@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Archiyou</title>
+    <link rel="icon" type="image/png" href="/img/ay_logo_white.png" />
+
+    <!-- Google Fonts preconnect -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Plus Jakarta Sans (UI/body), Outfit (display), JetBrains Mono (code) -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Outfit:wght@400;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&display=swap"
+    />
+
+    <!-- Design tokens applied to :root before first paint -->
+    <style id="design-tokens">
+      /* injected by design-tokens.ts at runtime */
+    </style>
+  </head>
+  <body>
+    <app-shell></app-shell>
+    <!-- workspace app -->
+    <script type="module" src="/src/apps/workspace/main.ts"></script>
+  </body>
+</html>

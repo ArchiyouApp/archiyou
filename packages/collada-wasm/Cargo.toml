@@ -1,0 +1,28 @@
+[package]
+name = "collada-wasm"
+version = "0.1.0"
+edition = "2024"
+description = "WebAssembly COLLADA (.dae) writer built on a vendored copy of 5mattmatt1/collada_io"
+license = "MIT"
+
+# Standalone crate: do not get absorbed into a parent cargo workspace.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# wasm glue
+wasm-bindgen = "0.2"
+console_error_panic_hook = { version = "0.1", optional = true }
+
+# vendored collada_io dependency (chrono dropped: timestamps are passed in as strings)
+xml-rs = "0.8.3"
+
+[features]
+default = ["console_error_panic_hook"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

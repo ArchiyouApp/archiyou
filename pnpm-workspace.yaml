@@ -1,0 +1,20 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  # Optional overlay for private, separately-licensed script modules. Empty in a
+  # public checkout apart from its README — an unmatched glob is not an error, so
+  # these lines are inert until a module repo is cloned in. Two depths so that
+  # either one-repo-per-module (modules/fem) or one repo holding several
+  # (modules/private/fem) works. See modules/README.md.
+  - 'modules/*'
+  - 'modules/*/*'
+
+overrides:
+  # dedupe ioredis so bullmq and @archiyou/server share one copy (avoids type clashes)
+  ioredis: ^5.11.1
+
+allowBuilds:
+  '@vaadin/vaadin-usage-statistics': false
+  esbuild: false
+  # native module — needs its build script to compile the SQLite binding
+  better-sqlite3: true

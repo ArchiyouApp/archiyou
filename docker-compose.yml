@@ -1,0 +1,155 @@
+# Production stack for the combined Archiyou server.
+#   caddy   — TLS reverse proxy (auto HTTPS) → api
+#   redis   — queue backend (password-protected; set REDIS_PASW in .env)
+#   api     — combined API (/api editor backend + / library + /execute)
+#   worker  — BullMQ execution worker
+#
+# Lives at the monorepo root because it deploys the whole monorepo, not just
+# apps/server: it builds from the root context and serves apps/editor/dist and
+# plugins/. The dev stack (server + redis only) stays at apps/server/docker-compose.yml.
+#
+# Run (from the repo root):  pnpm docker:prod   —  or plain `docker compose up -d`
+
+name: archiyou
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/data:/data
+      - ./caddy/config:/config
+      - ./caddy/logs:/logs
+      # The built editor SPA. NOT committed to git — the api container builds it
+      # on boot (apps/server/docker-entrypoint.sh), so on a first deploy this
+      # directory is empty and caddy 404s until that build finishes. The empty
+      # directory itself IS in git (apps/editor/dist/.gitkeep), which is what
+      # stops docker from creating it here as root and leaving uid 1000 unable
+      # to write into it.
+      - ./apps/editor/dist:/srv/app:ro
+      # Runtime-loaded editor plugins. Left OFF: plugins are a development
+      # feature, and the Caddyfile has no /plugins route to match this, so the
+      # built-in shape-picker is absent in production by design. Enabling it
+      # means uncommenting BOTH this mount and a /plugins handler in the
+      # Caddyfile — see the note there before you do.
+      #- ./plugins:/srv/plugins:ro
+    depends_on:
+      - api
+    networks:
+      - archiyou-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: archiyou-redis
+    volumes:
+      - redis_data:/data
+    env_file: .env
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASW}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - archiyou-network
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: archiyou-api
+    expose:
+      - "4100"
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      - SERVER_PORT=4100
+      - SERVER_REDIS_HOST=redis
+      - SERVER_REDIS_PORT=6379
+      - SERVER_REDIS_PASSWORD=${REDIS_PASW}
+      - SERVER_DATABASE_FILE=./data/archiyou.db
+      # Read by the entrypoint's build step and inlined into the editor bundle
+      # at build time (it cannot be changed afterwards without a rebuild). /api
+      # matches the prefix caddy strips in the Caddyfile; set an absolute URL
+      # only if you split the editor and API across hostnames.
+      - SERVER_API_BASE_URL=${SERVER_API_BASE_URL:-/api}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      # The image ships no code (see apps/server/Dockerfile): the whole monorepo
+      # checkout is mounted, so a deploy is `git pull` + `docker compose restart`.
+      # The entrypoint also BUILDS into this mount (editor SPA, packages, script
+      # modules) when sources are newer than its build stamp — which is why this
+      # mount is read-write here and read-only on the worker.
+      # It must be the repo ROOT, not just apps/server — apps/server is a workspace
+      # package whose node_modules are symlinks into ../../node_modules/.pnpm, and
+      # pnpm needs the root package.json + pnpm-workspace.yaml + lockfile.
+      # The container WORKDIR is /archiyou/apps/server, so
+      # SERVER_DATABASE_FILE=./data/archiyou.db resolves to apps/server/data.
+      - ./:/archiyou
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - archiyou-network
+
+  # Executes user-authored scripts. The Runner has NO sandbox (see
+  # apps/server/src/config.ts → execution), so treat this container as the one
+  # most likely to be compromised and give it as little as possible:
+  #   - NO env_file: an explicit allowlist of variables only, so a compromised
+  #     script cannot read SERVER_JWT_SECRET (forging tokens for any user) or the
+  #     Mailgun key out of process.env. config.jwtSecret is lazy, so the worker
+  #     boots fine without it.
+  #   - non-root (USER node in the Dockerfile), all capabilities dropped
+  #   - cpu/memory/pid ceilings, because the in-process execution timeout cannot
+  #     interrupt a tight synchronous loop (see ExecutionWorker.executeWithTimeout)
+  # Disabled for now — uncomment to enable server-side execution.
+  #worker:
+  #  build:
+  #    context: .
+  #    dockerfile: apps/server/Dockerfile
+  #  container_name: archiyou-worker
+  #  # Runs from WORKDIR /archiyou/apps/server, so this is @archiyou/server's
+  #  # `worker` script. From the workspace root the same line fails with
+  #  # ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL ("Command \"worker\" not found").
+  #  command: pnpm worker
+  #  environment:
+  #    - NODE_ENV=production
+  #    - SERVER_REDIS_HOST=redis
+  #    - SERVER_REDIS_PORT=6379
+  #    - SERVER_REDIS_PASSWORD=${REDIS_PASW}
+  #    - SERVER_EXECUTION_TIMEOUT_MS=${SERVER_EXECUTION_TIMEOUT_MS:-30000}
+  #    - WORKER_ID=worker
+  #  volumes:
+  #    # Same code mount as api. Read-only: the worker runs untrusted user
+  #    # scripts and has no reason to write to the checkout — it takes jobs from
+  #    # Redis and returns results there, never touching the SQLite DB.
+  #    - ./:/archiyou:ro
+  #  depends_on:
+  #    redis:
+  #      condition: service_healthy
+  #  restart: unless-stopped
+  #  cap_drop:
+  #    - ALL
+  #  security_opt:
+  #    - no-new-privileges:true
+  #  pids_limit: 256
+  #  mem_limit: 2g
+  #  cpus: 1.5
+  #  networks:
+  #    - archiyou-network
+
+volumes:
+  redis_data:
+    driver: local
+  server_data:
+    driver: local
+
+networks:
+  archiyou-network:
+    driver: bridge

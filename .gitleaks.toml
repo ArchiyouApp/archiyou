@@ -1,0 +1,33 @@
+# gitleaks configuration — see .github/workflows/secrets.yml
+#
+# Extends the built-in rule set rather than replacing it, so all the standard
+# provider patterns still apply.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholders and test fixtures that are not real credentials"
+
+paths = [
+  # Documented placeholders (change-me-…, empty values). The real files are
+  # gitignored; only *.env.example is tracked.
+  '''\.env\.example$''',
+  # Base64-encoded WebAssembly payloads. These are megabytes of base64 and trip
+  # entropy heuristics, but contain no credentials.
+  '''.*-wasm-binary\.ts$''',
+  '''packages/meshup/src/meshup-js-binary\.ts$''',
+  # Generated wasm-bindgen glue.
+  '''packages/.*/(pkg|ts/wasm)/.*\.js$''',
+  # Lockfiles: integrity hashes, not secrets.
+  '''pnpm-lock\.yaml$''',
+]
+
+regexes = [
+  # The dev-only JWT fallback in apps/server/src/config.ts. It is deliberately
+  # committed and the server throws rather than using it when NODE_ENV=production.
+  '''dev-insecure-jwt-secret-change-me''',
+  # Documented example values.
+  '''change-me-to-a-long-random-string''',
+  '''test1234''',
+]

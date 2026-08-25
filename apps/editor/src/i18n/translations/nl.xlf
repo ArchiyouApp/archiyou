@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file source-language="en" target-language="nl" datatype="plaintext" original="lit-localize-inputs">
+    <body>
+      <trans-unit id="s0a1b2c3d4e5f6a7b">
+        <source>Sign in to continue</source>
+        <target>Aanmelden om door te gaan</target>
+      </trans-unit>
+      <trans-unit id="s1b2c3d4e5f6a7b8c">
+        <source>Sign in</source>
+        <target>Aanmelden</target>
+      </trans-unit>
+      <trans-unit id="s2c3d4e5f6a7b8c9d">
+        <source>Signing in…</source>
+        <target>Aanmelden…</target>
+      </trans-unit>
+      <trans-unit id="s3d4e5f6a7b8c9d0e">
+        <source>Workspace</source>
+        <target>Werkruimte</target>
+      </trans-unit>
+      <trans-unit id="s4e5f6a7b8c9d0e1f">
+        <source>New Script</source>
+        <target>Nieuw script</target>
+      </trans-unit>
+      <trans-unit id="s5f6a7b8c9d0e1f2a">
+        <source>No scripts yet. Create your first one!</source>
+        <target>Nog geen scripts. Maak uw eerste aan!</target>
+      </trans-unit>
+      <trans-unit id="s6a7b8c9d0e1f2a3b">
+        <source>Light mode</source>
+        <target>Lichte modus</target>
+      </trans-unit>
+      <trans-unit id="s7b8c9d0e1f2a3b4c">
+        <source>Dark mode</source>
+        <target>Donkere modus</target>
+      </trans-unit>
+      <trans-unit id="s8c9d0e1f2a3b4c5d">
+        <source>Sign out</source>
+        <target>Afmelden</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

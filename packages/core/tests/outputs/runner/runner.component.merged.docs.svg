@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+  xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.0.dtd"
+  id="parentDoc"
+  width="297mm"
+  height="430mm"
+  viewBox="0 0 297 430"
+  data-multipage="true"
+  version="1.1">
+  <sodipodi:namedview id="namedview">
+    <inkscape:page id="page1" x="0" y="0" width="297" height="210" inkscape:label="parentPage"/>
+    <inkscape:page id="page2" x="0" y="220" width="297" height="210" inkscape:label="-myPage"/>
+  </sodipodi:namedview>
+  <defs>
+    <filter id="page-shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="0.5" stdDeviation="1.5" flood-color="rgba(0,0,0,0.28)"/>
+    </filter>
+  </defs>
+  <g id="layer1"
+     inkscape:label="parentPage"
+     inkscape:groupmode="layer">
+    <rect x="0" y="0" width="297" height="210" fill="white" stroke="none" filter="url(#page-shadow)"/>
+    <g transform="translate(10,10)">
+      <text x="0" y="0" font-family="'Outfit', sans-serif" font-size="6.3" font-weight="normal" font-style="normal" fill="#000000" text-anchor="start" dominant-baseline="text-before-edge" alignment-baseline="text-top">ParentPage</text>
+    </g>
+  </g>
+  <g id="layer1"
+     inkscape:label="-myPage"
+     inkscape:groupmode="layer" transform="translate(0,220)">
+    <rect x="0" y="0" width="297" height="210" fill="white" stroke="none" filter="url(#page-shadow)"/>
+  <defs>
+    <clipPath id="clip1"><rect x="0" y="0" width="277" height="190"/></clipPath>
+  </defs>
+    <g transform="translate(10,10)">
+      <g clip-path="url(#clip1)">
+        <svg x="0" y="0" width="277" height="190" viewBox="-7.07 -44.91 14.14 89.81" preserveAspectRatio="xMidYMid meet"><style>.ay-mypage-isometry .line{fill:none;stroke:black;stroke-width:0.1182;stroke-linecap:round;stroke-linejoin:round}.ay-mypage-isometry .hidden{stroke:#888;stroke-dasharray:1.4184 0.9456}.ay-mypage-isometry .fill{fill:#fff;stroke:none}</style><g class="ay-mypage-isometry"><path d="M0 -44.907312 L7.071068 -40.824829" class="line silhouette" /><path d="M0 -36.742346 L-7.071068 -40.824829" class="line visible" /><path d="M-7.071068 40.824829 L0 44.907312" class="line silhouette" /><path d="M-7.071068 -40.824829 L0 -44.907312" class="line silhouette" /><path d="M0 44.907312 L7.071068 40.824829" class="line silhouette" /><path d="M7.071068 -40.824829 L0 -36.742346" class="line visible" /><path d="M7.071068 40.824829 L7.071068 -40.824829" class="line silhouette" /><path d="M0 -36.742346 L0 44.907312" class="line visible" /><path d="M-7.071068 40.824829 L-7.071068 -40.824829" class="line silhouette" /></g></svg>
+      </g>
+    </g>
+  </g>
+</svg>

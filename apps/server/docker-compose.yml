@@ -1,0 +1,87 @@
+# Development stack for the combined Archiyou server.
+#   redis   — queue backend for server-side execution
+#   api     — combined API (/api editor backend + / library + /execute); runs DB migrations on boot
+#   worker  — BullMQ execution worker (runs the archiyou-core Runner)
+#
+# Build context is the monorepo root (../..) so the @archiyou/core workspace dep resolves.
+# Run:  pnpm --filter @archiyou/server docker:dev   (or: docker compose up)
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: archiyou-redis
+    ports:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - archiyou-network
+
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile
+    container_name: archiyou-api
+    ports:
+      - "4100:4100"
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      - SERVER_PORT=4100
+      - SERVER_REDIS_HOST=redis
+      - SERVER_REDIS_PORT=6379
+      - SERVER_DATABASE_FILE=./data/archiyou.db
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      # SQLite DB + execution result cache persist here.
+      - server_data:/repo/apps/server/data
+    restart: unless-stopped
+    networks:
+      - archiyou-network
+
+  # Executes user-authored scripts with NO sandbox (see SECURITY.md), exactly as in
+  # production — so it gets the same minimal environment here. This deliberately does
+  # NOT use `env_file: .env`: that hands the script Runner every secret in the file,
+  # including SERVER_JWT_SECRET (forging a session token for any user) and the Mailgun
+  # key. config.jwtSecret is a lazy getter precisely so the worker boots without it.
+  #
+  # The root docker-compose.yml is checked against this rule in CI
+  # (apps/server/scripts/check-worker-env.py); a dev box running the same code is worth
+  # holding to it too, since a dev .env is often a copy of the production one.
+  worker:
+    build:
+      context: ../..
+      dockerfile: apps/server/Dockerfile
+    container_name: archiyou-worker
+    command: pnpm worker
+    environment:
+      - NODE_ENV=production
+      - SERVER_REDIS_HOST=redis
+      - SERVER_REDIS_PORT=6379
+      - SERVER_EXECUTION_TIMEOUT_MS=${SERVER_EXECUTION_TIMEOUT_MS:-30000}
+      - WORKER_ID=worker
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - archiyou-network
+
+volumes:
+  redis_data:
+    driver: local
+  server_data:
+    driver: local
+
+networks:
+  archiyou-network:
+    driver: bridge

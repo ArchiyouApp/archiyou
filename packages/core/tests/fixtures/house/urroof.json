@@ -1,0 +1,93 @@
+{
+ "name": "urroof",
+ "author": "archiyou",
+ "version": null,
+ "code": "/*\n  Roof\n  \n  We take it that wall plate has priority over the sloped front wall\n  So the front wall is between the two side walls\n\n  origin of the model is outer corner of side wall and front sloped wall\n  \n*/\n\nSPAN = $SPAN; // span inside wall-to-wall inside\nHEIGHT = $HEIGHT; // height of ridge of front wall from topplate of side wall\nDEPTH = $DEPTH; // Depth from front wall to back (including wall depth)\nWALL_DEPTH = 200; // of side and front wall\nOVERHANG_LEFT = $OVERHANG_SIDE; // on x axis\nOVERHANG_RIGHT = $OVERHANG_SIDE;\nOVERHANG_FRONT = $OVERHANG_FRONTAL;\nOVERHANG_BACK = $OVERHANG_FRONTAL;\n\nPURLIN_SECTION_WIDTH = 100; // TODO: standard sizes\nPURLIN_SECTION_HEIGHT = 200;\nPURLIN_CTC_MAX =  1500;  // distance between centerlines of purlines\n\nRAFTER_SECTION_WIDTH = 38;\nRAFTER_SECTION_HEIGHT = 170;\nRAFTER_KEEP_ZOFFSET = 40;\nRAFTER_DISTANCE = 400;\n\n\n\n//// CALCULATED PROPERTIES ////\n\nANGLE = Math.atan(HEIGHT/(SPAN/2)); // roof angle\nANGLE_DEG = toDeg(ANGLE);\n\n//// MAIN ////\n\nlayer('context').color('red').dashed();\n\n\n// Where to lay it on \nfrontBottomRoofLineSlope = line([WALL_DEPTH,0,0],[SPAN/2,0,HEIGHT]);\nfrontBottomRoofLine = polyline([0,0,0], // with wall depth\n                               frontBottomRoofLineSlope.start(), \n                               frontBottomRoofLineSlope.end())\n\n\ncenterline = line([SPAN/2,0,HEIGHT],[SPAN/2,0,0])\n              .extend(1000, 'start')\n              .dashed();\n\nplaceContour = rectBetween([0,0,0],[SPAN,DEPTH,0])\nplaceContourWallLeft = rectBetween([0,0,0],[-WALL_DEPTH, DEPTH, 0])\nplaceContourWallFront = rectBetween([0,0,0],[SPAN,WALL_DEPTH, 0])\nplaceContourWallBack = placeContourWallFront.copy().moveY(DEPTH-WALL_DEPTH)\n\nlayer('diagram').color('blue');\n\n// First purlin on inside of wall\npurlinWallLeftSection = rectBetween(\n  [0,0,0],\n  [-PURLIN_SECTION_WIDTH, 0, PURLIN_SECTION_HEIGHT]\n).move(WALL_DEPTH)\n\n\npurlinLineTop = frontBottomRoofLineSlope\n  .copy()\n  .align(purlinWallLeftSection, 'leftbottom', 'leftfronttop') // TODO: align with start/end\n  .extendTo(centerline)\n\n\n// fill in purlinLineTop with purlines using PURLIN_CTC_MAX\nnumMidPurlins = Math.round(purlinLineTop.length()/PURLIN_CTC_MAX) - 1;\npurlinMidOffset = purlinLineTop.length()/(numMidPurlins + 1);\n\n\npurlinsMidSections = collection();\n\nfor(p = 0; p < numMidPurlins; p++)\n{\n  purlinsMidSections.add(\n    purlinWallLeftSection.copy()\n      .move(purlinLineTop\n      .direction()\n      .normalize()\n      .scale(purlinMidOffset*(p+1)))\n      .name('purlinMidLeftSection' + (p+1))\n  );\n}\n\n\n// top purlin AKA the ridge\nridgeSection = purlinWallLeftSection\n                .copy()\n                .align(\n                  purlinLineTop.end(),\n                  'frontcentertop',\n                  'center'\n                ).moveZ(-Math.tan(ANGLE)*PURLIN_SECTION_WIDTH/2)\n\n\n// Rafters diagram\n\n// Rafter bottom is purlinLineTop with \"keep\" (=cut) z offset\n\nrafterBottomLineLeft = purlinLineTop\n      .copy()\n      .moveZ(-RAFTER_KEEP_ZOFFSET)\n      .extendTo(\n        line([0,0,0],[0,0,HEIGHT]).tmp()) // extend to outer wall line\n       .extendTo(\n        line([-OVERHANG_LEFT,0,-HEIGHT],[-OVERHANG_LEFT,0,HEIGHT]).tmp()\n       )\n\nrafterTopLineLeft = rafterBottomLineLeft.copy()\n    .offset(-RAFTER_SECTION_HEIGHT)\n    .extendTo(centerline)  \n    .color('red');\n\nrafterLongSection = rafterBottomLineLeft\n                    .connect(rafterTopLineLeft)\n                    .close() \n\npurlinSections = collection(\n  purlinWallLeftSection, purlinsMidSections, ridgeSection)\n                  \n                      \n\n//// 3D MODEL ////\n\nlayer('purlins').color('green');\n\npurlinLength = DEPTH + OVERHANG_FRONT + OVERHANG_BACK;\n\npurlinBeams = purlinSections.copy()\n            .extrude(purlinLength, [0,1,0])\n            .moveY(-OVERHANG_FRONT)\n            .forEach((s,i) => s.name('purlin' + i))\n\n// Blocking between purlins\npurlinsBlocksFront =  frontBottomRoofLineSlope\n                      .copy()\n                      .offset(-PURLIN_SECTION_HEIGHT)\n                      .extendTo(centerline)\n                      .connect(frontBottomRoofLineSlope)\n                      .extrude(PURLIN_SECTION_WIDTH, [0,1,0])\n                      .cutoffBy(purlinBeams.first()) // NOTE: bit tricky here\n                      .subtract(purlinBeams.first().copy().move(-PURLIN_SECTION_WIDTH,0,PURLIN_SECTION_WIDTH/2).tmp())\n                      .cutoffBy(purlinBeams.last())\n                      .subtract(purlinBeams.copy().moveZ(-1).tmp()) // Problem with directly on slope line)\n                      .name('purlinsBlocksFront');\n                      //.forEach((s,i) => s.name('purlinBlockFront' + i)); // Collection => Shape stub\n\n\npurlinsBlocksBack = purlinsBlocksFront.copy().mirrorY(DEPTH/2);\n\n\nlayer('raftersLeft').color('brown')\n\nnumRafterBeamsDepth = Math.floor((\n  DEPTH-2*RAFTER_SECTION_WIDTH)/(RAFTER_DISTANCE+RAFTER_SECTION_WIDTH)) + 1 // without the overhangs front and back\n\nrafterBeams = rafterLongSection\n                .extrude(RAFTER_SECTION_WIDTH, [0,1,0])\n                .name('rafter')\n                .moveY(-RAFTER_SECTION_WIDTH) // align to front of purlin\n                .subtract(purlinBeams)\n                .row(numRafterBeamsDepth, RAFTER_DISTANCE, [0,1,0]) // distance to \n\n// last front rafter/facia\nrafterFaciaFront = rafterBeams.first().copy().moveY(-OVERHANG_FRONT+RAFTER_SECTION_WIDTH);\nrafterBeams.add(rafterFaciaFront);\n\n// last back rafter aligned with purlin\nrafterBeams.add(rafterBeams.first().copy().mirrorY(DEPTH/2)).name('rafterBackFacade')\nrafterBeams.add(rafterFaciaFront.copy().mirrorY(DEPTH/2)).name('rafterBackFacia')\n\n// Right purlinsMidSections\nlayer('raftersRight').color('brown');\nrafterBeamsRight = rafterBeams.copy().mirrorX(SPAN/2);\nlayer('purlinsRight').color('green')\npurlinBeamsRight = purlinBeams.copy().mirrorX(SPAN/2);\ncollection(purlinsBlocksBack,purlinsBlocksFront).copy().mirrorX(SPAN/2);\n\n",
+ "params": {
+  "SPAN": {
+   "name": "SPAN",
+   "type": "number",
+   "label": "Size",
+   "group": "main",
+   "iterable": true,
+   "default": 5000,
+   "_value": 5940,
+   "schema": {
+    "type": "number",
+    "default": 5000,
+    "minimum": 3000,
+    "maximum": 9000,
+    "multipleOf": 1
+   }
+  },
+  "HEIGHT": {
+   "name": "HEIGHT",
+   "type": "number",
+   "label": "HEIGHT",
+   "group": "main",
+   "order": 1,
+   "iterable": true,
+   "default": 3000,
+   "_value": 4038,
+   "schema": {
+    "type": "number",
+    "default": 3000,
+    "minimum": 2000,
+    "maximum": 6000,
+    "multipleOf": 1
+   }
+  },
+  "DEPTH": {
+   "name": "DEPTH",
+   "type": "number",
+   "label": "DEPTH",
+   "group": "main",
+   "order": 2,
+   "iterable": true,
+   "default": 5000,
+   "_value": 3169,
+   "schema": {
+    "type": "number",
+    "default": 5000,
+    "minimum": 2000,
+    "maximum": 12000,
+    "multipleOf": 1
+   }
+  },
+  "OVERHANG_SIDE": {
+   "name": "OVERHANG_SIDE",
+   "type": "number",
+   "label": "OVERHANG_LEFT",
+   "group": "main",
+   "order": 3,
+   "iterable": true,
+   "default": 500,
+   "_value": 314,
+   "schema": {
+    "type": "number",
+    "default": 500,
+    "minimum": 0,
+    "maximum": 1000,
+    "multipleOf": 1
+   }
+  },
+  "OVERHANG_FRONTAL": {
+   "name": "OVERHANG_FRONTAL",
+   "type": "number",
+   "label": "OVERHANG_FRONT",
+   "group": "main",
+   "order": 4,
+   "iterable": true,
+   "default": 500,
+   "_value": 322,
+   "schema": {
+    "type": "number",
+    "default": 500,
+    "minimum": 0,
+    "maximum": 1000,
+    "multipleOf": 1
+   }
+  }
+ },
+ "presets": {}
+}

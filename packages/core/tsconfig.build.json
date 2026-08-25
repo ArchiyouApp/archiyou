@@ -1,0 +1,20 @@
+{
+  // Declarations only, src/ only (tests are not part of the published surface).
+  //
+  // tsc exits non-zero here: src/ carries ~88 pre-existing type errors tracked by
+  // `typecheck:budget`. Declarations are still emitted for every file that has them, which is
+  // why `build:types` tolerates the exit code. Fixing the budget down to 0 would let this
+  // become a hard gate.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": false,
+    "emitDeclarationOnly": true,
+    "noEmitOnError": false,
+    "sourceMap": false
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "tests", "examples", "scripts"]
+}

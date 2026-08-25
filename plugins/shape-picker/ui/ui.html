@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Shape Picker — ui</title>
+<style>
+  /* Kept minimal; the host injects design tokens into every part's srcdoc.
+     Fallback values are used when opened standalone. */
+  :root {
+    --ay-fg: var(--ay-color-fg, #1a1a1a);
+    --ay-muted: var(--ay-color-muted, #6b7280);
+    --ay-border: var(--ay-color-border, #d1d5db);
+    --ay-accent: var(--ay-color-accent, #2563eb);
+    --ay-gap: var(--ay-space-3, 12px);
+    font-family: var(--ay-font, system-ui, sans-serif);
+  }
+  body { margin: 0; padding: var(--ay-gap); color: var(--ay-fg); }
+  .menu { display: flex; flex-direction: column; gap: var(--ay-gap); }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  label { font-size: 13px; font-weight: 600; }
+  select, input[type="range"] { width: 100%; }
+  select { padding: 6px 8px; border: 1px solid var(--ay-border); border-radius: 6px; background: #fff; }
+  .row { display: flex; align-items: center; justify-content: space-between; }
+  .val { font-variant-numeric: tabular-nums; color: var(--ay-muted); font-size: 12px; }
+  button.link { font: inherit; font-size: 13px; padding: 6px 10px; cursor: pointer;
+    border: 1px solid var(--ay-border); border-radius: 6px; background: #fff; }
+</style>
+</head>
+<body>
+  <div class="menu">
+    <div class="field">
+      <label for="shape">Shape</label>
+      <select id="shape"></select>
+    </div>
+    <div class="field">
+      <div class="row">
+        <label for="size">Size</label>
+        <span class="val"><output id="sizeval"></output> mm</span>
+      </div>
+      <input id="size" type="range" />
+    </div>
+    <!-- The main UI can open/close tools via the archiyou bridge. -->
+    <button class="link" id="open-export">Open Export Voor Wessel ↗</button>
+  </div>
+
+<script>
+  // --- bridge guard --------------------------------------------------------
+  // The host injects a real `archiyou` bridge (postMessage-backed) when this
+  // part is mounted by the plugin loader. When the file is opened standalone
+  // we stub it so the UI still renders and interactions log instead of crash.
+  const archiyou = window.archiyou ?? {
+    onSchema(cb) {
+      // Feed a demo schema so the menu is visible standalone.
+      cb([
+        { name: 'SHAPE', label: 'Shape', _value: 'cube',
+          schema: { type: 'string', enum: ['cube', 'sphere', 'cylinder'], default: 'cube' } },
+        { name: 'SIZE', label: 'Size', _value: 100,
+          schema: { type: 'number', minimum: 10, maximum: 300, multipleOf: 10, default: 100 } },
+      ]);
+    },
+    submit(values) { console.log('[shape-picker] submit', values); },
+    ui: { open(t) { console.log('[shape-picker] ui.open', t); }, close() {}, toggle() {} },
+  };
+
+  const shapeEl = document.getElementById('shape');
+  const sizeEl = document.getElementById('size');
+  const sizeValEl = document.getElementById('sizeval');
+
+  // Current input values object — the menu owns this and submits the whole thing.
+  const values = {};
+
+  function paramByName(schema, name) {
+    return schema.find((p) => p.name === name);
+  }
+  function valueOf(param) {
+    return param._value ?? param.schema?.default;
+  }
+
+  // Render the menu from the schema (the main script's $PARAMS).
+  archiyou.onSchema((schema) => {
+    const shape = paramByName(schema, 'SHAPE');
+    const size = paramByName(schema, 'SIZE');
+
+    // Dropdown built from the options param's enum.
+    const opts = shape?.schema?.enum ?? [];
+    shapeEl.innerHTML = opts.map((o) => `<option value="${o}">${o}</option>`).join('');
+    shapeEl.value = valueOf(shape);
+    values.SHAPE = shapeEl.value;
+
+    // Range built from the number param's bounds.
+    if (size) {
+      sizeEl.min = size.schema?.minimum ?? 0;
+      sizeEl.max = size.schema?.maximum ?? 100;
+      sizeEl.step = size.schema?.multipleOf ?? 1;
+      sizeEl.value = valueOf(size);
+      sizeValEl.value = sizeEl.value;
+      values.SIZE = Number(sizeEl.value);
+    }
+  });
+
+  // Collect + submit the values object; archiyou validates + executes.
+  function submit() {
+    archiyou.submit({ ...values });
+  }
+
+  shapeEl.addEventListener('change', () => {
+    values.SHAPE = shapeEl.value;
+    submit();
+  });
+  sizeEl.addEventListener('input', () => {
+    values.SIZE = Number(sizeEl.value);
+    sizeValEl.value = sizeEl.value;
+    submit();
+  });
+
+  // Open the Export tool panel from the main UI.
+  document.getElementById('open-export').addEventListener('click', () => {
+    archiyou.ui.open('Export');
+  });
+</script>
+</body>
+</html>

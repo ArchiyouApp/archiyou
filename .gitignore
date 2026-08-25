@@ -1,0 +1,55 @@
+node_modules
+dist
+
+# The editor's build output is NOT committed: the api container builds it on
+# boot from the mounted checkout (apps/server/docker-entrypoint.sh). The empty
+# DIRECTORY is tracked, though — docker-compose.yml bind-mounts it into caddy,
+# and docker creates a missing bind-mount source as root, which would leave the
+# container's uid 1000 unable to build into it. Vite empties outDir on every
+# build and takes the .gitkeep with it, so the entrypoint puts it back.
+!/apps/editor/dist
+/apps/editor/dist/*
+!/apps/editor/dist/.gitkeep
+
+*.db*
+/tmp
+caddy/
+
+# Build caches
+.turbo
+
+# Environment files — NEVER commit these. Only *.env.example belongs in git.
+.env
+.env.*
+!.env.example
+
+# Editor/IDE local settings
+.vscode/
+.idea/
+
+# Rust build output (also excluded from the Docker build context)
+target/
+
+# OS cruft
+.DS_Store
+
+# TMP output fileas
+*.svg
+*.glb
+*.gltf
+
+.claude/
+
+# Private script-module overlay — module repos cloned in here become pnpm workspace
+# packages. Their contents must NEVER be committed to this repo; the
+# `private-modules-boundary` CI job enforces that.
+#
+# Only the dev guide is tracked. Ignoring the CONTENTS rather than the directory is
+# what lets that one file live here — and it is why module repos are cloned into
+# subdirectories (`modules/fem`), since git refuses to clone into a non-empty dir.
+/modules/*
+!/modules/README.md
+
+
+# tmp AI plans
+/plans

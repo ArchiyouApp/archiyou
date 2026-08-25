@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    // The program spans other workspace packages (core, ui, types) via `paths`
+    // below, so rootDir must cover the monorepo. Inheriting the root config's
+    // "src" makes every file here "outside rootDir" — harmless under noEmit, but
+    // it buries the real diagnostics under 100+ TS6059s.
+    "rootDir": "../..",
+    // Typecheck only. Vite owns dist/ — without noEmit, `tsc && vite build`
+    // writes stray .js into dist/ before Vite ever runs (see AGENTS.md).
+    "noEmit": true,
+    // tsc cannot follow @archiyou/core's "./src/*": "./src/*" exports map, and an
+    // unresolved import is typed as `any`, which silently disables checking
+    // across the whole boundary. These make tsc resolve the same files Vite does.
+    // Do NOT "fix" this in core's exports map instead — mapping to ./src/*.ts
+    // breaks the Vite build, since consumers import with .js suffixes too.
+    "paths": {
+      "@archiyou/core": ["../../packages/core/src/index.ts"],
+      "@archiyou/core/src/*": ["../../packages/core/src/*"],
+      "@archiyou/types": ["../../packages/types/src/index.ts"],
+      "@archiyou/ui": ["../../packages/ui/src/index.ts"],
+      "@archiyou/ui/*": ["../../packages/ui/src/*"],
+      "@archiyou/editor/src/*": ["../../apps/editor/src/*"]
+    }
+  },
+  "include": ["src"]
+}

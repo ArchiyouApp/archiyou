@@ -1,0 +1,5168 @@
+{
+  "$schema": "./materials.schema.json",
+  "meta": {
+    "note": "Canonical SI units: density kg/m3, thermalConductivity W/mK, compressive/tensile MPa, elastic GPa, carbon kgCO2e/kg. Generated via tools/materials-generator (Gemini).",
+    "version": 2,
+    "generatedAt": "2026-07-06T21:13:25.556Z"
+  },
+  "materials": [
+    {
+      "name": "concrete",
+      "group": "concrete",
+      "description": "A composite construction material composed of fine and coarse aggregate bonded together with a fluid cement (cement paste) that hardens over time.",
+      "density": {
+        "value": 2400,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox",
+        "description": "Typical density for normal-weight concrete."
+      },
+      "viz": {
+        "pbr": {
+          "color": "#808080",
+          "metallic": 0,
+          "roughness": 0.8
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/concrete_sides.jpg",
+            "realWidth": 3000,
+            "realHeight": 3000,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "reinforced concrete"
+      ],
+      "carbon": {
+        "value": 0.0817,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT b3fb0ba9-2376-49bf-b21a-7f7a5cd97233"
+      },
+      "compressive": {
+        "value": 30,
+        "unit": "MPa",
+        "source": "Eurocode 2",
+        "description": "Characteristic compressive strength for C25/30 concrete."
+      },
+      "elastic": {
+        "value": 31,
+        "unit": "GPa",
+        "source": "Eurocode 2",
+        "description": "Secant modulus of elasticity for C25/30 concrete."
+      },
+      "recyclability": {
+        "value": 0.85,
+        "unit": "fraction",
+        "source": "The Concrete Centre",
+        "description": "Fraction of concrete that can be recycled into aggregate."
+      },
+      "tensile": {
+        "value": 2.6,
+        "unit": "MPa",
+        "source": "Eurocode 2",
+        "description": "Mean axial tensile strength for C25/30 concrete."
+      },
+      "thermalConductivity": {
+        "value": 1.5,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox",
+        "description": "Thermal conductivity for normal-weight concrete."
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "m3",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 2400,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 196,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A4": {
+            "value": 4.35,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 0.874,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "B1": {
+            "value": -14,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C1": {
+            "value": 3.32,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 10.3,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 5.05,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -12.1,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.335,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A4": {
+            "value": 0.0155,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 0.012,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "B1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C1": {
+            "value": 0.0115,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.0371,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 0.0505,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -0.106,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "b3fb0ba9-2376-49bf-b21a-7f7a5cd97233",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/b3fb0ba9-2376-49bf-b21a-7f7a5cd97233?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2028"
+        }
+      }
+    },
+    {
+      "name": "cement",
+      "group": "concrete",
+      "description": "A fine, grey powder, typically Portland cement, that acts as a hydraulic binder when mixed with water, forming a paste that hardens to bind aggregates in concrete and mortar.",
+      "density": {
+        "value": 1500,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox",
+        "description": "Typical bulk density of loose Portland cement powder."
+      },
+      "viz": {
+        "pbr": {
+          "color": "#8C8C8C",
+          "metallic": 0,
+          "roughness": 0.85
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/cement_sides.jpg",
+            "realWidth": 3000,
+            "realHeight": 3000,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "Portland cement",
+        "OPC",
+        "binder"
+      ],
+      "carbon": {
+        "value": 0.665,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 87371640-546c-4d9c-84cc-c13b6be94146"
+      },
+      "thermalConductivity": {
+        "value": 0.7,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox",
+        "description": "Thermal conductivity of hardened cement paste."
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1000,
+        "modules": {
+          "A1A3": {
+            "value": 665,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.855,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "87371640-546c-4d9c-84cc-c13b6be94146",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/87371640-546c-4d9c-84cc-c13b6be94146?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2027"
+        }
+      }
+    },
+    {
+      "name": "sand",
+      "group": "stone",
+      "description": "A granular material composed of finely divided rock and mineral particles, typically silica. Used as an aggregate in concrete, mortar, and asphalt, and for various landscaping and construction purposes.",
+      "density": {
+        "value": 1600,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox",
+        "description": "Typical density for dry, loose sand."
+      },
+      "viz": {
+        "pbr": {
+          "color": "#C2B280",
+          "metallic": 0,
+          "roughness": 0.8
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/sand_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "silica sand",
+        "construction sand"
+      ],
+      "carbon": {
+        "value": 0.0027,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 286b0072-1001-4e5f-baa2-282230755243"
+      },
+      "recyclability": {
+        "value": 1,
+        "unit": "fraction",
+        "source": "Construction industry practice",
+        "description": "Sand and gravel are highly reusable as aggregates."
+      },
+      "thermalConductivity": {
+        "value": 0.27,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox",
+        "description": "Thermal conductivity for dry sand."
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 1350,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 0.0027386873388177,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": 0.000302139657545658,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.00426009080011634,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0.00710354789079605,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -0.0015722714568952,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": -0.0000336275026795061,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": 0.00000192531758548693,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.0000216260876698418,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0.0000313199807090042,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": 0.0000243916153438805,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "286b0072-1001-4e5f-baa2-282230755243",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/286b0072-1001-4e5f-baa2-282230755243?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "gravel",
+      "group": "stone",
+      "description": "A loose aggregation of rock fragments, typically used as an aggregate in construction, for drainage, or as a decorative landscaping material.",
+      "density": {
+        "value": 1700,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox",
+        "description": "Typical density for loose gravel."
+      },
+      "viz": {
+        "pbr": {
+          "color": "#A09A90",
+          "metallic": 0,
+          "roughness": 0.8
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/gravel_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "aggregate",
+        "crushed stone"
+      ],
+      "carbon": {
+        "value": 0.0027,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT d35a5f2a-d72c-41a3-9f64-ea1b1ec066d1"
+      },
+      "compressive": {
+        "value": 100,
+        "unit": "MPa",
+        "source": "Geotechnical Engineering Handbook",
+        "description": "Compressive strength of individual rock particles (e.g., limestone, granite) that constitute gravel."
+      },
+      "elastic": {
+        "value": 50,
+        "unit": "GPa",
+        "source": "Geotechnical Engineering Handbook",
+        "description": "Elastic modulus of individual rock particles."
+      },
+      "recyclability": {
+        "value": 0.9,
+        "unit": "fraction",
+        "source": "Construction & Demolition Recycling Association",
+        "description": "High potential for reuse and recycling as aggregate."
+      },
+      "thermalConductivity": {
+        "value": 2,
+        "unit": "W/mK",
+        "source": "The Engineering ToolBox",
+        "description": "Thermal conductivity for dry gravel."
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 1850,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 0.0027386873388177,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": 0.000302139657545658,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.00426009080011634,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0.00710354789079605,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -0.0015722714568952,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": -0.0000336275026795061,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": 0.00000192531758548693,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.0000216260876698418,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0.0000313199807090042,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": 0.0000243916153438805,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "d35a5f2a-d72c-41a3-9f64-ea1b1ec066d1",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/d35a5f2a-d72c-41a3-9f64-ea1b1ec066d1?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "stone",
+      "group": "stone",
+      "description": "A natural, hard, non-metallic mineral matter, typically quarried and used for structural elements, cladding, paving, and decorative purposes.",
+      "density": {
+        "value": 2650,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#8B8B8B",
+          "metallic": 0,
+          "roughness": 0.7
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/stone_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "rock",
+        "natural stone",
+        "masonry stone"
+      ],
+      "carbon": {
+        "value": 0.02,
+        "unit": "kgCO2e/kg",
+        "source": "ICE database v3"
+      },
+      "compressive": {
+        "value": 120,
+        "unit": "MPa",
+        "source": "Engineering ToolBox"
+      },
+      "elastic": {
+        "value": 50,
+        "unit": "GPa",
+        "source": "Engineering ToolBox"
+      },
+      "recyclability": {
+        "value": 0.95,
+        "unit": "fraction",
+        "source": "General industry practice"
+      },
+      "tensile": {
+        "value": 5,
+        "unit": "MPa",
+        "source": "Engineering ToolBox"
+      },
+      "thermalConductivity": {
+        "value": 3,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "qm",
+        "declaredUnitValue": 1,
+        "modules": {
+          "A1A3": {
+            "value": 6.06357479470414,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": 28.4225806495542,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0.0628450487694968,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.8860988864242,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 1.47753796128558,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": -0.327032463034201,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.0385812218292351,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": -0.00865499802004194,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0.000400466057781281,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.00449822623532709,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.00651455598747288,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": 0.00507345599152715,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "f82e3ab8-d7bb-4765-a60c-bfe78ede1565",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/f82e3ab8-d7bb-4765-a60c-bfe78ede1565?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "mortar",
+      "group": "masonry",
+      "description": "A workable paste used to bind building blocks such as bricks, stones, or concrete masonry units together, fill and seal the irregular gaps between them, and sometimes add decorative colors or patterns to masonry walls.",
+      "density": {
+        "value": 2000,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#A09A90",
+          "metallic": 0,
+          "roughness": 0.85
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/mortar_sides.jpg",
+            "realWidth": 1000,
+            "realHeight": 1000,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "cement mortar",
+        "lime mortar",
+        "masonry mortar"
+      ],
+      "carbon": {
+        "value": 0.564,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 7c0535db-e6d1-4342-871d-74cde862d97a"
+      },
+      "compressive": {
+        "value": 10,
+        "unit": "MPa",
+        "source": "Eurocode 6"
+      },
+      "elastic": {
+        "value": 10,
+        "unit": "GPa",
+        "source": "Properties of Mortar and Concrete (Neville)"
+      },
+      "recyclability": {
+        "value": 0.1,
+        "unit": "fraction",
+        "source": "General construction waste management"
+      },
+      "thermalConductivity": {
+        "value": 0.8,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 1000,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 0.564,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "A4": {
+            "value": 0.0129,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "A5": {
+            "value": 0.0318,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "B1": {
+            "value": -0.154,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": 0.000313,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.00637,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C4": {
+            "value": 0.0169,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -0.0122,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": -0.0193,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "A4": {
+            "value": 0.00000529,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "A5": {
+            "value": 0.0292,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "B1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": -0.00000132,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.00000261,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C4": {
+            "value": -0.000516,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -0.0000872,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "7c0535db-e6d1-4342-871d-74cde862d97a",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/7c0535db-e6d1-4342-871d-74cde862d97a?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2029"
+        }
+      }
+    },
+    {
+      "name": "grout",
+      "group": "masonry",
+      "description": "A cementitious mixture used to fill gaps, reinforce masonry, or bond building components. It typically consists of cement, sand, water, and sometimes admixtures.",
+      "density": {
+        "value": 2200,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox",
+        "description": "Typical density for cementitious grout."
+      },
+      "viz": {
+        "pbr": {
+          "color": "#8C8C8C",
+          "metallic": 0,
+          "roughness": 0.8
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/grout_sides.jpg",
+            "realWidth": 1000,
+            "realHeight": 1000,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "cement grout",
+        "masonry grout",
+        "non-shrink grout"
+      ],
+      "carbon": {
+        "value": 0.15,
+        "unit": "kgCO2e/kg",
+        "source": "ICE database v3",
+        "description": "Embodied carbon for typical cementitious grout."
+      },
+      "compressive": {
+        "value": 35,
+        "unit": "MPa",
+        "source": "ACI 355.4",
+        "description": "Typical compressive strength for a general-purpose structural grout."
+      },
+      "elastic": {
+        "value": 30,
+        "unit": "GPa",
+        "source": "ACI 318",
+        "description": "Typical elastic modulus for cementitious grout."
+      },
+      "recyclability": {
+        "value": 0.8,
+        "unit": "fraction",
+        "source": "Construction & Demolition Waste Management",
+        "description": "Recyclability of hardened cementitious grout as aggregate."
+      },
+      "tensile": {
+        "value": 3.5,
+        "unit": "MPa",
+        "source": "ACI 318",
+        "description": "Typical tensile strength (flexural) for cementitious grout."
+      },
+      "thermalConductivity": {
+        "value": 1.5,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox",
+        "description": "Typical thermal conductivity for cementitious grout."
+      }
+    },
+    {
+      "name": "steel",
+      "group": "metal",
+      "description": "A strong, versatile alloy of iron and carbon, widely used in construction for structural frames, reinforcement, and various components due to its high strength-to-weight ratio and ductility.",
+      "density": {
+        "value": 7850,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#808080",
+          "metallic": 1,
+          "roughness": 0.5
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/steel_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "structural steel",
+        "mild steel"
+      ],
+      "carbon": {
+        "value": 2.529,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 04d1311a-ae38-4bfb-8e11-8992f1ddb14f"
+      },
+      "compressive": {
+        "value": 275,
+        "unit": "MPa",
+        "source": "Eurocode 3"
+      },
+      "elastic": {
+        "value": 200,
+        "unit": "GPa",
+        "source": "Engineering ToolBox"
+      },
+      "recyclability": {
+        "value": 0.9,
+        "unit": "fraction",
+        "source": "World Steel Association"
+      },
+      "tensile": {
+        "value": 275,
+        "unit": "MPa",
+        "source": "Eurocode 3"
+      },
+      "thermalConductivity": {
+        "value": 50,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1000,
+        "density": {
+          "value": 7850,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 2528.98448544598,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C1": {
+            "value": 2.19008386994757,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C2": {
+            "value": 2.51341637274405,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C4": {
+            "value": 0.145067094344954,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "D": {
+            "value": -1467.39377141986,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.402631929490777,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C1": {
+            "value": -0.761221607654565,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C2": {
+            "value": -0.0247189417793992,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C4": {
+            "value": -0.00442186797809064,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "D": {
+            "value": 0.562651707697722,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "04d1311a-ae38-4bfb-8e11-8992f1ddb14f",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/04d1311a-ae38-4bfb-8e11-8992f1ddb14f?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2028"
+        }
+      }
+    },
+    {
+      "name": "rebar",
+      "group": "metal",
+      "description": "Reinforcing bar, typically made from carbon steel, used to strengthen concrete structures.",
+      "density": {
+        "value": 7850,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#666666",
+          "metallic": 0.9,
+          "roughness": 0.5
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/rebar_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "reinforcing bar",
+        "reinforcement bar",
+        "steel rebar",
+        "concrete reinforcement"
+      ],
+      "carbon": {
+        "value": 0.6422,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT f6861618-5a92-4c3a-94ba-9f7329b29662"
+      },
+      "compressive": {
+        "value": 420,
+        "unit": "MPa",
+        "source": "ASTM A615 (yield strength)"
+      },
+      "elastic": {
+        "value": 200,
+        "unit": "GPa",
+        "source": "Engineering ToolBox"
+      },
+      "recyclability": {
+        "value": 0.85,
+        "unit": "fraction",
+        "source": "World Steel Association"
+      },
+      "tensile": {
+        "value": 600,
+        "unit": "MPa",
+        "source": "ASTM A615 (ultimate strength)"
+      },
+      "thermalConductivity": {
+        "value": 50,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 7850,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 0.642238043961809,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": 0.000329431870269309,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.00464540577397512,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": 0.142425458555739,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.00423045593552805,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": 0.00000192531758548693,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.0000216260876698418,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -0.000192068153078644,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "f6861618-5a92-4c3a-94ba-9f7329b29662",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/f6861618-5a92-4c3a-94ba-9f7329b29662?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "aluminum",
+      "group": "metal",
+      "description": "A lightweight, ductile, and corrosion-resistant metal widely used in construction, aerospace, and packaging.",
+      "density": {
+        "value": 2700,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#C0C0C0",
+          "metallic": 0.9,
+          "roughness": 0.4
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/aluminum_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "aluminium"
+      ],
+      "carbon": {
+        "value": 10.7707,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 143a4df2-563e-4ef9-b75b-90e1cf9f7ef9"
+      },
+      "compressive": {
+        "value": 276,
+        "unit": "MPa",
+        "source": "MatWeb (Aluminum 6061-T6)"
+      },
+      "elastic": {
+        "value": 69,
+        "unit": "GPa",
+        "source": "Engineering ToolBox"
+      },
+      "recyclability": {
+        "value": 0.75,
+        "unit": "fraction",
+        "source": "World Aluminium"
+      },
+      "tensile": {
+        "value": 310,
+        "unit": "MPa",
+        "source": "MatWeb (Aluminum 6061-T6)"
+      },
+      "thermalConductivity": {
+        "value": 205,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 2700,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 10.7706954412878,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.00426009080011634,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -7.51151951503331,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.0436277618731765,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.0000216260876698418,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -0.0423294480428123,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "143a4df2-563e-4ef9-b75b-90e1cf9f7ef9",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/143a4df2-563e-4ef9-b75b-90e1cf9f7ef9?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "copper",
+      "group": "metal",
+      "description": "A reddish-orange metallic element, highly ductile and malleable, with excellent electrical and thermal conductivity. Commonly used in electrical wiring, plumbing, roofing, and various alloys.",
+      "density": {
+        "value": 8960,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#B87333",
+          "metallic": 1,
+          "roughness": 0.3
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/copper_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "Cu"
+      ],
+      "carbon": {
+        "value": 5.0598,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT e5a4ebf9-0e5c-4fd8-bb04-1acb5497312f"
+      },
+      "elastic": {
+        "value": 110,
+        "unit": "GPa",
+        "source": "MatWeb"
+      },
+      "recyclability": {
+        "value": 0.85,
+        "unit": "fraction",
+        "source": "Copper Development Association"
+      },
+      "tensile": {
+        "value": 220,
+        "unit": "MPa",
+        "source": "MatWeb"
+      },
+      "thermalConductivity": {
+        "value": 401,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1,
+        "modules": {
+          "A1A3": {
+            "value": 5.05984929783852,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.00426009080011634,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -3.16326074623955,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": -0.0275907446061094,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.0000216260876698418,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": 0.0285199623020994,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "e5a4ebf9-0e5c-4fd8-bb04-1acb5497312f",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/e5a4ebf9-0e5c-4fd8-bb04-1acb5497312f?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "iron",
+      "group": "metal",
+      "description": "A common ferrous metal, often used in construction as cast iron for pipes, fittings, and decorative elements. Known for its high compressive strength and good castability.",
+      "density": {
+        "value": 7200,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#4A4A4A",
+          "metallic": 1,
+          "roughness": 0.6
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/iron_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "cast iron"
+      ],
+      "carbon": {
+        "value": 1.39,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT aa089b30-7862-4001-9286-9cb41058dba0"
+      },
+      "compressive": {
+        "value": 1000,
+        "unit": "MPa",
+        "source": "Engineering ToolBox"
+      },
+      "elastic": {
+        "value": 120,
+        "unit": "GPa",
+        "source": "Engineering ToolBox"
+      },
+      "recyclability": {
+        "value": 0.95,
+        "unit": "fraction",
+        "source": "World Steel Association"
+      },
+      "tensile": {
+        "value": 150,
+        "unit": "MPa",
+        "source": "Engineering ToolBox"
+      },
+      "thermalConductivity": {
+        "value": 55,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1000,
+        "density": {
+          "value": 20,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 1390,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C1": {
+            "value": 14.2,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C2": {
+            "value": 542,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C3": {
+            "value": 0.0215,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C4": {
+            "value": 0.919,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "D": {
+            "value": 0.138,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 19.3,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C1": {
+            "value": 0.00741,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C2": {
+            "value": 0.551,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C3": {
+            "value": 0.0000233,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C4": {
+            "value": 0.000996,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "D": {
+            "value": -0.00069,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "aa089b30-7862-4001-9286-9cb41058dba0",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/aa089b30-7862-4001-9286-9cb41058dba0?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2028"
+        }
+      }
+    },
+    {
+      "name": "lead",
+      "group": "metal",
+      "description": "A heavy, soft, malleable, and ductile metal. It is known for its high density, low melting point, and excellent corrosion resistance. Commonly used in batteries, radiation shielding, and as an alloying element.",
+      "density": {
+        "value": 11340,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#6A6A6A",
+          "metallic": 0.9,
+          "roughness": 0.6
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/lead_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "Pb"
+      ],
+      "carbon": {
+        "value": 1.2625,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 8aef9045-4b5f-4362-954f-2edda71f63e6"
+      },
+      "compressive": {
+        "value": 12,
+        "unit": "MPa",
+        "source": "MatWeb (Pure Lead)",
+        "description": "Typical yield strength, as lead is very ductile."
+      },
+      "elastic": {
+        "value": 16,
+        "unit": "GPa",
+        "source": "Engineering ToolBox"
+      },
+      "recyclability": {
+        "value": 0.95,
+        "unit": "fraction",
+        "source": "Lead Industries Association"
+      },
+      "tensile": {
+        "value": 12,
+        "unit": "MPa",
+        "source": "MatWeb (Pure Lead)"
+      },
+      "thermalConductivity": {
+        "value": 35,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 11342,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 1.26249892902128,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.00371400260976603,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": 1.48053620175922,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.00310911717195489,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.0000172994093894545,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": 0.000906586162829909,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "8aef9045-4b5f-4362-954f-2edda71f63e6",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/8aef9045-4b5f-4362-954f-2edda71f63e6?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "zinc",
+      "group": "metal",
+      "description": "A bluish-white, lustrous, diamagnetic metal. Zinc is the fourth most common metal in terms of production, after iron, aluminum, and copper. It is used for galvanizing steel, in alloys like brass, and in batteries.",
+      "density": {
+        "value": 7134,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#8E9BA7",
+          "metallic": 0.9,
+          "roughness": 0.4
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/zinc_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "Zn"
+      ],
+      "carbon": {
+        "value": 3.3884,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 26353b00-6cd3-426d-903b-9fc5b1670398"
+      },
+      "compressive": {
+        "value": 100,
+        "unit": "MPa",
+        "source": "MatWeb (typical cast zinc)"
+      },
+      "elastic": {
+        "value": 96,
+        "unit": "GPa",
+        "source": "Engineering ToolBox"
+      },
+      "recyclability": {
+        "value": 0.95,
+        "unit": "fraction",
+        "source": "International Zinc Association"
+      },
+      "tensile": {
+        "value": 150,
+        "unit": "MPa",
+        "source": "MatWeb (typical rolled zinc)"
+      },
+      "thermalConductivity": {
+        "value": 116,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1,
+        "modules": {
+          "A1A3": {
+            "value": 3.3883650833668,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.00371400260976603,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -2.46702094474344,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.00545795098707148,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.0000172994093894545,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -0.00953130191705395,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "26353b00-6cd3-426d-903b-9fc5b1670398",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/26353b00-6cd3-426d-903b-9fc5b1670398?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "wire",
+      "group": "metal",
+      "description": "A slender, flexible strand of metal, typically made from steel, used in various applications from structural reinforcement to electrical conduction.",
+      "density": {
+        "value": 7850,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#808080",
+          "metallic": 1,
+          "roughness": 0.4
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/wire_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "steel wire",
+        "metal wire"
+      ],
+      "carbon": {
+        "value": 2,
+        "unit": "kgCO2e/kg",
+        "source": "ICE database v3"
+      },
+      "compressive": {
+        "value": 250,
+        "unit": "MPa",
+        "source": "Eurocode 3"
+      },
+      "elastic": {
+        "value": 200,
+        "unit": "GPa",
+        "source": "Engineering ToolBox"
+      },
+      "recyclability": {
+        "value": 0.85,
+        "unit": "fraction",
+        "source": "World Steel Association"
+      },
+      "tensile": {
+        "value": 450,
+        "unit": "MPa",
+        "source": "Engineering ToolBox"
+      },
+      "thermalConductivity": {
+        "value": 50,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      }
+    },
+    {
+      "name": "bricks",
+      "group": "masonry",
+      "description": "Traditional building units made from fired clay, used for walls, paving, and other construction elements. Known for durability and thermal mass.",
+      "density": {
+        "value": 1900,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#A55233",
+          "metallic": 0,
+          "roughness": 0.8
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/bricks_sides.jpg",
+            "realWidth": 1000,
+            "realHeight": 1000,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "brick"
+      ],
+      "carbon": {
+        "value": 0.1965,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 30514538-fcb4-483b-b5d5-c108d2037536"
+      },
+      "compressive": {
+        "value": 15,
+        "unit": "MPa",
+        "source": "Eurocode 6"
+      },
+      "elastic": {
+        "value": 10,
+        "unit": "GPa",
+        "source": "Engineering ToolBox"
+      },
+      "recyclability": {
+        "value": 0.9,
+        "unit": "fraction",
+        "source": "BRE Green Guide"
+      },
+      "thermalConductivity": {
+        "value": 0.7,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "m3",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 575,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 113,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A4": {
+            "value": 4.15,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 0.824,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C1": {
+            "value": 0.352,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.942,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": -10.1,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C4": {
+            "value": 0.5,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -1.06,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.18,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A4": {
+            "value": 0.00166,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": -0.0039,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C1": {
+            "value": -0.0156,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.000377,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": -11.5,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C4": {
+            "value": -0.0429,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -0.00439,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "30514538-fcb4-483b-b5d5-c108d2037536",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/30514538-fcb4-483b-b5d5-c108d2037536?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "blocks",
+      "group": "masonry",
+      "description": "Standard concrete masonry units (CMU), commonly known as concrete blocks, used for load-bearing and non-load-bearing walls.",
+      "density": {
+        "value": 1920,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#8C8C8C",
+          "metallic": 0,
+          "roughness": 0.8
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/blocks_sides.jpg",
+            "realWidth": 1000,
+            "realHeight": 1000,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "concrete block"
+      ],
+      "carbon": {
+        "value": 0.126,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT cc0d7baa-755a-4a4a-baf3-4fe53d68a041"
+      },
+      "compressive": {
+        "value": 13.1,
+        "unit": "MPa",
+        "source": "ASTM C90"
+      },
+      "elastic": {
+        "value": 12,
+        "unit": "GPa",
+        "source": "ACI 530/ASCE 5/TMS 402"
+      },
+      "recyclability": {
+        "value": 0.9,
+        "unit": "fraction",
+        "source": "Global Cement and Concrete Association"
+      },
+      "thermalConductivity": {
+        "value": 1.1,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1000,
+        "density": {
+          "value": 1800,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 126,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "A4": {
+            "value": 3.93,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "A5": {
+            "value": 3.04,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "B1": {
+            "value": -47.5,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C1": {
+            "value": 0.612,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C2": {
+            "value": 1.64,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C4": {
+            "value": 14,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "D": {
+            "value": -2.71,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.00665,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "A4": {
+            "value": 0.00157,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "A5": {
+            "value": -0.00781,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "B1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C1": {
+            "value": -0.027,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C2": {
+            "value": 0.000656,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "C4": {
+            "value": -1.2,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          },
+          "D": {
+            "value": 0.0169,
+            "unit": "kgCO2e",
+            "description": "per 1000 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "cc0d7baa-755a-4a4a-baf3-4fe53d68a041",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/cc0d7baa-755a-4a4a-baf3-4fe53d68a041?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "granite",
+      "group": "stone",
+      "description": "A common intrusive felsic igneous rock, typically light-colored with visible grains, used widely in construction for its durability and aesthetic appeal.",
+      "density": {
+        "value": 2650,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#8C8C8C",
+          "metallic": 0,
+          "roughness": 0.7
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/granite_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "granite stone"
+      ],
+      "carbon": {
+        "value": 0.02,
+        "unit": "kgCO2e/kg",
+        "source": "ICE database v3"
+      },
+      "compressive": {
+        "value": 180,
+        "unit": "MPa",
+        "source": "Geotechnical Engineering Handbook"
+      },
+      "elastic": {
+        "value": 60,
+        "unit": "GPa",
+        "source": "Geotechnical Engineering Handbook"
+      },
+      "recyclability": {
+        "value": 0.95,
+        "unit": "fraction",
+        "source": "Construction & Demolition Recycling Association"
+      },
+      "tensile": {
+        "value": 8,
+        "unit": "MPa",
+        "source": "Geotechnical Engineering Handbook"
+      },
+      "thermalConductivity": {
+        "value": 3,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "qm",
+        "declaredUnitValue": 1,
+        "modules": {
+          "A1A3": {
+            "value": 6.06357479470414,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": 28.4225806495542,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0.0628450487694968,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.8860988864242,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 1.47753796128558,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": -0.327032463034201,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.0385812218292351,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": -0.00865499802004194,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0.000400466057781281,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.00449822623532709,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.00651455598747288,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": 0.00507345599152715,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "f82e3ab8-d7bb-4765-a60c-bfe78ede1565",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/f82e3ab8-d7bb-4765-a60c-bfe78ede1565?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "marble",
+      "group": "stone",
+      "description": "A metamorphic rock composed primarily of recrystallized carbonate minerals, most commonly calcite or dolomite. It is widely used for sculpture and as a building material.",
+      "density": {
+        "value": 2700,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#F0F0F0",
+          "metallic": 0,
+          "roughness": 0.5
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/marble_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "calcite marble",
+        "dolomite marble"
+      ],
+      "carbon": {
+        "value": 0.08,
+        "unit": "kgCO2e/kg",
+        "source": "ICE database v3"
+      },
+      "compressive": {
+        "value": 100,
+        "unit": "MPa",
+        "source": "Building Stone Institute"
+      },
+      "elastic": {
+        "value": 50,
+        "unit": "GPa",
+        "source": "Building Stone Institute"
+      },
+      "recyclability": {
+        "value": 0.9,
+        "unit": "fraction",
+        "source": "US EPA"
+      },
+      "tensile": {
+        "value": 10,
+        "unit": "MPa",
+        "source": "Building Stone Institute"
+      },
+      "thermalConductivity": {
+        "value": 2.5,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "qm",
+        "declaredUnitValue": 1,
+        "modules": {
+          "A1A3": {
+            "value": 15.04626743616,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": 7.75180960892434,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0.0171304572540041,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.241561100246706,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.402816840441806,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": -0.0748392424455142,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.0327768998681228,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": -0.00216374950501048,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0.00010011651444532,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.00112455655883177,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.00162863899686822,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": 0.00126836399788179,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "03ed395a-bc7b-4287-9013-8ba3ac1a2900",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/03ed395a-bc7b-4287-9013-8ba3ac1a2900?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "limestone",
+      "group": "stone",
+      "description": "A common sedimentary rock, primarily composed of calcium carbonate, often used in construction for cladding, flooring, and as aggregate.",
+      "density": {
+        "value": 2500,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#C0C0B0",
+          "metallic": 0,
+          "roughness": 0.8
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/limestone_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "calcium carbonate rock",
+        "sedimentary rock"
+      ],
+      "carbon": {
+        "value": 0.02,
+        "unit": "kgCO2e/kg",
+        "source": "ICE database v3"
+      },
+      "compressive": {
+        "value": 100,
+        "unit": "MPa",
+        "source": "Engineering ToolBox"
+      },
+      "elastic": {
+        "value": 50,
+        "unit": "GPa",
+        "source": "Engineering ToolBox"
+      },
+      "recyclability": {
+        "value": 0.9,
+        "unit": "fraction",
+        "source": "WRAP (Waste & Resources Action Programme)",
+        "description": "High potential for reuse as crushed aggregate."
+      },
+      "thermalConductivity": {
+        "value": 1.8,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "qm",
+        "declaredUnitValue": 1,
+        "modules": {
+          "A1A3": {
+            "value": 15.1890137265956,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": 14.2112903247771,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0.0314225243847484,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.4430494432121,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.738768980642789,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": -0.1635162315171,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.0457611913626567,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": -0.00432749901002097,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0.00020023302889064,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.00224911311766355,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.00325727799373644,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": 0.00253672799576358,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "b3e4257b-bdb7-4da2-9c33-990243dd4aa8",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/b3e4257b-bdb7-4da2-9c33-990243dd4aa8?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "sandstone",
+      "group": "stone",
+      "description": "A common sedimentary rock composed mainly of sand-sized mineral grains or rock fragments. Often used in construction for cladding, paving, and structural elements.",
+      "density": {
+        "value": 2400,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#C2B280",
+          "metallic": 0,
+          "roughness": 0.8
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/sandstone_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "brownstone",
+        "bluestone",
+        "flagstone"
+      ],
+      "carbon": {
+        "value": 0.02,
+        "unit": "kgCO2e/kg",
+        "source": "ICE database v3"
+      },
+      "compressive": {
+        "value": 80,
+        "unit": "MPa",
+        "source": "Engineering ToolBox"
+      },
+      "elastic": {
+        "value": 30,
+        "unit": "GPa",
+        "source": "Engineering ToolBox"
+      },
+      "recyclability": {
+        "value": 0.9,
+        "unit": "fraction",
+        "source": "General industry practice"
+      },
+      "thermalConductivity": {
+        "value": 2.5,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "qm",
+        "declaredUnitValue": 1,
+        "modules": {
+          "A1A3": {
+            "value": 15.1890137265956,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": 14.2112903247771,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0.0314225243847484,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.4430494432121,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.738768980642789,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": -0.1635162315171,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.0457611913626567,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": -0.00432749901002097,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0.00020023302889064,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.00224911311766355,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.00325727799373644,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": 0.00253672799576358,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "b3e4257b-bdb7-4da2-9c33-990243dd4aa8",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/b3e4257b-bdb7-4da2-9c33-990243dd4aa8?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "slate",
+      "group": "stone",
+      "description": "A fine-grained, foliated, homogeneous metamorphic rock derived from an original shale-type sedimentary rock, commonly used for roofing, flooring, and cladding.",
+      "density": {
+        "value": 2750,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#4A4A4A",
+          "metallic": 0,
+          "roughness": 0.7
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/slate_sides.jpg",
+            "realWidth": 1500,
+            "realHeight": 2625,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "roofing slate",
+        "natural slate"
+      ],
+      "carbon": {
+        "value": 0.03,
+        "unit": "kgCO2e/kg",
+        "source": "ICE database v3"
+      },
+      "compressive": {
+        "value": 120,
+        "unit": "MPa",
+        "source": "Geological Society of London"
+      },
+      "elastic": {
+        "value": 55,
+        "unit": "GPa",
+        "source": "Geological Society of London"
+      },
+      "recyclability": {
+        "value": 0.9,
+        "unit": "fraction",
+        "source": "WRAP UK"
+      },
+      "tensile": {
+        "value": 15,
+        "unit": "MPa",
+        "source": "Geological Society of London"
+      },
+      "thermalConductivity": {
+        "value": 2,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "qm",
+        "declaredUnitValue": 1,
+        "modules": {
+          "A1A3": {
+            "value": 15.6124070794204,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0.00906418972636973,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.12780272400349,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.213106436723881,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": -0.0471681437068559,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.25664415772328,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0.0000577595275646078,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.000648782630095253,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.000939599421270129,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": 0.000731748460316415,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "909a1f8a-00d8-436f-86f9-77e0ee840a88",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/909a1f8a-00d8-436f-86f9-77e0ee840a88?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "glass",
+      "group": "glass",
+      "description": "A hard, brittle, transparent or translucent amorphous solid, typically made by fusing sand with soda and lime. Commonly used in windows, doors, and facades.",
+      "density": {
+        "value": 2500,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#F8F8F8",
+          "metallic": 0,
+          "roughness": 0.05,
+          "alpha": 0.25
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/glass_sides.jpg",
+            "realWidth": 2000,
+            "realHeight": 3000,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "float glass"
+      ],
+      "carbon": {
+        "value": 0.9,
+        "unit": "kgCO2e/kg",
+        "source": "ICE database v3"
+      },
+      "compressive": {
+        "value": 1000,
+        "unit": "MPa",
+        "source": "Pilkington Glass"
+      },
+      "elastic": {
+        "value": 70,
+        "unit": "GPa",
+        "source": "Engineering ToolBox"
+      },
+      "recyclability": {
+        "value": 0.85,
+        "unit": "fraction",
+        "source": "WRAP"
+      },
+      "tensile": {
+        "value": 70,
+        "unit": "MPa",
+        "source": "Engineering ToolBox"
+      },
+      "thermalConductivity": {
+        "value": 1,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "qm",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 2500,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 4.74,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": 0.32,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A5": {
+            "value": 0.0681,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B2": {
+            "value": 0.00483,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B4": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B5": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B6": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B7": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.0304,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.0446,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C4": {
+            "value": 0.0334,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": -0.27,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.0127,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": -0.00338,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A5": {
+            "value": 0.0628,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B2": {
+            "value": 0.0000223,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B4": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B5": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B6": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "B7": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": -0.000323,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.000369,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C4": {
+            "value": -0.000873,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": -0.000995,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "a835bc20-b9fe-4112-bf74-32caa85712c8",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/a835bc20-b9fe-4112-bf74-32caa85712c8?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2029"
+        }
+      }
+    },
+    {
+      "name": "terracotta",
+      "group": "masonry",
+      "description": "A type of fired clay, typically brownish-red in color, used for roofing tiles, floor tiles, pipes, and decorative architectural elements. It is porous unless glazed.",
+      "density": {
+        "value": 1800,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#C07A5B",
+          "metallic": 0,
+          "roughness": 0.8
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/terracotta_sides.jpg",
+            "realWidth": 1000,
+            "realHeight": 1000,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "terra cotta",
+        "baked earth"
+      ],
+      "carbon": {
+        "value": 0.3,
+        "unit": "kgCO2e/kg",
+        "source": "ICE database v3 (for fired clay)"
+      },
+      "compressive": {
+        "value": 30,
+        "unit": "MPa",
+        "source": "Building Materials Science"
+      },
+      "elastic": {
+        "value": 15,
+        "unit": "GPa",
+        "source": "Building Materials Science"
+      },
+      "recyclability": {
+        "value": 0.5,
+        "unit": "fraction",
+        "source": "General construction waste management"
+      },
+      "thermalConductivity": {
+        "value": 0.8,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "qm",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 2020,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 12.329,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": 0.787,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A5": {
+            "value": 0.261,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.0656,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.1,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C4": {
+            "value": 0.041,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": -0.158,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": -0.1077783,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": 0.000315,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A5": {
+            "value": 0.123,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.0000262,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0.000191,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C4": {
+            "value": 0.00301,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": -0.000687,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "a6d60a75-7a4e-4dfc-87cc-fd40f68d279a",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/a6d60a75-7a4e-4dfc-87cc-fd40f68d279a?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      }
+    },
+    {
+      "name": "softwood",
+      "group": "wood",
+      "description": "General classification for wood from coniferous trees, typically lighter in color and less dense than hardwoods. Commonly used for structural framing, joinery, and pulp.",
+      "density": {
+        "value": 500,
+        "unit": "kg/m3",
+        "source": "Wood Handbook (FPL)",
+        "description": "Typical density for common softwoods like pine or spruce at 12% moisture content."
+      },
+      "viz": {
+        "pbr": {
+          "color": "#8B5A2B",
+          "metallic": 0,
+          "roughness": 0.7
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/softwood_sides.jpg",
+            "realWidth": 500,
+            "realHeight": 875,
+            "repeat": false
+          },
+          "section": {
+            "image": "./textures/softwood_section.jpg",
+            "realWidth": 500,
+            "realHeight": 500,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "pine",
+        "spruce"
+      ],
+      "carbon": {
+        "value": -1.4748,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 7aba3603-0689-4da5-8d24-fd92ae398d07"
+      },
+      "compressive": {
+        "value": 40,
+        "unit": "MPa",
+        "source": "Wood Handbook (FPL)",
+        "description": "Compressive strength parallel to grain for typical softwood."
+      },
+      "elastic": {
+        "value": 10,
+        "unit": "GPa",
+        "source": "Wood Handbook (FPL)",
+        "description": "Modulus of elasticity parallel to grain for typical softwood."
+      },
+      "recyclability": {
+        "value": 0.85,
+        "unit": "fraction",
+        "source": "European Wood Recyclers Federation",
+        "description": "Fraction of softwood that can be recycled or reused."
+      },
+      "tensile": {
+        "value": 100,
+        "unit": "MPa",
+        "source": "Wood Handbook (FPL)",
+        "description": "Tensile strength parallel to grain for typical softwood."
+      },
+      "thermalConductivity": {
+        "value": 0.13,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox",
+        "description": "Thermal conductivity for typical softwood."
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "m3",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 492.92,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1": {
+            "value": -768.7481780840219,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A2": {
+            "value": 9.519960129816685,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A3": {
+            "value": 32.249980829661475,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A1A3": {
+            "value": -726.9782371245437,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 5.577078090786692,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.641411784519627,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 815.9838066041344,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -12.873201788590272,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "biogenic": {
+          "A1": {
+            "value": -806.025,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A2": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A3": {
+            "value": -3.608757587696562,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A1A3": {
+            "value": -809.6337575876966,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 3.608757587696562,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 806.025,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "7aba3603-0689-4da5-8d24-fd92ae398d07",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/7aba3603-0689-4da5-8d24-fd92ae398d07?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2028"
+        }
+      }
+    },
+    {
+      "name": "hardwood",
+      "group": "wood",
+      "aliases": [
+        "oak",
+        "beech",
+        "ash"
+      ],
+      "description": "General deciduous timber (e.g. oak, beech).",
+      "density": {
+        "value": 700,
+        "unit": "kg/m3",
+        "description": "Air-dry (~12% MC)",
+        "source": "Wood Handbook (FPL)"
+      },
+      "elastic": {
+        "value": 13,
+        "unit": "GPa",
+        "source": "EN 338 (D30)"
+      },
+      "thermalConductivity": {
+        "value": 0.16,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "textures": {
+          "sides": {
+            "image": "./textures/hardwood_sides.jpg",
+            "realWidth": 500,
+            "realHeight": 875,
+            "repeat": false
+          },
+          "section": {
+            "image": "./textures/hardwood_section.jpg",
+            "realWidth": 500,
+            "realHeight": 500,
+            "repeat": false
+          }
+        },
+        "pbr": {
+          "color": "#8a5a2b",
+          "roughness": 0.7,
+          "metallic": 0
+        }
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "m3",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 761.6,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1": {
+            "value": -1234.3707979676826,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A2": {
+            "value": 11.1473748662059,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A3": {
+            "value": 87.08733283761966,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A1A3": {
+            "value": -1136.136090263857,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 6.384361484586354,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.990546912131675,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 1256.6254732708012,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -20.391998913951486,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "biogenic": {
+          "A1": {
+            "value": -1246.6666666666667,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A2": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A3": {
+            "value": -5.730035105756097,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A1A3": {
+            "value": -1252.3967017724228,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 5.730035105756097,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 1246.6666666666667,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "e131431f-4d99-4d7a-ae0a-744a06de3524",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/e131431f-4d99-4d7a-ae0a-744a06de3524?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2028"
+        }
+      },
+      "carbon": {
+        "value": -1.4918,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT e131431f-4d99-4d7a-ae0a-744a06de3524"
+      }
+    },
+    {
+      "name": "douglas",
+      "group": "wood",
+      "aliases": [
+        "douglas fir",
+        "oregon pine"
+      ],
+      "description": "A strong, durable softwood commonly used for structural timber.",
+      "density": {
+        "value": 530,
+        "unit": "kg/m3",
+        "description": "Air-dry (~12% MC)",
+        "source": "Wood Handbook (FPL)"
+      },
+      "compressive": {
+        "value": 50,
+        "unit": "MPa",
+        "description": "Parallel to grain",
+        "source": "Wood Handbook (FPL)"
+      },
+      "elastic": {
+        "value": 13,
+        "unit": "GPa",
+        "source": "Wood Handbook (FPL)"
+      },
+      "thermalConductivity": {
+        "value": 0.14,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "textures": {
+          "sides": {
+            "image": "./textures/douglas_sides.jpg",
+            "realWidth": 500,
+            "realHeight": 875,
+            "repeat": false
+          },
+          "section": {
+            "image": "./textures/douglas_section.jpg",
+            "realWidth": 500,
+            "realHeight": 500,
+            "repeat": false
+          }
+        },
+        "pbr": {
+          "color": "#c08a4a",
+          "roughness": 0.72,
+          "metallic": 0
+        }
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "m3",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 484.51,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1": {
+            "value": -778.6093368027252,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A2": {
+            "value": 7.987770027886886,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A3": {
+            "value": 29.369618981734188,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A1A3": {
+            "value": -741.2519477931041,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 4.644432090423722,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.630148071645649,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 803.040473270801,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -12.83099489060442,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "biogenic": {
+          "A1": {
+            "value": -793.0816666666666,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A2": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A3": {
+            "value": -3.1998843217735717,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A1A3": {
+            "value": -796.2815509884401,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 3.1998843217735717,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 793.0816666666666,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "2bd4c91f-16e5-4e01-b8b5-0c01aac363ce",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/2bd4c91f-16e5-4e01-b8b5-0c01aac363ce?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2028"
+        }
+      },
+      "carbon": {
+        "value": -1.5299,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 2bd4c91f-16e5-4e01-b8b5-0c01aac363ce"
+      }
+    },
+    {
+      "name": "plywood",
+      "group": "wood",
+      "aliases": [
+        "multiplex"
+      ],
+      "description": "A sheet material made from layers of wood veneer glued together.",
+      "density": {
+        "value": 600,
+        "unit": "kg/m3",
+        "description": "Density is a measure of how tightly packed the mass is inside an object",
+        "source": "Engineering ToolBox"
+      },
+      "elastic": {
+        "value": 7,
+        "unit": "GPa",
+        "source": "Wood Handbook (FPL)"
+      },
+      "thermalConductivity": {
+        "value": 0.13,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "textures": {
+          "sides": {
+            "image": "./textures/plywood_sides.jpg",
+            "realWidth": 500,
+            "realHeight": 875,
+            "repeat": false
+          },
+          "section": {
+            "image": "./textures/plywood_section.jpg",
+            "realWidth": 500,
+            "realHeight": 500,
+            "repeat": false
+          }
+        },
+        "pbr": {
+          "color": "#d9b380",
+          "roughness": 0.7,
+          "metallic": 0
+        }
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "m3",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 823.93,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1": {
+            "value": -1137.5101900191921,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A2": {
+            "value": 13.09165386599843,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A3": {
+            "value": 234.98710984313766,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A1A3": {
+            "value": -889.4314263100562,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 5.415403696285816,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.83376499425915,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 1258.804639510579,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -18.87813026139009,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "biogenic": {
+          "A1": {
+            "value": -1246.6666666666667,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A2": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A3": {
+            "value": -4.800525253850883,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A1A3": {
+            "value": -1251.4671919205177,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 4.800525253850883,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 1246.6666666666667,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "6bb6bd94-d9a8-4174-a8f3-f1625cbeb118",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/6bb6bd94-d9a8-4174-a8f3-f1625cbeb118?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      },
+      "carbon": {
+        "value": -1.0795,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 6bb6bd94-d9a8-4174-a8f3-f1625cbeb118"
+      }
+    },
+    {
+      "name": "osb",
+      "group": "wood",
+      "aliases": [
+        "oriented strand board"
+      ],
+      "description": "Engineered board of compressed, glued wood strands.",
+      "density": {
+        "value": 640,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "thermalConductivity": {
+        "value": 0.13,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#c2a06a",
+          "roughness": 0.8,
+          "metallic": 0
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/osb_sides.jpg",
+            "realWidth": 500,
+            "realHeight": 875,
+            "repeat": false
+          },
+          "section": {
+            "image": "./textures/osb_section.jpg",
+            "realWidth": 500,
+            "realHeight": 500,
+            "repeat": false
+          }
+        }
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "m3",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 611,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": -805.367358948675,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 2.40329901983044,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 996.236359813723,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C4": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -475.125557253014,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": -977.920121823849,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.00633928856491964,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 992.053606207742,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C4": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -2.43346835237422,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "766ea5bd-3f0f-4d48-a399-9c4a372524d8",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/766ea5bd-3f0f-4d48-a399-9c4a372524d8?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2029"
+        }
+      },
+      "carbon": {
+        "value": -1.3181,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 766ea5bd-3f0f-4d48-a399-9c4a372524d8"
+      }
+    },
+    {
+      "name": "glulam",
+      "group": "wood",
+      "aliases": [
+        "glued laminated timber",
+        "gl24"
+      ],
+      "description": "Structural timber of glued laminations.",
+      "density": {
+        "value": 470,
+        "unit": "kg/m3",
+        "source": "EN 14080 (GL24h)"
+      },
+      "compressive": {
+        "value": 24,
+        "unit": "MPa",
+        "description": "Bending strength (GL24h)",
+        "source": "EN 14080 (GL24h)"
+      },
+      "elastic": {
+        "value": 11.5,
+        "unit": "GPa",
+        "source": "EN 14080 (GL24h)"
+      },
+      "thermalConductivity": {
+        "value": 0.13,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#cba46c",
+          "roughness": 0.7,
+          "metallic": 0
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/glulam_sides.jpg",
+            "realWidth": 500,
+            "realHeight": 875,
+            "repeat": false
+          },
+          "section": {
+            "image": "./textures/glulam_section.jpg",
+            "realWidth": 500,
+            "realHeight": 500,
+            "repeat": false
+          }
+        }
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "m3",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 507.11,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1": {
+            "value": -763.8334814227853,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A2": {
+            "value": 37.5306786472961,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A3": {
+            "value": 58.11971586181548,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A1A3": {
+            "value": -668.1830869136738,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 5.13897858267999,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.671131950135097,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 825.6271399374679,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -12.919425554372722,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "biogenic": {
+          "A1": {
+            "value": -815.6683333333334,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A2": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A3": {
+            "value": -3.4391161255,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A1A3": {
+            "value": -819.1074494588335,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 3.4391161255,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 815.6683333333334,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "78bfe151-3cf3-46cb-a1a5-61a79bbd5476",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/78bfe151-3cf3-46cb-a1a5-61a79bbd5476?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2028"
+        }
+      },
+      "carbon": {
+        "value": -1.3176,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 78bfe151-3cf3-46cb-a1a5-61a79bbd5476"
+      }
+    },
+    {
+      "name": "clt",
+      "group": "wood",
+      "aliases": [
+        "cross laminated timber",
+        "x-lam"
+      ],
+      "description": "Panels of crosswise-glued timber layers.",
+      "density": {
+        "value": 480,
+        "unit": "kg/m3",
+        "source": "manufacturer typical"
+      },
+      "elastic": {
+        "value": 12,
+        "unit": "GPa",
+        "source": "manufacturer typical"
+      },
+      "thermalConductivity": {
+        "value": 0.13,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#c9a56a",
+          "roughness": 0.7,
+          "metallic": 0
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/clt_sides.jpg",
+            "realWidth": 500,
+            "realHeight": 875,
+            "repeat": false
+          },
+          "section": {
+            "image": "./textures/clt_section.jpg",
+            "realWidth": 500,
+            "realHeight": 500,
+            "repeat": false
+          }
+        }
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "m3",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 489.41,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1": {
+            "value": -731.0156953238699,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A2": {
+            "value": 9.11908009785155,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A3": {
+            "value": 52.281109489663635,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A1A3": {
+            "value": -669.6155057363546,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 1.76738043960864,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.641032817810208,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 798.7138066041346,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -11.181779346679177,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "biogenic": {
+          "A1": {
+            "value": -788.7550000000001,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A2": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A1A3": {
+            "value": -788.7550000000001,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 788.7550000000001,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "8c4eb262-9ae6-4ace-8f3d-0b06f2007f3e",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/8c4eb262-9ae6-4ace-8f3d-0b06f2007f3e?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2028"
+        }
+      },
+      "carbon": {
+        "value": -1.3682,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 8c4eb262-9ae6-4ace-8f3d-0b06f2007f3e"
+      }
+    },
+    {
+      "name": "bamboo",
+      "group": "wood",
+      "description": "Fast-growing grass used as a strong, light building material.",
+      "density": {
+        "value": 700,
+        "unit": "kg/m3",
+        "source": "literature typical"
+      },
+      "elastic": {
+        "value": 20,
+        "unit": "GPa",
+        "source": "literature typical"
+      },
+      "thermalConductivity": {
+        "value": 0.15,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#d8c088",
+          "roughness": 0.6,
+          "metallic": 0
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/bamboo_sides.jpg",
+            "realWidth": 500,
+            "realHeight": 875,
+            "repeat": false
+          },
+          "section": {
+            "image": "./textures/bamboo_section.jpg",
+            "realWidth": 500,
+            "realHeight": 500,
+            "repeat": false
+          }
+        }
+      }
+    },
+    {
+      "name": "pvc",
+      "group": "plastic",
+      "aliases": [
+        "polyvinyl chloride"
+      ],
+      "description": "Common rigid/flexible thermoplastic.",
+      "density": {
+        "value": 1400,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "elastic": {
+        "value": 3,
+        "unit": "GPa",
+        "source": "MatWeb (rigid PVC)"
+      },
+      "thermalConductivity": {
+        "value": 0.19,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#dcdcd8",
+          "roughness": 0.4,
+          "metallic": 0
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/pvc_sides.jpg",
+            "realWidth": 1000,
+            "realHeight": 1750,
+            "repeat": false
+          }
+        }
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1,
+        "modules": {
+          "A1A3": {
+            "value": 2.12686007521244,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.00426009080011634,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 2.25350607781064,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -0.596308502265591,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": -0.0355535232845701,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.0000216260876698418,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0.00147639952957679,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -0.00420551314026388,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "0c97fb5f-67df-495e-bac5-f5d931f58a90",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/0c97fb5f-67df-495e-bac5-f5d931f58a90?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      },
+      "carbon": {
+        "value": 2.1269,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 0c97fb5f-67df-495e-bac5-f5d931f58a90"
+      }
+    },
+    {
+      "name": "hdpe",
+      "group": "plastic",
+      "aliases": [
+        "high density polyethylene"
+      ],
+      "description": "Tough thermoplastic used for pipes and sheets.",
+      "density": {
+        "value": 950,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "thermalConductivity": {
+        "value": 0.48,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#2f3a40",
+          "roughness": 0.5,
+          "metallic": 0
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/hdpe_sides.jpg",
+            "realWidth": 1000,
+            "realHeight": 1750,
+            "repeat": false
+          }
+        }
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "kg",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 950,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1": {
+            "value": 2.3668666732929,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "A2": {
+            "value": 0.0982526656183418,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "A3": {
+            "value": 0.0796910256599798,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "A1A3": {
+            "value": 2.5448103645712217,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": 0.357700403585084,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.0189091877016336,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 2.27656459999999,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C4": {
+            "value": 0.014841,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -0.796915363655735,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "biogenic": {
+          "A1": {
+            "value": 0.0045038062951756,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "A2": {
+            "value": 0.0000428831632528,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "A3": {
+            "value": -0.0526225460147109,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "A1A3": {
+            "value": -0.0480758565562825,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C1": {
+            "value": 0.0000994511572545,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C2": {
+            "value": 0.0000087221807574,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C3": {
+            "value": 0.0003463,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "C4": {
+            "value": 0.0000114,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          },
+          "D": {
+            "value": -0.001124494822184,
+            "unit": "kgCO2e",
+            "description": "per 1 kg"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "937cf1c5-c813-4778-90e2-6f1ae84c4aa7",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/937cf1c5-c813-4778-90e2-6f1ae84c4aa7?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2029"
+        }
+      },
+      "carbon": {
+        "value": 2.5448,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 937cf1c5-c813-4778-90e2-6f1ae84c4aa7"
+      }
+    },
+    {
+      "name": "eps",
+      "group": "insulation",
+      "aliases": [
+        "expanded polystyrene",
+        "styrofoam"
+      ],
+      "description": "Rigid closed-cell foam insulation.",
+      "density": {
+        "value": 20,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "thermalConductivity": {
+        "value": 0.035,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#f4f4f0",
+          "roughness": 0.9,
+          "metallic": 0
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/eps_sides.jpg",
+            "realWidth": 1200,
+            "realHeight": 1644,
+            "repeat": false
+          }
+        }
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "m3",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 20,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 59.806,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 0.39,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.0604,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 67.2,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C4": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -27.8,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.208759,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 0.108,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.000222,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 0.0037,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C4": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -0.127,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "757297f1-9325-4df4-af51-96510be76bf3",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/757297f1-9325-4df4-af51-96510be76bf3?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2027"
+        }
+      },
+      "carbon": {
+        "value": 2.9903,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 757297f1-9325-4df4-af51-96510be76bf3"
+      }
+    },
+    {
+      "name": "xps",
+      "group": "insulation",
+      "aliases": [
+        "extruded polystyrene"
+      ],
+      "description": "Rigid extruded foam insulation, higher moisture resistance than EPS.",
+      "density": {
+        "value": 35,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "thermalConductivity": {
+        "value": 0.033,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#c7e0ef",
+          "roughness": 0.85,
+          "metallic": 0
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/xps_sides.jpg",
+            "realWidth": 1200,
+            "realHeight": 2100,
+            "repeat": false
+          }
+        }
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "m3",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 32,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 102.019470065136,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.136322905603723,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 118.126266986859,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -44.2517528799954,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": 0.430084069509508,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.000692034805434935,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C3": {
+            "value": 0.00587342426676152,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -0.315238128213221,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "c4ddfdbc-ee2b-4dd5-a754-b317cf06470a",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/c4ddfdbc-ee2b-4dd5-a754-b317cf06470a?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2026"
+        }
+      },
+      "carbon": {
+        "value": 3.1881,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT c4ddfdbc-ee2b-4dd5-a754-b317cf06470a"
+      }
+    },
+    {
+      "name": "mineralwool",
+      "group": "insulation",
+      "aliases": [
+        "rockwool",
+        "mineral wool",
+        "stone wool"
+      ],
+      "description": "Fibrous insulation from spun mineral fibres.",
+      "density": {
+        "value": 100,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "thermalConductivity": {
+        "value": 0.037,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#c8b56a",
+          "roughness": 0.95,
+          "metallic": 0
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/mineralwool_sides.jpg",
+            "realWidth": 1200,
+            "realHeight": 2100,
+            "repeat": false
+          }
+        }
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "m3",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 152,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 177.281536724966,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A4": {
+            "value": 3.31870052276103,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 22.2282884696402,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": 0.460930628161254,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C4": {
+            "value": 3.84689926095253,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -6.96228542089643,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": -11.8191978233122,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A4": {
+            "value": -0.00552027311471101,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "A5": {
+            "value": 12.847219248833,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C2": {
+            "value": -0.000766704599265412,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "C4": {
+            "value": 1.53484017027585,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          },
+          "D": {
+            "value": -0.0163331797788863,
+            "unit": "kgCO2e",
+            "description": "per 1 m3"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "155a3b83-ed73-4462-a4f1-69ce64e24981",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/155a3b83-ed73-4462-a4f1-69ce64e24981?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2028"
+        }
+      },
+      "carbon": {
+        "value": 1.1663,
+        "unit": "kgCO2e/kg",
+        "description": "Embodied carbon, cradle to gate (A1-A3), GWP-total",
+        "source": "ÖKOBAUDAT 155a3b83-ed73-4462-a4f1-69ce64e24981"
+      }
+    },
+    {
+      "name": "sprayfoam",
+      "group": "insulation",
+      "description": "Polyurethane spray foam insulation, typically closed-cell, used for thermal insulation and air sealing in building envelopes. It expands upon application to fill cavities and gaps.",
+      "density": {
+        "value": 32,
+        "unit": "kg/m3",
+        "source": "Energy.gov",
+        "description": "Typical density for closed-cell spray foam."
+      },
+      "viz": {
+        "pbr": {
+          "color": "#FDFD96",
+          "metallic": 0,
+          "roughness": 0.8
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/sprayfoam_sides.jpg",
+            "realWidth": 1200,
+            "realHeight": 1644,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "spray foam",
+        "polyurethane foam insulation",
+        "SPF",
+        "closed-cell spray foam"
+      ],
+      "carbon": {
+        "value": 3,
+        "unit": "kgCO2e/kg",
+        "source": "ICE database v3.0"
+      },
+      "compressive": {
+        "value": 0.15,
+        "unit": "MPa",
+        "source": "Spray Polyurethane Foam Alliance (SPFA)",
+        "description": "Typical compressive strength for closed-cell SPF (approx. 2 lb/ft3 density)."
+      },
+      "recyclability": {
+        "value": 0.05,
+        "unit": "fraction",
+        "source": "Polyurethane Manufacturers Association",
+        "description": "Limited recyclability for post-consumer waste, often downcycled or incinerated."
+      },
+      "thermalConductivity": {
+        "value": 0.022,
+        "unit": "W/mK",
+        "source": "Energy.gov",
+        "description": "Typical thermal conductivity for closed-cell spray foam."
+      }
+    },
+    {
+      "name": "drywall",
+      "group": "finish",
+      "description": "A common interior wall and ceiling finish material made from gypsum plaster pressed between two sheets of thick paper.",
+      "density": {
+        "value": 700,
+        "unit": "kg/m3",
+        "source": "Engineering ToolBox"
+      },
+      "viz": {
+        "pbr": {
+          "color": "#e0e0e0",
+          "metallic": 0,
+          "roughness": 0.7
+        },
+        "textures": {
+          "sides": {
+            "image": "./textures/drywall_sides.jpg",
+            "realWidth": 1000,
+            "realHeight": 1000,
+            "repeat": false
+          }
+        }
+      },
+      "aliases": [
+        "gypsum board",
+        "plasterboard"
+      ],
+      "carbon": {
+        "value": 0.2,
+        "unit": "kgCO2e/kg",
+        "source": "ICE database v3"
+      },
+      "compressive": {
+        "value": 1.7,
+        "unit": "MPa",
+        "source": "Gypsum Association"
+      },
+      "elastic": {
+        "value": 3,
+        "unit": "GPa",
+        "source": "Gypsum Association"
+      },
+      "recyclability": {
+        "value": 0.2,
+        "unit": "fraction",
+        "source": "Waste & Resources Action Programme (WRAP)"
+      },
+      "tensile": {
+        "value": 0.3,
+        "unit": "MPa",
+        "source": "Gypsum Association"
+      },
+      "thermalConductivity": {
+        "value": 0.16,
+        "unit": "W/mK",
+        "source": "Engineering ToolBox"
+      },
+      "lca": {
+        "standard": "EN 15804+A2",
+        "indicator": "GWP-total",
+        "declaredUnit": "qm",
+        "declaredUnitValue": 1,
+        "density": {
+          "value": 680,
+          "unit": "kg/m3",
+          "description": "gross density declared by the EPD"
+        },
+        "modules": {
+          "A1A3": {
+            "value": 1.0138704404845,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": 0.115680993791439,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A5": {
+            "value": 0.0010112032249956,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.0628701053214343,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C4": {
+            "value": 0.722615477694245,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "biogenic": {
+          "A1A3": {
+            "value": -0.554784715029117,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A4": {
+            "value": 0.0050882549228696,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "A5": {
+            "value": 0.0000033547608252749,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C1": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C2": {
+            "value": 0.00276535593634218,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C3": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "C4": {
+            "value": 0.0516843269918321,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          },
+          "D": {
+            "value": 0,
+            "unit": "kgCO2e",
+            "description": "per 1 qm"
+          }
+        },
+        "source": {
+          "dataset": "ÖKOBAUDAT",
+          "uuid": "0773f90c-78ef-4727-a966-3b005c1a1469",
+          "version": "1.1",
+          "url": "https://oekobaudat.de/OEKOBAU.DAT/resource/processes/0773f90c-78ef-4727-a966-3b005c1a1469?format=html",
+          "retrieved": "2026-07-27",
+          "validUntil": "2027"
+        }
+      }
+    }
+  ]
+}

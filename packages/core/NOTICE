@@ -1,0 +1,26 @@
+Archiyou
+Copyright 2026 Mark van der Net / Archiyou
+
+This product includes software developed by Archiyou, licensed under the
+Apache License, Version 2.0. See the LICENSE file for the full text.
+
+-------------------------------------------------------------------------------
+
+This product also includes third-party software under other licenses. See
+ATTRIBUTION.md for the full list, including the bundled WebAssembly binaries,
+which carry licenses of their own.
+
+Notably, this product includes Open CASCADE Technology 7.6, compiled to
+WebAssembly and distributed as
+packages/core/src/modeler/brep/wasm/archiyou-opencascade.wasm (and as
+dist/wasm/archiyou-opencascade.wasm in the @archiyou/core package). It is
+licensed under the GNU Lesser General Public License version 2.1 with the Open
+CASCADE exception; both texts are distributed alongside the binary as
+LICENSE_LGPL_21.txt and OCCT_LGPL_EXCEPTION.txt. ATTRIBUTION.md records the exact
+source revision it was built from, how to rebuild it against a modified
+OpenCascade, and a written offer for the corresponding source.
+
+It also includes the gdrr-2bp solver (MIT, Copyright (c) 2026 Jeroen Gardeyn),
+the meshup mesh kernel (Apache-2.0, with an MIT-licensed Rust core), and
+wasm-bindgen generated glue (MIT or Apache-2.0). Their notices are in
+ATTRIBUTION.md.

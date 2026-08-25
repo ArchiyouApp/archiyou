@@ -1,0 +1,14 @@
+# Cargo build artifacts. These were tracked by accident (~494 files) until the
+# open-source release cleanup; see packages/collada-wasm/.gitignore.
+target/
+
+# wasm-pack drops a `.gitignore` containing `*` into its --out-dir, which would
+# hide the very glue we need to commit. Ignore that file itself so a rebuild
+# does not produce a spurious diff — already-tracked files stay tracked
+# regardless of what it says.
+pkg/.gitignore
+
+# The wasm binary in pkg/ is redundant: ts/BinPacker.ts loads the module from
+# the committed base64 in ts/gdrr2bp-wasm-binary.ts, and only imports the JS
+# glue from pkg/. Keeping the binary out saves 247 KB per rebuild.
+pkg/*.wasm

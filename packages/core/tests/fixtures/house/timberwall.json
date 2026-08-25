@@ -1,0 +1,239 @@
+{
+ "name": "timberwall",
+ "author": "archiyou",
+ "version": null,
+ "code": "// Archiyou 0.22\n\nSTUD_THICKNESS = 38;\nBOARDING_STOCK_WIDTH = 1220;\nBOARDING_STOCK_HEIGHT = 2440;\nCERT_COST_PERC = 0.1;\n\n//// MATERIAL SETTINGS ////\n\nMATERIALS = {\n    WOOD: { EUR_M3: 375, KG_M3: 460, GWP: -707  }, // GWP in kgCO2eq/m3\n    OSB: { EUR_M3: 335, KG_M3: 600, GWP: -691 }, // 9 or 18 mm: 348 EUR/m3 - 327 EUR/m3\n    ECOBOARD: { EUR_M3: 535, KG_M3: 570, LAMBDA: 0.09, GWP: -621  }, // Agepan DWD protect\n    WATERBARRIER: { EUR_M2: 2.7 },\n    GLASS_WOOL: { EUR_M3: 41, LAMBDA: 0.035, GWP: 24, }, // Knauff Naturoll 035\n    GLASS_WOOL_ACOUSTIC: { EUR_M3: 45, LAMBDA: 0.037, GWP: 16 }, // Knauf Acoustifit\n    WOOD_WOOL: { EUR_M3: 90, LAMBDA: 0.036, GWP: -38 }, // Gutex Thermoflex 111\n    HEMP: { EUR_M3: 120, KG_M3: 36, LAMBDA: 0.039, GWP: -20.3  }// Hempflax\n}\n\nBOARDS_OPTIONS_TO_DATA = {\n    'none' : { thickness: 0, kgm3: 0, eurm2: 0},\n    'OSB9' : { thickness: 9, kgm3: MATERIALS.OSB.KG_M3, eurm2: 3.14 },\n    'OSB18' : { thickness: 18, kgm3: MATERIALS.OSB.KG_M3, eurm2: 5.89 },\n    'AGEPAN16' : { thickness: 16, kgm3: MATERIALS.ECOBOARD.KG_M3, eurm2: 8.57 }\n}\n\n//// CALC SETTINGS ////\n\nPRICING = {\n    LABOR_COST_EUR_PER_STUD: 15, \n    LABOR_COST_EUR_PER_OPENING: 100,\n    LABOR_PROFIT_PERC: 0.15,\n    MATERIAL_PROFIT_PERC : 0.25,\n    PLATFORM_PERC: 0.25,\n}\n\n//// PARAM DYNAMICS ////\n\n$PARAMS.OPENING_SILL.enableIf($OPENING);\n$PARAMS.OPENING_WIDTH.enableIf($OPENING);\n$PARAMS.OPENING_HEIGHT.enableIf($OPENING);\n$PARAMS.OPENING_START.enableIf($OPENING);\n\n\n///// CALCULATED PARAMS ////\n\nopenings = [{ \n              left: $OPENING_START, \n              sill: $OPENING_SILL, \n              width: $OPENING_WIDTH,\n              height: $OPENING_HEIGHT }]\n\n//// WALL FRAME ////\n\n// Interactive dim line\nline([0,0,0],[$WIDTH,0,0])\n    .hide()\n    .dim( { offset: 600 })\n        .bindParam('WIDTH');\n\nline([$WIDTH,0,0],[$WIDTH,0,$HEIGHT])\n    .hide()\n    .dim( { offset: 600 })\n    .bindParam('HEIGHT');\n\n\nwall = modeler.make.wall(\n                $WIDTH,\n                $HEIGHT-$TOP_CONNECT*STUD_THICKNESS,\n                $DEPTH, \n                STUD_THICKNESS, \n                610, \n                ($OPENING) ? openings : [],\n                { height: $ROOF_HEIGHT, center: $ROOF_RIDGE_CENTER/100 }\n);\n\n\nwall.openingDiagrams.hide();\nwall.diagram.hide();\nif($INSULATION == 'none'){ wall.insulation.hide () };\n\n// make extra connecting top-plate\nif($TOP_CONNECT)\n{\n    wall.plates.add(\n            boxbetween([0,-$DEPTH/2,0],[$WIDTH,$DEPTH/2, STUD_THICKNESS])\n            .move(0,0,$HEIGHT-STUD_THICKNESS)\n            .color('green')\n    )\n}\n\n//// BOARDING ////\nboardThickness = BOARDS_OPTIONS_TO_DATA[$BOARDS].thickness;\nboardKgM3 = BOARDS_OPTIONS_TO_DATA[$BOARDS].kgm3;\nboardCostM2 = BOARDS_OPTIONS_TO_DATA[$BOARDS].eurm2;\n\n// We make sections based on openings\n/*\nboards = collection();\nif(wall.openingDiagrams.count())\n{\n  wallOpenings = wall.openingDiagrams.copy();\n  wallOpenings.sort((s1,s2) => s1.min().x - s2.min().x);\n\n  function makeSectionBoarding(start,end,height)\n  {\n    if(end-start > 0)\n    {\n        let offset = 0;\n        if (start !== 0)\n        {\n            let nextGridLine = wall.grid.find(gl => gl.center().x > start);\n            offset = (nextGridLine) ? nextGridLine.center().x - start : 0;  \n        }\n\n        let boarding = make.boarding( { \n                width: end-start,\n                height: height,\n                direction: 'horizontal',\n                stockWidth: BOARDING_STOCK_WIDTH, \n                stockHeight: BOARDING_STOCK_HEIGHT, \n                grid: 610,\n                gridOffset: offset,\n                leftover: true })\n                    .addToScene()\n                    .move(start)\n        boards.add(boarding)\n        return boarding;\n    }\n}\n\n\n\nif(boardThickness)\n{\n    if (wallOpenings.length > 0)\n    {\n        wallOpenings.forEach((o,i,all) =>\n        {\n            // before opening section\n            let sectionBeforeStartX = (i === 0) ? 0 : all[i-1].max().x + STUD_THICKNESS;\n            let sectionBeforeEndX = o.min().x - STUD_THICKNESS;\n            makeSectionBoarding(sectionBeforeStartX,sectionBeforeEndX, $HEIGHT);\n            // after opening section\n            let sectionAfterStartX = o.max().x + STUD_THICKNESS\n            let sectionAfterEndX = (i < all.length - 1 )\n                        ? all[i+1].min().x - STUD_THICKNESS // to next opening\n                        : $WIDTH // to end of wall\n            makeSectionBoarding(sectionAfterStartX,sectionAfterEndX, $HEIGHT);\n            // bottom of opening\n            makeSectionBoarding(sectionBeforeEndX,sectionAfterStartX, o.min().z - STUD_THICKNESS)\n            // top of opening\n            makeSectionBoarding(sectionBeforeEndX,sectionAfterStartX, $HEIGHT-o.max().z- STUD_THICKNESS).moveY(o.max().z + STUD_THICKNESS)\n        })\n    }\n    else {\n        // just make one big boarding filling total wall\n        makeSectionBoarding(0,$WIDTH, $HEIGHT*1);\n    }\n\n    // finish boards by extruding and rotating\n    extrudedBoards = boards\n        .hide()\n        .copy()\n        .rotateAround(90, [1,0,0], [0,0,0])\n        .moveY(-$DEPTH/2)\n        .extrude(boardThickness, [0,-1,0])\n        .color('yellow')\n  }\n}\n*/\n//// TABLES: MATERIALS ////\n/*\nallWoodBeams = collection(wall.studs, wall.plates, wall.cripplesTop, wall.cripplesBottom, wall.openingFramesHorizontals, wall.openingFramesVerticals, wall.openingKingStuds, wall.openingJackStuds );\nwoodVolumeM3 = allWoodBeams.volume()/Math.pow(10,9); \nwoodLengthM = allWoodBeams.reduce((agg,s) => agg + s.obbox().height(), 0)/1000;\nopeningsM2 = (wall.openingDiagrams.length) ? wall.openingDiagrams.toArray().reduce((agg,s) => agg + s.bbox().front().area(), 0) / Math.pow(10,6) : 0\nwallMinusOpeningsM2 = (($WIDTH*$HEIGHT/1000000)-openingsM2);\nboardingAreaM2 = (boards?.length) ? wallMinusOpeningsM2 : 0;\nboardingVolumeM3 = wallMinusOpeningsM2*boardThickness/1000; \ninsulationM3 = ($INSULATION !== 'none') ? (wallMinusOpeningsM2 * ($DEPTH/1000) - woodVolumeM3) : 0;\ninsulationM2 = insulationM3 / ($DEPTH/1000); \nbarierM2 = (boards?.length) ? wallMinusOpeningsM2 * 1.20 : 0; // a bit more overlap and loss\n\ninsulationEUR_M3 = { \n    none : 0,\n    glasswool : MATERIALS.GLASS_WOOL.EUR_M3,\n    //'glaswol-acoust' : MATERIALS.GLASS_WOOL_ACOUSTIC.EUR_M3,\n    woodwool: MATERIALS.WOOD_WOOL.EUR_M3,\n    hempflax: MATERIALS.HEMP.EUR_M3\n }[$INSULATION] || 0;\n\nSCREW_40_COST_PC = roundTo(13.01/500,2);\nSCREW_70_COST_PC = roundTo(12.19/200,2);\nSCREW_90_COST_PC = roundTo(16.84/200,2);\nSCREW_140_COST_PC = roundTo(21.19/200,2);\n\n// for boarding\nnumScrews40 =  boards?.length ? Math.ceil((wall.studs.length * wall.studs.first().bbox().height() + wall.plates.bbox().width()*2 )  / 400) : 0; // every 400 mm\n// framing\nnumScrews70 = Math.ceil(wall.studs.first().bbox().height()/1000/0.2)*2;\nnumScrews90 = wall.studs.length * 4;\nnumScrews140 = wall.studs.length * 2;\n\nmaterialRows = [\n        ['wood SLS',`${STUD_THICKNESS}x${$DEPTH}`, 'length', roundTo(woodLengthM,2), 'm', roundTo(MATERIALS.WOOD.EUR_M3*(STUD_THICKNESS*$DEPTH/1000000),2), roundTo(woodVolumeM3 * MATERIALS.WOOD.EUR_M3,2)]];\n\nif($INSULATION !== 'none')\n{\n    materialRows.push(['insulation',`${$INSULATION}`, 'volume', roundTo(insulationM3,2), 'm3', insulationEUR_M3, roundTo(insulationM3 * insulationEUR_M3, 2)]);\n}\n\n// boards and water barrier\nif ($BOARDS !== 'none')\n{ \n    materialRows.push(['no insulation','122x244', 'area', roundTo(boardingAreaM2,2), 'm2', boardCostM2, roundTo(boardingAreaM2 * boardCostM2,2)]); \n    materialRows.push(['water barier','', 'area + overlap', roundTo(barierM2,2), 'm2', MATERIALS.WATERBARRIER.EUR_M2 , roundTo(barierM2*MATERIALS.WATERBARRIER.EUR_M2,2)]);\n    materialRows.push(['screws boards','4x40', 'pcs', numScrews40, 'pcs', SCREW_40_COST_PC,roundTo(numScrews40*SCREW_40_COST_PC,2)]);\n}\n        \nmaterialRows = materialRows.concat([\n        ['screws studs','5x90', 'pcs', numScrews90, 'pcs', SCREW_90_COST_PC, roundTo(numScrews90*SCREW_90_COST_PC,2)],\n        ['screws studs','6x140', 'pcs', numScrews140, 'pcs', SCREW_140_COST_PC,roundTo(numScrews140*SCREW_140_COST_PC,2)],\n        ['screws doubles','5x70', 'pcs', numScrews70, 'pcs', SCREW_70_COST_PC,roundTo(numScrews70*SCREW_70_COST_PC,2)],\n    ]);\n// manual sum\nmaterialRows.push(['','', '', '', '', '', '----- +']);\nmaterialRows.push(['TOTAL MATERIAL COST EST','', '', '', '', '', `\u20ac ${roundTo(materialRows.reduce((sum,row) => sum+((typeof row[6] === 'number') ? row[6] : 0), 0),2)}`])\n\n// total screw cost for price metric calculation \nhardwareCost = roundTo(numScrews90*SCREW_90_COST_PC,2) + roundTo(numScrews140*SCREW_140_COST_PC,2) + roundTo(numScrews70*SCREW_70_COST_PC,2);\n \ncalc.table('materials', \n    materialRows,\n    ['material','dim in cm', 'quantity', 'amount', 'unit', '\u20ac per unit', 'cost \u20ac est']);\n\n//// METRICS ////\n\n// Metric: pricing\n// See calculation in above \n\nmaterialCost = Math.round(\n                    hardwareCost\n                    + woodVolumeM3 * MATERIALS.WOOD.EUR_M3\n                    + boardingAreaM2 * boardCostM2\n                    + insulationM3 * insulationEUR_M3\n                    + barierM2 * MATERIALS.WATERBARRIER.EUR_M2\n                    );\n\nlaborCost = Math.round(\n                PRICING.LABOR_COST_EUR_PER_STUD * wall.studs.length\n                + PRICING.LABOR_COST_EUR_PER_OPENING * wall.openingDiagrams.length);\n\nproductionCost = Math.round(\n                    materialCost * (PRICING.MATERIAL_PROFIT_PERC + 1)\n                     + laborCost * (PRICING.LABOR_PROFIT_PERC + 1))\n\ncalc.metric('production cost', productionCost, { label: 'Production cost', unit: 'EUR', icon: 'currency-eur'})\n\n// Metric: R-value\nthermalResistanceLambda = { \n    none : 0,\n    glasswool : MATERIALS.GLASS_WOOL.LAMBDA,\n    'glaswol-acoust' : MATERIALS.GLASS_WOOL_ACOUSTIC.LAMBDA,\n    woodwool: MATERIALS.WOOD_WOOL.LAMBDA,\n    hempflax: MATERIALS.HEMP.LAMBDA,\n }[$INSULATION] || 0;\n\nthermalResistance = (thermalResistanceLambda)\n                        ? roundTo(($DEPTH/1000)/thermalResistanceLambda,2)\n                        : 0;\n\ncalc.metric('Rd',thermalResistance , { label: 'Rd', unit: 'm2K/W', icon: 'heat-wave'})\n\n// Metric: GWP iso\ninsulationGWP_kgCO2eq_M3 = {  \n    none : 0, \n    glasswool : MATERIALS.GLASS_WOOL.GWP, \n    'glaswol-acoust' : MATERIALS.GLASS_WOOL_ACOUSTIC.GWP,\n    woodwool: MATERIALS.WOOD_WOOL.GWP,\n    hempflax: MATERIALS.HEMP.GWP\n }[$INSULATION] || 0;\n\ncalc.metric('GWP', Math.round(insulationGWP_kgCO2eq_M3*insulationM3), { label: 'Eco impact', unit: 'kgCO2eq', icon: 'leaf'} )\n\n// Metric: weight\nboardingKgM2 = BOARDS_OPTIONS_TO_DATA[$BOARDS].kgm3\nweight = Math.round(\n            boardingVolumeM3 * boardingKgM2\n        + woodVolumeM3 * MATERIALS.WOOD.KG_M3\n        );\ncalc.metric('weight', weight, { label: 'Mass', unit: 'kg', icon: 'weight-kilogram'})\n\n//// TABLES: PARTS\n\nPART_COLUMNS = ['part','subpart', 'material', 'section (mm)', 'dim (mm)', 'quantity']\nsection = `${STUD_THICKNESS}x${$DEPTH}`;\n\nparts = [\n    ['base wall frame',  'top & bottom plate', 'wood SLS', section, wall.plates[0].bbox().width(), wall.plates.length],\n    ['base wall frame',  'studs + opening kingstuds', 'wood SLS', section, wall.studs[0].bbox().height(), wall.studs.length + wall.openingKingStuds.length ],\n]\n\n// if we have any (succesfull) openings\nif(wall.openingDiagrams.length)\n{\n    parts = parts.concat([  \n        ['opening',  'cripple studs top', 'wood SLS', section, (wall.cripplesTop.first()) ? wall.cripplesTop.first().bbox().height() : '', wall.cripplesTop.length ],\n        ['opening',  'cripple studs bottom', 'wood SLS', section, (wall.cripplesBottom.first()) ? wall.cripplesBottom.bbox().height() : '', wall.cripplesBottom.length ],\n        ['opening',  'frame horizontals', 'wood SLS', section, (wall.openingFramesHorizontals.first()) ? wall.openingFramesHorizontals.first().bbox().width() : '', wall.openingFramesHorizontals.length ],\n        ['opening',  'frame verticals', 'wood SLS', section, (wall.openingFramesVerticals.first()) ? wall.openingFramesVerticals.first().bbox().height() : '', wall.openingFramesVerticals.length ],\n    ])\n}\n\n// add boarding\nwholeBoards = boards?.filter(s => s.bbox().height() === BOARDING_STOCK_HEIGHT && s.bbox().width() === BOARDING_STOCK_WIDTH )\ncutBoards = boards?.filter(s => s.bbox().height() !== BOARDING_STOCK_HEIGHT || s.bbox().width() !== BOARDING_STOCK_WIDTH)\nboardParts = [];\n\nif(wholeBoards && wholeBoards.length > 0){\n    boardParts.push(\n        ['boards', 'uncut', $BOARDS, `${wholeBoards.first().bbox().width()}x${wholeBoards.first().bbox().height()}`, boardThickness, wholeBoards.length]\n    )\n}\nif(cutBoards && cutBoards.length > 0) // TODO: improve by make.partList non-beam shapes too!\n{\n    cutBoards.forEach(cutBoard => \n        boardParts.push(\n            ['boards', 'cut',  $BOARDS, `${cutBoard.bbox().width()}x${cutBoard.bbox().height()}`, boardThickness, 1]\n    ))\n}\n// aggregate by section\n// TODO: something like table.groupBy(...);\nboardPartsBySection = {};\nboardParts.forEach(row => {\n    if (boardPartsBySection[row[3]]){ boardPartsBySection[row[3]][5] += 1;}\n    else { boardPartsBySection[row[3]] = row }});\nparts = parts.concat(Object.values(boardPartsBySection))\n\n\ncalc.table('parts',\n    parts,\n    PART_COLUMNS);\n\n//// CAM PIPELINE ////\n\nfunction docPipeline()\n{\n    iso = wall.iso([-1,-1,1]).move($WIDTH*2);\n    \n    dimLevels = [\n        { axis :'y', at: 0.1, minDistance: 3, offset: 100, showLine: false }, // cutline slightly above stud\n        { axis :'x', at: 0.05, minDistance: 3, offset: 200, showLine: false }\n    ]\n        ;\n\n    if($OPENING)\n    { \n        dimLevels.push( { axis: 'x', at: $OPENING_START+STUD_THICKNESS, align: false, offset: 0, minDistance: STUD_THICKNESS+2, showLine: false }) \n        dimLevels.push( { axis: 'y', at: $OPENING_START+$OPENING_HEIGHT/2, align: false, offset: 0, minDistance:STUD_THICKNESS+2, showLine: false }) \n    }\n    layout = wall.elevation('front')\n            .moveTo(0,0,0) // center on origin\n            .move($WIDTH/2, $HEIGHT/2) // align at x-axis\n            //.autoDim({ levels: dimLevels, });\n\n    // TODO\n    //print(layout.bbox().back());\n    //layout.bbox().back().dim({ offset: 100 })\n    //layout.bbox().right().dim({ offset: 100 })\n\n    // Board saw plan\n    \n    //sawplan = group(); // empty\n    //if(boards.length)\n    // {\n    //    sawplan = boards.pack({ \n    //                    autoRotate: false , // not needed, already XY\n     //                   flatten: false,  // not needed, already flat\n    //                    stockWidth: BOARDING_STOCK_WIDTH, \n    //                    stockHeight: BOARDING_STOCK_HEIGHT, \n    //                    margin: 5 }).addToScene()\n    //    sawplan.group('bins').dashed();\n    //}\n    \n}\n\n//docPipeline(); // DEBUG DOC PIPELINE\n\n\n//// SPEC DOC ////\nspec = doc\n    .create('plan')\n    .pipeline(docPipeline)\n    .page('main')\n    .padding('1cm')\n    .titleblock({ title: 'Framed wall', designer: 'traditional', designLicense: 'public', manualLicense: 'CC-BY-NC' })\n    .text('Framed Wall', { size: '10mm' })\n    .position(0,1.0)\n    .text(`${$WIDTH}x${$HEIGHT}x${$DEPTH} - ${STUD_THICKNESS}x${$DEPTH}`, { size: '5mm' })\n    .position(0,0.93)\n    .view('iso')\n    .shapes('iso')\n    .pivot('topleft')\n    .position(0.13,0.96)\n    .width(0.4)\n    .height(0.4)\n    .text('Material list', { size: '6mm'})\n    .position(0,0.33)\n    .table('materials', { fontsize: 6 })\n    .pivot(0,0)\n    .position(0,0.0)\n    .height(0.28)\n    .width(0.4)\n    .text('Cut list', { size: '6mm'})\n    .position(0.42,0.38)\n    .table('parts', {fontsize: 6 })\n    .position(0.42,0.0)\n    .pivot(0,0)\n    .width(0.35)\n    .height(0.32)\n    .view('layout')\n    .shapes('layout')\n    .pivot('topright')\n    .position(1,1)\n    .width(0.6)\n    .height(0.55)\n    \n    //.table('pricing',{fontsize: 5.5 })\n    //.position(0.7,0.4)\n    //.width(0.3)\n\n/*\nif($BOARDS !== 'none')\n{\n    spec = spec.view('sawplan')\n        .pivot('bottomleft')\n        .shapes('sawplan')\n        .position(0, 0.33)\n        .width(0.2)\n        .height(0.2)\n        .text('sawplan', { size: '5mm'})\n        .position(0,0.6)\n        .text(`stock ${BOARDING_STOCK_WIDTH}x${BOARDING_STOCK_HEIGHT}`, { size: '3mm'})\n        .position(0,0.56)\n}\n*/\n\n",
+ "params": {
+  "WIDTH": {
+   "name": "WIDTH",
+   "type": "number",
+   "label": "Width",
+   "group": "main",
+   "enabled": true,
+   "order": 0,
+   "iterable": true,
+   "units": "mm",
+   "default": 3000,
+   "_value": 2500,
+   "schema": {
+    "type": "number",
+    "default": 3000,
+    "minimum": 1000,
+    "maximum": 3000,
+    "multipleOf": 1
+   }
+  },
+  "HEIGHT": {
+   "name": "HEIGHT",
+   "type": "number",
+   "label": "Height",
+   "group": "main",
+   "enabled": true,
+   "order": 1,
+   "iterable": true,
+   "units": "mm",
+   "default": 2500,
+   "_value": 2426,
+   "schema": {
+    "type": "number",
+    "default": 2500,
+    "minimum": 1000,
+    "maximum": 2500,
+    "multipleOf": 1
+   }
+  },
+  "DEPTH": {
+   "name": "DEPTH",
+   "type": "options",
+   "label": "Depth",
+   "group": "main",
+   "enabled": true,
+   "order": 2,
+   "iterable": true,
+   "default": 120,
+   "_value": 235,
+   "schema": {
+    "type": "number",
+    "enum": [
+     120,
+     140,
+     184,
+     235
+    ],
+    "default": 120
+   }
+  },
+  "OPENING": {
+   "name": "OPENING",
+   "type": "boolean",
+   "label": "With opening",
+   "enabled": true,
+   "order": 6,
+   "iterable": true,
+   "default": false,
+   "_value": true,
+   "schema": {
+    "type": "boolean",
+    "default": false
+   }
+  },
+  "INSULATION": {
+   "name": "INSULATION",
+   "type": "options",
+   "label": "Insulation",
+   "enabled": true,
+   "order": 3,
+   "iterable": true,
+   "default": "hempflax",
+   "schema": {
+    "type": "string",
+    "enum": [],
+    "default": ""
+   }
+  },
+  "TOP_CONNECT": {
+   "name": "TOP_CONNECT",
+   "type": "boolean",
+   "label": "Double Top",
+   "enabled": true,
+   "order": 4,
+   "iterable": true,
+   "default": false,
+   "schema": {
+    "type": "boolean",
+    "default": false
+   }
+  },
+  "BOARDS": {
+   "name": "BOARDS",
+   "type": "options",
+   "label": "BOARDS",
+   "group": "main",
+   "order": 5,
+   "iterable": true,
+   "default": "none",
+   "_value": "OSB9",
+   "schema": {
+    "type": "string",
+    "enum": [
+     "none",
+     "OSB9",
+     "OSB18"
+    ],
+    "default": "none"
+   }
+  },
+  "OPENING_START": {
+   "name": "OPENING_START",
+   "type": "number",
+   "label": "OPENING_START",
+   "group": "main",
+   "enabled": true,
+   "order": 7,
+   "iterable": true,
+   "default": 1000,
+   "_value": 1000,
+   "_definedProgrammatically": true,
+   "schema": {
+    "type": "number",
+    "default": 1000,
+    "minimum": 4000,
+    "maximum": 2000,
+    "multipleOf": 1
+   }
+  },
+  "OPENING_SILL": {
+   "name": "OPENING_SILL",
+   "type": "number",
+   "label": "OPENING_SILL",
+   "group": "main",
+   "enabled": true,
+   "order": 8,
+   "iterable": true,
+   "default": 500,
+   "_value": 500,
+   "_definedProgrammatically": true,
+   "schema": {
+    "type": "number",
+    "default": 500,
+    "minimum": 100,
+    "maximum": 1500,
+    "multipleOf": 1
+   }
+  },
+  "OPENING_WIDTH": {
+   "name": "OPENING_WIDTH",
+   "type": "number",
+   "label": "OPENING_WIDTH",
+   "group": "main",
+   "enabled": true,
+   "order": 9,
+   "iterable": true,
+   "default": 600,
+   "_value": 600,
+   "_definedProgrammatically": true,
+   "schema": {
+    "type": "number",
+    "default": 600,
+    "minimum": 300,
+    "maximum": 1500,
+    "multipleOf": 1
+   }
+  },
+  "OPENING_HEIGHT": {
+   "name": "OPENING_HEIGHT",
+   "type": "number",
+   "label": "OPENING_HEIGHT",
+   "group": "main",
+   "enabled": true,
+   "order": 10,
+   "iterable": true,
+   "default": 1000,
+   "_value": 1000,
+   "_definedProgrammatically": true,
+   "schema": {
+    "type": "number",
+    "default": 1000,
+    "minimum": 300,
+    "maximum": 1500,
+    "multipleOf": 1
+   }
+  },
+  "ROOF_HEIGHT": {
+   "name": "ROOF_HEIGHT",
+   "type": "number",
+   "label": "ROOF_HEIGHT",
+   "group": "main",
+   "order": 11,
+   "iterable": true,
+   "default": 0,
+   "_value": 2110,
+   "schema": {
+    "type": "number",
+    "default": 0,
+    "minimum": 0,
+    "maximum": 4000,
+    "multipleOf": 1
+   }
+  },
+  "ROOF_RIDGE_CENTER": {
+   "name": "ROOF_RIDGE_CENTER",
+   "type": "number",
+   "label": "ROOF_RIDGE_CENTER",
+   "group": "main",
+   "order": 12,
+   "iterable": true,
+   "units": "none",
+   "default": 0,
+   "_value": 59,
+   "schema": {
+    "type": "number",
+    "default": 0,
+    "minimum": 0,
+    "maximum": 100,
+    "multipleOf": 1
+   }
+  }
+ },
+ "presets": {}
+}

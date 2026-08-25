@@ -1,0 +1,219 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # packages/meshup is a submodule and a workspace dependency of the editor,
+      # core and the root manifest — pnpm install cannot resolve without it.
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # better-sqlite3 is a native module; pnpm-workspace.yaml allowlists its
+      # build script, and node-gyp needs a toolchain to compile the binding.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # No Rust toolchain here on purpose: every WASM artifact is committed
+      # (base64 payloads plus the wasm-bindgen glue), so a clean clone builds
+      # with Node alone. If this step ever fails to resolve a `pkg/` import,
+      # something stopped being tracked.
+      - name: Build editor
+        env:
+          SERVER_API_BASE_URL: /api
+        run: pnpm --filter @archiyou/editor build
+
+      - name: Check build output
+        run: |
+          test -f apps/editor/dist/index.html || { echo "::error::no index.html in build output"; exit 1; }
+          test -d apps/editor/dist/assets    || { echo "::error::no assets/ in build output"; exit 1; }
+
+      - name: Server tests
+        run: pnpm --filter @archiyou/server test
+
+      - name: UI tests
+        run: pnpm --filter @archiyou/ui test
+
+      - name: Core tests
+        run: pnpm --filter @archiyou/core test:runner
+
+      # The module contract is authored in packages/module-sdk and mirrored into
+      # packages/core/src/modules/sdkTypes.ts, because core is published to npm and the
+      # SDK is not — an import by name would dangle in everything core ships. Two copies
+      # of one contract drift silently, so the mirror is checked here as well as by a
+      # unit test (which `test:runner` does not run).
+      - name: Module contract mirror is in sync
+        run: pnpm --filter @archiyou/core check:sdk-types
+
+      # Real gates. Each package's own source must typecheck against its
+      # dependencies' actual types. tsconfig `paths` makes tsc resolve
+      # @archiyou/core (its exports map defeats tsc, which silently typed those
+      # boundaries as `any`), and scripts/typecheck-own.mjs ignores only core's
+      # pre-existing backlog — so none of these three can regress.
+      - name: Typecheck server
+        run: pnpm --filter @archiyou/server typecheck:own
+
+      - name: Typecheck ui
+        run: pnpm --filter @archiyou/ui typecheck:own
+
+      - name: Typecheck editor
+        run: pnpm --filter @archiyou/editor typecheck:own
+
+      # packages/core is not type-clean yet, so it gets a ratchet rather than a
+      # zero-error gate: the count may go down but never up. Waiting for zero
+      # would mean no gate at all, which is how this drifted in the first place.
+      # Lower the budget in packages/core/package.json as it improves; when it
+      # reaches 0, switch core to typecheck:own like the other packages.
+      - name: Typecheck core (budget — fails only if errors increase)
+        run: pnpm --filter @archiyou/core typecheck:budget
+
+  # Private script modules are developed as a gitignored overlay in ./modules (see
+  # modules/README.md). That boundary is one .gitignore line, and a single `git add -f`
+  # or a weakened ignore rule would publish proprietary source into a public repo —
+  # irreversibly, since it would land in the history. So it gets a gate rather than
+  # a convention.
+  private-modules-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # README.md is the one tracked file here (the dev guide); anything else is
+      # private module source.
+      - name: No module source may be tracked
+        run: |
+          tracked="$(git ls-files -- modules/ | grep -v '^modules/README.md$' || true)"
+          if [ -n "$tracked" ]; then
+            echo "::error::files under modules/ are tracked in git — this overlay must stay private"
+            echo "$tracked"
+            exit 1
+          fi
+
+      # Checked separately from the above: an empty `git ls-files` is also what you
+      # get right before someone commits, so the ignore rule itself has to hold.
+      - name: modules/ contents must stay ignored
+        run: |
+          mkdir -p modules/canary
+          echo "canary" > modules/canary/file.txt
+          if [ -z "$(git check-ignore modules/canary/file.txt)" ]; then
+            echo "::error::modules/ contents are no longer covered by .gitignore"
+            exit 1
+          fi
+          rm -rf modules/canary
+
+      # The exception is narrow and easy to widen by accident: `/modules/*` plus a
+      # single negation. If the guide itself stopped being tracked, the directory
+      # would be empty in a public checkout and the setup instructions would vanish.
+      - name: the module dev guide must stay tracked
+        run: |
+          git ls-files --error-unmatch modules/README.md >/dev/null 2>&1 || {
+            echo "::error::modules/README.md is no longer tracked"; exit 1; }
+
+      # The overlay is only usable if pnpm still looks there. Dropping this glob
+      # would not fail any build — it would silently stop linking the modules.
+      - name: workspace must keep the modules overlay glob
+        run: |
+          grep -qE "^\s*-\s*'modules/\*'" pnpm-workspace.yaml || {
+            echo "::error::pnpm-workspace.yaml no longer includes the 'modules/*' glob"; exit 1; }
+
+      # The .gitignore keeps module SOURCE out, but pnpm-lock.yaml is tracked and
+      # records an importer per workspace project — including the overlay ones,
+      # with their full dependency lists. That is enough to leak a private
+      # module's name and, from its deps, what it does. pnpm tolerates importers
+      # that have no directory, so a lockfile generated without the overlay still
+      # installs cleanly for everyone.
+      - name: no private module may appear in the lockfile
+        run: |
+          leaked="$(grep -nE "^  modules/" pnpm-lock.yaml || true)"
+          if [ -n "$leaked" ]; then
+            echo "::error::pnpm-lock.yaml contains importers for the private modules overlay"
+            echo "$leaked"
+            echo "Fix: run 'pnpm lockfile:public' and commit the result."
+            exit 1
+          fi
+
+  # The deployment config is executable, so it gets checked like code: a broken
+  # Caddyfile means the reverse proxy will not start. This caught `auto_https on`,
+  # which was invalid and had gone unnoticed.
+  deploy-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate Caddyfile
+        run: |
+          docker run --rm -v "${{ github.workspace }}/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2 caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Validate compose files
+        run: |
+          # `config` renders and schema-checks; the mount source only has to exist.
+          mkdir -p apps/editor/dist
+          # Prod stack, at the repo root (build context `.`).
+          docker compose -f docker-compose.yml config >/dev/null
+          # Dev stack, one level down (build context `../..`) — --project-directory
+          # so `env_file: .env` and ${VAR} interpolation resolve as they do in situ.
+          docker compose -f apps/server/docker-compose.yml \
+            --project-directory apps/server config >/dev/null
+
+      # Guards the move of the prod compose file to the repo root: every relative
+      # path in it must resolve INSIDE the repo. `context: ../..` left over from
+      # apps/server/ silently resolves to the parent of the checkout, and the
+      # build then fails on a missing Dockerfile.
+      - name: Prod compose paths must stay inside the repo
+        run: |
+          docker compose -f docker-compose.yml config \
+            | python3 -c '
+          import sys, yaml, os
+          cfg = yaml.safe_load(sys.stdin)
+          root = os.path.realpath(".")
+          bad = []
+          for name, svc in cfg.get("services", {}).items():
+              ctx = (svc.get("build") or {}).get("context")
+              if ctx:
+                  bad += [(name, "build.context", ctx)] * (not os.path.realpath(ctx).startswith(root))
+              for v in svc.get("volumes", []):
+                  if v.get("type") == "bind":
+                      src = v["source"]
+                      bad += [(name, "bind", src)] * (not os.path.realpath(src).startswith(root))
+          for svc, kind, p in bad:
+              print(f"::error::{svc}: {kind} {p} resolves outside the repo")
+          sys.exit(1 if bad else 0)'
+
+      # The worker executes unsandboxed user scripts, so a compromise there must
+      # not yield the token-signing key or the mail credentials. Checked against
+      # the rendered config, not the YAML source.
+      - name: Worker must not receive app secrets
+        run: |
+          pip install --quiet pyyaml
+          mkdir -p apps/editor/dist
+          docker compose -f docker-compose.yml config \
+            | python3 apps/server/scripts/check-worker-env.py
+          # The dev stack runs the same unsandboxed Runner, and a dev .env is very
+          # often a copy of the production one — so it is held to the same rule.
+          docker compose -f apps/server/docker-compose.yml \
+            --project-directory apps/server config \
+            | python3 apps/server/scripts/check-worker-env.py

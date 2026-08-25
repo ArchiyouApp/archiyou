@@ -1,0 +1,13 @@
+# Cargo build artifacts. NOTE: packages/gdrr2bp-wasm is missing this file and
+# tracks ~500 build artifacts by accident — do not repeat that here.
+target/
+
+# wasm-pack drops a `.gitignore` containing `*` into its --out-dir, which would
+# hide the very glue we need to commit. buildscripts/build-wasm.ts deletes it,
+# but ignore it here too in case someone runs wasm-pack by hand.
+ts/wasm/.gitignore
+
+# Intermediate wasm-opt output (ours is renamed over the original; wasm-pack's
+# built-in step can leave this behind if it is interrupted).
+ts/wasm/*-opt.wasm
+ts/wasm/*.wasm.opt

@@ -1,0 +1,31 @@
+{
+  "name": "@archiyou/ui",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "typecheck:own": "node ../../scripts/typecheck-own.mjs packages/ui",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@archiyou/core": "workspace:*",
+    "@archiyou/module-sdk": "workspace:*",
+    "@archiyou/types": "workspace:*",
+    "@lit-labs/signals": "^0.2.0",
+    "@lit/localize": "^0.12.2",
+    "@vaadin/router": "^1.7.5",
+    "dompurify": "^3.4.1",
+    "lit": "^3.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.4"
+  }
+}

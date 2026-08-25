@@ -1,0 +1,60 @@
+{
+  "name": "@archiyou/collada-wasm",
+  "version": "0.1.0",
+  "description": "COLLADA (.dae) writer compiled to WebAssembly, with a typed TypeScript wrapper.",
+  "license": "MIT",
+  "author": "Mark van der Net (Archiyou)",
+  "type": "module",
+  "main": "./ts/index.ts",
+  "types": "./ts/index.ts",
+  "exports": {
+    ".": "./ts/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup",
+    "build:wasm": "tsx buildscripts/build-wasm.ts",
+    "rust:check": "cargo check --target wasm32-unknown-unknown",
+    "rust:test": "cargo test",
+    "prepublishOnly": "node ../../scripts/require-pnpm-publish.mjs && pnpm build"
+  },
+  "keywords": [
+    "collada",
+    "dae",
+    "3d",
+    "wasm",
+    "export",
+    "archiyou"
+  ],
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ArchiyouApp/archiyou-web.git",
+    "directory": "packages/collada-wasm"
+  },
+  "homepage": "https://archiyou.com",
+  "bugs": {
+    "url": "https://github.com/ArchiyouApp/archiyou-web/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}

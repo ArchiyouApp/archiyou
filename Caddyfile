@@ -1,0 +1,71 @@
+# Global options.
+#
+# Automatic HTTPS is on by default in Caddy 2 for any site addressed by hostname,
+# so there is nothing to switch on here. (This block previously said
+# `auto_https on`, which is not valid syntax — the only accepted values are off /
+# disable_redirects / disable_certs / ignore_loaded_certs — so `caddy validate`
+# failed and the proxy would not have started at all.)
+#
+# Uncomment for a staging deploy to avoid Let's Encrypt rate limits while testing:
+# {
+#   acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+# }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Editor + API on ONE origin.
+#
+# Serving the app and the API from the same host means the browser never makes a
+# cross-origin request, so CORS is out of the picture entirely. The server's
+# routes live at the root (/auth, /scripts, /proxy, /health), so `handle_path`
+# strips the /api prefix before proxying — /api/auth/login reaches the server as
+# /auth/login. Build the editor with SERVER_API_BASE_URL=/api to match.
+#
+# Replace app.archiyou.com with your own domain.
+# ─────────────────────────────────────────────────────────────────────────────
+next.archiyou.com {
+	encode zstd gzip
+
+	# --- API (prefix stripped) ---
+	handle_path /api/* {
+		reverse_proxy api:4100
+	}
+
+	# NOTE: runtime-loaded editor plugins are DEV-ONLY. plugin-loader.ts fetches
+	# /plugins/<name>, which a Vite plugin serves from the repo-root plugins/ dir
+	# during development; nothing serves it here, so the built-in shape-picker is
+	# simply absent in production. To change that, serve plugins/ under /plugins
+	# and uncomment the matching bind mount in docker-compose.yml — but note that
+	# it puts arbitrary JS from the checkout on the app's own origin, where the CSP
+	# already allows 'unsafe-eval' and 'unsafe-inline'.
+
+	# --- Editor SPA ---
+	handle {
+		root * /srv/app
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# The app frames its own published configurators, and embedding a
+		# configurator elsewhere is a product feature, so DENY is wrong here
+		# (unlike on the API vhost). CSP frame-ancestors below is the real control.
+		X-Frame-Options "SAMEORIGIN"
+
+		# Content-Security-Policy. Every allowance below is load-bearing — check
+		# against the code before tightening:
+		#   'unsafe-eval'  the script Runner compiles user scripts with
+		#                  new AsyncFunction (packages/core/src/runner/Runner.ts)
+		#   blob:          plugin-loader.ts imports plugins from blob: URLs, and
+		#                  Vite's module workers are URL/blob based
+		#   data:          WASM ships inlined as base64 and is decoded at runtime
+		#   fonts.googleapis/gstatic  webfonts in index.html
+		#   cdn.jsdelivr.net          lucide icon sprites (src/icons.ts)
+		#   www.gstatic.com           Draco decoder (packages/ui model-viewer.ts)
+		# Vendoring those three CDNs would let script-src/font-src drop to 'self'.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://www.gstatic.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' blob: data: https://cdn.jsdelivr.net https://www.gstatic.com; frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
+	}
+}
+

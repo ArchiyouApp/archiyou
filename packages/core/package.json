@@ -1,0 +1,121 @@
+{
+  "name": "@archiyou/core",
+  "version": "0.9.0",
+  "type": "module",
+  "description": "The Archiyou geometry kernel and script runtime: run parametric CAD scripts on the main thread or in a Web Worker.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./src/*": "./src/*.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsup && pnpm build:types",
+    "typecheck": "tsc --noEmit",
+    "typecheck:budget": "node ../../scripts/typecheck-budget.mjs packages/core 156",
+    "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly || true",
+    "check:pack": "tsx buildscripts/check-pack.ts",
+    "sync:sdk-types": "tsx buildscripts/sync-sdk-types.ts",
+    "check:sdk-types": "tsx buildscripts/sync-sdk-types.ts --check",
+    "prepublishOnly": "node ../../scripts/require-pnpm-publish.mjs && pnpm check:sdk-types && pnpm build && pnpm check:pack",
+    "test": "vitest run",
+    "test:brep": "vitest run tests/unit/brep/",
+    "test:kernels": "vitest run tests/unit/modeler/kernels/",
+    "test:cadscripts": "vitest run tests/cadscripts/run.cadscripts.test.ts",
+    "test:modeler": "vitest run tests/unit/modeler/*test.ts",
+    "test:make": "vitest run tests/unit/make/make.test.ts",
+    "test:layouter": "vitest run tests/unit/modeler/layouter.test.ts",
+    "test:docs": "vitest run tests/unit/docs/Docs.test.ts",
+    "test:dimensions": "vitest run tests/unit/annotator/dimensions.test.ts",
+    "test:labels": "vitest run tests/unit/annotator/labels.test.ts",
+    "test:runner": "vitest run tests/unit/runner/",
+    "test:materials": "vitest run tests/unit/materials/",
+    "test:modules": "vitest run tests/unit/modules/ tests/unit/runner/runner.modules.test.ts",
+    "test:runner:components": "vitest run tests/unit/runner/runner.component.test.ts",
+    "test:runner:components:recursive": "vitest run tests/unit/runner/runner.component.recursive.test.ts tests/unit/runner/runner.component.shared.test.ts",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "generate:completions": "tsx scripts/generate-completions.ts"
+  },
+  "keywords": [
+    "cad",
+    "parametric",
+    "geometry",
+    "3d",
+    "mesh",
+    "brep",
+    "wasm",
+    "gltf",
+    "architecture",
+    "archiyou"
+  ],
+  "author": "Mark van der Net (Archiyou)",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.32.1",
+  "devDependencies": {
+    "@archiyou/module-sdk": "workspace:*",
+    "@types/node": "^25.5.2",
+    "@vitest/coverage-v8": "^4.1.4",
+    "ts-morph": "^25.0.1",
+    "tsup": "^8.5.1",
+    "tsx": "^4.19.3",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.8",
+    "vitest": "^4.1.4"
+  },
+  "dependencies": {
+    "@archiyou/collada-wasm": "workspace:^",
+    "@archiyou/gdrr2bp-wasm": "workspace:^",
+    "@archiyou/meshup": "workspace:^",
+    "@gltf-transform/core": "^4.3.0",
+    "@noble/hashes": "^2.0.1",
+    "acorn": "^8.16.0",
+    "acorn-globals": "^7.0.1",
+    "comlink": "^4.4.2",
+    "fast-xml-parser": "^5.5.11",
+    "json-schema": "^0.4.0",
+    "jspdf": "^4.2.1",
+    "semver": "^7.7.4",
+    "svg-path-parser": "^1.1.0",
+    "svg2pdf.js": "^2.7.0",
+    "typebox": "^1.1.21",
+    "write-excel-file": "^3.0.8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ArchiyouApp/archiyou-web.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://archiyou.com",
+  "bugs": {
+    "url": "https://github.com/ArchiyouApp/archiyou-web/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./src/*": "./src/*.ts",
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist",
+    "src/**/*.ts",
+    "src/**/*.js",
+    "src/**/*.txt",
+    "LICENSE",
+    "NOTICE",
+    "ATTRIBUTION.md",
+    "README.md"
+  ]
+}

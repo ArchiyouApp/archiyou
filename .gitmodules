@@ -1,0 +1,3 @@
+[submodule "packages/meshup"]
+	path = packages/meshup
+	url = https://github.com/ArchiyouApp/meshup.git

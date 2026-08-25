@@ -1,0 +1,111 @@
+{
+ "name": "housetest",
+ "author": "archiyou",
+ "version": "0.1",
+ "code": "\nWIDTH = $WIDTH;\nDEPTH = $DEPTH;\nWALL_THICKNESS = 200;\nWALL_HEIGHT = $WALL_HEIGHT;\nROOF_HEIGHT = $ROOF_HEIGHT;\nROOF_RIDGE_PERC = 50; // TODO in Roof\n\n//// INTERACTIVE DIM LINES ////\n\nline([0,0,0],[WIDTH,0,0]).tmp().moveY(-1000).dim().param('WIDTH'); // WIDTH\nline([0,0,0],[0,DEPTH,0]).tmp().move(-1000).dim().param('DEPTH'); // DEPTH\nline([0,0,0],[0,0,WALL_HEIGHT]).tmp().move(WIDTH+1000).dim().param('HEIGHT'); // HEIGHT\n\n\n//// MAIN ////\n\n\nwallFrontComponent = $component('./timberwall', \n                       { WIDTH: WIDTH-2*WALL_THICKNESS, HEIGHT: WALL_HEIGHT, \n                          DEPTH: WALL_THICKNESS,\n                         OPENING: true, OPENING_LEFT: 500, OPENING_WIDTH: 600, \n                         OPENING_HEIGHT: 1600, OPENING_SILL: 100, \n                         ROOF_HEIGHT: ROOF_HEIGHT, ROOF_RIDGE_CENTER: ROOF_RIDGE_PERC }\n                      )\n              .model()\n              .move(WALL_THICKNESS, WALL_THICKNESS/2)\n\nwallFrontComponent.name('wallFront');\n\n\nwallLeft = $component('./timberwall', \n                  { \n                    WIDTH: DEPTH, HEIGHT: WALL_HEIGHT, DEPTH: WALL_THICKNESS, \n                    OPENING: true, OPENING_LEFT: 1000, OPENING_WIDTH: 600, OPENING_HEIGHT: 1000, OPENING_SILL: 500,\n                  })\n              .model()\n              .rotateZ(-90, [0,WALL_THICKNESS/2,0])\n              .move(WALL_THICKNESS,DEPTH-WALL_THICKNESS*0.5)\n              .name('wallLeft');\n\nwallRight = $component('./timberwall', { WIDTH: DEPTH, HEIGHT: WALL_HEIGHT, DEPTH: WALL_THICKNESS})\n              .model()\n              .rotateZ(-90, [0,WALL_THICKNESS/2,0])\n              .move(WIDTH,DEPTH-WALL_THICKNESS*0.5)\n              .name('wallRight');\n\nwallBack = $component('./timberwall', { WIDTH: WIDTH-2*WALL_THICKNESS, HEIGHT: WALL_HEIGHT, DEPTH: WALL_THICKNESS,\n                        ROOF_HEIGHT: ROOF_HEIGHT, ROOF_RIDGE_CENTER: ROOF_RIDGE_PERC })\n            .model()\n            .moveY(DEPTH-WALL_THICKNESS*0.5)\n            .move(WALL_THICKNESS)\n            .name('wallBack');\n\nroof = $component('./urroof', { SPAN: WIDTH, HEIGHT: ROOF_HEIGHT, DEPTH: DEPTH, \n                                OVERHANG_SIDE: $OVERHANG_SIDE, OVERHANG_FRONTAL: $OVERHANG_FRONT })\n            .model()\n            .moveZ(WALL_HEIGHT)\n            .name('wallBack');\n\nstructureElems = all().filter((s) => !s.name()?.includes('insulation'));\nmodeler.make.partList(structureElems);\n\nstructureElems.iso().move(10000)\n\n\n\n\n",
+ "params": {
+  "WIDTH": {
+   "name": "WIDTH",
+   "type": "number",
+   "label": "WIDTH",
+   "group": "main",
+   "order": 0,
+   "iterable": true,
+   "default": 3000,
+   "_value": 2500,
+   "schema": {
+    "type": "number",
+    "default": 3000,
+    "minimum": 2000,
+    "maximum": 8000,
+    "multipleOf": 1
+   }
+  },
+  "DEPTH": {
+   "name": "DEPTH",
+   "type": "number",
+   "label": "DEPTH",
+   "group": "main",
+   "order": 1,
+   "iterable": true,
+   "default": 5000,
+   "_value": 4000,
+   "schema": {
+    "type": "number",
+    "default": 5000,
+    "minimum": 2000,
+    "maximum": 10000,
+    "multipleOf": 1
+   }
+  },
+  "ROOF_HEIGHT": {
+   "name": "ROOF_HEIGHT",
+   "type": "number",
+   "label": "ROOF_HEIGHT",
+   "group": "main",
+   "order": 2,
+   "iterable": true,
+   "default": 0,
+   "_value": 1997,
+   "schema": {
+    "type": "number",
+    "default": 0,
+    "minimum": 0,
+    "maximum": 3000,
+    "multipleOf": 1
+   }
+  },
+  "OVERHANG_SIDE": {
+   "name": "OVERHANG_SIDE",
+   "type": "number",
+   "label": "OVERHANG_SIDE",
+   "group": "OVERHANGS",
+   "order": 0,
+   "iterable": true,
+   "default": 500,
+   "_value": 377,
+   "schema": {
+    "type": "number",
+    "default": 500,
+    "minimum": 0,
+    "maximum": 2000,
+    "multipleOf": 1
+   }
+  },
+  "OVERHANG_FRONT": {
+   "name": "OVERHANG_FRONT",
+   "type": "number",
+   "label": "OVERHANG_FRONT",
+   "group": "OVERHANGS",
+   "order": 1,
+   "iterable": true,
+   "default": 500,
+   "_value": 554,
+   "schema": {
+    "type": "number",
+    "default": 500,
+    "minimum": 0,
+    "maximum": 2000,
+    "multipleOf": 1
+   }
+  },
+  "WALL_HEIGHT": {
+   "name": "WALL_HEIGHT",
+   "type": "number",
+   "label": "WALL_HEIGHT",
+   "group": "main",
+   "order": 3,
+   "iterable": true,
+   "default": 2700,
+   "_value": 2550,
+   "schema": {
+    "type": "number",
+    "default": 2700,
+    "minimum": 2000,
+    "maximum": 3500,
+    "multipleOf": 1
+   }
+  }
+ },
+ "presets": {}
+}
