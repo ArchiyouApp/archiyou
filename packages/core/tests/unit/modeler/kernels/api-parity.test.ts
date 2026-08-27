@@ -81,6 +81,13 @@ describe('mesh-kernel names on brep Shapes', () =>
         const xs = [...new Set(g.toArray().map((s: any) => Math.round(s.center().x)))].sort((a, b) => a - b)
         expect(xs).toEqual([0, 15, 30])     // 10 wide + 5 spacing
     })
+
+    test('grid() reads a zero count as a flat grid on that axis', () =>
+    {
+        // grid(3,2,0) is how a flat XY grid gets written - it must not come back empty
+        const g = new brep.Solid().makeBox(10).grid(3, 2, 0, 5)
+        expect(g.length).toEqual(6)
+    })
 })
 
 describe('linear shapes speak the Curve vocabulary', () =>
@@ -144,6 +151,7 @@ describe('collections speak it too', () =>
     {
         const c = new brep.ShapeCollection(new brep.Solid().makeBox(10))
         expect(c.grid(2, 2, 1, 5).length).toEqual(4)
+        expect(new brep.ShapeCollection(new brep.Solid().makeBox(10)).grid(2, 2, 0, 5).length).toEqual(4)
 
         const p = new brep.ShapeCollection(new brep.Solid().makeBox(10)).place(25)
         expect(Math.round(p.bbox().min().z)).toEqual(25)

@@ -40,7 +40,7 @@ import { Vector, Point, Bbox, OBbox, Vertex, Edge, Wire, Face,
 // Scene + style come from the MESH kernel: both kernels share one SceneNode graph and one
 // Style model, which is what lets the scene navigator and the GLTF exporter stay kernel-agnostic.
 import { SceneNode } from '@archiyou/meshup'
-import { nodeToString } from '@archiyou/meshup'
+import { nodeToString, gridCounts } from '@archiyou/meshup'
 import { Style } from '@archiyou/meshup'
 import type { StyleData } from '@archiyou/meshup'
 import { Color } from '@archiyou/meshup'
@@ -4342,17 +4342,20 @@ export class Shape
     }
 
     /** Repeat this Shape on a 3D grid, spaced by `spacing` between bounding boxes.
+     *  Counts are floored and clamped to at least 1, so grid(4,3,0) is a flat 4x3 grid in XY
+     *  rather than an empty collection.
      *  Mesh-kernel parity — row() in up to three directions at once. */
     @checkInput([[Number,2],[Number,2],[Number,1],[Number,10]], ['auto','auto','auto','auto'])
     grid(cx?:number, cy?:number, cz?:number, spacing?:number):ShapeCollection
     {
+        const [nx,ny,nz] = gridCounts([cx,cy,cz], 'Shape::grid()');
         const bbox = this.bbox();
         const step = [ bbox.width() + spacing, bbox.depth() + spacing, bbox.height() + spacing ];
 
         const shapes = new ShapeCollection();
-        for (let z = 0; z < cz; z++){
-        for (let y = 0; y < cy; y++){
-        for (let x = 0; x < cx; x++)
+        for (let z = 0; z < nz; z++){
+        for (let y = 0; y < ny; y++){
+        for (let x = 0; x < nx; x++)
         {
             const first = (x === 0 && y === 0 && z === 0);
             const shape = first ? this : this.copy(false);

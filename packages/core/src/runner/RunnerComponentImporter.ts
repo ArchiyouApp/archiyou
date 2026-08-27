@@ -79,6 +79,34 @@
  *               - tables => Db instance
  *               these instances have inspection/selection functionality
  *          
+ *   5. Caching: identical activations execute ONCE
+ *
+ *      Executing a component means running a whole script, so a wall repeated across a facade
+ *      would model itself once per repeat. The Runner therefore memoises the raw execution
+ *      result (Runner._componentResults) keyed on everything the outputs can depend on: the
+ *      component's own code, the params, the requested outputs, the kernel and the units.
+ *      See Runner._componentResultCacheKey().
+ *
+ *          wallA = $component('./wall').params({ w: 100 }).model(); // executes
+ *          wallB = $component('./wall').params({ w: 100 }).model(); // memoised
+ *          wallC = $component('./wall').params({ w: 200 }).model(); // different key: executes
+ *
+ *      The memo is NOT cleared between runs — the key contains the code, so editing the
+ *      component invalidates by itself, and a configurator moving one param keeps the hits for
+ *      every component that param does not reach.
+ *
+ *      Each caller still gets its OWN shapes: a memoised model tree is re-created with clones
+ *      (see _copyComponentShape), because a Shape can only live in one SceneNode and the
+ *      caller is free to move/mutate what it receives.
+ *
+ *      CAVEAT: the other categories (docs, tables, metrics) are handed out as the SAME module
+ *      instances on every hit — they are not cloned. Reading and merging them is fine; a
+ *      caller that mutates one in place should use noCache().
+ *
+ *      noCache() bypasses AND resets the memo, for a component that is not a pure function of
+ *      its params (it reads a $import()ed asset that changed, or a stateful script module):
+ *
+ *          $component('./wall').noCache().params({ w: 100 }).model();
  * 
  */
 
@@ -110,6 +138,8 @@ export class RunnerComponentImporter
     options:Record<string,any>; // TODO
     script?:ScriptData; // script to execute - will be fetched from library or from disk
     _requestedOutputs:Array<string> = [];  // requested outputs
+    _useCache:boolean = true; // see noCache()
+    _fromCache:boolean = false; // whether the last execution was served from the cache (inspection/tests)
 
     
     constructor(runner:Runner, scope:RunnerScriptScope,  ref:string)
@@ -141,6 +171,25 @@ export class RunnerComponentImporter
             throw new Error(`$component("${this.label}")::pipeline(): Invalid pipeline string. Please supply a valid pipeline string.`);
         }
         this._pipeline = p;
+        return this;
+    }
+
+    /** Bypass AND reset the component execution result cache for this call.
+     *
+     *  By default an identical component activation (same code, params, outputs, kernel) is
+     *  executed once and memoised on the Runner - so a wall repeated across a facade models
+     *  once. Reach for noCache() when the component is not a pure function of its params and
+     *  that memo would be wrong: it reads a $import()ed asset that changes under it, or a
+     *  script module that carries state between calls.
+     *
+     *      $component('./wall').noCache().params({ w: 100 }).model();
+     *
+     *  It also DROPS whatever was already memoised under this call's key, so the next
+     *  ordinary $component() re-executes rather than serving the result we just bypassed.
+     *  Order in the chain does not matter - the cache is only consulted at execution time. */
+    noCache(): this
+    {
+        this._useCache = false;
         return this;
     }
 
@@ -242,15 +291,36 @@ export class RunnerComponentImporter
 
         this._runner._checkRequestAndAddDefaults(request); // check request and add defaults if needed
 
-        console.info(`$component("${this.label}")::_executeComponentScript(): Executing component script with outputs: "${request.outputs.join(',')}"`);
-        
-        const r = this._runner._executeComponentScript(request);
-        
-        // Check for errors
-        if(r.status === 'error')
+        // Identity of this activation. Built AFTER _checkRequestAndAddDefaults, so the
+        // defaults it fills in (outputs above all) are part of the key rather than a
+        // difference the cache cannot see.
+        const cacheKey = this._runner._componentResultCacheKey(script, request);
+
+        // noCache() resets as well as bypasses: drop the stale memo now, so a later ordinary
+        // $component() re-executes instead of serving exactly what we were asked to skip.
+        if(!this._useCache){ this._runner.clearComponentResultCache(cacheKey); }
+
+        let r = this._useCache ? this._runner.getComponentResultFromCache(cacheKey) : null;
+        this._fromCache = !!r;
+
+        if(r)
         {
-            const msgs = (r.errors ?? []).map(e => (e && typeof e === 'object' && 'message' in e) ? (e as any).message : String(e)).join('; ');
-            throw new Error(`$component("${this.label}")::_executeComponentScript(): Error executing component script: ${msgs}`);
+            console.info(`$component("${this.label}")::_executeComponentScript(): Cache hit - reusing memoised result for outputs: "${request.outputs.join(',')}"`);
+        }
+        else
+        {
+            console.info(`$component("${this.label}")::_executeComponentScript(): Executing component script with outputs: "${request.outputs.join(',')}"`);
+
+            r = this._runner._executeComponentScript(request);
+
+            // Check for errors. Before caching: a component that threw gets another chance.
+            if(r.status === 'error')
+            {
+                const msgs = (r.errors ?? []).map(e => (e && typeof e === 'object' && 'message' in e) ? (e as any).message : String(e)).join('; ');
+                throw new Error(`$component("${this.label}")::_executeComponentScript(): Error executing component script: ${msgs}`);
+            }
+
+            if(this._useCache){ this._runner.addComponentResultToCache(cacheKey, r); }
         }
 
         //// TODO: 
@@ -280,7 +350,7 @@ export class RunnerComponentImporter
                 if(outPathObj.category === 'model' && outPathObj._output)
                 {
                     console.info(`$component("${this.label}")::_executeComponentScript(): Recreating component scene tree in main scope for pipeline "${pl}"...`);
-                    const recreatedNode = this._recreateComponentObjTree(outPathObj._output as ComponentGraphNode);
+                    const recreatedNode = this._recreateComponentObjTree(outPathObj._output as ComponentGraphNode, undefined, true, this._useCache);
                     // result is SmartShapeCollection of all (visible) shapes in the recreated subtree
                     const col = recreatedNode.shapes();
                     // Attach the root node so that .name() on the collection renames the scene node
@@ -323,7 +393,7 @@ export class RunnerComponentImporter
      *  creating fresh SceneNodes and re-binding each shape's `_modeler` to
      *  the main scope's modeler so subsequent ops (export, layouter, etc.)
      *  resolve against the correct kernel. */
-    _recreateComponentObjTree(tree: ComponentGraphNode, parentNode?: SceneNode, onlyVisible: boolean = true): SceneNode
+    _recreateComponentObjTree(tree: ComponentGraphNode, parentNode?: SceneNode, onlyVisible: boolean = true, copyShapes: boolean = false): SceneNode
     {
         if (onlyVisible && tree.style?.visible === false)
         {
@@ -341,7 +411,12 @@ export class RunnerComponentImporter
 
         if (tree.shape)
         {
-            const shape = tree.shape as any;
+            // Re-parenting MOVES a shape: it gets the main scope's modeler and a new node, and
+            // the caller is free to mutate it afterwards. That is fine for a one-shot result,
+            // but a memoised tree has to survive for the next hit - and a Shape can only be in
+            // one SceneNode - so hand out a clone whenever the result is (or just became)
+            // cached. Uncached calls keep the cheaper move.
+            const shape = (copyShapes ? this._copyComponentShape(tree.shape) : tree.shape) as any;
             shape._modeler = mainModeler;
             shape._node = null;
             newNode.setShape(shape);
@@ -358,12 +433,42 @@ export class RunnerComponentImporter
 
         tree.children.forEach(childData =>
         {
-            this._recreateComponentObjTree(childData, newNode, onlyVisible);
+            this._recreateComponentObjTree(childData, newNode, onlyVisible, copyShapes);
         });
 
         console.info(`$component("${this.label}")::_recreateComponentObjTree(): Recreated node "${newNode.name}" with ${newNode.shapes().length} shapes (including descendants)`);
 
         return newNode;
+    }
+
+    /** Clone one shape out of a cached component tree.
+     *
+     *  Not simply `_copy()`: that is each kernel's PURE clone and the two carry different
+     *  amounts of metadata with it - meshup drops name/material/modeler, brep keeps those but
+     *  does not carry `style`, which is where `.color()` on a shape lands. Restoring both
+     *  halves here keeps a cached component visually and nominally identical to an uncached
+     *  one, instead of leaking the difference into the scene. */
+    _copyComponentShape(shape: any): any
+    {
+        if (typeof shape?._copy !== 'function')
+        {
+            console.warn(`$component("${this.label}")::_copyComponentShape(): Shape has no _copy(); reusing the original. The memoised component tree may be mutated through it.`);
+            return shape;
+        }
+
+        const copy = shape._copy();
+
+        copy._name = shape._name;
+        copy._nameInherited = shape._nameInherited;
+        copy._material = shape._material;
+        copy._scene = shape._node?.root?.() ?? shape._scene;
+
+        if (shape.style && typeof copy.style?.merge === 'function')
+        {
+            copy.style.merge(shape.style.explicitData());
+        }
+
+        return copy;
     }
 
     //// UTILS ////

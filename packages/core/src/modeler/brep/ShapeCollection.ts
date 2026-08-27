@@ -39,6 +39,7 @@ import { flattenEntitiesToArray, flattenEntities, roundToTolerance } from '.'  /
 
 // special libraries
 import { Color } from '@archiyou/meshup'
+import { gridCounts } from '@archiyou/meshup'
 //import { packer } from 'guillotine-packer' // see: https://github.com/tyschroed/guillotine-packer
 // import { DxfWriter, Units } from '@tarikjabiri/dxf'; // TODO: after refactor
  
@@ -2172,17 +2173,20 @@ import { getOc } from './index' // OC global getter
          return this.union();
       }
 
-      /** Repeat the whole collection on a 3D grid. Mesh-kernel parity with row(). */
+      /** Repeat the whole collection on a 3D grid. Mesh-kernel parity with row().
+       *  Counts are floored and clamped to at least 1, so grid(4,3,0) is a flat 4x3 grid
+       *  in XY rather than an empty collection. */
       grid(cx:number=2, cy:number=2, cz:number=1, spacing:number=10):ShapeCollection
       {
+         const [nx,ny,nz] = gridCounts([cx,cy,cz], 'ShapeCollection::grid()');
          const bb = this.bbox();
          if(!bb){ return this }
          const step = [ bb.width() + spacing, bb.depth() + spacing, bb.height() + spacing ];
 
          const out = new ShapeCollection();
-         for (let z = 0; z < cz; z++){
-         for (let y = 0; y < cy; y++){
-         for (let x = 0; x < cx; x++)
+         for (let z = 0; z < nz; z++){
+         for (let y = 0; y < ny; y++){
+         for (let x = 0; x < nx; x++)
          {
             const first = (x === 0 && y === 0 && z === 0);
             this.shapes.forEach(sh =>

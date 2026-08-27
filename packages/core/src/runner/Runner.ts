@@ -67,6 +67,22 @@ import { ModuleRegistry } from '../modules/ModuleRegistry'; // optional, entitle
 import { MODELER_METHODS_INTO_GLOBAL, SCRIPT_OUTPUT_GLTF_OPTIONS_DEFAULT } from '../constants'; 
 import { ParamManager } from '../execution/ParamManager';
 
+/** How many component execution results the Runner memoises before evicting the
+ *  least-recently-used one. Every entry pins that run's Shapes in memory, so this is a
+ *  ceiling on growth over a long editor session rather than a performance knob. */
+const MAX_COMPONENT_RESULT_CACHE = 64;
+
+/** JSON with object keys sorted at every level, so two param objects that differ only in
+ *  key order hash the same. Plain JSON.stringify would make { w:1, h:2 } and { h:2, w:1 }
+ *  two separate cache entries - and a script that builds params dynamically hits that. */
+function stableStringify(v:any):string
+{
+    if(v === null || typeof v !== 'object'){ return JSON.stringify(v) ?? 'null'; }
+    if(Array.isArray(v)){ return `[${v.map(stableStringify).join(',')}]`; }
+    const keys = Object.keys(v).sort();
+    return `{${keys.map(k => `${JSON.stringify(k)}:${stableStringify(v[k])}`).join(',')}}`;
+}
+
 export class Runner
 {
     private _modeler:Modeler;
@@ -98,6 +114,15 @@ export class Runner
      *  reference can be live at once (a cycle, before the guard above trips), and they
      *  would otherwise share -- and then delete -- one entry in _localScopes. */
     private _componentScopeSeq = 0;
+    /** Memoised component EXECUTION results, keyed by _componentResultCacheKey(): a component
+     *  used twenty times in a facade would otherwise run its script twenty times. Insertion
+     *  ordered and capped, so it doubles as an LRU (see addComponentResultToCache).
+     *
+     *  Deliberately NOT cleared per run - the key includes the component's own code, so an
+     *  edit in the editor invalidates by itself, and a configurator changing one param keeps
+     *  the hits for every component that param does not reach. Bypass per call with
+     *  $component(..).noCache(), or wipe it with clearComponentResultCache(). */
+    private _componentResults: Map<string, RunnerScriptExecutionResult> = new Map();
     private _importAssets: Record<string, AssetPayload> = {}; // prefetched $import() assets by url (raw bytes)
     /** Optional script modules (see src/modules/). Persistent like _interactor:
      *  it caches loaded module instances so editor re-runs don't re-fetch a
@@ -1842,6 +1867,87 @@ ${contextLines.join('\n')}
         }
         return this._componentScripts[nameHash];
     }
+
+    //// COMPONENT EXECUTION RESULT CACHE ////
+
+    /* $component() is executed synchronously, once per call site, in a throwaway scope. Two
+       identical calls therefore ran the same script twice - which for a wall repeated across
+       a facade is the dominant cost of the whole run. The cache below memoises the raw
+       RunnerScriptExecutionResult so the second call only has to re-import the outputs.
+
+       Correctness rests on the key: it must cover EVERYTHING the component's outputs can
+       depend on, because nothing else invalidates it. See _componentResultCacheKey().
+
+       What it cannot see is a component that is not a pure function of its inputs (reading a
+       $import()ed asset that changed under it, or a module with its own state). Those call
+       $component(..).noCache(). */
+
+    /** Cache identity for one component activation.
+     *
+     *  - component  the reference/label. Not cosmetic: toComponentGraph() prefixes every
+     *               scene node name with it, so two labels are two different trees.
+     *  - code       the component's own source, so an edit in the editor misses by itself
+     *               (the prefetch overwrites _componentScripts with the new code each run).
+     *  - params     what the caller passed in. Key-order-insensitive, see stableStringify.
+     *  - outputs    a request for fewer outputs must not be served the fuller result, and
+     *               vice versa. Sorted: order carries no meaning.
+     *  - kernel/units  the same code models differently under brep and mesh.
+     */
+    _componentResultCacheKey(script:Script, request:RunnerScriptExecutionRequest):string
+    {
+        return hash(stableStringify({
+            component: request.component ?? '',
+            code: script?.code ?? '',
+            params: request.params ?? {},
+            outputs: [...(request.outputs ?? [])].sort(),
+            kernel: request.kernel ?? '',
+            unitSystem: request.unitSystem ?? '',
+        }));
+    }
+
+    /** Memoised result for a key, or null. A hit is refreshed to the most-recent end so the
+     *  eviction in addComponentResultToCache() drops what is genuinely least used. */
+    getComponentResultFromCache(key:string):RunnerScriptExecutionResult|null
+    {
+        const hit = this._componentResults.get(key);
+        if(!hit){ return null; }
+        this._componentResults.delete(key);
+        this._componentResults.set(key, hit);
+        return hit;
+    }
+
+    /** Memoise a component result. Errors are never cached: a component that threw must get
+     *  another chance next run, otherwise a transient failure sticks for the session. */
+    addComponentResultToCache(key:string, result:RunnerScriptExecutionResult):void
+    {
+        if(!result || result.status === 'error'){ return; }
+
+        this._componentResults.delete(key); // re-insert at the recent end
+        this._componentResults.set(key, result);
+
+        while(this._componentResults.size > MAX_COMPONENT_RESULT_CACHE)
+        {
+            const oldest = this._componentResults.keys().next().value as string;
+            this._componentResults.delete(oldest);
+        }
+    }
+
+    /** Drop one memoised result, or the whole cache when no key is given. */
+    clearComponentResultCache(key?:string):this
+    {
+        if(key === undefined)
+        {
+            console.info(`Runner::clearComponentResultCache(): Dropped all ${this._componentResults.size} memoised component results.`);
+            this._componentResults.clear();
+        }
+        else {
+            this._componentResults.delete(key);
+        }
+        return this;
+    }
+
+    /** Number of memoised component results. For tests and debugging. */
+    get componentResultCacheSize():number { return this._componentResults.size; }
 
     /** Build the ArchiyouStateData payload for a finished execution scope.
      *  Delegates to Modeler.toArchiyouState so Modeler.toGLB embeds the
