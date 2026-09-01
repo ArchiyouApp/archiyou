@@ -278,6 +278,8 @@ export interface ViewOptions
      *   - 'clip' [default] honour the scale and show what fits (with a warning)
      *   - 'fit'  fall back to fitting the drawing */
     overflow?:'clip'|'fit'
+    /** Extra CSS for the drawing, selector → declarations — see View.css(). */
+    css?:Record<string,string>
 }
 
 export interface CaptionOptions
@@ -374,6 +376,39 @@ export interface TitleBlockInput
     logoUrl ?: string // default: archiyou logo
     designLicense ?: PublishLicense // license of the design
     manualLicense ?: PublishLicense // license of the manual
+}
+
+/** How `Document.instructable()` lays an instructable's steps onto pages. */
+export interface InstructableOptions
+{
+    /** Step cells across the page. Default 2. */
+    columns?:number
+    /** Step cells down the page. Default 2 — so four steps a page on A4 landscape. */
+    rows?:number
+    /** Gap between cells, as a fraction of the content area. Default 0.03. */
+    gutter?:number
+    /** Draw the step number. Default true. */
+    numbering?:boolean
+    /** Text height of the step number. Default '7mm'. */
+    numberSize?:string|number
+    /** Text height of the step title. Default '4.5mm'. */
+    titleSize?:string|number
+    /** Text height of the note / tools line. Default '3mm'. */
+    noteSize?:string|number
+    /** Lines reserved for the note under each drawing. Default 2; 0 leaves none. */
+    noteLines?:number
+    /** Draw a border around each step cell. Default false. */
+    border?:boolean
+    /** Colour of the parts a step is NOT about, so the subject reads against them.
+     *  Default '#b0b0b0'. Null draws context the same as the subject. */
+    contextColor?:string|null
+    /** Colour of the part a step IS about. Default null — the drawing's own black. */
+    subjectColor?:string|null
+    /** Hidden-line strategy for the step drawings. Default 'clip', which is the one that
+     *  keeps per-part identity and so makes contextColor possible at all. */
+    strategy?:'raycast'|'exact'|'clip'|'painter'
+    /** Base name for the pages this creates. Default the instructable's own name. */
+    pageName?:string
 }
 
 export interface LabelBlockOptions

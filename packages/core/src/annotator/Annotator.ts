@@ -70,6 +70,33 @@ export class Annotator
     /** Height of that box, in text heights. */
     DIMENSION_TEXT_HEIGHT_FACTOR = 1.2;
 
+    /*  On-page sizes of a LABEL — a free-text callout — in millimeters, same contract as the
+        dimension sizes above. A label is bigger than a dimension value on purpose: it is
+        prose meant to be read, not a number read off a line.
+
+        NOTE the unit split. Label.offset and Label.angle are in SCREEN PIXELS and screen
+        degrees, because in the viewer a label is an HTML box floated over the canvas and
+        that is the only unit it has. On a PAGE there is no screen, so the leader is sized
+        from `length` in millimeters, or from LABEL_LEADER_LENGTH_MM when the script named
+        none — and the pixel figure is used only as a last resort, when neither a page scale
+        nor a drawing size is known. Do not "unify" the two: `length` is one NAME for the
+        leader, not one unit, and they measure different things for different renderers. */
+
+    /** Height of a label's text (mm on the page) */
+    LABEL_TEXT_SIZE_MM = 2.5;
+    /** Line weight of a label's leader (mm on the page) */
+    LABEL_LINE_WIDTH_MM = 0.15;
+    /** Length of the leader from the anchor out to the text (mm on the page) */
+    LABEL_LEADER_LENGTH_MM = 8;
+    /** Diameter of the circular anchor marker (mm on the page) */
+    LABEL_MARKER_SIZE_MM = 1.5;
+    /** Width of the arrowhead anchor marker, for `target: 'arrow'` (mm on the page) */
+    LABEL_ARROW_SIZE_MM = 2;
+    /** Longest text that still goes in a circle. Past this a label that did not ask for a
+     *  shape gets a rectangle instead — see labelShapeFor(). 0 never circles; a big number
+     *  always does. */
+    LABEL_CIRCLE_MAX_CHARS = 3;
+
     //// END SETTINGS ////
 
     _archiyou:ArchiyouModules;

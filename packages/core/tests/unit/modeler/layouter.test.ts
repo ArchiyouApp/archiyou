@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from 'vitest'
+import { beforeAll, describe, expect, test, vi } from 'vitest'
 
 import { createNodeIO } from '@archiyou/meshup'
 
@@ -96,6 +96,111 @@ describe('Layouter', () =>
         const animationNames = doc.getRoot().listAnimations().map((animation: any) => animation.getName())
 
         expect(animationNames).toEqual(['exploded'])
+    })
+
+    //// PART STACK ////
+
+    /** A workbench: 4 legs, 2 rails, a top — three parts in three quantities. */
+    const buildWorkbench = () =>
+    {
+        modeler.reset()
+
+        modeler.group('legs',
+            ...[0, 1, 2, 3].map(i => modeler.box(44, 44, 700)
+                .moveToX(i % 2 ? 1100 : 0).moveToY(i < 2 ? 500 : 0).name('leg')))
+        modeler.group('frame',
+            ...[0, 1].map(i => modeler.box(1180, 44, 60).moveToY(i * 500).moveToZ(600).name('rail')))
+        modeler.group('top', modeler.box(1200, 600, 18).moveToZ(730).name('top panel'))
+    }
+
+    /** Every laid-out shape, by its bbox after the layout has been applied. */
+    const stackedBoxes = () => modeler.all().toArray()
+        .map((shape: any) => shape.bbox())
+        .sort((a: any, b: any) => (a.center().x - b.center().x) || (a.center().z - b.center().z))
+
+    test('partStack stacks the pieces of a part and rows the stacks up, most used first', () =>
+    {
+        buildWorkbench()
+
+        const transforms = new Layouter(modeler.scene()).partStack().result().transforms
+        expect(transforms).toHaveLength(7)          // one per piece, not one per part
+
+        new Layouter(modeler.scene()).partStack().apply()
+
+        const boxes = stackedBoxes()
+
+        /*  Four legs in one stack, then two rails, then the top: the most-used part leads, and
+            every piece of a part shares its stack's footprint. */
+        const columns = boxes.reduce((groups: Array<Array<any>>, box: any) =>
+        {
+            const column = groups.find(g => Math.abs(g[0].center().x - box.center().x) < 1e-6)
+            if (column) { column.push(box) } else { groups.push([box]) }
+            return groups
+        }, [])
+
+        expect(columns.map((c: Array<any>) => c.length)).toEqual([4, 2, 1])
+    })
+
+    test('partStack lays every piece flat, thinnest side up', () =>
+    {
+        buildWorkbench()
+        new Layouter(modeler.scene()).partStack().apply()
+
+        // a 44x44x700 leg and a 1200x600x18 top both end up as thick as their thinnest side
+        const heights = stackedBoxes().map((b: any) => +(b.max().z - b.min().z).toFixed(6))
+        expect(heights.slice(0, 4)).toEqual([44, 44, 44, 44])
+        expect(heights[heights.length - 1]).toBe(18)
+    })
+
+    test('partStack piles a stack up from the ground, one thickness at a time', () =>
+    {
+        buildWorkbench()
+        new Layouter(modeler.scene()).partStack().apply()
+
+        const legs = stackedBoxes().slice(0, 4)
+        ;[0, 44, 88, 132].forEach((z, i) => expect(legs[i].min().z).toBeCloseTo(z, 6))
+        expect(new Set(legs.map((b: any) => +b.center().x.toFixed(6))).size).toBe(1)
+        expect(new Set(legs.map((b: any) => +b.center().y.toFixed(6))).size).toBe(1)
+    })
+
+    test('partStack leaves a gap between stacks, and none inside one unless asked', () =>
+    {
+        buildWorkbench()
+        new Layouter(modeler.scene()).partStack({ spacing: 100, gap: 10 }).apply()
+
+        const boxes = stackedBoxes()
+
+        // inside the leg stack: 44 of board, then 10 of air
+        ;[0, 54, 108, 162].forEach((z, i) => expect(boxes[i].min().z).toBeCloseTo(z, 6))
+
+        // between the leg stack and the rail stack: 100
+        const legsEnd = Math.max(...boxes.slice(0, 4).map((b: any) => b.max().x))
+        const railsStart = Math.min(...boxes.slice(4, 6).map((b: any) => b.min().x))
+        expect(railsStart - legsEnd).toBeCloseTo(100, 6)
+    })
+
+    test('partStack does not touch the scene until it is applied', () =>
+    {
+        buildWorkbench()
+        const before = modeler.all().toArray().map((s: any) => s.center().toArray())
+
+        new Layouter(modeler.scene()).partStack().result()
+
+        expect(modeler.all().toArray().map((s: any) => s.center().toArray())).toEqual(before)
+    })
+
+    test('partStack says so when it is handed something that is not a part', () =>
+    {
+        buildWorkbench()
+        modeler.line([0, 0, 0], [100, 0, 0])
+
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const transforms = new Layouter(modeler.scene()).partStack().result().transforms
+        const messages = warn.mock.calls.flat().join(' ')
+        warn.mockRestore()
+
+        expect(transforms).toHaveLength(7)          // the line is not one of them
+        expect(messages).toContain('not a part')
     })
 
     /** Extended example for visual inspection */

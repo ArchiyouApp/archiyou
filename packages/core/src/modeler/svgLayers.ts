@@ -177,6 +177,8 @@ export interface RenderDrawingOptions
     square?: boolean
     /** Confine the stylesheet to this class — see BuildSVGDocumentOptions.scoped. */
     scoped?: string
+    /** Extra CSS rules, already scoped by the caller — see BuildSVGDocumentOptions.css. */
+    css?: string
     units?: ModelUnits
     title?: string
 }
@@ -223,9 +225,11 @@ export function renderDrawingFromLayer(
     const layers: Array<SVGLayer> = [geometry]
 
     let annotated = false
+    let drawn:Array<any> = []
     if (options?.annotations !== false)
     {
-        const annotations = annotationLayer(collectAnnotations(o), {
+        drawn = collectAnnotations(o)
+        const annotations = annotationLayer(drawn, {
             unitsPerMm: options?.unitsPerMm,
             drawingSize: size,
         })
@@ -233,11 +237,14 @@ export function renderDrawingFromLayer(
         layers.push(annotations)
     }
 
-    /*  Room for the value text at the middle of a dimension line — a few characters wide.
-        In real page millimeters when the scale is known; otherwise a fraction of the drawing,
-        since a flat number of model units cropped anything bigger than a small part. */
+    /*  Room for what an annotation hangs outside its own extents — the value text at the
+        middle of a dimension line, the leader and text box of a label. In real page
+        millimeters when the scale is known; otherwise a fraction of the drawing, since a flat
+        number of model units cropped anything bigger than a small part. The annotations are
+        handed over so a drawing with labels gets their longer reach and one without is framed
+        exactly as before. */
     const margin = !annotated ? 0
-                    : (options?.unitsPerMm) ? options.unitsPerMm * annotationMarginMm(o?._modeler?.modules?.annotator)
+                    : (options?.unitsPerMm) ? options.unitsPerMm * annotationMarginMm(o?._modeler?.modules?.annotator, drawn)
                     : Math.max(10, size / 30)
 
     const stroke: SVGStroke = (options?.unitsPerMm)
@@ -255,6 +262,7 @@ export function renderDrawingFromLayer(
                 ? { ...options.frame, margin: (options.frame as any).margin ?? margin }
                 : { mode: 'fit', padding: options?.padding ?? 0, square: options?.square === true, margin },
         scoped: options?.scoped,
+        css: options?.css,
         units: options?.units ?? o?._modeler?.units?.(),
         title: options?.title,
     })

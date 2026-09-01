@@ -17,6 +17,36 @@ export const activeAnimation  = signal<string | null>(null);
  *  model-viewer watches this and forces a camera re-frame on the next GLB load. */
 export const resetCameraCounter = signal<number>(0);
 
+//// INSTRUCT ////
+
+/*  Step-by-step playback of an instructable. The viewer owns the API and the scene work; a
+    tool drives it from here, so the controls can live wherever they read best without the
+    tool having to reach across shadow roots for the viewer element. */
+
+/** Which instructable is being stepped through, null when playback is off. */
+export const instructName = signal<string | null>(null);
+/** Which step, -1 when off. */
+export const instructStep = signal<number>(-1);
+/** What the viewer found in the current run — the tool renders its list off this. */
+export const instructAvailable = signal<Array<{ name: string; title?: string; steps: number }>>([]);
+
+export function setInstructStep(name: string | null, index: number): void
+{
+  instructName.set(name);
+  instructStep.set(index);
+}
+
+export function clearInstructStep(): void
+{
+  instructName.set(null);
+  instructStep.set(-1);
+}
+
+export function setInstructAvailable(list: Array<{ name: string; title?: string; steps: number }>): void
+{
+  instructAvailable.set(list);
+}
+
 export function setViewStyleId(id: string | null): void { viewStyleId.set(id); }
 export function setCameraOrtho(ortho: boolean): void { cameraOrtho.set(ortho); }
 export function setArActive(active: boolean): void { arActive.set(active); }

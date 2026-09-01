@@ -29,6 +29,7 @@ import { Type } from 'typebox'
 import { roundTo } from '../utils' // utils
 import { MM_PER_UNIT, toMM, formatLength } from '../units/UnitConverter'
 import { DOC_DEFAULT_SVG_FONT_FAMILY } from '../constants'
+import { svgXY, svgLine, svgLeader, svgArrow, svgTextLabel } from './svgPrimitives'
 
 /*  Fallbacks for the label proportions, used only when a DimensionLine cannot reach an
     Annotator (a line built outside the app, a unit test). The real settings live on the
@@ -1094,9 +1095,7 @@ export class DimensionLine extends BaseAnnotation
      *  lines that were emitted but could never be drawn. */
     _svgXY(p:PointLike):{ x:number, y:number }
     {
-        const a = p as any;
-        if (Array.isArray(a)){ return { x: a[0] ?? 0, y: a[1] ?? 0 } }
-        return { x: a?.x ?? 0, y: a?.y ?? 0 };
+        return svgXY(p);
     }
 
     /** Where the value goes when it does not fit on the line: off to the side, on a leader.
@@ -1123,21 +1122,14 @@ export class DimensionLine extends BaseAnnotation
     /** The leader from a too-short dimension line out to its value. */
     _makeSvgLabelLeader(from:Array<number>, to:Array<number>, strokeWidth:number=0.5):string
     {
-        return `<line class="annotation line leader" style="stroke:black;stroke-width:${+strokeWidth.toFixed(4)}" `
-            + `x1="${+from[0].toFixed(4)}" y1="${+from[1].toFixed(4)}" `
-            + `x2="${+to[0].toFixed(4)}" y2="${+to[1].toFixed(4)}"/>`;
+        return svgLeader(from, to, strokeWidth);
     }
 
     /** Generate a line segment in SVG (with SVG coords) */
     @validate(PointLikeSchema, PointLikeSchema)
     _makeSvgLinePath(start:PointLike, end:PointLike, strokeWidth:number=0.5)
     {  
-       const startPoint = this._svgXY(start);
-       const endPoint = this._svgXY(end);
-       // stroke:black inline — the kernels' `.line` rule covers this too, but a dimension has
-       // to survive being pulled out of that stylesheet (a DOM-less SVG rasterizer, a copy of
-       // just the <g class="dimensionline">).
-       return `<line class="annotation line" style="stroke:black;stroke-width:${+strokeWidth.toFixed(4)}" x1="${startPoint.x}" y1="${startPoint.y}" x2="${endPoint.x}" y2="${endPoint.y}"/>`
+       return svgLine(start, end, strokeWidth);
     }
 
     /** Place SVG arrow on position and rotation. Tip of the arrow is pivot */
@@ -1145,35 +1137,9 @@ export class DimensionLine extends BaseAnnotation
     @validate(PointLikeSchema, Type.Optional(Type.Boolean({ default: false })))
     _makeSvgArrow(at:PointLike, flip?:boolean, strokeWidth:number=0.5, arrowScale:number=1)
     {
-       /*   Arrows in raw SVG
-            - Pivot of arrow is at [0,0] pointing upwards (in SVG coordinate system of course)
-            - use style for fill/stroke, so we can override it later (not tags fill="..")
-            - TODO: different arrow styles
-        */
-       const SIZE = '10 5'; // Size of non-rotated graphic, use this for scaling
-       // stroke:black — nothing else styles `.arrow-path`, and SVG's default stroke is `none`,
-       // so without it the arrowheads were simply not drawn.
-       const ARROWS_SVG  = {
-            default: `<path class="arrow-path" style="fill:none;stroke:black;stroke-width:${+(strokeWidth / arrowScale).toFixed(4)}" d="M -5 5 L 0 0 L 5 5" />`
-       }
-       const DEFAULT_ARROW_SVG = 'default'
-
-       const atPoint = this._svgXY(at);
-        
+       // The glyph points along the dimension line; `flip` turns it round for the far end.
        const rotation = (flip) ? this.getSVGRotation() - 90 + 180: this.getSVGRotation() - 90;
-       
-       // NOTE: underscores _ in attributes are omitted (_worldSize => worldSize)
-       return `
-          <g 
-                class="annotation arrow ${(flip) ? 'end' : 'start'}"
-                worldSize="${SIZE}"
-                transform="translate(${atPoint.x} ${atPoint.y}) 
-                            rotate(${rotation})
-                            scale(${+arrowScale.toFixed(4)} ${+arrowScale.toFixed(4)})
-                            ">
-                            ${ARROWS_SVG[DEFAULT_ARROW_SVG]}
-          </g>`
-        
+       return svgArrow(at, rotation, strokeWidth, arrowScale, flip === true);
     }
 
     /** An annotation setting, from the Annotator when one is reachable. */
@@ -1200,42 +1166,17 @@ export class DimensionLine extends BaseAnnotation
     @validate(PointLikeSchema, Type.String())
     _makeSvgTextLabel(at:PointLike, text:string, fontSize:number=1): string
     {
-        const atPoint = this._svgXY(at);
-        const angle = this._labelAngle();
-
         /*  A backing box, so the value stays readable where the dimension line, the geometry
-            or another dimension runs under it. Sized by glyph count rather than measured:
-            there are no font metrics here (this runs in a worker and in node alike), and the
-            legacy code only got them because it measured inside jsPDF at draw time. An
-            over-wide box merely hides a little more of the line it sits on. */
-        const background = this._setting('DIMENSION_TEXT_BACKGROUND_COLOR');
-
-        const w = Math.max(1, text.trim().length) * fontSize * this._setting('DIMENSION_TEXT_CHAR_WIDTH_FACTOR')
-                    + fontSize * this._setting('DIMENSION_TEXT_PADDING_FACTOR');
-        const h = fontSize * this._setting('DIMENSION_TEXT_HEIGHT_FACTOR');
-
-        const rect = (!background) ? '' :
-            `<rect class="annotation text-background" `
-            + `x="${+(atPoint.x - w/2).toFixed(4)}" y="${+(atPoint.y - h/2).toFixed(4)}" `
-            + `width="${+w.toFixed(4)}" height="${+h.toFixed(4)}" `
-            + `style="fill:${background};stroke:none" />`;
-
-        /*  NOTE: the rotation is applied HERE, not left on a `data-angle` for a renderer to
-            pick up later. There is no later any more — this SVG is the drawing, in the editor
-            and in the PDF alike. */
-        return `<g class="annotation dimension-label" transform="rotate(${+angle.toFixed(4)} ${atPoint.x} ${atPoint.y})">
-                    ${rect}
-                    <text
-                        class="annotation text"
-                        text-anchor="middle"
-                        alignment-baseline="middle"
-                        font-family="${DOC_DEFAULT_SVG_FONT_FAMILY}"
-                        font-size="${+fontSize.toFixed(4)}"
-                        style="fill:black;stroke-opacity:0;stroke-width:0"
-                        x="${atPoint.x}"
-                        y="${atPoint.y}"
-                        dominant-baseline="central">${text}</text>
-                </g>`;
+            or another dimension runs under it. */
+        return svgTextLabel(at, text, fontSize, {
+            angle: this._labelAngle(),
+            cssClass: 'dimension-label',
+            background: this._setting('DIMENSION_TEXT_BACKGROUND_COLOR'),
+            charWidthFactor: this._setting('DIMENSION_TEXT_CHAR_WIDTH_FACTOR'),
+            paddingFactor: this._setting('DIMENSION_TEXT_PADDING_FACTOR'),
+            heightFactor: this._setting('DIMENSION_TEXT_HEIGHT_FACTOR'),
+            fontFamily: DOC_DEFAULT_SVG_FONT_FAMILY,
+        });
     }
 
     // NOTE: do very little styling here to be able to easily style with CSS. Only stroke-width is good to set (default is 1, 0.5 sets it apart from Shapes)

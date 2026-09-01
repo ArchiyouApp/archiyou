@@ -418,6 +418,10 @@ export interface BuildSVGDocumentOptions
     scoped?: string
     /** Extra `data-*` attributes on the root element. */
     data?: Record<string, string | number>
+    /** Extra CSS rules, appended after the base stylesheet so they win at equal specificity.
+     *  Already-scoped text: the caller prefixes its own selectors, because only it knows
+     *  which scope they belong to (see View.css). */
+    css?: string
 }
 
 /** Frame a set of layers into one SVG document — the single writer of an Archiyou drawing.
@@ -457,11 +461,18 @@ export function buildSVGDocument(o: BuildSVGDocumentOptions): string | null
 
     const stroke: SVGStroke = o.stroke ?? { mode: 'device' }
     const scope = o.scoped ? `.${o.scoped} ` : ''
-    const style = (stroke.mode === 'device')
+    const base = (stroke.mode === 'device')
                     ? stylesheet(stroke.width ?? DEFAULT_STROKE_WIDTH, scope)
                     : stylesheetMm(
                         +(stroke.mode === 'mm' ? stroke.widthMm * stroke.unitsPerMm : stroke.width).toFixed(4),
                         scope)
+
+    /*  Extra rules go in their own <style>, AFTER the base one. Same specificity, later
+        source, so they win — which is what lets a caller draw one group of a drawing
+        differently (an instructable's context parts, say) without this module knowing what a
+        group means. Inline presentation attributes could not do it: in SVG a stylesheet rule
+        beats an attribute, so `.line{stroke:black}` would override the shape's own colour. */
+    const style = o.css ? `${base}<style>${o.css}</style>` : base
 
     const content = layers.map(l =>
         {

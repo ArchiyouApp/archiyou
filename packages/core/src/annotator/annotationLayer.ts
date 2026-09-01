@@ -17,20 +17,54 @@ import type { SVGLayer } from '../modeler/SVGExporter'
  *  Three times the default 4mm value text — see annotationMarginMm(). */
 export const ANNOTATION_MARGIN_MM = 12
 
+/** Fallbacks for a label's reach, when the Annotator carrying the real settings cannot be
+ *  reached. Mirror Annotator.LABEL_LEADER_LENGTH_MM / LABEL_TEXT_SIZE_MM. */
+const LABEL_LEADER_MARGIN_MM = 8
+const LABEL_TEXT_MARGIN_MM = 2.5
+
 /** Room a drawing's annotations need beyond their own extents, in page millimeters.
  *
  *  A dimension line reports the box of the LINE. Its value text sits at the middle of that
  *  line and its arrowheads straddle the ends, so both stick out past it — by an amount that
  *  follows the text size, not a fixed number of millimeters. Derived rather than fixed so
  *  that raising `annotator.DIMENSION_TEXT_SIZE_MM` cannot quietly start clipping labels;
- *  set `DIMENSION_MARGIN_MM` to pin it. */
-export function annotationMarginMm(annotator?:any):number
+ *  set `DIMENSION_MARGIN_MM` to pin it.
+ *
+ *  A LABEL reaches further still: it reports only its anchor (see Label.toShape) and hangs a
+ *  text box, and sometimes a leader, off it. Pass the annotations actually being drawn and
+ *  that extra room is included — but ONLY when a label is among them, so a drawing carrying
+ *  nothing but dimensions is framed exactly as it always was. Called without them, this
+ *  answers the dimension question alone, which is what every existing caller meant.
+ *
+ *  The leader is counted only when one is actually drawn. A label sitting ON the thing it
+ *  names — the page's default, see AnnotatorLabel — reaches no further than its own box, and
+ *  reserving a leader's length for it shrinks every drawing on the page for nothing.
+ */
+export function annotationMarginMm(annotator?:any, annotations?:Array<any>):number
 {
     const explicit = annotator?.DIMENSION_MARGIN_MM;
     if(typeof explicit === 'number' && explicit >= 0){ return explicit }
 
     const textMm = annotator?.DIMENSION_TEXT_SIZE_MM;
-    return (typeof textMm === 'number' && textMm > 0) ? textMm * 3 : ANNOTATION_MARGIN_MM;
+    const dimensionMm = (typeof textMm === 'number' && textMm > 0) ? textMm * 3 : ANNOTATION_MARGIN_MM;
+
+    const labels = (annotations ?? []).filter(a => a?._type === 'label');
+    if(!labels.length){ return dimensionMm }
+
+    const leaderMm = annotator?.LABEL_LEADER_LENGTH_MM;
+    const labelTextMm = annotator?.LABEL_TEXT_SIZE_MM;
+
+    const drawsLeader = labels.some(a => a.line && !a._isLabelOnly?.());
+    const reachMm = !drawsLeader ? 0
+        : labels.reduce((longest:number, a:any) =>
+            Math.max(longest, (typeof a.length === 'number' && a.length > 0) ? a.length
+                : (typeof leaderMm === 'number' && leaderMm > 0) ? leaderMm
+                : LABEL_LEADER_MARGIN_MM), 0);
+
+    const labelMm = reachMm
+                  + ((typeof labelTextMm === 'number' && labelTextMm > 0) ? labelTextMm : LABEL_TEXT_MARGIN_MM) * 2;
+
+    return Math.max(dimensionMm, labelMm);
 }
 
 /** Annotations linked to a Shape or a ShapeCollection of EITHER kernel, deduped.

@@ -16,6 +16,7 @@ import type { Mesh } from '@archiyou/meshup';
 import { Table } from '../calc/Table';
 
 import { BinPacker } from '@archiyou/gdrr2bp-wasm';
+import { collectParts } from './parts';
 import type { CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm';
 
 import { Static } from 'typebox';
@@ -110,6 +111,14 @@ type MeshModeler = Omit<Modeler,
         polygon(...args: Parameters<Modeler['polygon']>): meshup.Polygon
         vertex(...args: Parameters<Modeler['vertex']>): meshup.Vertex
     }
+
+/** Options for {@link Make.partList}. */
+export interface PartListOptions
+{
+    /** Add a `label` column (A, B, C …) as the first column. Default false — scripts read
+     *  these rows positionally, so the shift is opt-in. */
+    labels?: boolean
+}
 
 export class Make
 {
@@ -1577,16 +1586,22 @@ export class Make
      *   - organize shapes into groups (group name → part name)
      *   - name individual shapes (shape name → subpart name)
      */
-    partList(shapes: ShapeCollection, name?: string): Table
+    partList(shapes: ShapeCollection, name?: string, options?: PartListOptions): Table
     {
+        const withLabels = options?.labels === true;
+
+        /*  `label` is opt-in and goes FIRST when it is on. Off by default because scripts read
+            these rows positionally (see the cadscripts) and silently shifting every column
+            would break them. `docs.instruct` always asks for it. */
         const COLUMNS = [
+            ...(withLabels ? ['label'] : []),
             'part',
             'subpart',
             'type',
             'section',
             'length',
             'quantity'
-        ]; // TODO: label system, materials
+        ]; // TODO: materials
 
         if (
             !ShapeCollection.isShapeCollection(shapes) ||
@@ -1598,98 +1613,29 @@ export class Make
             );
         }
 
-        const BEAM_RATIO = 2; // length / width to count as a beam
-        const PLATE_RATIO = 10; // width / thickness to count as a plate
-
-        /** Classify a single shape as beam/plate and extract its section + length from the OBB.
-         *  Returns null when the shape is not a usable cuboid solid. */
-        const classify = (
-            shape: any
-        ): {
-            type: 'beam' | 'plate';
-            width: number;
-            thickness: number;
-            length: number;
-        } | null =>
-        {
-            if (typeof shape?.obbox !== 'function') return null;
-            if (shape.isSolid?.() === false) return null; // only solids (mesh / brep), not curves
-
-            const obb = shape.obbox();
-            if (!obb || obb.is3D?.() === false) return null;
-
-            // sort dimensions ascending
-            const [thickness, width, length] = [
-                obb.width(),
-                obb.height(),
-                obb.depth()
-            ].sort((a, b) => a - b);
-            if (thickness <= 0) return null;
-
-            const isBeam = length / width >= BEAM_RATIO;
-            const isPlate = width / thickness >= PLATE_RATIO;
-            if (!isBeam && !isPlate) return null; // cube-ish blocks are neither beam nor plate
-
-            return { type: isBeam ? 'beam' : 'plate', width, thickness, length };
-        };
-
         console.info(
             `Make::partList(shapes, name): Got ${shapes.length} shape(s) to make a part list with. Naming and grouping shapes improves the result.`
         );
 
-        const partRowsAll: Array<Array<any>> = [];
-
-        shapes.forEachGroup((groupName, groupedShapes) =>
-        {
-            groupedShapes.forEach(shape =>
-            {
-                if ((shape as any).style?.visible === false) return; // skip hidden shapes
-
-                const dims = classify(shape);
-                if (!dims) return;
-                ``;
-                // part (0), subpart (1), type (2), section (3), length (4), quantity (5)
-                partRowsAll.push([
-                    groupName,
-                    (shape as any).name?.() ?? '',
-                    dims.type,
-                    `${Math.round(dims.width)}x${Math.round(dims.thickness)}`,
-                    Math.round(dims.length),
-                    1
-                ]);
-            });
+        /*  A cut list is beams and plates. A block — measurable, solid, but neither long nor
+            thin — is not something you cut to length, so it is left out, as it always has
+            been. docs.instruct asks collectParts() for all three kinds instead, because a
+            manual step cannot point at a part that has no name. */
+        const parts = collectParts(shapes, {
+            kinds: ['beam', 'plate'],
+            order: 'scene',
+            labels: withLabels ? 'alpha' : false,
         });
 
-        // Merge identical parts (same part, type, section & length); accumulate subpart names + quantity
-        const groupedPartRows: Record<string, Array<any>> = {};
-        const genId = (row: Array<any>) =>
-            `${row[0]}-${row[2]}-${row[3]}-${row[4]}`; // part, type, section, length
-
-        partRowsAll.forEach(row =>
-        {
-            const id = genId(row);
-            if (!groupedPartRows[id])
-            {
-                groupedPartRows[id] = [...row];
-            }
-            else
-            {
-                const subpart = row[1];
-                if (
-                    subpart &&
-                    groupedPartRows[id][1].indexOf(subpart) === -1
-                ) // avoid repeating names
-                {
-                    groupedPartRows[id][1] += groupedPartRows[id][1]
-                        ? `,${subpart}`
-                        : subpart;
-                }
-                groupedPartRows[id][5] += 1; // quantity
-            }
-        });
-
-        // After grouping flatten again into Array
-        const groupedRows = Object.values(groupedPartRows) as Array<Array<any>>; // [ [row1], [row2], ...]
+        const groupedRows = parts.map(part => ([
+            ...(withLabels ? [part.label] : []),
+            part.group,
+            part.name,
+            part.measure.kind,
+            part.section,
+            part.length,
+            part.quantity,
+        ]));
 
         // Make Calc table
         const tableName =

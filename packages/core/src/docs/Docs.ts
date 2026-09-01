@@ -35,10 +35,11 @@ import type { PageOrientation, ScaleInput, ImageOptions, TextOptions,
         ContainerPositionLike, PageSize, DocPathStyle, WidthHeightInput,
         ContainerTableInput, TableContainerOptions as TableOptions,
         DocGraphicInputRect, DocGraphicInputCircle, DocGraphicInputOrthoLine,
-        ContainerBlock, TitleBlockInput, LabelBlockOptions,
+        ContainerBlock, TitleBlockInput, LabelBlockOptions, InstructableOptions,
         DocSettings, DocUnits, DocData, DocSVGPage, ViewOptions } from './types'
 
 import { Document } from './Document'
+import { Instruct } from './instruct/Instruct'
 import { PDFExporter } from './PDFExporter'
 
 
@@ -65,6 +66,8 @@ export class Docs
     _docs:Array<Document> = []; // multiple Documents names (see them as 'files')
 
     _activeDoc:Document; // active Document instance
+
+    _instructs:Array<Instruct> = []; // instructables (see instruct/Instruct.ts)
 
     _assetsCache:Record<string,any> = {}; // keep assets like images in cache to avoid reloading on every toData() call
 
@@ -147,6 +150,7 @@ export class Docs
     {
         this._docs = [];
         this._activeDoc = null;
+        this._instructs = [];
     }
 
     _setDefaults():Docs
@@ -261,6 +265,49 @@ export class Docs
         return newDoc;
     }
 
+    //// INSTRUCTABLES ////
+
+    /** Make or get an instructable — a step-by-step manual generated from the finished scene.
+     *
+     *  Mirrors create(): the Docs module owns them, the Instruct carries the building API.
+     *  One script can hold several (an assembly manual and a maintenance manual are different
+     *  sequences over the same model), and calling this twice with one name returns the same
+     *  one rather than starting a second.
+     *
+     *      docs.instruct('assembly')
+     *          .title('Workbench')
+     *          .parts()                       // identify + label + print
+     *          .step('Bolt the rails to the legs')
+     *              .shapes('A', 'B')
+     *              .subject('B')
+     *              .camera('front')
+     *              .move({ from: 'top' });
+     */
+    instruct(name:string = 'instructable'):Instruct
+    {
+        const existing = this._instructs.find(i => i._name === name);
+        if(existing){ return existing }
+
+        const made = new Instruct(this, name);
+        this._instructs.push(made);
+
+        console.info(`Docs::instruct(): Created instructable "${name}"`);
+
+        return made;
+    }
+
+    /** Names of the instructables in this script. */
+    instructs():Array<string>
+    {
+        return this._instructs.map(i => i._name);
+    }
+
+    /** One instructable by name, or null. */
+    getInstruct(name:string):Instruct|null
+    {
+        return this._instructs.find(i => i._name === name) ?? null;
+    }
+
     /** Check if there is an active Document, otherwise create a default one */
     checkAndMakeDefaultDoc():Document
     {
@@ -299,6 +346,7 @@ export class Docs
     set(name:string, value:string):Document { return this.checkAndMakeDefaultDoc().set(name, value); }
     titleblock(data?:TitleBlockInput):Document { return this.checkAndMakeDefaultDoc().titleblock(data); }
     labelblock(labels:string|Array<string>, texts:string|Array<string>, options?:LabelBlockOptions):Document { return this.checkAndMakeDefaultDoc().labelblock(labels, texts, options); }
+    instructable(name?:string, options?:InstructableOptions):Document { return this.checkAndMakeDefaultDoc().instructable(name, options); }
     lastBlock():ContainerBlock { return this.checkAndMakeDefaultDoc().lastBlock(); }
     width(n:WidthHeightInput):Document { return this.checkAndMakeDefaultDoc().width(n); }
     height(n:WidthHeightInput):Document { return this.checkAndMakeDefaultDoc().height(n); }

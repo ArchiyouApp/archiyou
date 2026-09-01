@@ -9,8 +9,10 @@ import type {
     LayoutTransformation,
     LayoutTransformationResult,
     LayoutViewOptions,
+    PartStackLayoutOptions,
     AnyShape,
 } from './types'
+import { collectParts } from './parts'
 
 import { TOLERANCE } from '@archiyou/meshup'
 
@@ -195,6 +197,111 @@ export class Layouter
         console.info(`Layouter::rowOrtho(): Completed in ${(performance.now() - t).toFixed(2)} ms.`);
 
         return this;
+    }
+
+    /** Lay every part out flat and stack its pieces, one stack per part, side by side in a
+     *  row — the pile of cut material a project starts from, most-used part first.
+     *
+     *  Where rowOrtho() lays out SHAPES, one after another, this lays out PARTS: the four legs
+     *  of a table are one stack four boards high, not four boards in a row. On a model with
+     *  any repetition that is the difference between a row you can read and a row that runs off
+     *  the page — and it is what someone taking the cut list to a saw actually has in front of
+     *  them.
+     *
+     *  What counts as "the same part" is not this module's opinion: it is `collectParts()`,
+     *  which `Make.partList()` and `docs.instruct` share. Same layer, same kind, same section,
+     *  same length. Note the layer — two identical beams in different sub-assemblies are two
+     *  parts, and so two stacks, which is the answer a cut list and a manual already give.
+     *
+     *  Each piece is turned the way rowOrtho turns one, by the OBB's own ortho quaternion:
+     *  longest side along X, thinnest along Z. So a stack grows in Z by the part's thickness,
+     *  a row advances in X by its length, and the whole arrangement sits on the XY plane.
+     *
+     *  Anything that is not a part — a curve, a vertex, a solid too degenerate to measure —
+     *  gets no transform and stays where it was. It is said out loud rather than silently
+     *  dropped, because a stray shape sitting in the middle of the stacks looks like a bug in
+     *  the layout.
+     */
+    partStack(options: PartStackLayoutOptions = {}): this
+    {
+        const t = performance.now();
+        console.info('Layouter::partStack(): Starting part stack layout...');
+
+        const spacing = options.spacing ?? 5;
+        const gap = options.gap ?? 0;
+        const includeHidden = options.includeHidden === true;
+
+        /*  Detected here unless the caller already knows — an instructable does, and its parts
+            are the ones its steps are written in terms of. See Instruct._stepParts(). */
+        const parts = options.parts
+            ?? collectParts(this._scene, { labels: false, order: 'scene', includeHidden });
+
+        /*  Most used first: the biggest pile leads, and volume breaks a tie so that two parts
+            you need four of each are ordered the way a cut list orders them. */
+        const ordered = [...parts].sort((a, b) =>
+            (b.quantity - a.quantity) || (b.measure.volume - a.measure.volume));
+
+        // collectParts hands back the shapes; the transforms have to name the nodes holding them
+        const nodesByShape = new Map<AnyShape, MeshupSceneNode>(
+            this._shapeNodes().map(node => [node.shape(), node] as [AnyShape, MeshupSceneNode]));
+
+        let lastX = 0;
+
+        const transforms = ordered.flatMap(part =>
+        {
+            /*  The part's own measurements, not each piece's, so a stack stays square: the
+                pieces of a part are the same size to within the rounding that merged them, and
+                stepping by each piece's own thickness would let a stack lean. */
+            const { thickness, length } = part.measure;
+            const x = lastX + length / 2;
+            lastX += length + spacing;
+
+            return part.shapes
+                .map((shape, i) =>
+                {
+                    const node = nodesByShape.get(shape);
+                    if (!node) { return null }
+
+                    const obbox = shape.obbox();
+                    const z = thickness / 2 + i * (thickness + gap);
+
+                    return {
+                        sceneNode: node,
+                        // to the origin, then to its place in the stack — as rowOrtho does it
+                        translation: obbox.center().toVector().reverse().add([x, 0, z])
+                                        .toArray() as [number, number, number],
+                        /*  Per piece, not per part: four legs of one part can stand in four
+                            different directions in the model, and each needs its own turn to
+                            end up lying the same way as the rest of its stack. */
+                        rotation: Object.values(obbox.toOrthoQuaternion()) as [number, number, number, number],
+                        scale: [1, 1, 1] as [number, number, number],
+                    }
+                })
+                .filter((transform): transform is LayoutTransformation => transform !== null);
+        }) as Array<LayoutTransformation>;
+
+        const placed = new Set(transforms.map(transform => transform.sceneNode));
+        const skipped = this._shapeNodes().filter(node => !placed.has(node)).length;
+
+        if (skipped)
+        {
+            console.warn(`Layouter::partStack(): ${skipped} shape${skipped === 1 ? ' is' : 's are'} `
+                + `not a part — curves, points, or solids with no measurable volume — so `
+                + `${skipped === 1 ? 'it was' : 'they were'} left where ${skipped === 1 ? 'it is' : 'they are'}. `
+                + `Only solids stack.`);
+        }
+
+        this._result = {
+            name: 'partstack',
+            translationMode: 'relative',
+            transforms,
+        }
+
+        console.info(`Layouter::partStack(): ${ordered.length} part${ordered.length === 1 ? '' : 's'}, `
+            + `${transforms.length} piece${transforms.length === 1 ? '' : 's'}, in `
+            + `${(performance.now() - t).toFixed(2)} ms.`);
+
+        return this
     }
 
     apply(): this

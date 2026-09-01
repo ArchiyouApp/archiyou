@@ -70,5 +70,13 @@ export interface ArchiyouStateData
      *  Serialized fn sources, evaluated app-side on every value change. NOT a definition
      *  change: applying these never sets _definedProgrammatically. Shape: paramName → target → src. */
     managedBehaviours?:ManagedBehavioursData
+    /** Instructables declared this run (via docs.instruct()), as resolved step data.
+     *
+     *  Carried on the state rather than only in GLB extras so the viewer can step through a
+     *  manual on an ORDINARY run — the editor asks for `default/model/glb` with no options, so
+     *  a GLB-only channel would be empty unless the user knew to add `?instruct`. It is plain
+     *  JSON of a few KB (paths and text, no geometry), and it is the same data
+     *  `extras.instruct` carries for a standalone file. */
+    instruct?:Array<any> // InstructData[] — typed loosely here, like annotations
 }
 
