@@ -18,7 +18,7 @@ describe('collection.intersections mesh path', () =>
         icol.toArray().forEach((s: any) => expect(s.constructor.name).toBe('Mesh'))
     })
 
-    it('intersections() replaces in place: originals removed, results visible', () =>
+    it('intersections() is non-replacing: originals stay, results are added too', () =>
     {
         const boxes = (m.box(10, 10, 100) as any).row(5)
         const subbox = (m.box(100, 50, 50) as any).color('blue')
@@ -30,7 +30,8 @@ describe('collection.intersections mesh path', () =>
         expect(icol.length).toBeGreaterThan(0)
         icol.toArray().forEach((s: any) => expect(inScene(s)).toBe(true))
 
-        // ...and the source copies were removed from the scene.
-        originals.forEach((s: any) => expect(inScene(s)).toBe(false))
+        // ...as NEW shapes, next to the sources, which are left untouched.
+        originals.forEach((s: any) => expect(inScene(s)).toBe(true))
+        icol.toArray().forEach((s: any) => expect(originals).not.toContain(s))
     })
 })

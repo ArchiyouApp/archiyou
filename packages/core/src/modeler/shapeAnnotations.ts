@@ -22,7 +22,7 @@ import { buildDXF, type toDXFOptions } from './DXFExporter'
 import type { toDAEOptions } from './DAEExporter'
 import type { DimensionOptions, LabelOptions } from '../annotator/types'
 import { collectAnnotations } from '../annotator/annotationLayer'
-import { renderDrawing } from './svgLayers'
+import { renderDrawing, sceneSVG } from './SVGExporter'
 
 /** meshup's own collection serializer, kept as the fallback for a drawing with nothing
  *  core can add to it (an empty collection, which meshup answers with a placeholder). */
@@ -257,6 +257,14 @@ function linkedAnnotations(modeler: any, shapes: Array<any>): Array<any> {
     same one brep's ShapeCollection.toSVG() calls. */
 ;(meshup.ShapeCollection.prototype as any).toSVG = function (this: any, options?: any): string | null {
     return renderDrawing(this, options) ?? kernelCollectionToSVG.call(this, options)
+}
+
+/*  The SCENE drawing is core's too, for the same reason: meshup draws each shape from
+    `shape.style` alone (so a model styled through `layer(...)` came out uniformly red) and
+    projects by dropping z (so an elevation on XZ collapsed to a line). Same `<g id>` tree,
+    resolved styling, drawn in the model's own plane. See sceneSVG in ./SVGExporter. */
+;(meshup.SceneNode.prototype as any).toSVG = function (this: any): string | null {
+    return sceneSVG(this)
 }
 
 /*  A single Shape draws through a collection of one — the same route brep's Shape.toSVG()

@@ -71,14 +71,18 @@ describe('mesh ↔ brep divergences (pinned, not accepted)', () =>
 
     //// ==== 2. MUTATION CONTRACTS ==== ////
 
-    it('2. union()/intersection() mutate the receiver on mesh but not on brep', () =>
+    it('2. union() mutates the receiver on mesh but not on brep', () =>
     {
-        /*  brep's union() and intersection() build the result and swap it into the SCENE, but
-            never update the receiver's own geometry — the handle a script is holding still refers
-            to the old shape. subtract() does update it, on both kernels. The portable spelling is
-            therefore to rebind: `s = s.union(other)` works everywhere, `s.union(other)` does not.
+        /*  brep's union() builds the result and swaps it into the SCENE, but never updates the
+            receiver's own geometry — the handle a script is holding still refers to the old shape.
+            subtract() does update it, on both kernels. The portable spelling is therefore to
+            rebind: `s = s.union(other)` works everywhere, `s.union(other)` does not.
 
-            SHOULD BE: brep union()/intersection() update the receiver like subtract() does.
+            intersection() is NOT in this divergence any more: it is non-replacing on both kernels
+            (the receiver is untouched, the shared geometry comes back as a new shape on the active
+            layer), so `s = s.intersection(other)` is the only spelling on either.
+
+            SHOULD BE: brep union() updates the receiver like subtract() does.
                        (See the "brep methods MUTATE" convention the kernel documents for itself.) */
         for (const [kernel, m, mutatesOnUnion] of [['mesh', mesh, true], ['brep', brep, false]] as const)
         {

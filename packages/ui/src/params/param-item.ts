@@ -29,6 +29,11 @@ export class ParamItem extends LitElement
   /** Set when the slotted control draws its own label row (the number control in
    *  presentation mode puts label and value box on one line above its slider). */
   @property({ type: Boolean }) hideLabel = false;
+  /** Tall row: name + actions on their own header line, control full-width below.
+   *  For controls that cannot live on one dense line — an object list with an
+   *  expanded entry form. A boolean rather than a third `mode`, because `mode` is
+   *  a density/audience axis that all five leaf controls branch on. */
+  @property({ type: Boolean, reflect: true }) block = false;
   /** Content translator, supplied by the configurator. Defaults to the identity, so the
    *  EDITOR's authoring rows are a compile-time no-op — this component is shared between
    *  both, and importing configurator locale state here would couple them. */
@@ -75,7 +80,8 @@ export class ParamItem extends LitElement
     const programmatic = isProgrammatic(this.param);
 
     return html`
-      <span class="grip" title="Drag to reorder">
+      <div class="compact-head">
+      <span class="grip" title="Drag to reorder" @pointerdown=${this._onGripPointerDown}>
         <wa-icon library="lucide" name="grip-horizontal"></wa-icon>
       </span>
 
@@ -96,14 +102,6 @@ export class ParamItem extends LitElement
               ${this.param.name}
             </span>`
       }
-
-      <span class="param-slot"
-        @pointerdown=${this._onSlotPointerDown}
-        @pointerup=${this._onSlotPointerUp}
-        @pointercancel=${this._onSlotPointerUp}
-      >
-        <slot></slot>
-      </span>
 
       <span class="actions">
         ${programmatic
@@ -134,6 +132,15 @@ export class ParamItem extends LitElement
                   <wa-icon library="lucide" name="trash-2"></wa-icon>
                 </button>`
         }
+      </span>
+      </div>
+
+      <span class="param-slot"
+        @pointerdown=${this._onSlotPointerDown}
+        @pointerup=${this._onSlotPointerUp}
+        @pointercancel=${this._onSlotPointerUp}
+      >
+        <slot></slot>
       </span>
     `;
   }
@@ -173,6 +180,10 @@ export class ParamItem extends LitElement
 
   private _onSlotPointerDown = () => { this._dragLocked = true; };
   private _onSlotPointerUp   = () => { this._dragLocked = false; };
+
+  /** A pointerup that lands outside the slot (a text selection dragged out of an
+   *  input) never clears the lock, so releasing it here keeps the grip usable. */
+  private _onGripPointerDown = () => { this._dragLocked = false; };
 
   // ── Label editing ──
 
@@ -261,6 +272,29 @@ export class ParamItem extends LitElement
     }
 
     :host([dragging]) { opacity: 0.4; }
+
+    /* Non-block: the head dissolves so grip/label/actions are flex items of the
+       host, exactly as before. The order property puts the control back between
+       label and actions, which is where it sits in the dense authoring row. */
+    .compact-head { display: contents; }
+    .actions { order: 1; }
+
+    :host([block]) {
+      display: block;
+      height: auto;
+      padding-top: var(--space-sm);
+      padding-bottom: var(--space-sm);
+    }
+
+    :host([block]) .compact-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: var(--space2xl);
+    }
+
+    :host([block]) .label { flex: 1; }
+    :host([block]) .param-slot { display: block; width: 100%; }
 
     :host([readonly]) .grip { display: none; }
     :host([readonly]) .actions { display: none; }

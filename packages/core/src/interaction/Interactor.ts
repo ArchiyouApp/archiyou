@@ -43,7 +43,7 @@
 import type { ArchiyouModules } from '../types';
 import { Handle } from './Handle';
 import { HandleRegistry } from './HandleRegistry';
-import type { HandleData, ManagedHandleOp, ManagedHandlesData } from './types';
+import type { HandleData, HandleParamMap, ManagedHandleOp, ManagedHandlesData } from './types';
 
 // Shallow equality for number tuples (position, uAxis, vAxis, …)
 const _eqArr = (a: readonly number[], b: readonly number[]): boolean =>
@@ -53,6 +53,14 @@ const _eqArr = (a: readonly number[], b: readonly number[]): boolean =>
 const _eq = (a: number | readonly number[], b: number | readonly number[]): boolean =>
     Array.isArray(a) && Array.isArray(b) ? _eqArr(a as number[], b as number[]) : a === b;
 
+// Param maps are small flat records of primitives — JSON is an honest comparison here.
+const _eqMap = (a: HandleParamMap | null, b: HandleParamMap | null): boolean =>
+    JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/** World-position axes. Under a RELATIVE range the viewer adds the axis value to the
+ *  property as a delta, and a world position is not a delta — so only 'u'/'v' are valid. */
+const _WORLD_AXES = ['x', 'y', 'z'];
+
 export class Interactor
 {
     /** Per-run list of Handles declared by the script. Cleared each run. */
@@ -61,10 +69,23 @@ export class Interactor
     private _registry = new HandleRegistry();
     private _scriptChanged = false;
     /** Param names known for this run (from the script definition). Used to validate
-     *  paramsFnSrc functions against actual param names on first definition. */
+     *  paramsFnSrc functions and entry bindings against actual param names. */
     private _knownParamNames: string[] = [];
+    /** The run's live ParamManager, so params declared with $PARAMS.define() count too. */
+    private _paramManager: { getParams?: () => Array<{ name: string }> } | null = null;
 
-    get knownParamNames(): string[] { return this._knownParamNames; }
+    /** Param names a handle may legally reference right now.
+     *
+     *  The frozen list from beginRun() comes from `request.script.params`, i.e. what the app
+     *  has already persisted. On the FIRST run of a script that declares its params in code,
+     *  that is empty — which would leave the programmatic scripts, the ones most likely to
+     *  get a name wrong, with no check at all. So merge in what the ParamManager has been
+     *  told this run; $PARAMS.define() has always already run by the time a handle names it. */
+    get knownParamNames(): string[]
+    {
+        const defined = this._paramManager?.getParams?.().map(p => p.name) ?? [];
+        return [...new Set([...this._knownParamNames, ...defined])];
+    }
 
     // ── Selection ────────────────────────────────────────────────────────────────
     // The Interactor also owns click-selection state (it is already the persistent,
@@ -113,11 +134,17 @@ export class Interactor
     /** Called at the start of each run (from Runner._executionStartRunInScope).
      *  Clears the per-run handle list, records the script identity, and stores
      *  the known param names for paramsFnSrc validation. */
-    beginRun(scriptKey: string, knownParamNames: string[] = [], selectedPaths: string[] = []): void
+    beginRun(
+        scriptKey: string,
+        knownParamNames: string[] = [],
+        selectedPaths: string[] = [],
+        paramManager: { getParams?: () => Array<{ name: string }> } | null = null,
+    ): void
     {
         this.handles = [];
         this._scriptChanged = this._registry.setScript(scriptKey);
         this._knownParamNames = knownParamNames;
+        this._paramManager = paramManager;
         this._selected = new Set(selectedPaths);
         this._interactive = [];
     }
@@ -150,6 +177,8 @@ export class Interactor
             if (!data.id) data.id = String(i);
             touched.add(data.id);
 
+            this._checkParamMapAxes(data);
+
             if (this._scriptChanged || !this._registry.has(data.id))
             {
                 // First definition (or script changed → re-add everything)
@@ -169,12 +198,18 @@ export class Interactor
                 {
                     ops.push({ id: data.id, _operation: 'add', data });
                     this._registry.put(data.id, data);
-                    // No separate mutator op needed — the add carries the full state
-                    continue;
+                    // Deliberately NOT `continue`. The viewer preserves the live (possibly
+                    // dragged) position across a re-add — a definition change must never
+                    // yank a dragged handle back — so the position inside this add op is
+                    // ignored on the far end. If the script also commanded a position this
+                    // run via at()/position(), it takes the mutator op below to actually
+                    // move the handle. Scripts that derive range() from the same values as
+                    // at() (one per list entry, bounds from the entry itself) change the
+                    // definition on EVERY edit, so without this they would never move again.
                 }
 
                 // ── Mutator change detection ───────────────────────────────────
-                // No definition change — only emit update for explicit mutators.
+                // Emit update for explicit mutators, definition change or not.
                 let dirty = false;
                 const op: ManagedHandleOp = { id: data.id, _operation: 'update' };
                 if (h._atCalled || h._positionCalled)
@@ -232,11 +267,40 @@ export class Interactor
         // Icon
         if (stored.icon !== current.icon)                       return true;
 
+        // Declarative drag-axis → property map
+        if (!_eqMap(stored.paramMap, current.paramMap))         return true;
+
         // Start position: only a definition change when start() was explicitly
         // called this run (at()/position() are mutators, not definition changes).
         if (h._startCalled && !_eqArr(stored.position, current.position)) return true;
 
         return false;
+    }
+
+    /** Drop world axes from a relative param map, with an explanation.
+     *
+     *  range() may be called after param(), so this cannot be validated at the param()
+     *  call site — it is checked here, once, while the run's handles are being serialized.
+     *  Dropping the offending axis is better than shipping it: the viewer would add a world
+     *  coordinate to the property as if it were a drag delta, sending the value off to
+     *  somewhere absurd on the first nudge. */
+    private _checkParamMapAxes(data: HandleData): void
+    {
+        const map = data.paramMap;
+        if (!map || !data.rangeRelative) return;
+
+        // Capture the pairs BEFORE dropping them — the message names what was discarded.
+        const bad = Object.entries(map).filter(([axis]) => _WORLD_AXES.includes(axis));
+        if (bad.length === 0) return;
+
+        bad.forEach(([axis]) => delete map[axis as keyof HandleParamMap]);
+        this._archiyou?.console?.error(
+            `$handle().param(): handle "${data.id}" has a relative range, so ` +
+            `${bad.map(([axis, prop]) => `"${axis}: '${prop}'"`).join(', ')} ` +
+            `cannot be applied — 'x'/'y'/'z' are world positions, not drag deltas. ` +
+            `Use 'u'/'v' with a relative range, or give range() numbers instead of strings ` +
+            `to write world coordinates directly.`,
+        );
     }
 
     /** @deprecated — use getManagedHandlesData() instead. */

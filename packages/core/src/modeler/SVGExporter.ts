@@ -1,21 +1,38 @@
 /**
  *  SVGExporter.ts
  *
- *  A small, self-contained SVG writer for the Modeler pipeline — the missing
- *  sibling of DXFExporter.ts and DAEExporter.ts.
+ *  Every SVG this package emits, in one place — the sibling of DXFExporter.ts and
+ *  DAEExporter.ts.
  *
- *  Scope:
- *    - Serialize a ShapeCollection of 2D curves into one SVG document with a
- *      proper viewBox, padding, optional square framing and a stylesheet that
- *      works on light AND dark backgrounds.
- *    - Project the scene's 3D meshes to 2D line-work (hidden-line removal in
- *      Rust/WASM) WITHOUT touching the scenegraph, so an export never changes
- *      what the next export sees.
- *    - Produce a size-capped thumbnail via progressive degradation, so a
- *      pathologically dense model can never emit a multi-megabyte icon.
+ *  Four things come out of here:
+ *    - `renderDrawing` — one flat, framed technical drawing from EITHER kernel, styled
+ *      through the layer cascade and dimensioned by the annotator. This is what a Shape's
+ *      or a document view's toSVG() ends up calling.
+ *    - `buildSVG` — a ShapeCollection of 2D curves as one SVG document with a proper
+ *      viewBox, padding, optional square framing and a stylesheet that works on light AND
+ *      dark backgrounds.
+ *    - `buildProjectionSVG` / `buildThumbnailSVG` — the scene's 3D meshes projected to 2D
+ *      line-work (hidden-line removal in Rust/WASM) WITHOUT touching the scenegraph, so an
+ *      export never changes what the next export sees. The thumbnail is size-capped by
+ *      progressive degradation, so a pathologically dense model can never emit a
+ *      multi-megabyte icon.
+ *    - `sceneSVG` — the SCENE rather than a drawing: one nested `<g>` per scene node, which
+ *      is what survives into Illustrator as layers, and the one thing the flat drawing
+ *      assembler cannot express.
  *
- *  This file is dependency-free and pure-TS (no WASM, no meshup edits). Geometry
- *  is consumed through meshup's public accessors (bbox(), curves(), group(),
+ *  Everything above the kernels — framing, stylesheet, line weight, annotations, scale — is
+ *  written once here rather than once per kernel. The two kernels draw differently and that
+ *  is fine: meshup emits true arcs and flips y inside toSVGElem(), brep tessellates edges to
+ *  polylines and mirrors the Shape first; KERNEL LINE-WORK below is where that difference is
+ *  absorbed into a common SVGLayer.
+ *
+ *  Why this lives in core and not in the kernel: a drawing has to be taken in the plane the
+ *  model is actually ON and styled through the layer cascade, and meshup knows about neither.
+ *  Its own scene serializer drew every shape from `shape.style` alone — so a model styled
+ *  entirely through `layer(...)` came out uniformly red — and projected by dropping z, so a
+ *  wall elevation on XZ collapsed to a single horizontal line.
+ *
+ *  Geometry is consumed through meshup's public accessors (bbox(), curves(), group(),
  *  toSVGElem()) and the undecorated projection entrypoints _iso()/_elevation().
  *
  *  Why the undecorated projections: ShapeCollection.iso()/elevation() carry
@@ -27,6 +44,10 @@
 
 import type * as meshup from '@archiyou/meshup'
 import type { ModelUnits } from './types'
+import { detectExportFrame, drawnInPlane, isPlanFrame, planeTolerance, projectorFor, shapeBox,
+    type ExportFrame, type ExportPlane } from './utils'
+import { annotationLayer, annotationMarginMm, collectAnnotations } from '../annotator/annotationLayer'
+import { isKernelShapeCollection } from './typeguards'
 
 //// TYPES ////
 
@@ -143,13 +164,14 @@ const POLYLINE_PATH_RE = /^[MLZmlz0-9eE.,\s+-]+$/
 
 type Box2D = { minX: number; minY: number; maxX: number; maxY: number }
 
-/** A curve's bounding box in SVG coordinates. meshup's toSVGElem() flips Y (SVG's Y axis
- *  points down, the model's points up), so the box must be flipped identically or the
- *  viewBox won't contain the geometry it frames. */
-function curveBoxSVG(curve: any): Box2D | null
+/** A shape's bounding box in SVG coordinates. SVG's y axis points down and the model's
+ *  points up, so model y [min,max] is svg y [-max,-min] — the box has to be flipped exactly
+ *  like the geometry (meshup does it inside toSVGElem(), we do it here for brep), or the
+ *  viewBox will not contain what it frames. */
+function boxSVG(shape: any): Box2D | null
 {
-    const bb = curve?.bbox?.()
-    if (!bb) return null
+    const bb = shape?.bbox?.()
+    if (!bb?.min || !bb?.max) return null
     const min = bb.min(), max = bb.max()
     if (![min?.x, min?.y, max?.x, max?.y].every((n) => typeof n === 'number' && isFinite(n))) return null
     return { minX: min.x, minY: -max.y, maxX: max.x, maxY: -min.y }
@@ -293,6 +315,41 @@ function viewBoxFor(box: Box2D, padding: number, square: boolean, decimals: numb
     return `${f(minX)} ${f(minY)} ${f(w)} ${f(h)}`
 }
 
+//// STYLE CASCADE ////
+
+/** Run `body` with every shape drawn in its CASCADED style, then put the originals back.
+ *
+ *  What an author calls a layer is a SceneNode, and the colour and linetype set on it
+ *  (`layer('diagram').color('blue').dashed()`) cascade to the shapes beneath it — resolved
+ *  only at export time. meshup's toSVGElem() reads `shape.style` directly and has no channel
+ *  for another style, so a shape under a blue layer drew itself in SHAPE_DEFAULT_STYLE's red
+ *  and every layer colour in the model was lost on the way out.
+ *
+ *  The resolution is the one the DXF exporter does (see DXFExporter's LAYERS & STYLE) and the
+ *  one the viewer does (GLTFBuilder): the node's effectiveStyle() with the shape's own
+ *  explicit style merged on top, so a shape that colours itself still beats its layer.
+ *
+ *  meshup has its own version of this in SceneNode.applyStyle(), which makes the merge
+ *  PERMANENT — right for handing shapes to a foreign library, wrong for an export, which has
+ *  to leave the scene exactly as it found it. Hence the swap and the finally: `body()` is
+ *  synchronous, so no one can observe the scene mid-swap.
+ */
+export function withCascadedStyles<T>(shapes: Array<any>, body: () => T): T
+{
+    const swapped: Array<[any, any]> = []
+    shapes.forEach(shape =>
+    {
+        const cascaded = shape?.node?.()?.effectiveStyle?.()
+        if (!cascaded) return                       // no scene node → nothing to cascade from
+        cascaded.merge(shape.style?.explicitData?.() ?? {})
+        swapped.push([shape, shape.style])
+        shape.style = cascaded
+    })
+
+    try { return body() }
+    finally { swapped.forEach(([shape, original]) => { shape.style = original }) }
+}
+
 //// CURVE COLLECTION ////
 
 interface PreparedCurve
@@ -351,14 +408,150 @@ function prepareCurves(collection: any): Array<PreparedCurve>
     const hiddenGroup = (groups?.has ? groups.has('hidden') : true) ? collection?.group?.('hidden') : undefined
     const hiddenSet = new Set<any>(hiddenGroup?.toArray?.() ?? [])
 
+    // Turned onto the drawing's own plane first, or a model built on XZ draws as the single
+    // flat line a plan view of it really is. Copies, so nothing the caller holds moves — see
+    // drawnInPlane(). The hidden-line lookup stays keyed by the original.
+    const inPlane = drawnInPlane(curves, detectExportFrame(curves))
+
     const out: Array<PreparedCurve> = []
     for (const curve of curves)
     {
-        const box = curveBoxSVG(curve)
+        const drawn = inPlane?.get(curve) ?? curve
+        const box = boxSVG(drawn)
         if (!box) continue
-        out.push({ curve, box, isHidden: hiddenSet.has(curve) })
+        out.push({ curve: drawn, box, isHidden: hiddenSet.has(curve) })
     }
     return out
+}
+
+//// KERNEL LINE-WORK ////
+
+/** Which drawing group each curve belongs to, as meshup's own exporter decides it: a curve
+ *  can be in several, later ones win, and the per-shape provenance tags (`shape-0`, …) only
+ *  fill a gap — they say where a curve came from, not how to draw it. */
+function meshGroupClasses(collection: any): Map<any, string>
+{
+    const curveToGroup = new Map<any, string>()
+    collection?._groups?.forEach?.((groupCol: any, groupName: string) =>
+    {
+        const isProvenance = /^shape-\d+$/.test(groupName)
+        groupCol?.toArray?.().forEach((shape: any) =>
+        {
+            if (isProvenance && curveToGroup.has(shape)) return
+            curveToGroup.set(shape, groupName)
+        })
+    })
+    return curveToGroup
+}
+
+/** The 2D line-work of a mesh-kernel Shape or ShapeCollection: its curves, and the faces
+ *  lying flat on the XY plane (see drawableFaces) — a flattened footprint is a collection of
+ *  Meshes, and used to come out of a view completely blank. */
+function meshDrawableLayer(collection: any, plane: ExportPlane): SVGLayer
+{
+    const drawables = [...drawableFaces(collection), ...(collection?.curves?.()?.toArray?.() ?? [])]
+    const groups = meshGroupClasses(collection)
+
+    // The drawing's own plane, and a turned copy of anything that is not on XY already. The
+    // copies are what gets serialized; the originals stay the key for everything looked up
+    // per shape (its drawing group) and are what the caller still holds.
+    const frame = detectExportFrame(drawables, plane)
+    const copies = drawnInPlane(drawables, frame)
+    const drawn = drawables.map((shape: any) => copies?.get(shape) ?? shape)
+
+    const elements: Array<string> = []
+    let box: Box2D | null = null
+
+    // Drawn in the cascaded style: this layer already writes a shape's own colour inline, so
+    // dropping the colour its LAYER gave it was the odd one out.
+    withCascadedStyles(drawn, () =>
+    {
+        drawables.forEach((shape: any, i: number) =>
+        {
+            const groupName = groups.get(shape)
+            const cssClass = 'line' + (groupName ? ` ${groupName}` : '')
+            const elem = drawn[i]?.toSVGElem?.(cssClass, { omitDefaults: true, nonScalingStroke: false })
+            if (typeof elem !== 'string' || !elem) return
+            elements.push(elem)
+            box = unionBox(box, boxSVG(drawn[i]))
+        })
+    })
+
+    return { elements, box, frame }
+}
+
+/** The 2D line-work of a brep Shape or ShapeCollection.
+ *
+ *  brep writes a `<path>` per Edge and mirrors the Shape into SVG space beforehand (meshup
+ *  flips inside toSVGElem instead). Each mirrored Edge keeps pointing at the Shape it came
+ *  from: that link is where its styling is read from, since an Edge of a styled Wire carries
+ *  no style of its own. */
+function brepDrawableLayer(collection: any, all: boolean): SVGLayer
+{
+    const edges = collection?._get2DXYShapeEdges?.(all)
+
+    const elements: Array<string> = []
+    let box: Box2D | null = null
+
+    edges?.forEach?.((edge: any) =>
+    {
+        const flipped = edge._mirroredY(0)
+        flipped._parent = edge._parent ?? edge
+
+        const elem = flipped?.toSVG?.()
+        if (typeof elem !== 'string' || !elem) return
+        elements.push(elem)
+
+        // already mirrored, so this box is in SVG space as it stands
+        const bb = flipped?.bbox?.()
+        const min = bb?.min?.(); const max = bb?.max?.()
+        if (typeof min?.x === 'number' && typeof max?.x === 'number')
+        {
+            box = unionBox(box, { minX: min.x, minY: min.y, maxX: max.x, maxY: max.y })
+        }
+    })
+
+    return { elements, box }
+}
+
+/** True for a brep Shape/ShapeCollection — it is the kernel that mirrors before drawing. */
+function isBrep(o: any): boolean
+{
+    return typeof o?._get2DXYShapeEdges === 'function' || o?.mode === 'brep'
+}
+
+/** A single Shape, as a collection of one.
+ *
+ *  Both kernels' line-work extraction is a collection operation (curves(), the 2D-XY edge
+ *  filter), and a Shape has neither. A view handed a Shape directly — `.shapes(rect)` rather
+ *  than `.shapes(collection(rect))` — therefore yielded no line-work at all, which the
+ *  renderer read as "nothing to scale" and quietly fell back to drawing it unscaled.
+ *
+ *  The collection has to come from the shape's OWN kernel: a brep Shape in a meshup
+ *  collection draws nothing, and the reverse is just as empty. */
+function asCollection(o: any): any
+{
+    if (isKernelShapeCollection(o)) return o
+
+    const Col = o?._modeler?.classes?.ShapeCollection
+    if (typeof Col === 'function')
+    {
+        try { return new Col(o) } catch { /* fall through to the shape itself */ }
+    }
+    return o
+}
+
+/** The drawable 2D line-work of a Shape or ShapeCollection from EITHER kernel.
+ *  @param all include Shapes that are hidden (brep only — meshup draws what it is given)
+ */
+export function drawableLayer(o: any, options?: { all?: boolean, plane?: ExportPlane }): SVGLayer
+{
+    if (!o) return { elements: [], box: null }
+
+    const collection = asCollection(o)
+    return isBrep(collection)
+            ? brepDrawableLayer(collection, options?.all === true)
+            : meshDrawableLayer(collection, options?.plane ?? 'auto')
 }
 
 //// DOCUMENT ASSEMBLY ////
@@ -377,6 +570,9 @@ export interface SVGLayer
     box: Box2D | null
     /** Wrapped in `<g class="…">` when given, so a layer can be styled or found as a whole. */
     cssClass?: string
+    /** The model plane this line-work was drawn in. Carried so anything drawn ALONGSIDE it
+     *  later — a view's annotations, re-drawn per page — lands in the same plane. */
+    frame?: ExportFrame | null
 }
 
 /** How thick the lines are drawn.
@@ -705,6 +901,212 @@ function thumbnailFromPrepared(prepared: Array<PreparedCurve>, o: ThumbnailSVGOp
 
     // 4. give up rather than store something unusable
     return best.bytes <= hardMaxBytes ? { ...best, degraded } : null
+}
+
+//// ONE DRAWING, EITHER KERNEL ////
+
+export interface RenderDrawingOptions
+{
+    /** Draw the linked dimension lines and labels. Default true. */
+    annotations?: boolean
+    /** Include Shapes that are hidden (brep). Default false. */
+    all?: boolean
+    /** Model units per page millimeter, when the drawing is going somewhere with a known
+     *  scale (a document view). Sizes annotations and line weight in real millimeters. */
+    unitsPerMm?: number
+    /** Line weight on paper. Default DRAWING_LINE_WIDTH_MM. Only used with `unitsPerMm`. */
+    lineWidthMm?: number
+    /** Framing. Default: the drawing's own extents plus room for its dimension text. */
+    frame?: SVGFrame
+    /** Blank margin on every side, as a fraction of the drawing's largest side. Default none:
+     *  a technical drawing is placed by its frame, not floated in air. */
+    padding?: number
+    /** Normalize into a square viewBox, so one asset serves both 1:1 and wide slots. */
+    square?: boolean
+    /** Which model plane the drawing is taken from. Default 'auto' — detected from the
+     *  geometry, so an elevation modelled on XZ draws as an elevation. See ./utils. */
+    plane?: ExportPlane
+    /** Confine the stylesheet to this class — see BuildSVGDocumentOptions.scoped. */
+    scoped?: string
+    units?: ModelUnits
+    title?: string
+}
+
+/** Line weight on paper, in millimeters. A normal technical drawing weight. */
+export const DRAWING_LINE_WIDTH_MM = 0.25
+
+/** The width, in model units, of a drawing with no scale to speak of.
+ *
+ *  A drawing that is about to be fitted into a view has no size of its own yet, so the only
+ *  weights that make sense are relative to the drawing itself. This is the view width the
+ *  old kernel exporters implicitly assumed (drawingSize/800 for a 0.25mm line), written down
+ *  rather than left in a magic divisor. */
+const IMPLIED_VIEW_WIDTH_MM = 200
+
+/** Draw a Shape or ShapeCollection of either kernel as one SVG document.
+ *  Returns null when there is nothing to draw. */
+export function renderDrawing(o: any, options?: RenderDrawingOptions): string | null
+{
+    return renderDrawingFromLayer(drawableLayer(o, { all: options?.all, plane: options?.plane }), o, options)
+}
+
+/** The same, from line-work that has already been drawn.
+ *
+ *  A document view re-draws its annotations for every page it lands on — they are sized in
+ *  page millimeters, so they depend on the view's scale — while the geometry does not change
+ *  at all. Handing back the layer means the drawing is serialized ONCE per view, however many
+ *  times it is framed: the difference between a 300ms page and a 3s one.
+ *
+ *  @param annotationSource the Shapes whose annotations to draw (the geometry layer is only
+ *      strings by now, and no longer knows what it was drawn from).
+ */
+export function renderDrawingFromLayer(
+    geometry: SVGLayer,
+    annotationSource: any,
+    options?: RenderDrawingOptions): string | null
+{
+    const o = annotationSource
+
+    const size = geometry.box
+                    ? Math.max(geometry.box.maxX - geometry.box.minX, geometry.box.maxY - geometry.box.minY) || 1
+                    : 1
+
+    const layers: Array<SVGLayer> = [geometry]
+
+    let annotated = false
+    if (options?.annotations !== false)
+    {
+        const annotations = annotationLayer(collectAnnotations(o), {
+            unitsPerMm: options?.unitsPerMm,
+            drawingSize: size,
+            // A dimension has to travel to the drawing's plane with the geometry it measures,
+            // or it lands flat on the floor beside an elevation. The layer carries the frame
+            // it was drawn in so a view that re-draws its annotations per page still agrees
+            // with line-work it serialized once.
+            projector: isPlanFrame(geometry.frame ?? null) ? undefined : projectorFor(geometry.frame!),
+        })
+        annotated = annotations.elements.length > 0
+        layers.push(annotations)
+    }
+
+    /*  Room for the value text at the middle of a dimension line — a few characters wide.
+        In real page millimeters when the scale is known; otherwise a fraction of the drawing,
+        since a flat number of model units cropped anything bigger than a small part. */
+    const margin = !annotated ? 0
+                    : (options?.unitsPerMm) ? options.unitsPerMm * annotationMarginMm(o?._modeler?.modules?.annotator)
+                    : Math.max(10, size / 30)
+
+    const stroke: SVGStroke = (options?.unitsPerMm)
+        ? { mode: 'mm', widthMm: options?.lineWidthMm ?? DRAWING_LINE_WIDTH_MM, unitsPerMm: options.unitsPerMm }
+        // No scale known: a weight relative to the drawing, which is the same thing once the
+        // drawing is fitted to a view — the fit is (view/drawing) and this is (drawing/N).
+        : { mode: 'units', width: size / (IMPLIED_VIEW_WIDTH_MM / (options?.lineWidthMm ?? DRAWING_LINE_WIDTH_MM)) }
+
+    return buildSVGDocument({
+        layers,
+        stroke,
+        // An explicitly framed drawing (a view at a fixed scale) still needs the room its
+        // annotations do not report — see buildSVGDocument.
+        frame: options?.frame
+                ? { ...options.frame, margin: (options.frame as any).margin ?? margin }
+                : { mode: 'fit', padding: options?.padding ?? 0, square: options?.square === true, margin },
+        scoped: options?.scoped,
+        units: options?.units ?? o?._modeler?.units?.(),
+        title: options?.title,
+    })
+}
+
+//// THE SCENE AS SVG ////
+
+/*  The scene rather than a drawing: one nested `<g>` per scene node, shapes drawn inside the
+ *  node that holds them. That hierarchy is the point — it is what survives into Illustrator
+ *  as layers — and it is the one thing the drawing assembler above, which frames one flat
+ *  drawing, cannot express. The output shape is meshup's, element for element, so nothing
+ *  downstream can tell. */
+
+/** Room left around the drawing, as a fraction of its largest side. */
+const SCENE_PADDING = 0.05
+
+const fmt = (n: number): number => +n.toFixed(6)
+
+/** Is this shape flat enough to draw — on the drawing's plane, or one parallel to it?
+ *
+ *  Deliberately not `is2D()`: that asks for a bbox extent of exactly 0, which a shape turned
+ *  onto the drawing plane never has (a quarter turn is cos/sin, not an axis swap) and which a
+ *  shape the SCRIPT rotated does not have either. Parallel planes all count — an SVG is a
+ *  projection, so geometry off the plane still belongs in the picture, exactly as it did when
+ *  every drawing was a plan. */
+function isDrawable(shape: any, frame: ExportFrame, tol: number): boolean
+{
+    const box = shapeBox(shape)
+    if (!box) return false
+    const n = frame.normal
+    const extent = Math.abs((box.max.x - box.min.x) * n.x)
+        + Math.abs((box.max.y - box.min.y) * n.y)
+        + Math.abs((box.max.z - box.min.z) * n.z)
+    return extent <= tol
+}
+
+/** `<g>` for one node and everything under it, shapes taken from `drawn`. */
+function nodeElem(node: any, drawn: Map<any, any>): string
+{
+    const visible = node.effectiveStyle?.()?.visible !== false
+    const lines: string[] = [`<g id="${node.name}"${visible ? '' : ' display="none"'}>`]
+
+    const shape = node.shape?.()
+    const target = shape ? drawn.get(shape) : undefined
+    if (target?.toSVGElem) { lines.push('  ' + target.toSVGElem()) }
+
+    node.children?.().forEach((child: any) =>
+    {
+        lines.push(...nodeElem(child, drawn).split('\n').map((l: string) => '  ' + l))
+    })
+
+    lines.push('</g>')
+    return lines.join('\n')
+}
+
+/** The scene under `root` as a self-contained SVG, or null when it holds nothing drawable.
+ *
+ *  @param plane forces a view instead of detecting one. Default 'auto'.
+ */
+export function sceneSVG(root: any, plane: ExportPlane = 'auto'): string | null
+{
+    const shapes: Array<any> = root?.shapes?.()?.toArray?.() ?? []
+    const frame = detectExportFrame(shapes, plane)
+    if (!frame) return null
+
+    const boxes = shapes.map(shapeBox).filter((b): b is NonNullable<ReturnType<typeof shapeBox>> => b !== null)
+    const tol = planeTolerance(boxes)
+    const drawable = shapes.filter(s => isDrawable(s, frame, tol))
+    if (drawable.length === 0) return null
+
+    // Turned onto the drawing plane, as throwaway copies — nothing in the scene moves. The
+    // map is keyed by the original, which is what the node still holds.
+    const copies = drawnInPlane(drawable, frame)
+    const drawn = new Map<any, any>(drawable.map(s => [s, copies?.get(s) ?? s]))
+
+    return withCascadedStyles([...drawn.values()], () =>
+    {
+        let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity
+        drawn.forEach(shape =>
+        {
+            const bb = shapeBox(shape)
+            if (!bb) return
+            minX = Math.min(minX, bb.min.x)
+            maxX = Math.max(maxX, bb.max.x)
+            minY = Math.min(minY, -bb.max.y)   // SVG's y axis points down
+            maxY = Math.max(maxY, -bb.min.y)
+        })
+        if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 1; maxY = 1 }
+
+        const w = maxX - minX
+        const h = maxY - minY
+        const pad = Math.max(w, h) * SCENE_PADDING || 1
+
+        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${fmt(minX - pad)} ${fmt(minY - pad)} `
+            + `${fmt(w + 2 * pad)} ${fmt(h + 2 * pad)}">\n${nodeElem(root, drawn)}\n</svg>`
+    })
 }
 
 /** Byte length of a UTF-8 string, without assuming Node's Buffer (core runs in a Worker too). */

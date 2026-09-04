@@ -585,12 +585,12 @@ export class Make
                 .extrude(depth*2).moveY(-depth) // make solid 2x bigger
                 .removeFromScene();
 
-            // do this in place, instead of Collection.intersections(...)
-            // TODO: fix
+            // in place, instead of Collection.intersections() - which is non-replacing and
+            // would add the trimmed volumes to the scene alongside the untrimmed studs.
             primaryStuds.forEach((shape) => 
-                shape.intersection(wallRidgeContourSolid));
+                shape._intersection(wallRidgeContourSolid));
             insulation.forEach((shape) => 
-                shape.intersection(wallRidgeContourSolid));
+                shape._intersection(wallRidgeContourSolid));
           
         }
 
@@ -1032,9 +1032,9 @@ export class Make
         if(ridge)
         {
             openingKingStuds.add(
-                openingKingStuds.forEach((s) => s.intersection(wallRidgeContourSolid)));
+                openingKingStuds.forEach((s) => s._intersection(wallRidgeContourSolid)));
             openingJackStuds.add(
-                openingJackStuds.forEach((s) => s.intersection(wallRidgeContourSolid)));
+                openingJackStuds.forEach((s) => s._intersection(wallRidgeContourSolid)));
             /*
             insulation.forEach((s) => {
                 s.subtract(openingKingStuds);

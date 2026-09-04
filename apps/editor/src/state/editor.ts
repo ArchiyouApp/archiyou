@@ -18,7 +18,7 @@ import { deepEqual } from '@archiyou/core/src/utils';
 
 import { editorScript, bumpScript, saveCore } from './core';
 import { evaluateParamBehaviours } from './param-behaviours';
-import type { ScriptMetadata, ScriptPreset } from './types';
+import type { ParamEntryRef, ScriptMetadata, ScriptPreset } from './types';
 
 //// EDITOR UI SIGNALS ////
 
@@ -47,6 +47,23 @@ export const activeBottomPanel = signal<'console' | 'scene' | 'none'>('console')
 export const fileManagerCollapsed = signal<boolean>(true);
 export const paramMenuCollapsed   = signal<boolean>(false);
 export const presetMenuCollapsed  = signal<boolean>(true);
+
+/** The object-list entry currently expanded in the param menu, or null.
+ *
+ *  Written by param-item-object-list when a row is toggled, and by the viewer when a
+ *  handle bound with $handle().param('OPENINGS[i]') is clicked; read back by that menu.
+ *  One signal rather than two states, so a click in the 3D view and a click in the menu
+ *  are literally the same act — which is the whole point of the feature. */
+export const activeParamEntry = signal<ParamEntryRef | null>(null);
+
+export function setActiveParamEntry(ref: ParamEntryRef | null): void
+{
+  activeParamEntry.set(ref);
+  // Activating a row the user cannot see is not activation. The configurator has its own
+  // collapse flag in state/configurator.ts; configurator-params reacts to this signal for
+  // it, rather than importing it here and closing an import cycle.
+  if (ref) paramMenuCollapsed.set(false);
+}
 
 export const scriptMetadata = signal<ScriptMetadata>({
   projectName: '',

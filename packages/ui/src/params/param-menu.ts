@@ -12,6 +12,8 @@ import './param-item-boolean';
 import './param-item-text';
 import './param-item-options';
 import './param-item-list';
+import './param-item-object-list';
+import './param-item-object';
 import './param-define-menu';
 
 import {
@@ -28,6 +30,8 @@ import {
   saveAsPreset,
   paramVisible,
   paramEnabled,
+  isObjectListParam,
+  activeParamEntry,
 } from '@archiyou/editor/src/state/workspace';
 
 import { PARAM_TAB_NAME_MAX_LENGTH } from '@archiyou/editor/src/settings';
@@ -38,6 +42,10 @@ import type { ScriptParam, ScriptParamData, ParamValueChangeDetail, ParamSpec } 
 export class ParamMenu extends SignalWatcher(LitElement)
 {
   @state() private _activeTab = 'main';
+  private _pendingActiveEntry: { param: string; index: number } | null = null;
+  /** The entry we last switched tabs for, so the user can move to another tab afterwards
+   *  without being yanked straight back. */
+  private _lastRevealedEntry: string | null = null;
   @state() private _defineMenuOpen = false;
   @state() private _editingParam: ScriptParam | null = null;
   @state() private _editingTab: string | null = null;
@@ -60,6 +68,12 @@ export class ParamMenu extends SignalWatcher(LitElement)
   {
     const collapsed = paramMenuCollapsed.get();
     this.toggleAttribute('collapsed', collapsed);
+
+    // Read here, act on it in updated(): signal reads belong in render() so SignalWatcher
+    // tracks them. Clicking an opening's handle in the 3D view activates its entry, but the
+    // row only becomes visible once its GROUP is the open tab — expanding a row on a tab
+    // nobody is looking at is not activation.
+    this._pendingActiveEntry = activeParamEntry.get();
 
     const groups = this._groups();
     if (!groups.includes(this._activeTab))
@@ -251,6 +265,7 @@ export class ParamMenu extends SignalWatcher(LitElement)
       <param-item
         .param=${p}
         ?disabled=${!paramEnabled(p)}
+        ?block=${isObjectListParam(p) || p.type === 'object'}
         class=${isDragOver ? 'drag-over' : ''}
         data-name=${ifDefined(p.name)}
       >
@@ -267,7 +282,10 @@ export class ParamMenu extends SignalWatcher(LitElement)
       case 'boolean': return html`<param-item-boolean .param=${p}></param-item-boolean>`;
       case 'text':    return html`<param-item-text    .param=${p}></param-item-text>`;
       case 'options': return html`<param-item-options .param=${p}></param-item-options>`;
-      case 'list':    return html`<param-item-list    .param=${p}></param-item-list>`;
+      case 'list':    return isObjectListParam(p)
+                        ? html`<param-item-object-list .param=${p}></param-item-object-list>`
+                        : html`<param-item-list        .param=${p}></param-item-list>`;
+      case 'object':  return html`<param-item-object  .param=${p}></param-item-object>`;
       default:        return nothing;
     }
   }
@@ -573,6 +591,8 @@ export class ParamMenu extends SignalWatcher(LitElement)
 
   override updated()
   {
+    this._revealActiveEntry();
+
     const area = this.renderRoot.querySelector<HTMLElement>('.tab-scroll-area');
     if (area && !this._scrollListeners.has(area))
     {
@@ -580,6 +600,19 @@ export class ParamMenu extends SignalWatcher(LitElement)
       area.addEventListener('scroll', () => this._updateScrollState(area));
     }
     this._updateTabOverflow();
+  }
+
+  /** Bring the tab holding the newly-activated param entry to the front. */
+  private _revealActiveEntry()
+  {
+    const ref = this._pendingActiveEntry;
+    const key = ref ? `${ref.param}/${ref.index}` : null;
+    if (key === this._lastRevealedEntry) return;
+    this._lastRevealedEntry = key;
+    if (!ref) return;
+
+    const group = scriptParams.get().find(p => p.name === ref.param)?.group ?? 'main';
+    if (group !== this._activeTab) this._activeTab = group;
   }
 
   private _updateTabOverflow()
@@ -807,7 +840,12 @@ export class ParamMenu extends SignalWatcher(LitElement)
 
     .param-list {
       flex-shrink: 0;
-      max-height: 200px;
+      /* The ONE scroll container for the params. Object-list rows no longer cap their own
+         height, so a fully expanded opening — five entry rows plus a six-field form — has to
+         fit here. Still capped, because this menu is flex-shrink:0 above the code box and
+         unbounded growth would eat the editor; 70vh leaves the code box a usable strip on a
+         short screen, and the scrollbar covers the rest. */
+      max-height: min(70vh, 640px);
       overflow-y: auto;
     }
 

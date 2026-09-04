@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
+import { SignalWatcher } from '@lit-labs/signals';
 import { msg } from '@lit/localize';
 import { Router } from '@vaadin/router';
 
@@ -9,12 +10,18 @@ import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '@awesome.me/webawesome/dist/components/divider/divider.js';
 
+import { editorScript, isReadOnly } from '@archiyou/editor/src/state/workspace';
+
 @customElement('editor-main-menu-file-menu')
-export class MainMenuFileMenu extends LitElement
+export class MainMenuFileMenu extends SignalWatcher(LitElement)
 {
   // ── 1. Render ──
   override render()
   {
+    // A foreign (read-only) script is not in our collection, so there is
+    // nothing of ours to delete — and neither is an empty editor.
+    const canDelete = !!editorScript.get() && !isReadOnly.get();
+
     return html`
       <wa-dropdown placement="bottom-start" @wa-select=${this._handleSelect}>
 
@@ -40,6 +47,10 @@ export class MainMenuFileMenu extends LitElement
         <wa-dropdown-item value="save">
           <wa-icon slot="icon" library="lucide" name="save"></wa-icon>
           ${msg('Save')}
+        </wa-dropdown-item>
+        <wa-dropdown-item value="delete-script" variant="danger" ?disabled=${!canDelete}>
+          <wa-icon slot="icon" library="lucide" name="trash-2"></wa-icon>
+          ${msg('Delete script')}
         </wa-dropdown-item>
 
         <wa-divider></wa-divider>

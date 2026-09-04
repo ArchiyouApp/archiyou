@@ -157,6 +157,14 @@ export interface ScriptParamDefineOptions
     // friendly schema aliases
     options?: Array<any>  // → schema.enum
     listItemType?: 'string'|'number'|'boolean' // → schema.items.type
+    min?: number  // → schema.minimum
+    max?: number  // → schema.maximum
+    step?: number // → schema.multipleOf
+    /** Name of a $PARAMS.defineObject() type (or an inline object schema / props map).
+     *  For 'list' it becomes schema.items; for 'object' it becomes the schema itself. */
+    of?: string|Record<string, any>
+    /** Property of an object entry to use as its label in the UI. Falls back to `name`. */
+    labelProp?: string
     // JSON-Schema keywords (pass-through)
     minimum?: number
     maximum?: number
@@ -167,6 +175,28 @@ export interface ScriptParamDefineOptions
     items?: Record<string, any>
     properties?: Record<string, any>
     [key: string]: any
+}
+
+/** One property of an object type declared with $PARAMS.defineObject().
+ *  Accepts three spellings:
+ *      - a bare type:      'number' | 'text' | 'boolean' | 'string' | 'integer'
+ *      - an array:         ['left','right'] → an enum of allowed values
+ *      - a full defintion: { type:'number', min:0, max:5000, step:10, default:100, units:'mm' }
+ */
+export type ScriptObjectPropDef = string | Array<string|number> | Record<string, any>
+
+/** Options for $PARAMS.defineObject() */
+export interface ScriptObjectDefineOptions
+{
+    /** Human name for the type. Defaults to the registered name. */
+    title?: string
+    /** Property used as an entry's label in the UI. Falls back to `name`, then '<Title> <n>'. */
+    labelProp?: string
+    /** Opt-in ONLY. Defaulting either of these makes schema evolution destructive: add one
+     *  property next week and every list the user already edited fails validation, which
+     *  silently replaces it with the script's default. */
+    required?: Array<string>
+    additionalProperties?: boolean
 }
 
 export type ParamOperation = 'new'|'updated'|'deleted'

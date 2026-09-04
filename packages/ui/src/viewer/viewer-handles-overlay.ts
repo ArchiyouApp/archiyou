@@ -23,7 +23,15 @@ export interface HandleDragEventDetail
 {
   id: string;
   pointerEvent: PointerEvent;
+  /** drag-end only: the pointer never really moved, so this gesture was a click.
+   *  Carried on the same event rather than a separate 'handle-click' so there is no
+   *  ordering question between cleaning up the drag and acting on the click. */
+  click?: boolean;
 }
+
+/** How far the pointer may travel and still count as a click, in px. Matches the slop
+ *  model-viewer already uses to tell a shape pick from an orbit drag. */
+const CLICK_SLOP_PX = 5;
 
 /**
  * HTML/CSS overlay for script-authored interaction handles, layered on top of
@@ -38,6 +46,8 @@ export interface HandleDragEventDetail
 export class ViewerHandlesOverlay extends LitElement
 {
   @property({ attribute: false }) handles: HandleOverlay[] = [];
+  /** Id of the handle that stands for the param entry currently open in the param menu. */
+  @property({ attribute: false }) activeId: string | null = null;
 
   private _nodes = new Map<string, HTMLElement>();
   @property({ attribute: false }) private _draggingId: string | null = null;
@@ -48,13 +58,14 @@ export class ViewerHandlesOverlay extends LitElement
       ${repeat(this.handles, (h) => h.id, (h) =>
       {
         const dragging = this._draggingId === h.id;
+        const active   = this.activeId === h.id;
         return html`
           <div
             class="ay-handle-anchor"
             data-id=${h.id}
           >
             <div
-              class="ay-handle ${dragging ? 'ay-handle--dragging' : ''}"
+              class="ay-handle ${dragging ? 'ay-handle--dragging' : ''} ${active ? 'ay-handle--active' : ''}"
               part="handle"
               @pointerdown=${(e: PointerEvent) => this._onPointerDown(h, e)}
             >
@@ -72,6 +83,9 @@ export class ViewerHandlesOverlay extends LitElement
     e.preventDefault();
     this._draggingId = h.id;
 
+    const startX = e.clientX;
+    const startY = e.clientY;
+
     const onMove = (ev: PointerEvent) =>
     {
       this.dispatchEvent(new CustomEvent<HandleDragEventDetail>('handle-drag-move', {
@@ -85,9 +99,10 @@ export class ViewerHandlesOverlay extends LitElement
       this._draggingId = null;
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      const click = Math.hypot(ev.clientX - startX, ev.clientY - startY) <= CLICK_SLOP_PX;
       this.dispatchEvent(new CustomEvent<HandleDragEventDetail>('handle-drag-end', {
         bubbles: true, composed: true,
-        detail: { id: h.id, pointerEvent: ev },
+        detail: { id: h.id, pointerEvent: ev, click },
       }));
     };
 
@@ -141,6 +156,7 @@ export class ViewerHandlesOverlay extends LitElement
       --ay-handle-shadow:      0 2px 8px rgba(0, 0, 0, 0.25);
       --ay-handle-bg-hover:    #1D4ED8;
       --ay-handle-bg-dragging: #1E40AF;
+      --ay-handle-ring-active: #F59E0B;
     }
 
     .ay-handle-anchor {
@@ -178,6 +194,12 @@ export class ViewerHandlesOverlay extends LitElement
     .ay-handle--dragging {
       cursor: grabbing;
       background: var(--ay-handle-bg-dragging);
+    }
+
+    /* The handle whose param-entry form is open in the menu. A ring rather than a fill,
+       so it can combine with the hover and dragging states instead of fighting them. */
+    .ay-handle--active {
+      box-shadow: var(--ay-handle-shadow), 0 0 0 2px var(--ay-handle-ring-active);
     }
 
     .ay-handle wa-icon {

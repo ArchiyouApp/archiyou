@@ -13,6 +13,8 @@ import '../params/param-item-boolean.js';
 import '../params/param-item-text.js';
 import '../params/param-item-options.js';
 import '../params/param-item-list.js';
+import '../params/param-item-object-list.js';
+import '../params/param-item-object.js';
 
 import '../params/param-help.js';
 
@@ -21,10 +23,11 @@ import {
   setConfiguratorParamMenuCollapsed,
 } from '@archiyou/editor/src/state/configurator';
 import { configuratorParams, configuratorValueFor, setConfiguratorValue } from '@archiyou/editor/src/state/configurator';
+import { activeParamEntry, isObjectListParam } from '@archiyou/editor/src/state/workspace';
 import { translate } from '@archiyou/editor/src/state/locale';
 import { groupKey } from '@archiyou/core/src/i18n/keys';
 
-import type { ScriptParam, ParamValueChangeDetail } from '@archiyou/editor/src/state/workspace';
+import type { ScriptParam, ParamValueChangeDetail, ParamEntryRef } from '@archiyou/editor/src/state/workspace';
 
 @customElement('configurator-params')
 export class ConfiguratorParams extends SignalWatcher(LitElement)
@@ -35,6 +38,9 @@ export class ConfiguratorParams extends SignalWatcher(LitElement)
     const collapsed = configuratorParamMenuCollapsed.get();
     const params    = configuratorParams.get();
     const groups    = this._groups(params);
+    // Read here, act on it in updated(): signal reads belong in render() so SignalWatcher
+    // tracks them, the same pattern model-viewer uses for its pending-* fields.
+    this._pendingActiveEntry = activeParamEntry.get();
 
     return html`
       <div class="header" @click=${this._toggleCollapse}>
@@ -66,6 +72,37 @@ export class ConfiguratorParams extends SignalWatcher(LitElement)
         </div>
       ` : nothing}
     `;
+  }
+
+  // ── 2. State & Properties ──
+
+  private _pendingActiveEntry: ParamEntryRef | null = null;
+  /** The entry ref we last revealed, so a param-menu that the user deliberately collapsed
+   *  stays collapsed until something new is actually activated. */
+  private _lastRevealedEntry: string | null = null;
+
+  // ── 3. Lifecycle ──
+
+  override updated()
+  {
+    // A handle click in the 3D view activates a param entry; here that has to open the
+    // menu and select the right tab, or the row it activated is somewhere the user cannot
+    // see. The editor's equivalent lives in setActiveParamEntry(); this menu's collapse
+    // flag is configurator-local, so it is reacted to rather than written from there.
+    const ref = this._pendingActiveEntry;
+    const key = ref ? `${ref.param}/${ref.index}` : null;
+    if (key === this._lastRevealedEntry) return;
+    this._lastRevealedEntry = key;
+    if (!ref) return;
+
+    setConfiguratorParamMenuCollapsed(false);
+
+    const group = configuratorParams.get().find(p => p.name === ref.param)?.group ?? 'main';
+    this.updateComplete.then(() =>
+    {
+      const tabs = this.renderRoot.querySelector('wa-tab-group') as (HTMLElement & { active: string }) | null;
+      if (tabs) tabs.active = group;
+    });
   }
 
   // ── 4. Behaviour & Methods ──
@@ -119,7 +156,10 @@ export class ConfiguratorParams extends SignalWatcher(LitElement)
       case 'boolean': return html`<param-item-boolean .param=${p} .value=${v} mode="presentation"></param-item-boolean>`;
       case 'text':    return html`<param-item-text    .param=${p} .value=${v} mode="presentation"></param-item-text>`;
       case 'options': return html`<param-item-options .param=${p} .value=${v} mode="presentation"></param-item-options>`;
-      case 'list':    return html`<param-item-list    .param=${p} .value=${v} mode="presentation"></param-item-list>`;
+      case 'list':    return isObjectListParam(p)
+                        ? html`<param-item-object-list .param=${p} .value=${v} .t=${translate.get()} mode="presentation"></param-item-object-list>`
+                        : html`<param-item-list        .param=${p} .value=${v} mode="presentation"></param-item-list>`;
+      case 'object':  return html`<param-item-object  .param=${p} .value=${v} .t=${translate.get()} mode="presentation"></param-item-object>`;
       default:        return nothing;
     }
   }

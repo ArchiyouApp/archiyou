@@ -152,3 +152,114 @@ describe('ParamManager.getManagedParams() — full sync', () =>
         expect(managed.new.map(p => p.name)).toContain('FRESH')
     })
 })
+
+// ── defineObject() + the `of:` alias ─────────────────────────────────────────
+
+describe('ParamManager.defineObject()', () =>
+{
+    const OPENING = {
+        wall:   ['left', 'right', 'front', 'back'],
+        left:   { type: 'number', min: 0, max: 20000, step: 10, default: 1000, units: 'mm' },
+        width:  { type: 'number', min: 100, max: 5000, step: 10, default: 1200 },
+        name:   'text',
+    }
+
+    it('registers a type and inlines it into a list param via of:', () =>
+    {
+        const pm = new ParamManager()
+        pm.defineObject('Opening', OPENING)
+        pm.define('openings', 'list', { of: 'Opening', default: [{ wall: 'front', left: 500, width: 900, name: 'a' }] })
+
+        const p = pm.getParamsMap()['OPENINGS']
+        const schema = p.schema as any
+
+        expect(schema.type).toBe('array')
+        // Inlined, not referenced: the app has to validate with no ParamManager around.
+        expect(schema.items.type).toBe('object')
+        expect(schema.items.title).toBe('Opening')
+        expect(schema.items.properties.left.maximum).toBe(20000)
+        expect(schema.items.properties.wall.enum).toEqual(['left', 'right', 'front', 'back'])
+        expect(p.validateValue(p.default)).toBe(true)
+    })
+
+    it('gives each param its own copy, so one cannot mutate the other', () =>
+    {
+        const pm = new ParamManager()
+        pm.defineObject('Opening', OPENING)
+        pm.define('alpha', 'list', { of: 'Opening' })
+        pm.define('beta',  'list', { of: 'Opening' })
+
+        const a = pm.getParamsMap()['ALPHA'].schema as any
+        const b = pm.getParamsMap()['BETA'].schema as any
+
+        a.items.properties.left.maximum = 1
+        expect(b.items.properties.left.maximum).toBe(20000)
+        expect((pm.getDefinedObjects()['Opening'] as any).properties.left.maximum).toBe(20000)
+    })
+
+    it('throws on an unknown type, naming what IS defined', () =>
+    {
+        const pm = new ParamManager()
+        pm.defineObject('Opening', OPENING)
+        expect(() => pm.define('holes', 'list', { of: 'Hole' })).toThrow(/Opening/)
+    })
+
+    it('accepts an inline properties map without registering a type', () =>
+    {
+        const pm = new ParamManager()
+        pm.define('points', 'list', { of: { x: 'number', y: 'number' } })
+        expect((pm.getParamsMap()['POINTS'].schema as any).items.properties.x.type).toBe('number')
+    })
+
+    it('still accepts a raw items schema (back-compat)', () =>
+    {
+        const pm = new ParamManager()
+        pm.define('points', 'list', { items: { type: 'object', properties: { x: { type: 'number' } } } })
+        expect((pm.getParamsMap()['POINTS'].schema as any).items.properties.x.type).toBe('number')
+    })
+
+    it('rejects a seeded default that does not fit, pointing at the entry', () =>
+    {
+        const pm = new ParamManager()
+        pm.defineObject('Opening', OPENING)
+
+        expect(() => pm.define('openings', 'list', {
+            of: 'Opening',
+            default: [
+                { wall: 'front', left: 500,  width: 900 },
+                { wall: 'ceiling', left: 500, width: 900 }, // not an allowed wall
+            ],
+        })).toThrow(/entry 1/)
+    })
+
+    it('builds an object param, defaulting to a fully populated value', () =>
+    {
+        const pm = new ParamManager()
+        pm.defineObject('Opening', OPENING)
+        pm.define('main', 'object', { of: 'Opening' })
+
+        const p = pm.getParamsMap()['MAIN']
+        expect(p.default).toEqual({ wall: 'left', left: 1000, width: 1200, name: '' })
+        expect(p.validateValue(p.default)).toBe(true)
+    })
+
+    it('keeps a user-edited list across a re-definition', () =>
+    {
+        const edited = [{ wall: 'back', left: 20, width: 300, name: 'edited' }]
+
+        const pm = new ParamManager([{
+            name: 'OPENINGS', type: 'list',
+            schema: {
+                type: 'array',
+                items: ParamManager.buildObjectSchema('Opening', OPENING),
+                default: [],
+            },
+            _value: edited, _definedProgrammatically: true,
+        } as unknown as ScriptParamData])
+
+        pm.defineObject('Opening', OPENING)
+        pm.define('openings', 'list', { of: 'Opening', default: [{ wall: 'front', left: 10, width: 200 }] })
+
+        expect(pm.getParamsMap()['OPENINGS']._value).toEqual(edited)
+    })
+})

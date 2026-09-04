@@ -8,6 +8,20 @@ export interface HandlePlane
     vAxis:  [number, number, number];
 }
 
+/** A drag scalar a handle can feed into a param property.
+ *  'x'|'y'|'z' are the handle's world position; 'u'|'v' its projection onto the
+ *  drag axes — which, under a relative range, IS the drag delta. */
+export type HandleAxis = 'x' | 'y' | 'z' | 'u' | 'v';
+
+/** Drag axis → property name, e.g. `{ u: 'left', v: 'sill' }`.
+ *
+ *  Declarative on purpose. Because the viewer knows which PROPERTY each axis feeds, it can
+ *  step-snap and clamp against that property's own schema before validating — and it has
+ *  to, since ScriptParam.validateValue() checks the whole value and would silently reject
+ *  a `left` that misses its multipleOf. A map function cannot be introspected that way,
+ *  which is why it is the escape hatch and not the default. */
+export type HandleParamMap = Partial<Record<HandleAxis, string>>;
+
 export interface HandleData
 {
     id: string;
@@ -22,6 +36,8 @@ export interface HandleData
      *  false → rangeMin/Max are absolute world-projections onto uAxis/vAxis. */
     rangeRelative: boolean;
     plane: HandlePlane;
+    /** Param reference this handle writes to. Either a plain name (`'WIDTH'`) or one
+     *  element of a list param (`'OPENINGS[2]'`) — see Handle.param(). */
     param: string | null;
     /** Serialized map function `(handle, param) => newParamValue`.
      *  When param is non-null and this is null → autoMap (linear remap of handle
@@ -33,6 +49,10 @@ export interface HandleData
      *  detects which keys changed and applies each changed param independently.
      *  Use for 2D handles or any case that updates more than one param at once. */
     paramsFnSrc: string | null;
+    /** Declarative drag-axis → property map, for a param whose value is an object (an
+     *  `object` param, or one entry of an object list). Mutually exclusive with
+     *  paramFnSrc — the map is the readable form, the function the escape hatch. */
+    paramMap: HandleParamMap | null;
 }
 
 // ── Managed-handle op protocol ────────────────────────────────────────────────

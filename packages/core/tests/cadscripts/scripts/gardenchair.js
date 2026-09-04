@@ -149,8 +149,9 @@ sideBackSupportBeam = sideBackSupportBeam.hide().extrude(BEAM_THICKNESS, [-1,0,0
 sideBeamDepth = sideBeamDepth.extrude(BEAM_THICKNESS, [1,0,0]);
 sideLegFront = sideLegFront.extrude(BEAM_THICKNESS, [-1,0,0]);
 
-// intersection() is in-place in the mesh kernel: copy first to keep sideSeatingBeam
-sideSeatingBeamPadding = sideSeatingBeam.copy().intersection(sideBackBeam) // pad seat beam
+// intersection() is non-replacing: sideSeatingBeam stays as it is and the shared volume
+// comes back as a new Mesh
+sideSeatingBeamPadding = sideSeatingBeam.intersection(sideBackBeam) // pad seat beam
 sideSeatingBeamPadding.moveX(-BEAM_THICKNESS)
 sideBackBeam.moveX(-BEAM_THICKNESS*2);
 

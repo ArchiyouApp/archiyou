@@ -108,7 +108,6 @@ describe('Dimensions', () =>
         const dl = modeler.line([0, 0, 0], [100, 100, 0]).dim() as DimensionLine
 
         expect(dl.targetDir().toArray()).toEqual([100, 100, 0])
-        expect(String((dl as unknown as { _calculatePoint: Function })._calculatePoint)).toContain('planarLength')
 
         const offsetComponents = (dl as unknown as {
             _resolveOffsetComponents(): [number, number, number]
@@ -297,4 +296,74 @@ describe('Dimensions', () =>
         // Without a drawing size the old fixed sizes are kept (callers that do not pass one)
         expect(dim.toSVG()).toContain('font-size="1"')
     })
+
+    /**
+     * A dimension stands off perpendicular to itself, and "perpendicular" only means something
+     * once you say in which plane. This used to answer XY for every dimension in every model.
+     * See _planeNormal() in src/annotator/AnnotatorDimensionLine.ts.
+     */
+    describe('offsets inside the drawing plane', () =>
+    {
+        /** A wall elevation on XZ: 4m along the ground, 2.5m up. */
+        const elevation = () =>
+        {
+            const bottom = modeler.line([0, 0, 0], [4000, 0, 0])
+            modeler.line([0, 0, 0], [0, 0, 2500])
+            return bottom as any
+        }
+
+        it('offsets a dimension on an XZ elevation inside XZ, not out of the drawing', () =>
+        {
+            const dl = elevation().dim() as DimensionLine
+            const [x, y, z] = (dl as any)._resolveOffsetComponents()
+
+            // Perpendicular to a horizontal line, in the plane of the wall: straight down or up.
+            expect(Math.abs(z)).toBeCloseTo(1, 6)
+            expect(x).toBeCloseTo(0, 6)
+            expect(y).toBeCloseTo(0, 6)   // y is OUT of an XZ drawing — the old answer
+        })
+
+        it('steps the dimension line off the geometry it measures', () =>
+        {
+            const dl = elevation().dim() as DimensionLine
+            const start = (dl as any)._calculatePoint('start')
+
+            // The wall's bottom edge is at z = 0; the dimension may not sit on top of it.
+            expect(Math.abs(start.z)).toBeGreaterThan(0)
+            expect(start.y).toBeCloseTo(0, 6)
+        })
+
+        it('still offsets a plan dimension inside XY', () =>
+        {
+            modeler.rect(400, 200)
+            const dl = (modeler.line([-200, -100, 0], [200, -100, 0]) as any).dim() as DimensionLine
+            const [x, y, z] = (dl as any)._resolveOffsetComponents()
+
+            expect(Math.abs(y)).toBeCloseTo(1, 6)
+            expect(x).toBeCloseTo(0, 6)
+            expect(z).toBeCloseTo(0, 6)
+        })
+
+        it('lets an explicit offset vector win over the plane', () =>
+        {
+            const dl = elevation().dim({ offsetVec: [0, 1, 0] }) as DimensionLine
+            expect((dl as any)._resolveOffsetComponents()).toEqual([0, 1, 0])
+        })
+
+        // The line has to turn into the drawing AND step off inside it: the projection and the
+        // offset have to agree about which plane that is, or it turns in and then steps out.
+        it('draws the dimension beside the elevation, not on it', () =>
+        {
+            elevation().dim()
+
+            const svg = (modeler.all() as any).toSVG() as string
+            const dimLine = svg.match(/<line class="annotation line"[^>]*>/)?.[0] ?? ''
+            const y1 = Number(dimLine.match(/y1="([-\d.]+)"/)?.[1])
+
+            expect(dimLine).toMatch(/x1="0"/)
+            expect(dimLine).toMatch(/x2="4000"/)
+            expect(Math.abs(y1)).toBeGreaterThan(0)   // 0 is the bottom edge itself
+        })
+    })
+
 })

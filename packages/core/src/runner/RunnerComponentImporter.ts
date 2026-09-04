@@ -409,6 +409,17 @@ export class RunnerComponentImporter
             newNode.setStyle(tree.style);
         }
 
+        // Attach BEFORE setShape() below: adoption resolves the sid provider through the
+        // scene root, which this node only reaches once it is in the caller's tree.
+        if (parentNode)
+        {
+            parentNode.addChild(newNode);
+        }
+        else
+        {
+            mainModeler.scene().addChild(newNode);
+        }
+
         if (tree.shape)
         {
             // Re-parenting MOVES a shape: it gets the main scope's modeler and a new node, and
@@ -419,16 +430,13 @@ export class RunnerComponentImporter
             const shape = (copyShapes ? this._copyComponentShape(tree.shape) : tree.shape) as any;
             shape._modeler = mainModeler;
             shape._node = null;
+            // The component ran in its own scope, with its own Modeler and so its own sid
+            // sequence. Those numbers mean nothing here: drop them so the caller's scene
+            // renumbers the shape on adoption, keeping the old one only as provenance. Without
+            // this a moved (uncached) shape would keep a component-scope sid while a copied
+            // (cached) one got a caller sid — the cache would be observable.
+            if (shape._sid) { shape._sidFrom = shape._sid; shape._sid = 0; }
             newNode.setShape(shape);
-        }
-
-        if (parentNode)
-        {
-            parentNode.addChild(newNode);
-        }
-        else
-        {
-            mainModeler.scene().addChild(newNode);
         }
 
         tree.children.forEach(childData =>
@@ -458,6 +466,7 @@ export class RunnerComponentImporter
 
         const copy = shape._copy();
 
+        copy._inheritSid?.(shape);
         copy._name = shape._name;
         copy._nameInherited = shape._nameInherited;
         copy._material = shape._material;

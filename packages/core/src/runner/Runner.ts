@@ -1294,7 +1294,7 @@ ${contextLines.join('\n')}
         // so the Interactor can validate paramsFn key references at first definition time.
         const scriptKey = request?.script?.id ?? request?.script?.fileId ?? 'default';
         const knownParamNames = Object.keys(request?.script?.params ?? {});
-        scope._archiyou.interactor?.beginRun(scriptKey, knownParamNames, request?.selection ?? []);
+        scope._archiyou.interactor?.beginRun(scriptKey, knownParamNames, request?.selection ?? [], scope._paramManager);
         // scope._archiyou.gizmos = []; // TODO AFTER REFACTOR
 
         this._pipelineExports = []; // reset pipelineExports (to avoid from previous runs)

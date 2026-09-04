@@ -157,3 +157,28 @@ describe('collections speak it too', () =>
         expect(Math.round(p.bbox().min().z)).toEqual(25)
     })
 })
+
+describe('styling verbs match the mesh kernel', () =>
+{
+    test('continuous() undoes dashed() on a Shape', () =>
+    {
+        const w = new brep.Wire().makeRect(100, 50).dashed()
+        expect(w.style.strokeDash).toEqual([5, 5])
+
+        w.continuous()
+        expect(w.style.strokeDash).toEqual([])
+        // explicit, so it wins over a dashed layer in the cascade
+        expect(w.style.explicitData().stroke?.dash).toEqual([])
+    })
+
+    test('continuous() undoes dashed() on a whole ShapeCollection', () =>
+    {
+        const c = new brep.ShapeCollection(
+            new brep.Wire().makeRect(100, 50),
+            new brep.Wire().makeRect(10, 10)).dashed()
+        c.forEach(s => expect(s.style.strokeDash).toEqual([5, 5]))
+
+        c.continuous()
+        c.forEach(s => expect(s.style.strokeDash).toEqual([]))
+    })
+})

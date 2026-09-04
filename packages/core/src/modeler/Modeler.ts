@@ -38,6 +38,7 @@ import { validate, optional } from "../decorators";
 import { type AnyShape, isAnyShape } from "./types";
 
 import { buildDXF, type toDXFOptions } from "./DXFExporter";
+import { detectExportFrame } from "./utils";
 import { buildSVG, buildProjectionSVG, buildThumbnailSVG, buildThumbnailSVGFromCurves,
     type toSVGOptions, type toProjectionSVGOptions,
     type ThumbnailSVGOptions, type ThumbnailSVGResult } from "./SVGExporter";
@@ -103,6 +104,12 @@ export class Modeler
     declare private _make: Make
     /** Cached brep view of `classes` — see the getter. */
     private _brepClasses: KernelClasses | null = null
+
+    /** Serial-id sequence for shapes adopted into this modeler's scene. One counter per
+     *  Modeler — Runner.initLocalArchiyou() builds a fresh Modeler per scope, so the main
+     *  run and every $component() activation number independently and cannot interleave.
+     *  Rebased by reset(); the scene root pulls from it via setSidProvider(). */
+    private _sidSeq = 0
     
     stats:Record<string,any> = {}; // stats of last operation
 
@@ -154,8 +161,24 @@ export class Modeler
     reset()
     {
         this._scene = meshup.SceneNode.root('root'); // new scene root
+        this._sidSeq = 0; // a run starts numbering from 1 again
+        this._scene.setSidProvider(() => this._nextSid());
         this._setActiveLayer(this._scene);
         this.setMake();
+    }
+
+    /** Hand out the next shape serial id. Installed on the scene root as a provider by
+     *  reset(), so the meshup scene layer can number adopted shapes without knowing about
+     *  the Modeler — the same arrangement as the active layer below. */
+    private _nextSid(): number
+    {
+        return ++this._sidSeq
+    }
+
+    /** Highest serial id handed out so far (= number of shapes adopted this run). */
+    lastSid(): number
+    {
+        return this._sidSeq
     }
 
     /** Set the active layer (where new shapes land) and mirror it onto the scene root so
@@ -913,8 +936,10 @@ export class Modeler
     toSVG(options?: toSVGOptions): string | null
     {
         const exportScene = this._exportScene();
-        const has2D = exportScene.shapes().toArray().some((s:any) => s?.is2D?.())
-        if (!has2D)
+        // Asked of the drawing plane, not of is2D(): that tests a bbox extent for an EXACT
+        // zero, and a rect rotated onto XZ keeps ~1e-15 of it, so a model built by rotation
+        // was turned away as "no 2D shapes in scene".
+        if (!detectExportFrame(exportScene.shapes().toArray()))
         {
             console.warn('Modeler::toSVG(): No 2D shapes in scene. Nothing to export.')
             return null
@@ -1097,9 +1122,11 @@ export class Modeler
     }
 
     /** Export the whole scene's 2D shapes (and all dimension annotations) to a DXF
-     *  string. Non-2D shapes are skipped. Returns null when the scene has no
-     *  2D-on-XY geometry. This is the scene-level entry used by the Runner's
-     *  `dxf` model output. */
+     *  string. Non-2D shapes are skipped. The drawing plane is detected from the geometry
+     *  itself — a model standing on XZ exports as a front elevation without being rotated
+     *  first — or forced with `options.plane`. Returns null when the scene holds no 2D
+     *  geometry at all. This is the scene-level entry used by the Runner's `dxf` model
+     *  output. */
     toDXF(options?: toDXFOptions): string | null
     {
         const shapes = this._exportScene().shapes().toArray()

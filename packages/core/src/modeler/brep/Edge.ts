@@ -537,11 +537,32 @@ export class Edge extends Shape
         return this.direction(true)
     }
 
-    /** Get tangent (= direction ) at certain point on the Edge */
-    @checkInput('PointLike', 'Point')
-    tangent()
+    /** The tangent direction of a straight (Line) Edge, as a normalised Vector.
+     *
+     *  A Line has one tangent along its whole length, so it needs no point to be asked at.
+     *  Any other edge type has a different tangent at every point of it, so there is no single
+     *  answer to give: `tangent()` warns and returns null, and `tangentAt(point)` is the method
+     *  to use. Mirrors meshup's `Curve.tangent()`.
+     *
+     *  NOTE: this used to carry `@checkInput('PointLike', 'Point')` while taking no arguments
+     *  at all, so every call — on a Line as much as on a Circle — threw an INPUT ERROR for the
+     *  missing argument 0. Nothing could have been calling it.
+     */
+    tangent():Vector|null
     {
-        return this.direction().normalize();
+        if(this.edgeType() !== 'Line')
+        {
+            console.warn(`Edge::tangent(): a ${this.edgeType()} Edge has a different tangent at every point of it. Use tangentAt(point) instead.`);
+            return null;
+        }
+
+        const dir = this.direction();
+        if(dir.length() === 0)
+        {
+            console.warn('Edge::tangent(): this Edge has zero length, so it has no tangent direction.');
+            return null;
+        }
+        return dir.normalize();
     }
 
     /** Get direction = tangent at certain point on the Edge */

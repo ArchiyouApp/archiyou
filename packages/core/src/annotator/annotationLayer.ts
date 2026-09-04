@@ -12,6 +12,7 @@
  */
 
 import type { SVGLayer } from '../modeler/SVGExporter'
+import type { Projector } from '../modeler/utils'
 
 /** Room around the annotations, in page millimeters, when nothing better is known.
  *  Three times the default 4mm value text — see annotationMarginMm(). */
@@ -151,14 +152,16 @@ function regroupedAnnotations(o:any, already:Array<any>):Array<any>
  */
 export function annotationLayer(
     annotations:Array<any>,
-    options?:{ unitsPerMm?:number, drawingSize?:number }):SVGLayer
+    options?:{ unitsPerMm?:number, drawingSize?:number, projector?:Projector }):SVGLayer
 {
     const elements:Array<string> = [];
     let box:{ minX:number, minY:number, maxX:number, maxY:number } | null = null;
+    const to = options?.projector;
 
     (annotations ?? []).forEach(a =>
     {
-        const elem = a?.toSVG?.({ drawingSize: options?.drawingSize, unitsPerMm: options?.unitsPerMm });
+        const elem = a?.toSVG?.({ drawingSize: options?.drawingSize, unitsPerMm: options?.unitsPerMm,
+                                  projector: to });
         if(typeof elem !== 'string' || elem.length === 0){ return }
         elements.push(elem);
 
@@ -167,7 +170,10 @@ export function annotationLayer(
         if(typeof min?.x !== 'number' || typeof max?.x !== 'number'){ return }
 
         // SVG's y axis points down: model y [min,max] is svg y [-max,-min]
-        const b = { minX: min.x, minY: -max.y, maxX: max.x, maxY: -min.y };
+        //
+        // A drawing taken from another plane turns the box with everything else, and a turned
+        // box is not its own min and max: the eight corners are, so those are what is measured.
+        const b = to ? boxOfCorners(min, max, to) : { minX: min.x, minY: -max.y, maxX: max.x, maxY: -min.y };
         box = (!box) ? b : {
             minX: Math.min(box.minX, b.minX), minY: Math.min(box.minY, b.minY),
             maxX: Math.max(box.maxX, b.maxX), maxY: Math.max(box.maxY, b.maxY),
@@ -175,4 +181,17 @@ export function annotationLayer(
     });
 
     return { elements, box, cssClass: elements.length ? 'annotations' : undefined };
+}
+
+/** SVG extents of a model-space box seen in the drawing's plane. Every corner is projected,
+ *  because a rotated box's extent is not the projection of its min and max. */
+function boxOfCorners(min:any, max:any, to:Projector):{ minX:number, minY:number, maxX:number, maxY:number }
+{
+    const xs:Array<number> = []; const ys:Array<number> = [];
+    [min.x, max.x].forEach(x => [min.y, max.y].forEach(y => [min.z ?? 0, max.z ?? 0].forEach(z =>
+    {
+        const p = to.point({ x, y, z });
+        xs.push(p.x); ys.push(-p.y); // SVG's y axis points down
+    })));
+    return { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
 }

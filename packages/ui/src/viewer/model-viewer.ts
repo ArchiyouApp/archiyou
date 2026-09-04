@@ -6,7 +6,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { buildScenegraphPath, executionResult, scenegraph, scriptParams, updateParam, selectedPath, setSelectedPath, interactiveShapes } from '@archiyou/editor/src/state/workspace';
+import { buildScenegraphPath, executionResult, scenegraph, scriptParams, updateParam, selectedPath, setSelectedPath, interactiveShapes, activeParamEntry, setActiveParamEntry, isObjectListParam, paramItemSchema } from '@archiyou/editor/src/state/workspace';
 import { formatDimensionValue } from './gltf-annotations.js';
 import { scheduleExecution, resetCameraCounter } from '@archiyou/editor/src/state/viewer';
 import type { ScriptOutputData } from '@archiyou/core/src/execution/types';
@@ -19,6 +19,8 @@ import type { ViewerLabelsOverlay, OverlayLabel, OverlayLabelPos, DimensionParam
 import { handleDefFromData } from './gltf-handles.js';
 import type { HandleDef } from './gltf-handles.js';
 import type { ManagedHandlesData } from '@archiyou/core/src/interaction/types';
+import { applyParamMap, parseParamRef, snapClampChanged } from './handle-param.js';
+import type { ParamEntryRef } from '@archiyou/editor/src/state/types';
 import './viewer-handles-overlay.js';
 import type { ViewerHandlesOverlay, HandleOverlay, HandleOverlayPos, HandleDragEventDetail } from './viewer-handles-overlay.js';
 import { VIEWER_AUTO_FRAME_ON_FIRST_LOAD, VIEWER_BACKGROUND_COLOR, VIEWER_BACKGROUND_COLOR_DARK,
@@ -150,6 +152,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
     this._pendingResetCount = resetCameraCounter.get();
     this._pendingSelectedPath = selectedPath.get();
     this._interactiveShapes = interactiveShapes.get();
+    this._pendingActiveEntry = activeParamEntry.get();
     this._pendingUnitSystem = (executionResult.get()?.request?.unitSystem as string) ?? null;
 
     return html`
@@ -158,6 +161,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
         @dim-param-change=${this._onDimParamChange}
       ></viewer-labels-overlay>
       <viewer-handles-overlay
+        .activeId=${this._activeHandleIdFor(this._pendingActiveEntry)}
         @handle-drag-start=${this._onHandleDragStart}
         @handle-drag-move=${this._onHandleDragMove}
         @handle-drag-end=${this._onHandleDragEnd}
@@ -379,6 +383,10 @@ export class ModelViewer extends SignalWatcher(LitElement)
   private _lastUnitSystem: string | null = null;
   private _htmlHandles: HandleDef[] = [];
   private _activeHandle: HandleDef | null = null;
+  /** Anchor at drag start, so a gesture that turns out to be a click can be undone —
+   *  _onHandleDragMove has already nudged anchorLocal by then. */
+  private _dragStartAnchor: THREE.Vector3 | null = null;
+  private _pendingActiveEntry: ParamEntryRef | null = null;
   private _handleHitPlane = new THREE.Plane();
   private _handleRaycaster = new THREE.Raycaster();
   private _rangeHelper?: THREE.Object3D;
@@ -1467,9 +1475,11 @@ export class ModelViewer extends SignalWatcher(LitElement)
         const path = buildScenegraphPath(parentPath, node.name);
         this._pathToObject.set(path, obj);
         // Stamp identity so a raycast hit can be mapped back to its scene path /
-        // shape (used by click-selection). node.shape is the shape UUID or null.
+        // shape (used by click-selection). node.shape is the shape UUID or null;
+        // node.sid is the shape's serial id (creation order), 0 for containers.
         obj.userData.scenePath = path;
         obj.userData.shapeId = node.shape ?? null;
+        obj.userData.sid = node.sid ?? 0;
 
         const objectChildren = semanticChildrenOf(obj);
         const childCount = Math.min(objectChildren.length, node.children.length);
@@ -2103,6 +2113,10 @@ export class ModelViewer extends SignalWatcher(LitElement)
       paramFnSrc:  h.paramFnSrc,
       paramsFnSrc: h.paramsFnSrc,
     }));
+    // _reconcileHandles mutates _htmlHandles imperatively, so no Lit render re-evaluates
+    // the template's .activeId binding — set it here or a handle added for an
+    // already-active entry would come up unhighlighted.
+    overlay.activeId = this._activeHandleIdFor(this._pendingActiveEntry);
   }
 
   /** A parameter change can make a model dramatically bigger than the one the
@@ -2357,6 +2371,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
     if (!handle) return;
 
     this._activeHandle = handle;
+    this._dragStartAnchor = handle.anchorLocal.clone();
 
     // Build the hit-plane from handle's boundary plane (normal = uAxis × vAxis)
     const n = new THREE.Vector3().crossVectors(handle.plane.uAxis, handle.plane.vAxis).normalize();
@@ -2398,13 +2413,25 @@ export class ModelViewer extends SignalWatcher(LitElement)
   {
     const detail = (e as CustomEvent<HandleDragEventDetail>).detail;
     const handle = this._activeHandle;
+    const startAnchor = this._dragStartAnchor;
     this._activeHandle = null;
+    this._dragStartAnchor = null;
     this._controls.enabled = true;
 
     if (this._rangeHelper) { this._scene.remove(this._rangeHelper); this._rangeHelper = undefined; }
     this._dirty = true;
 
     if (!handle || handle.id !== detail.id) return;
+
+    // A click, not a drag: put the handle back where it was (drag-move has already nudged
+    // it within the slop) and, when it stands for a list entry, open that entry's form.
+    if (detail.click)
+    {
+      if (startAnchor) handle.anchorLocal.copy(startAnchor);
+      const ref = handle.param ? parseParamRef(handle.param) : null;
+      if (ref?.index !== null && ref !== null) setActiveParamEntry({ param: ref.name, index: ref.index });
+      return;
+    }
 
     // Compute the final u/v scalar values for this drag position
     const { uScalar, vScalar } = _resolveHandleScalars(handle, handle.anchorLocal);
@@ -2472,13 +2499,22 @@ export class ModelViewer extends SignalWatcher(LitElement)
       return;
     }
 
-    // ── Single-param path (.param(name, fn?) or autoMap) ─────────────────────
+    // ── Single-param path (.param(ref, map | fn?) or autoMap) ────────────────
     if (!handle.param) return;
 
-    const param = scriptParams.get().find(p => p.name === handle.param);
+    const ref = parseParamRef(handle.param);
+    const param = scriptParams.get().find(p => p.name === ref.name);
     if (!param)
     {
-      console.warn(`Handle bound to unknown param "${handle.param}"`);
+      console.warn(`Handle bound to unknown param "${ref.name}"`);
+      return;
+    }
+
+    // An indexed ref (OPENINGS[2]) or a map object both mean the target is an OBJECT, and
+    // objects are written property-by-property against their own sub-schema.
+    if (ref.index !== null || handle.paramMap)
+    {
+      this._applyHandleObjectParam(handle, ref, param, handleObj, paramValue);
       return;
     }
 
@@ -2539,6 +2575,119 @@ export class ModelViewer extends SignalWatcher(LitElement)
 
     await this._applyHandleParam(param, next);
   };
+
+  /** Id of the handle standing for `ref`, or null. Resolved by (param, index) because a
+   *  handle's own id is script-settable and need not encode the binding. */
+  private _activeHandleIdFor(ref: ParamEntryRef | null): string | null
+  {
+    if (!ref) return null;
+    return this._htmlHandles.find((h) =>
+    {
+      if (!h.param) return false;
+      const r = parseParamRef(h.param);
+      return r.name === ref.param && r.index === ref.index;
+    })?.id ?? null;
+  }
+
+  /** Write one finished drag into a param whose value is an OBJECT — either a whole
+   *  `object` param, or one element of a list param addressed as `OPENINGS[2]`.
+   *
+   *  Either way the whole param value is replaced (that is what a param value is), but only
+   *  the mapped properties change, each snapped and clamped against its own sub-schema
+   *  first. ScriptParam.validateValue() checks the value as a whole, so an unsnapped `left`
+   *  would fail the write and the drag would look broken. */
+  private _applyHandleObjectParam(
+    handle: HandleDef,
+    ref: { name: string; index: number | null },
+    param: any,
+    handleObj: any,
+    paramValue: (p: any) => any,
+  ): void
+  {
+    const indexed = ref.index !== null;
+
+    if (indexed && !isObjectListParam(param))
+    {
+      console.warn(`Handle "${handle.id}": "${ref.name}[${ref.index}]" needs a list of objects, but "${ref.name}" is not one`);
+      return;
+    }
+
+    // Where the object lives, and the schema that governs it.
+    const current = paramValue(param);
+    const objectSchema = indexed ? paramItemSchema(param) : (param.schema ?? {});
+    const container = indexed ? (Array.isArray(current) ? structuredClone(current) : null) : null;
+    const target = indexed ? container?.[ref.index as number] : current;
+
+    if (!target || typeof target !== 'object')
+    {
+      console.warn(`Handle "${handle.id}": "${handle.param}" has no object to write to`);
+      return;
+    }
+
+    const before = indexed ? target : structuredClone(target);
+    let next: Record<string, any> | null;
+
+    if (handle.paramMap)
+    {
+      next = applyParamMap(
+        handleObj, before, handle.paramMap, handle.rangeRelative, objectSchema,
+        (msg) => console.warn(`Handle "${handle.id}": ${msg}`),
+      );
+    }
+    else
+    {
+      // Map-function escape hatch, run exactly like the scalar paramFnSrc path: it may
+      // mutate the copy it is given or return a new value.
+      const fn = this._reconstructParamFn(handle.paramFnSrc!, handle.id);
+      if (!fn) return;
+      const copy = structuredClone(before);
+      try
+      {
+        const returned = fn(handleObj, copy);
+        next = snapClampChanged(before, (returned !== undefined ? returned : copy), objectSchema);
+      }
+      catch (err)
+      {
+        console.error(`Handle "${handle.id}": map function threw:`, err);
+        return;
+      }
+    }
+    if (!next) return;
+
+    const value = indexed ? Object.assign(container as any[], { [ref.index as number]: next }) : next;
+
+    const { success, errors } = param.validateValueVerbose(value);
+    if (!success)
+    {
+      console.warn(`Handle "${handle.id}" produced an invalid ${param.name}:`, errors);
+      return;
+    }
+
+    console.info('Handle updated param', handle.param, '→', next);
+    updateParam(param.name, { value });
+    scheduleExecution();
+
+    // Re-base the drag zone on the position just reached. Execution is async (50ms debounce
+    // plus a full CAD run), so a second drag started before the re-run lands would otherwise
+    // measure its delta from the stale origin and add it on top of the value already written.
+    handle.plane.origin.copy(handle.anchorLocal);
+  }
+
+  /** Rebuild a map function from its serialized source, as the scalar paramFnSrc path does.
+   *  Script-derived code on the main thread — see CONTRIBUTING.md. */
+  private _reconstructParamFn(src: string, handleId: string): ((h: any, v: any) => any) | null
+  {
+    try
+    {
+      // eslint-disable-next-line no-eval
+      return (0, eval)('(' + src + ')');
+    }
+    catch (err)
+    {
+      console.error(`Handle "${handleId}": map function could not be reconstructed:`, err);
+      return null;
+    }
+  }
 
   /** Shared tail for single-param path: prechecks → validate → updateParam → scheduleExecution. */
   private async _applyHandleParam(param: any, next: any): Promise<void>

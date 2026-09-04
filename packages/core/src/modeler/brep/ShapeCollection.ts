@@ -26,7 +26,7 @@ import { Point, Vector, Shape, Vertex, Edge, Wire, Face, Shell, Solid, Brep } fr
 
 // Scene + style come from the mesh kernel — one SceneNode graph and one Style model for both.
 import { SceneNode } from '@archiyou/meshup'
-import { renderDrawing } from '../svgLayers'
+import { renderDrawing } from '../SVGExporter'
 import type { StyleData } from '@archiyou/meshup'
 import { Exporter } from './Exporter'
 import { BaseAnnotation } from '../../annotator/AnnotatorBaseAnnotation'
@@ -2150,6 +2150,13 @@ import { getOc } from './index' // OC global getter
          return this;
       }
 
+      /** Make all Shapes in this ShapeCollection unbroken lines again (undoes dashed()) */
+      continuous():this
+      {
+         this.forEach( shape => shape.continuous());
+         return this;
+      }
+
       /** Assign lineWidth to all Shapes in collection  */
       @checkInput(Number, 'auto')
       lineWidth(lw:number):this
@@ -2744,7 +2751,7 @@ import { getOc } from './index' // OC global getter
       /** Export Shapes that are 2D and on XY plane to SVG
        *
        *  The document itself — framing, stylesheet, line weight, annotations — is assembled
-       *  in core (see modeler/svgLayers.ts), by the same code the mesh kernel goes through.
+       *  in core (see modeler/SVGExporter.ts), by the same code the mesh kernel goes through.
        *  This kernel only contributes its line-work. It used to write the whole document
        *  here, byte-duplicating meshup's stylesheet and re-deriving the same margins, which
        *  is how the two came to disagree about what a drawing's extents even are.

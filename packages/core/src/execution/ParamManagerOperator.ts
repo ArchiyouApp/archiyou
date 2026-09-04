@@ -43,7 +43,12 @@ export class ParamManagerOperator
         
         this.originalParam = p;  // NOTE: already validated
         this.name = this.originalParam.name;
-        this.targetParam = { ...this.originalParam, _behaviours: {}} as ScriptParam; // start with copy, but reset behaviours 
+        // Round-trip through fromData() rather than spreading: an object spread drops the
+        // ScriptParam prototype, which used to make targetParam.validateValue() undefined
+        // and set() throw. It also re-runs Type.Unsafe(), so the operator gets its own deep
+        // copy of the schema and can never mutate the original's.
+        this.targetParam = ScriptParam.fromData(this.originalParam.toData());
+        this.targetParam._behaviours = {}; // behaviours are re-declared every run
         this.manager = manager;
 
         this._setParamProps(); // set properties of targetParam on this Controller
@@ -83,10 +88,19 @@ export class ParamManagerOperator
             throw new Error(`ParamManager: value does not match the array items schema for param "${this.targetParam.name}"!`)
         }
 
+        // Normalize BEFORE the duplicate check: that check indexes _value, so the very
+        // first push onto an untouched param used to throw.
+        if (!Array.isArray(this.targetParam._value)) { this.targetParam._value = [] }
+
         if (!this._checkIfListElemExistsLast(v))
         {
-            if (!Array.isArray(this.targetParam._value)) { this.targetParam._value = [] }
             this.targetParam._value = [...this.targetParam._value, v]
+            // Without this the param is never reported back: paramOperated() stays false
+            // and getOperatedParamsByOperation() skips it entirely.
+            // NOTE: deliberately NOT done in set(). 'updated' makes the app stamp
+            // _definedProgrammatically, which permanently locks a UI-authored param's
+            // definition in the menu.
+            this.setOperation('updated')
         }
 
         return v;
@@ -248,28 +262,10 @@ export class ParamManagerOperator
 
     paramToData(param:ScriptParam):ScriptParamData
     {
-        // targetParam is built via object spread ({ ...originalParam }) which drops
-        // the ScriptParam prototype, so toData() may not be present. Reconstruct the
-        // data shape directly (mirrors ScriptParam.toData()) when that's the case.
-        if (typeof (param as any).toData === 'function') { return param.toData(); }
-
-        const p = param as any;
-        return {
-            type:                     p.type,
-            name:                     p.name,
-            label:                    p.label,
-            group:                    p.group,
-            enabled:                  p.enabled,
-            visible:                  p.visible,
-            order:                    p.order,
-            iterable:                 p.iterable,
-            description:              p.description,
-            units:                    p.units,
-            default:                  p.default,
-            _value:                   p._value,
-            _definedProgrammatically: p._definedProgrammatically,
-            schema:                   p.schema,
-        } as ScriptParamData;
+        // Both originalParam and targetParam keep the ScriptParam prototype (see the
+        // constructor), so toData() is always available. The hand-written field mirror
+        // that used to live here was a drift hazard against ScriptParam.toData().
+        return param.toData();
     }
 
     /** Export to raw Param data for output 

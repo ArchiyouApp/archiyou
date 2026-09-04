@@ -92,7 +92,7 @@ describe('Modeler DXF export', () =>
         expect(dxf).toMatch(/\$INSUNITS\n70\n5\n/)
     })
 
-    it('returns null when there is no 2D-on-XY geometry', () =>
+    it('returns null when there is no 2D geometry at all', () =>
     {
         modeler.box(50, 50, 50)
         expect(modeler.toDXF()).toBeNull()
@@ -116,6 +116,315 @@ describe('Modeler DXF export', () =>
         expect(dxf).not.toBeNull()
         expect(countEntity(dxf, 'CIRCLE')).toBe(1)
         expect(countEntity(dxf, 'LWPOLYLINE')).toBeGreaterThanOrEqual(1)
+    })
+
+    /**
+     * Layers and styling. What an author calls a layer is a SceneNode, and its colour and
+     * linetype cascade to the shapes beneath it — so both have to be read off the scene tree,
+     * not off the shape. See the LAYERS & STYLE section of src/modeler/DXFExporter.ts.
+     */
+    describe('layers and styling', () =>
+    {
+        /** Group code/value pairs of every entity or table record of the given type. */
+        const records = (dxf: string, type: string): Array<Array<[number, string]>> =>
+        {
+            const lines = dxf.split('\n')
+            const out: Array<Array<[number, string]>> = []
+            let cur: Array<[number, string]> | null = null
+            for (let i = 0; i + 1 < lines.length; i += 2)
+            {
+                const code = Number(lines[i])
+                const value = lines[i + 1]
+                if (code === 0)
+                {
+                    if (cur) { out.push(cur); cur = null }
+                    if (value === type) cur = []
+                    continue
+                }
+                cur?.push([code, value])
+            }
+            if (cur) out.push(cur)
+            return out
+        }
+
+        const value = (body: Array<[number, string]>, code: number): string | undefined =>
+            body.find(([c]) => c === code)?.[1]
+
+        /** The LAYER table records, keyed by name. */
+        const layers = (dxf: string): Record<string, { rgb?: string; linetype?: string }> =>
+            Object.fromEntries(records(dxf, 'LAYER')
+                .map(b => [value(b, 2)!, { rgb: value(b, 420), linetype: value(b, 6) }]))
+
+        /** Layer name + any per-entity override, one row per geometry entity. */
+        const drawn = (dxf: string): Array<{ layer?: string; rgb?: string; linetype?: string }> =>
+            ['LWPOLYLINE', 'LINE', 'CIRCLE', 'ARC'].flatMap(t => records(dxf, t))
+                .map(b => ({ layer: value(b, 8), rgb: value(b, 420), linetype: value(b, 6) }))
+
+        const rgb = (hex: number): string => String(hex)
+
+        it('names DXF layers after the scene layer, not the shape', () =>
+        {
+            modeler.layer('walls')
+            const shape = modeler.rect(100, 50) as any
+            shape.name('southWall')   // the variable, not the layer
+
+            const dxf = modeler.toDXF() as string
+            expect(Object.keys(layers(dxf))).toContain('walls')
+            expect(Object.keys(layers(dxf))).not.toContain('southWall')
+            expect(drawn(dxf)[0].layer).toBe('walls')
+        })
+
+        it('puts shapes that are in no layer on the default layer 0', () =>
+        {
+            modeler.rect(100, 50)
+            expect(drawn(modeler.toDXF() as string)[0].layer).toBe('0')
+        })
+
+        // A DXF layer name is flat, so a nested scene layer is spelled out with the same dot
+        // notation addLayer('walls.inner') already uses.
+        it('spells a nested scene layer as a dotted path', () =>
+        {
+            modeler.layer('walls')
+            const inner = modeler.group('inner', modeler.rect(10, 10)) as any
+            expect(inner).toBeTruthy()
+
+            const dxf = modeler.toDXF() as string
+            expect(Object.keys(layers(dxf))).toContain('walls.inner')
+        })
+
+        // The whole point: a colour set on the LAYER reaches the file. Reading it off the
+        // shape (which is what used to happen) finds only SHAPE_DEFAULT_STYLE's red.
+        it('gives a layer the colour and linetype set on it', () =>
+        {
+            modeler.layer('diagram').color('blue').dashed()
+            modeler.rect(100, 50)
+
+            const dxf = modeler.toDXF() as string
+            expect(layers(dxf).diagram).toEqual({ rgb: rgb(0x0000ff), linetype: 'DASHED' })
+            // The shape agrees with its layer, so it is drawn ByLayer — no override at all.
+            expect(drawn(dxf)[0]).toEqual({ layer: 'diagram', rgb: undefined, linetype: undefined })
+        })
+
+        it('cascades a layer colour through a nested layer', () =>
+        {
+            modeler.layer('frame').color('green')
+            modeler.group('braces', modeler.rect(10, 10))
+
+            const dxf = modeler.toDXF() as string
+            expect(layers(dxf)['frame.braces'].rgb).toBe(rgb(0x008000))
+        })
+
+        it('overrides the layer on a shape that styles itself', () =>
+        {
+            modeler.layer('main').color('green')
+            modeler.rect(100, 50)                      // ByLayer green
+            ;(modeler.circle(10, [200, 0, 0]) as any).color('grey').dashed()
+
+            const dxf = modeler.toDXF() as string
+            expect(layers(dxf).main.rgb).toBe(rgb(0x008000))
+
+            const circle = drawn(dxf).find(e => e.rgb !== undefined)
+            expect(circle).toEqual({ layer: 'main', rgb: rgb(0x808080), linetype: 'DASHED' })
+            // The rect still says nothing: it is its layer's colour.
+            expect(drawn(dxf).filter(e => e.rgb === undefined).length).toBe(1)
+        })
+
+        // An unstyled shape must not be flooded with SHAPE_DEFAULT_STYLE's red: CAD's own
+        // default (index 7, no true colour) is what an author who set no colour means.
+        it('writes no colour for a shape nobody styled', () =>
+        {
+            modeler.rect(100, 50)
+            const dxf = modeler.toDXF() as string
+            expect(layers(dxf)['0'].rgb).toBeUndefined()
+            expect(drawn(dxf)[0].rgb).toBeUndefined()
+        })
+
+        // A Shape has no visible() method — only hide()/show() setting style.visible — so the
+        // old filter never excluded anything and `all` did nothing.
+        it('skips hidden shapes unless asked for all of them', () =>
+        {
+            modeler.rect(100, 50)
+            const template = modeler.rect(10, 10) as any
+            template.hide()
+
+            expect(drawn(modeler.toDXF() as string).length).toBe(1)
+            expect(drawn(modeler.toDXF({ all: true }) as string).length).toBe(2)
+        })
+
+        it('skips everything on a hidden layer', () =>
+        {
+            modeler.rect(100, 50)
+            modeler.layer('hidden').hide()
+            modeler.rect(10, 10)
+
+            expect(drawn(modeler.toDXF() as string).length).toBe(1)
+        })
+    })
+
+    /**
+     * A DXF is a drawing on XY, but models are not: a wall elevation is built on XZ, a
+     * section on YZ. The exporter finds the plane the 2D geometry lies on and writes the
+     * drawing in that plane's frame — nothing in the scene moves. See the EXPORT PLANE
+     * section of src/modeler/DXFExporter.ts.
+     */
+    describe('drawing plane detection', () =>
+    {
+        /** The DXF with handles (5 / 330) dropped, so two drawings of the same geometry
+         *  compare equal regardless of how many entities were written before them. */
+        const skeleton = (dxf: string): string =>
+        {
+            const lines = dxf.split('\n')
+            const out: string[] = []
+            for (let i = 0; i + 1 < lines.length; i += 2)
+            {
+                const code = Number(lines[i])
+                if (code !== 5 && code !== 330) out.push(`${code}:${lines[i + 1]}`)
+            }
+            return out.join('|')
+        }
+
+        /** One of each entity the exporter can write: bulged polyline, circle, arc,
+         *  ellipse, line and spline. Every one of them has to survive the mapping. */
+        const drawEverything = (place: (shape: any) => void): void =>
+        {
+            const rect = modeler.rect(100, 50) as any
+            rect.fillet(10)                                    // LWPOLYLINE + bulges
+            place(rect)
+            place(modeler.circle(20, [200, 0, 0]))             // CIRCLE
+            place(modeler.arc([300, 0, 0], [320, 20, 0], [340, 0, 0])) // ARC
+            const ellipse = modeler.circle(50, [-200, 0, 0]) as any
+            ellipse.scale([2, 1, 1])                           // ELLIPSE
+            place(ellipse)
+            place(modeler.line([0, 100, 0], [100, 100, 0]))    // LINE
+            place(modeler.spline([0, -100, 0], [50, -50, 0], [100, -150, 0], [150, -100, 0])) // SPLINE
+        }
+
+        const drawingOf = (place: (shape: any) => void): string =>
+        {
+            modeler.reset()
+            annotator.reset()
+            drawEverything(place)
+            return skeleton(modeler.toDXF() as string)
+        }
+
+        it('exports geometry modelled on the XZ plane', () =>
+        {
+            // A 100 x 50 rect stood up on XZ: x runs -50..50, z runs -25..25.
+            ;(modeler.rect(100, 50) as any).rotateX(90)
+
+            const dxf = modeler.toDXF() as string
+            expect(dxf).not.toBeNull()
+            expect(countEntity(dxf, 'LWPOLYLINE')).toBe(1)
+            // Model x stays x and model z (height) becomes y, so the elevation is upright.
+            expect(dxf).toMatch(/\n10\n-50\n20\n-25\n/)
+            expect(dxf).toMatch(/\n10\n50\n20\n25\n/)
+        })
+
+        // The sharpest statement of what "rotate into the drawing plane" has to mean: the
+        // same shapes, stood up on XZ, must produce the same drawing they do lying on XY —
+        // arc directions and polyline bulge signs included, which flip if the plane is read
+        // from the wrong side.
+        it('draws an XZ model exactly as it draws the same model on XY', () =>
+        {
+            expect(drawingOf(shape => shape.rotateX(90))).toBe(drawingOf(() => {}))
+        })
+
+        it('draws a YZ model exactly as it draws the same model on XY', () =>
+        {
+            // 120 degrees about [1,1,1] cycles x -> y -> z -> x, landing XY on YZ.
+            expect(drawingOf(shape => shape.rotateAround(120, [1, 1, 1]))).toBe(drawingOf(() => {}))
+        })
+
+        it('leaves the scene untouched', () =>
+        {
+            const rect = (modeler.rect(100, 50) as any).rotateX(90)
+            const before = [rect.bbox().min().toArray(), rect.bbox().max().toArray()]
+
+            expect(modeler.toDXF()).not.toBeNull()
+
+            expect([rect.bbox().min().toArray(), rect.bbox().max().toArray()]).toEqual(before)
+        })
+
+        it('draws a plane that is offset from the origin at the origin', () =>
+        {
+            ;(modeler.rect(100, 50) as any).rotateX(90).moveY(500)
+            const offset = modeler.toDXF() as string
+
+            modeler.reset()
+            ;(modeler.rect(100, 50) as any).rotateX(90)
+            expect(skeleton(offset)).toBe(skeleton(modeler.toDXF() as string))
+        })
+
+        it('ignores 3D shapes when detecting the plane', () =>
+        {
+            modeler.box(50, 50, 50)
+            ;(modeler.rect(100, 50) as any).rotateX(90)
+
+            const dxf = modeler.toDXF() as string
+            expect(countEntity(dxf, 'LWPOLYLINE')).toBe(1)
+            expect(dxf).toMatch(/\n10\n-50\n20\n-25\n/)
+        })
+
+        // A drawing is one plane. Shapes on a *parallel* plane are a second drawing, and
+        // stacking them would silently overlay two floors on top of each other.
+        it('picks the plane most of the geometry is on', () =>
+        {
+            modeler.rect(100, 50)
+            modeler.rect(20, 20)
+            ;(modeler.rect(10, 10) as any).moveZ(500)   // a storey up — not this drawing
+
+            expect(countEntity(modeler.toDXF() as string, 'LWPOLYLINE')).toBe(2)
+        })
+
+        it('draws a plane at neither of the coordinate planes true-size', () =>
+        {
+            ;(modeler.rect(100, 50) as any).rotateX(45)
+
+            const dxf = modeler.toDXF() as string
+            expect(countEntity(dxf, 'LWPOLYLINE')).toBe(1)
+            // Seen normal to its own plane, the rect is its full 100 x 50 — not the
+            // foreshortened 100 x 35.4 a plan view would show.
+            expect(dxf).toMatch(/\n10\n-50\n20\n-25\n/)
+            expect(dxf).toMatch(/\n10\n50\n20\n25\n/)
+        })
+
+        it('takes dimension lines to the drawing plane with their shapes', () =>
+        {
+            const line = modeler.line([0, 0, 0], [120, 0, 0]) as any
+            line.dim()
+            line.rotateX(90)
+
+            const dxf = modeler.toDXF() as string
+            expect(countEntity(dxf, 'DIMENSION')).toBe(1)
+            expect(dxf).toContain('AcDbAlignedDimension')
+            expect(dxf).toMatch(/120/)
+        })
+
+        // The line has to turn into the drawing AND stand off inside it: an offset computed
+        // against the plan normal points out of an elevation, so the dimension used to be
+        // written straight on top of the geometry it measures.
+        it('stands a dimension off the elevation it measures', () =>
+        {
+            modeler.line([0, 0, 0], [4000, 0, 0]).dim()   // on XZ, at z = 0
+            modeler.line([0, 0, 0], [0, 0, 2500])
+
+            const dxf = modeler.toDXF() as string
+            const dim = dxf.slice(dxf.indexOf('\nDIMENSION\n'))
+            // Groups 10/20 are the dimension line's own point. The wall's bottom edge is at
+            // y = 0 in the drawing, so a dimension standing off it cannot be there too.
+            const y = Number(dim.match(/\n20\n([-\d.]+)\n/)?.[1])
+            expect(dxf).toContain('AcDbAlignedDimension')
+            expect(Math.abs(y)).toBeGreaterThan(0)
+        })
+
+        it('honours an explicit plane instead of detecting one', () =>
+        {
+            ;(modeler.rect(100, 50) as any).rotateX(90)   // on XZ
+            expect(modeler.toDXF({ plane: 'xz' })).not.toBeNull()
+            // Asked for a plan of a model that has no plan, the answer is nothing — not a
+            // silently foreshortened elevation.
+            expect(modeler.toDXF({ plane: 'xy' })).toBeNull()
+        })
     })
 
     /**
@@ -237,9 +546,9 @@ describe('Modeler DXF export', () =>
         // took the radius from the bbox width. A lens (two arcs about different centres)
         // satisfies that test but is not a circle, and was written as one.
         //
-        // Driven through writeCurveToDXF directly: a Modeler boolean returns the lens
-        // without putting it in the scene, so modeler.toDXF() would export the two source
-        // circles and prove nothing about the lens.
+        // Driven through writeCurveToDXF directly: intersection() is non-replacing, so the
+        // scene holds the two source circles alongside the lens and modeler.toDXF() would
+        // export all three - proving nothing about the lens on its own.
         it('does not write a two-arc lens as a CIRCLE', () =>
         {
             const lens = (modeler.circle(50) as any)

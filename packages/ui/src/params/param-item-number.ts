@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { live } from 'lit/directives/live.js';
+import { ifDefined } from 'lit/directives/if-defined.js';
 import { SignalWatcher } from '@lit-labs/signals';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -65,9 +66,9 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
                 <input
                     type="number"
                     class="num"
-                    min=${min}
-                    max=${max}
-                    step=${step}
+                    min=${ifDefined(this.bare ? undefined : min)}
+                    max=${ifDefined(this.bare ? undefined : max)}
+                    step=${ifDefined(this.bare ? undefined : step)}
                     .value=${numStr}
                     @focus=${() => { this._focused = true; }}
                     @blur=${() => { this._focused = false; }}
@@ -120,7 +121,7 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
                 @mousedown=${(e: MouseEvent) => e.stopPropagation()}
                 @dragstart=${(e: DragEvent) => e.stopPropagation()}
             >
-                ${slider}
+                ${this.bare ? '' : slider}
                 ${dec}
                 ${numUnit}
                 ${frac}
@@ -171,6 +172,13 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
 
     /** UI density — see ParamUIMode. */
     @property({ type: String, reflect: true }) mode: ParamUIMode = 'compact';
+
+    /** No slider, and no clamping to bounds. For a value whose schema has no
+     *  meaningful range — notably an object property declared as a bare
+     *  'number', which is deliberately left unbounded (PARAM_TYPE_SCHEMAS.number
+     *  would impose maximum:100). Without this the paramMax() fallback of 100
+     *  would silently clamp what the user types. */
+    @property({ type: Boolean, reflect: true }) bare = false;
 
     /** Externally-owned value. The configurator keeps end-user values in its own
      *  signal (never on the shared ScriptParam), so it hands the current value in
@@ -284,6 +292,16 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
     {
         const src = this._sourceUnit();
         const srcVal = src ? convert(displayVal, this._displayUnit(src), src) : displayVal;
+
+        // Unbounded param: the min/max/step fallbacks are meaningless here, and
+        // clamping to them would destroy the value the user typed.
+        if (this.bare)
+        {
+            this._value = srcVal;
+            this._dispatchValue(srcVal);
+            return;
+        }
+
         const min  = paramMin(this.param);
         const max  = paramMax(this.param);
         const step = paramStep(this.param);
@@ -318,7 +336,9 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
         // live edit: clamp in source space but don't snap (snap on change)
         const src = this._sourceUnit();
         const srcVal = src ? convert(parsed, this._displayUnit(src), src) : parsed;
-        const clamped = Math.max(paramMin(this.param), Math.min(paramMax(this.param), srcVal));
+        const clamped = this.bare
+            ? srcVal
+            : Math.max(paramMin(this.param), Math.min(paramMax(this.param), srcVal));
         this._value = clamped;
         this._dispatchValue(clamped);
     }
@@ -339,7 +359,7 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
     {
         const step = paramStep(this.param);
         const min  = paramMin(this.param);
-        this._value = Math.max(min, this._value - step);
+        this._value = this.bare ? this._value - step : Math.max(min, this._value - step);
         this._dispatchValue(this._value);
     }
 
@@ -347,7 +367,7 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
     {
         const step = paramStep(this.param);
         const max  = paramMax(this.param);
-        this._value = Math.min(max, this._value + step);
+        this._value = this.bare ? this._value + step : Math.min(max, this._value + step);
         this._dispatchValue(this._value);
     }
 

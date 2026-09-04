@@ -20,7 +20,11 @@
  *                      There is a helper method on ParamManager.updateParamsWithManaged()
  */
 
-import type { ScriptParamData, ParamOperation, ScriptParamType, ScriptParamDefineOptions, ManagedBehavioursData } from './types'
+import { Type } from 'typebox'
+import { Check } from 'typebox/value'
+
+import type { ScriptParamData, ParamOperation, ScriptParamType, ScriptParamDefineOptions,
+              ScriptObjectPropDef, ScriptObjectDefineOptions, ManagedBehavioursData } from './types'
 import { ScriptParam, PARAM_TYPE_SCHEMAS } from './ScriptParam'
 import { ParamManagerOperator } from './ParamManagerOperator'
 
@@ -46,6 +50,14 @@ export class ParamManager
     /** Presets declared from the script via preset() this run.
      *  Shaped to match Script.presets (Record<presetName, Record<paramName, ScriptParamData>>). */
     _definedPresets:Record<string, Record<string, ScriptParamData>> = {};
+
+    /** Object types declared this run via defineObject() (name → JSON Schema).
+     *  An INSTANCE field on purpose, never module-level: Runner builds a fresh
+     *  ParamManager per scope per run and component scripts get their own scope,
+     *  so a shared registry would leak type names between scripts in one worker.
+     *  Nothing here crosses the worker boundary — the resolved schema is inlined
+     *  into each param's own schema (see _resolveObjectSchema). */
+    _objectSchemas:Record<string, Record<string,any>> = {};
 
     /** Set up ParamManager with current params */
     constructor(params?:Array<ScriptParam|ScriptParamData>)
@@ -201,6 +213,283 @@ export class ParamManager
         return this.paramOperators.find(pc => pc.name === name)
     }
 
+    //// OBJECT SCHEMAS ////
+
+    /** Friendly aliases → JSON Schema keywords, shared by define() and defineObject(). */
+    static SCHEMA_KEYWORD_ALIASES:Record<string,string> =
+    {
+        min:     'minimum',
+        max:     'maximum',
+        step:    'multipleOf',
+        options: 'enum',
+    }
+
+    /** JSON Schema keywords that pass through define()/defineObject() untouched.
+     *  NOTE: 'description' is deliberately NOT here. It is already a top-level
+     *  ScriptParamData field; copying it into the schema too would change
+     *  toData() for every existing param and force a save on the next run of
+     *  every script. */
+    static SCHEMA_KEYWORDS:Array<string> =
+    [
+        'minimum', 'maximum', 'multipleOf', 'minLength', 'maxLength', 'pattern',
+        'enum', 'items', 'properties', 'required', 'additionalProperties',
+        'minItems', 'maxItems',
+    ]
+
+    /** Archiyou param type → JSON Schema type, for object properties */
+    static PROP_TYPE_MAP:Record<string,string> =
+    {
+        number:  'number',
+        integer: 'integer',
+        text:    'string',
+        string:  'string',
+        boolean: 'boolean',
+    }
+
+    /** Collect JSON Schema keywords out of a friendly options object.
+     *  Aliases are applied first so an explicit JSON Schema keyword always wins. */
+    static schemaKeywordsFrom(options:Record<string,any> = {}):Record<string,any>
+    {
+        const out:Record<string,any> = {};
+
+        Object.entries(ParamManager.SCHEMA_KEYWORD_ALIASES)
+            .forEach(([alias, keyword]) =>
+            {
+                if(options[alias] !== undefined){ out[keyword] = options[alias]; }
+            });
+
+        ParamManager.SCHEMA_KEYWORDS
+            .forEach((keyword) =>
+            {
+                if(options[keyword] !== undefined){ out[keyword] = options[keyword]; }
+            });
+
+        return out;
+    }
+
+    /** JSON Schema type that fits a list of allowed values */
+    static _enumJsonType(values:Array<any>):string
+    {
+        const allNumeric = values.length > 0
+                            && values.every( v => typeof v === 'number'
+                                                    || (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))));
+        return (allNumeric) ? 'number' : 'string';
+    }
+
+    /** One property shorthand → a JSON Schema fragment.
+     *
+     *  IMPORTANT: a bare type deliberately does NOT inherit PARAM_TYPE_SCHEMAS.
+     *  The 'number' entry there carries maximum:100, which would reject anything a
+     *  real model needs (a 3000mm wall). Bare properties stay unbounded and the UI
+     *  renders them without a slider — see param-item-number's `bare` mode.
+     */
+    static normalizeProperty(def:ScriptObjectPropDef):Record<string,any>
+    {
+        if(Array.isArray(def))
+        {
+            const type = ParamManager._enumJsonType(def);
+            return {
+                type: type,
+                enum: (type === 'number') ? def.map(Number) : def.map(String),
+            };
+        }
+
+        if(typeof def === 'string')
+        {
+            if(def === 'options')
+            {
+                throw new Error(`the 'options' shorthand needs values — write the allowed values as an array instead, like ['a','b','c']`);
+            }
+            const jsonType = ParamManager.PROP_TYPE_MAP[def];
+            if(!jsonType)
+            {
+                throw new Error(`unknown type "${def}". Use one of: ${Object.keys(ParamManager.PROP_TYPE_MAP).join(', ')} — or an array of allowed values`);
+            }
+            return { type: jsonType };
+        }
+
+        if(def && typeof def === 'object')
+        {
+            const o = def as Record<string,any>;
+            const schema:Record<string,any> = ParamManager.schemaKeywordsFrom(o);
+
+            if(Array.isArray(schema.enum))
+            {
+                // values win: { type:'options', options:[...] } and { options:[...] } both land here
+                schema.type = ParamManager._enumJsonType(schema.enum);
+            }
+            else if(o.type !== undefined)
+            {
+                if(o.type === 'options')
+                {
+                    throw new Error(`type 'options' needs values — add options: ['a','b'] (or use a plain array)`);
+                }
+                const jsonType = ParamManager.PROP_TYPE_MAP[o.type];
+                if(!jsonType)
+                {
+                    throw new Error(`unknown type "${o.type}". Use one of: ${Object.keys(ParamManager.PROP_TYPE_MAP).join(', ')}`);
+                }
+                schema.type = jsonType;
+            }
+            else
+            {
+                schema.type = 'string';
+            }
+
+            // Archiyou extras ride along as non-standard keywords — TypeBox ignores what it does not know
+            if(o.default !== undefined){ schema.default = o.default; }
+            if(o.label   !== undefined){ schema.label   = o.label; }
+            if(o.units   !== undefined){ schema.units   = o.units; }
+
+            return schema;
+        }
+
+        throw new Error(`expected a type name, an array of values or a definition object — got "${typeof def}"`);
+    }
+
+    /** Build the JSON Schema for a named object type */
+    static buildObjectSchema(name:string, props:Record<string,ScriptObjectPropDef>, options:ScriptObjectDefineOptions = {}):Record<string,any>
+    {
+        if(!props || typeof props !== 'object' || Array.isArray(props) || Object.keys(props).length === 0)
+        {
+            throw new Error(`ParamManager::defineObject(): Please supply the properties of "${name}"! For example: { width: 'number', name: 'text' }`);
+        }
+
+        const properties = Object.entries(props).reduce(
+            (acc, [key, def]) =>
+            {
+                try { acc[key] = ParamManager.normalizeProperty(def); }
+                catch(e){ throw new Error(`ParamManager::defineObject(): property "${key}" of "${name}": ${(e as Error).message}`); }
+                return acc;
+            },
+            {} as Record<string,any>);
+
+        const schema:Record<string,any> = {
+            type:       'object',
+            title:      options.title ?? name,
+            properties: properties,
+        };
+
+        // Both are opt-in ONLY — see ScriptObjectDefineOptions for why defaulting them is destructive.
+        if(Array.isArray(options.required)){ schema.required = options.required; }
+        if(options.additionalProperties !== undefined){ schema.additionalProperties = options.additionalProperties; }
+        if(options.labelProp !== undefined){ schema.labelProp = options.labelProp; }
+
+        return schema;
+    }
+
+    /** The default value of a single object property */
+    static propertyDefault(propSchema:Record<string,any>):any
+    {
+        if(propSchema?.default !== undefined){ return propSchema.default; }
+        if(Array.isArray(propSchema?.enum)){ return propSchema.enum[0]; }
+
+        switch(propSchema?.type)
+        {
+            case 'number':
+            case 'integer': return propSchema.minimum ?? 0;
+            case 'boolean': return false;
+            case 'array':   return [];
+            case 'object':  return ParamManager.objectDefaults(propSchema);
+            default:        return '';
+        }
+    }
+
+    /** A fully populated entry for an object schema.
+     *  Used by the param menu's "add" and "duplicate" buttons, and by defineObject()
+     *  when the author supplies no default of their own. */
+    static objectDefaults(objectSchema:Record<string,any>):Record<string,any>
+    {
+        return Object.entries(objectSchema?.properties ?? {}).reduce(
+            (acc, [key, propSchema]) =>
+            {
+                acc[key] = ParamManager.propertyDefault(propSchema as Record<string,any>);
+                return acc;
+            },
+            {} as Record<string,any>);
+    }
+
+    /** Label for one entry of an object list: an explicit labelProp beats the
+     *  conventional `name` property, which beats a positional fallback. */
+    static objectEntryLabel(itemSchema:Record<string,any>, entry:Record<string,any>, index:number):string
+    {
+        const clean = (v:any):string|null =>
+        {
+            const s = (typeof v === 'string' || typeof v === 'number') ? String(v).trim() : '';
+            return (s !== '') ? s : null;
+        };
+
+        const byProp = (itemSchema?.labelProp) ? clean(entry?.[itemSchema.labelProp]) : null;
+
+        return byProp
+                ?? clean(entry?.name)
+                ?? `${itemSchema?.title ?? 'Item'} ${index + 1}`;
+    }
+
+    /** Programmatically declare a named object type, for use as the items of a list param.
+     *
+     *  @example
+     *  $PARAMS.defineObject('Opening', {
+     *      wall:   ['left','right','front','back'],
+     *      width:  { type:'number', min:100, max:5000, step:10, default:1200 },
+     *      name:   'text',
+     *  });
+     *  $PARAMS.define('OPENINGS', 'list', { of: 'Opening', default: [ ... ] });
+     */
+    defineObject(name:string, props:Record<string,ScriptObjectPropDef>, options:ScriptObjectDefineOptions = {}):Record<string,any>
+    {
+        if(!name || typeof name !== 'string')
+        {
+            throw new Error(`ParamManager::defineObject(): Please supply a name for this object type!`);
+        }
+
+        const schema = ParamManager.buildObjectSchema(name, props, options);
+        this._objectSchemas[name] = schema;
+
+        return schema;
+    }
+
+    /** Object types declared this run (name → JSON Schema) */
+    getDefinedObjects():Record<string, Record<string,any>>
+    {
+        return this._objectSchemas;
+    }
+
+    /** Resolve a define() `of:` into a real object schema.
+     *  A string looks up defineObject(); an object is either a schema already or a
+     *  props map we build on the fly. Always returns a deep copy, so two params can
+     *  never share (and mutate) one registered schema.
+     */
+    _resolveObjectSchema(of:string|Record<string,any>):Record<string,any>
+    {
+        if(typeof of === 'string')
+        {
+            const schema = this._objectSchemas[of];
+            if(!schema)
+            {
+                const known = Object.keys(this._objectSchemas);
+                // Throwing beats warning here: falling back would leave items at the list
+                // base schema ({type:'string'}), which then rejects the whole default and
+                // leaves the user staring at an empty list with no explanation.
+                throw new Error(`ParamManager::define(): Unknown object type "${of}". ${
+                    (known.length > 0)
+                        ? `Defined so far: ${known.join(', ')}`
+                        : `Declare it first with $PARAMS.defineObject('${of}', { ... })`}`);
+            }
+            return JSON.parse(JSON.stringify(schema));
+        }
+
+        if(of && typeof of === 'object' && !Array.isArray(of))
+        {
+            const asSchema = of as Record<string,any>;
+            return (asSchema.type === 'object')
+                    ? JSON.parse(JSON.stringify(asSchema))
+                    : ParamManager.buildObjectSchema('Item', of as Record<string,ScriptObjectPropDef>);
+        }
+
+        throw new Error(`ParamManager::define(): "of" needs the name of a defineObject() type, an object schema or a properties map. Got "${typeof of}"`);
+    }
+
     //// PROGRAMMATIC PARAM DEFINITION ////
 
     /**
@@ -240,6 +529,7 @@ export class ParamManager
         }
 
         param._definedProgrammatically = true;
+        this._checkObjectDefault(param);
         const upper = param.name.toUpperCase();
         this._definedThisRun.add(upper); // register even if definition is unchanged (full-sync)
 
@@ -277,17 +567,37 @@ export class ParamManager
         if (!baseSchema) { throw new Error(`ParamManager::define(): Unsupported param type "${type}". Supported: ${Object.keys(PARAM_TYPE_SCHEMAS).join(', ')}`); }
 
         const o = options as Record<string, any>;
-        const schema: Record<string, any> = { ...baseSchema };
 
-        // friendly aliases → schema keywords
-        if (o.options      !== undefined) schema.enum  = o.options;
+        // friendly aliases (min/max/step/options) + JSON-Schema keywords, in one table
+        const schema: Record<string, any> = { ...baseSchema, ...ParamManager.schemaKeywordsFrom(o) };
+
         if (o.listItemType !== undefined) schema.items = { type: o.listItemType };
 
-        // JSON-Schema keywords pass through
-        for (const k of ['minimum', 'maximum', 'multipleOf', 'minLength', 'maxLength', 'enum', 'items', 'properties'])
+        // `of:` — a defineObject() type, an inline object schema, or a properties map.
+        // The resolved schema is INLINED here: ScriptParamData.schema is the only param
+        // channel back to the app, and validateValue() has to work app-side with no
+        // ParamManager around, so a $ref would need a resolver at every call site.
+        if (o.of !== undefined)
         {
-            if (o[k] !== undefined) schema[k] = o[k];
+            const objectSchema = this._resolveObjectSchema(o.of);
+
+            if (type === 'object')
+            {
+                Object.assign(schema, objectSchema, { type: 'object' });
+                if (o.default === undefined) schema.default = ParamManager.objectDefaults(objectSchema);
+            }
+            else
+            {
+                schema.items = objectSchema;
+            }
         }
+
+        if (o.labelProp !== undefined)
+        {
+            if (type === 'object') schema.labelProp = o.labelProp;
+            else if (schema.items) (schema.items as Record<string, any>).labelProp = o.labelProp;
+        }
+
         if (o.default !== undefined) schema.default = o.default;
 
         return {
@@ -303,6 +613,36 @@ export class ParamManager
             enabled:     o.enabled,
             default:     o.default,
         } as ScriptParamData;
+    }
+
+    /** Seeded defaults of object(-list) params are easy to get subtly wrong, and the
+     *  failure is silent and late: the value is dropped, the menu shows an empty list
+     *  and nothing says why. Check at define() time and name the offending entry.
+     *  Deliberately checks `default` only — `_value` is the user's, and the caller
+     *  already validates it before preserving it. */
+    _checkObjectDefault(param:ScriptParam):void
+    {
+        const s = param.schema as any;
+        const isObjectList = s?.type === 'array' && s?.items?.type === 'object';
+        const isObject     = s?.type === 'object' && Object.keys(s?.properties ?? {}).length > 0;
+
+        if(!isObjectList && !isObject){ return; }
+
+        const value = param.default;
+        if(value === undefined || param.validateValue(value)){ return; }
+
+        if(isObjectList && Array.isArray(value))
+        {
+            const itemSchema = Type.Unsafe(s.items);
+            const badIndex = value.findIndex( entry => !Check(itemSchema, entry));
+
+            if(badIndex !== -1)
+            {
+                throw new Error(`ParamManager::define(): entry ${badIndex} of "${param.name}" does not match the "${s.items.title ?? 'object'}" definition: ${JSON.stringify(value[badIndex])}`);
+            }
+        }
+
+        throw new Error(`ParamManager::define(): the default of "${param.name}" does not match its definition: ${JSON.stringify(value)}`);
     }
 
     /** Programmatically declare a preset (named set of param values) from the script.

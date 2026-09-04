@@ -114,6 +114,36 @@ describe('Modeler — brep mode', () =>
             // subtracted() is @sceneAdd: the result joins the scene
             expect(m.all().length).toBeGreaterThan(2)
         })
+
+        it('intersection() adds its result to the scene, like intersections()', () =>
+        {
+            const l1 = m.line([0,0,0],[100,0,0]) as any
+            const l2 = m.line([50,-50,0],[50,50,0]) as any
+            const before = m.all().length
+
+            const v = l1.intersection(l2)
+            expect(v).toBeTruthy()
+            expect(v.type).toBe('Vertex')
+            // the intersection Vertex is a new Shape in the scene; both operands stay
+            expect(m.all().toArray()).toContain(v)
+            expect(m.all().length).toBe(before + 1)
+            expect(m.all().toArray()).toContain(l1)
+        })
+
+        it('an intersection() result carries the modeler, so addToScene() works on it', () =>
+        {
+            const l1 = m.line([0,0,0],[100,0,0]) as any
+            const l2 = m.line([50,-50,0],[50,50,0]) as any
+
+            const v = l1.intersection(l2)
+            expect(v._modeler).toBe(m)
+
+            m.layer('connectors')
+            v.addToScene() // re-adding moves it to the active layer, it does not duplicate
+            const n = m.all().toArray().filter((s:any) => s === v).length
+            expect(n).toBe(1)
+            expect(v._node.parent().name).toBe('connectors')
+        })
     })
 
     describe('app methods', () =>

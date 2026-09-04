@@ -13,6 +13,8 @@ import '../plugins/plugin-part-frame';
 import { createExecutionFailureResult, runScript, warmupWorker } from '../services/execution-service';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
 
 import '@archiyou/ui/editor/main-menu.js';
 import '@archiyou/ui/editor/codebox.js';
@@ -157,6 +159,23 @@ export class PageEditor extends SignalWatcher(LitElement)
         @script-importer-cancel=${this._handleScriptImporterCancel}
         @script-importer-import=${this._handleScriptImporterImport}
       ></script-importer>
+      <wa-dialog
+        class="delete-dialog"
+        label="Delete script"
+        ?open=${this._showDeleteConfirm}
+        @wa-after-hide=${this._handleDeleteDialogAfterHide}
+      >
+        <p class="delete-message">
+          Delete <strong>${editorScript.get()?.name ?? 'this script'}</strong>? This removes it
+          from your scripts here and on the server, and cannot be undone.
+        </p>
+        <wa-button slot="footer" appearance="outlined" @click=${this._handleDeleteCancel}>
+          Cancel
+        </wa-button>
+        <wa-button slot="footer" variant="danger" @click=${this._handleDeleteConfirm}>
+          Delete
+        </wa-button>
+      </wa-dialog>
     `;
   }
 
@@ -171,6 +190,7 @@ export class PageEditor extends SignalWatcher(LitElement)
   @state() private _showPublishMenu = false;
   @state() private _showManageConfigurators = false;
   @state() private _showModules = false;
+  @state() private _showDeleteConfirm = false;
   // Non-null → the publish menu opens in edit mode for this published version.
   @state() private _editConfigurator: ScriptData | null = null;
   // Why a /editor/{…} deep link could not be opened (empty = no problem).
@@ -554,6 +574,14 @@ export class PageEditor extends SignalWatcher(LitElement)
     if (value === 'open-script')
     {
       this._showScriptManager = true;
+      return;
+    }
+
+    if (value === 'delete-script')
+    {
+      // A foreign (read-only) script isn't in our collection — nothing to delete.
+      if (!editorScript.get() || isReadOnly.get()) return;
+      this._showDeleteConfirm = true;
       return;
     }
 
@@ -948,6 +976,30 @@ export class PageEditor extends SignalWatcher(LitElement)
     deleteScriptById(e.detail);
   }
 
+  /** Main menu ▸ Delete script — confirmed. Deleting the active script makes
+   *  the collection's last entry (or a fresh script) active, so the editor
+   *  never ends up without one. */
+  private _handleDeleteConfirm()
+  {
+    const script = editorScript.get();
+    this._showDeleteConfirm = false;
+    if (!script || isReadOnly.get()) return;
+    deleteScriptById(script.fileId);
+  }
+
+  private _handleDeleteCancel()
+  {
+    this._showDeleteConfirm = false;
+  }
+
+  /** Only the dialog's own hide closes the confirmation — nested Web Awesome
+   *  overlays re-emit `wa-after-hide` as a composed, bubbling event. */
+  private _handleDeleteDialogAfterHide(e: Event)
+  {
+    if (e.target !== e.currentTarget) return;
+    this._showDeleteConfirm = false;
+  }
+
   private _handleMenuSelect(e: CustomEvent<'info' | 'code' | 'history' | 'files' | 'templates' | 'help' | 'settings' | null>)
   {
     this._activeSection = e.detail;
@@ -1091,6 +1143,18 @@ export class PageEditor extends SignalWatcher(LitElement)
 
     editor-main-menu { flex-shrink: 0; }
     editor-toolbar    { flex-shrink: 0; }
+
+    /* Main menu ▸ Delete script confirmation */
+    .delete-dialog {
+      --width: 28rem;
+    }
+
+    .delete-message {
+      margin: 0;
+      font-size: var(--text-sm);
+      color: var(--color-text);
+      line-height: 1.5;
+    }
 
     /* Deep-link failure notice (/editor/{name} could not be opened) — a
        floating popup, deliberately taken out of the editor's row-flex layout

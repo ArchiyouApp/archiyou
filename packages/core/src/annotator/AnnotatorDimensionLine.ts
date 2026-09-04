@@ -18,6 +18,7 @@ import type { Vector, Point, PointLike, Curve } from '@archiyou/meshup'
 import type { ArchiyouModules } from '../types'
 import type { DimensionLineData, DimensionOptions, AnnotationType } from './types'
 import { BaseAnnotation } from './AnnotatorBaseAnnotation'
+import { detectExportFrame } from '../modeler/utils'
 
 import { isPointLike } from '../modeler/typeguards'
 
@@ -55,6 +56,7 @@ export class DimensionLine extends BaseAnnotation
     targetShape:AnyShape = null; // the (sub)shape (mostly an Curve) the dimension line is directly generated from
     linkedTo:any = null; // the main parent Shape or ShapeCollection this dimension is linked to
     _linkedCenterCache:[number, number, number]|null = null; // see _linkedCenter()
+    _planeNormalCache:[number, number, number]|null = null; // see _planeNormal()
     // value:number; // the value of the dimension line, from BaseAnnotation
     static:boolean = false;
     units:ModelUnits = null;
@@ -141,6 +143,7 @@ export class DimensionLine extends BaseAnnotation
         this.targetShape = edge;
         this.linkedTo = this._getParentShape(edge); // set main Shape
         this._linkedCenterCache = null; // a new link means a new centre to offset away from
+        this._planeNormalCache = null;
         this.linkedTo.addAnnotations(this); // make two-sided link
         // init() validates options against an object schema — never pass undefined
         return this.init(edge.start().toPoint(), edge.end().toPoint(), options ?? {})
@@ -414,7 +417,7 @@ export class DimensionLine extends BaseAnnotation
     /** Calculate the direction for offsetting from target  
      *  How to offset depends on dimension line type: normal, ortho
     */
-    _calculateOffsetVec(overwrite:boolean=false):Vector
+    _calculateOffsetVec(overwrite:boolean=false, planeNormal?:{ x:number, y:number, z:number }|null):Vector
     {
         // Don't overwrite if already set
         if(this.offsetVec && !overwrite)
@@ -422,34 +425,32 @@ export class DimensionLine extends BaseAnnotation
             return this.offsetVec;
         }
 
-        // If dimension line is parallel to z-axis, make offset the x-axis
-        if ( this.targetDir().isParallel([0,0,1]))
+        const normal = this._planeNormal(planeNormal);
+
+        // A dimension running along the view direction projects to a point and has no
+        // perpendicular in the drawing. Offset along an axis of the plane instead, so it is at
+        // least visible: the old code did this for a z-parallel line in a plan, hardcoded to x.
+        if(this.targetDir().isParallel(normal))
         {
-            this.offsetVec = new this.classes.Vector(1,0,0);
+            const inPlane = this._componentsLength(this._crossComponents(normal, [0, 0, 1])) > 1e-9
+                                ? this._normalizeComponents(this._crossComponents(normal, [0, 0, 1]))
+                                : [1, 0, 0] as [number, number, number];
+            this.offsetVec = new this.classes.Vector(inPlane[0], inPlane[1], inPlane[2]);
             return this.offsetVec;
         }
         else 
         {
             // Determine offset from a 2D/3D Shape: So the Shape can have an outside
-            const insidePoint = this._linkedCenter();
             const targetDir = this.targetDir().toArray() as [number, number, number];
-            let newOffsetComponents = this._crossComponents(targetDir, [0, 0, 1]);
+            let newOffsetComponents = this._crossComponents(targetDir, normal);
 
             if(this._componentsLength(newOffsetComponents) === 0)
             {
                 newOffsetComponents = this._crossComponents(targetDir, [0, 1, 0]);
             }
 
-            const targetMiddle = this._targetMiddleComponents();
-            const d1 = this._distanceBetween(this._addComponents(targetMiddle, newOffsetComponents), insidePoint);
-            const d2 = this._distanceBetween(this._addComponents(targetMiddle, this._scaleComponents(newOffsetComponents, -1)), insidePoint);
-
             // Basic: newwOffsetVec points away from center
-            if (d1 < d2) 
-            {
-                newOffsetComponents = this._scaleComponents(newOffsetComponents, -1);
-            }
-
+            newOffsetComponents = this._awayFromLinked(newOffsetComponents);
             newOffsetComponents = this._normalizeComponents(newOffsetComponents);
 
             // If ortho the offset vector is parallel to one of the 3 axis (or reversed)
@@ -568,14 +569,66 @@ export class DimensionLine extends BaseAnnotation
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    _getEffectiveOffsetComponents():[number, number, number]
+    /** The normal of the plane this dimension offsets INSIDE.
+     *
+     *  A dimension stands off perpendicular to itself, and "perpendicular" only means
+     *  something once you say in which plane. This used to answer XY for every dimension in
+     *  every model: on a wall elevation drawn on XZ the offset came out along Y, which points
+     *  straight out of the drawing, so the dimension line landed exactly on top of the
+     *  geometry it measures — and in the 3D viewer it floated off the face of the wall.
+     *
+     *  `override` is the DRAWING's plane, which an exporter knows exactly (see Projector).
+     *  Without one — the viewer, and toData() — the model's own 2D plane is the same answer
+     *  by another route. A model with no 2D plane at all is 3D, and there the plan normal is
+     *  as good as any, which is what this always used to assume.
+     */
+    _planeNormal(override?:{ x:number, y:number, z:number }|null):[number, number, number]
+    {
+        if(override){ return [override.x, override.y, override.z] }
+        if(this._planeNormalCache){ return this._planeNormalCache }
+
+        const shapes = this._archiyou?.modeler?.all?.()?.toArray?.() ?? [];
+        const frame = detectExportFrame(shapes);
+        this._planeNormalCache = frame
+                                    ? [frame.normal.x, frame.normal.y, frame.normal.z]
+                                    : [0, 0, 1];
+        return this._planeNormalCache;
+    }
+
+    /** Unit vector perpendicular to the dimension line, inside `planeNormal`'s plane, or null
+     *  when the two are parallel — a dimension running along the view direction, which has no
+     *  perpendicular in the drawing at all. */
+    _perpendicularInPlane(planeNormal:[number, number, number]):[number, number, number]|null
+    {
+        const dir:[number, number, number] = [
+            this.targetEnd.x - this.targetStart.x,
+            this.targetEnd.y - this.targetStart.y,
+            this.targetEnd.z - this.targetStart.z,
+        ];
+        const perp = this._crossComponents(dir, planeNormal);
+        const length = this._componentsLength(perp);
+        return (length < 1e-9) ? null : this._normalizeComponents(perp);
+    }
+
+    /** Flip `components` to point AWAY from the shape this dimension is linked to, so the
+     *  line stands outside the thing it measures rather than through it. */
+    _awayFromLinked(components:[number, number, number]):[number, number, number]
+    {
+        const insidePoint = this._linkedCenter();
+        const targetMiddle = this._targetMiddleComponents();
+        const d1 = this._distanceBetween(this._addComponents(targetMiddle, components), insidePoint);
+        const d2 = this._distanceBetween(this._addComponents(targetMiddle, this._scaleComponents(components, -1)), insidePoint);
+        return (d1 < d2) ? this._scaleComponents(components, -1) : components;
+    }
+
+    _getEffectiveOffsetComponents(planeNormal?:{ x:number, y:number, z:number }|null):[number, number, number]
     {
         if(this._hasCustomOffsetVec && this.offsetVec)
         {
             return [this.offsetVec.x, this.offsetVec.y, this.offsetVec.z];
         }
 
-        this._calculateOffsetVec(true);
+        this._calculateOffsetVec(true, planeNormal);
 
         if(!this._offsetComponents)
         {
@@ -585,52 +638,54 @@ export class DimensionLine extends BaseAnnotation
         return [...this._offsetComponents] as [number, number, number];
     }
 
-    _getPlanarOffsetComponents():[number, number, number] | null
+    /** The offset for a dimension that LIES IN the drawing plane: straight perpendicular to
+     *  itself, pointing outward. Null when it does not lie in that plane (a dimension across a
+     *  3D model, which the general path handles) or when it is `ortho`, which offsets along an
+     *  axis rather than perpendicular. */
+    _getPlanarOffsetComponents(planeNormal?:{ x:number, y:number, z:number }|null):[number, number, number] | null
     {
         if(this.ortho)
         {
             return null;
         }
 
+        const normal = this._planeNormal(planeNormal);
         const targetDir = [
             this.targetEnd.x - this.targetStart.x,
             this.targetEnd.y - this.targetStart.y,
             this.targetEnd.z - this.targetStart.z,
         ] as [number, number, number];
 
-        if(Math.abs(targetDir[2]) > 1e-9)
+        const length = this._componentsLength(targetDir);
+        if(length === 0)
         {
             return null;
         }
 
-        const planarLength = Math.hypot(targetDir[0], targetDir[1]);
-        if(planarLength === 0)
+        // Out of the drawing plane: this dimension is not a planar one, whatever plane it is
+        // in. Measured on the unit direction so the test does not scale with the model.
+        const outOfPlane = Math.abs(
+            (targetDir[0] * normal[0] + targetDir[1] * normal[1] + targetDir[2] * normal[2]) / length);
+        if(outOfPlane > 1e-9)
         {
             return null;
         }
 
-        let offsetComponents:[number, number, number] = [
-            targetDir[1] / planarLength,
-            -targetDir[0] / planarLength,
-            0,
-        ];
-
-        const insidePoint = this._linkedCenter();
-        const targetMiddle = this._targetMiddleComponents();
-        const d1 = this._distanceBetween(this._addComponents(targetMiddle, offsetComponents), insidePoint);
-        const d2 = this._distanceBetween(this._addComponents(targetMiddle, this._scaleComponents(offsetComponents, -1)), insidePoint);
-
-        if(d1 < d2)
-        {
-            offsetComponents = this._scaleComponents(offsetComponents, -1);
-        }
-
-        return offsetComponents;
+        const perpendicular = this._perpendicularInPlane(normal);
+        return perpendicular ? this._awayFromLinked(perpendicular) : null;
     }
 
-    _resolveOffsetComponents():[number, number, number]
+    _resolveOffsetComponents(planeNormal?:{ x:number, y:number, z:number }|null):[number, number, number]
     {
-        return this._getPlanarOffsetComponents() ?? this._getEffectiveOffsetComponents();
+        // An offset the author set outranks every rule below it. Checked here rather than only
+        // in _getEffectiveOffsetComponents(), which the planar path used to skip straight past:
+        // a custom offsetVec was quietly ignored for any dimension lying in the drawing plane,
+        // which is most of them.
+        if(this._hasCustomOffsetVec && this.offsetVec)
+        {
+            return [this.offsetVec.x, this.offsetVec.y, this.offsetVec.z];
+        }
+        return this._getPlanarOffsetComponents(planeNormal) ?? this._getEffectiveOffsetComponents(planeNormal);
     }
 
     _scaledOffset(components:[number, number, number], distance:number):Vector
@@ -682,43 +737,22 @@ export class DimensionLine extends BaseAnnotation
         ];
     }
 
-    _calculatePoint(at:'start'|'end'):Point
+    /** One end of the dimension LINE — the target point, stepped off by the offset.
+     *
+     *  @param planeNormal the drawing's plane, when the caller is an exporter that knows it.
+     *      See _planeNormal(): without one this falls back to the model's own 2D plane.
+     *
+     *  There used to be a copy of the planar case inlined here, gated on both ends sharing a
+     *  z and on the line being diagonal, computing the same perpendicular in XY that
+     *  _getPlanarOffsetComponents() computes below. Two implementations of one rule is one too
+     *  many when the rule is about to learn a second plane.
+     */
+    _calculatePoint(at:'start'|'end', planeNormal?:{ x:number, y:number, z:number }|null):Point
     {   
         if(!this.offsetLength) { this._calculateAutoOffsetLength(); }
 
         const sourcePoint = (at === 'start') ? this.targetStart : this.targetEnd;
-
-        if(!this.ortho && this.targetStart.z === this.targetEnd.z)
-        {
-            const dx = this.targetEnd.x - this.targetStart.x;
-            const dy = this.targetEnd.y - this.targetStart.y;
-            const planarLength = Math.hypot(dx, dy);
-
-            if(planarLength > 0 && dx !== 0 && dy !== 0)
-            {
-                let offsetX = dy / planarLength;
-                let offsetY = -dx / planarLength;
-
-                const insidePoint = this._linkedCenter();
-                const targetMiddle = this._targetMiddleComponents();
-                const d1 = this._distanceBetween([targetMiddle[0] + offsetX, targetMiddle[1] + offsetY, targetMiddle[2]], insidePoint);
-                const d2 = this._distanceBetween([targetMiddle[0] - offsetX, targetMiddle[1] - offsetY, targetMiddle[2]], insidePoint);
-
-                if(d1 < d2)
-                {
-                    offsetX *= -1;
-                    offsetY *= -1;
-                }
-
-                return new this.classes.Point(
-                    sourcePoint.x + offsetX * this.offsetLength,
-                    sourcePoint.y + offsetY * this.offsetLength,
-                    sourcePoint.z,
-                );
-            }
-        }
-
-        const offsetComponents = this._resolveOffsetComponents();
+        const offsetComponents = this._resolveOffsetComponents(planeNormal);
         const curPoint = sourcePoint.copy(); // Make sure we use copies!
         const offsetPoint = this._offsetPoint(curPoint, offsetComponents, this.offsetLength);
 
@@ -1020,7 +1054,8 @@ export class DimensionLine extends BaseAnnotation
      *     if 3D the Dimension Line is projected to XY plane
      *     NOTE: we need to transform from Archiyou coordinate system to the SVG one (flip y)
      */
-    toSVG(options?:{ drawingSize?:number, unitsPerMm?:number }):string
+    toSVG(options?:{ drawingSize?:number, unitsPerMm?:number,
+        projector?:{ point:(p:any) => {x:number, y:number, z:number}, normal?:{x:number, y:number, z:number} } }):string
     {   
         /*  Size the line weight, arrowheads and value text for the page.
 
@@ -1046,21 +1081,29 @@ export class DimensionLine extends BaseAnnotation
         const arrowScale = perMm ? ((ann?.DIMENSION_ARROW_SIZE_MM ?? 5) * perMm) / 10
                       : drawing ? drawing / 667 : 1;
 
-        const lineStart = this._calculatePoint('start');
-        const lineEnd = this._calculatePoint('end');
+        /*  Into the drawing's plane, then into SVG's. `projector` is given when the drawing is
+            taken from somewhere other than XY (an elevation modelled on XZ): a dimension has
+            to turn with the geometry it measures, or it lands flat on the floor beside it. It
+            also carries that plane's normal, which is what the offset stands off INSIDE — the
+            two have to agree, or the line turns into the drawing and then steps out of it. */
+        const to = options?.projector;
+
+        const lineStart = this._calculatePoint('start', to?.normal);
+        const lineEnd = this._calculatePoint('end', to?.normal);
         const lineMid = lineStart.copy()
                             .move(lineEnd.toVector()
                             .subtract(lineStart)
                             .scale(0.5));
 
-        const lineStartArr = lineStart.toArray();
-        const lineEndArr =  lineEnd.toArray();
-        const lineMidArr =  lineMid.toArray();
+        const flat = (p:any):[number,number,number] =>
+        {
+            const v = to ? to.point(p) : p;
+            return [v.x, -v.y, 0]; // SVG's y axis points down
+        };
 
-        // flip y-axis for SVG coordinate system
-        lineStartArr[1] = -lineStartArr[1];
-        lineEndArr[1] = -lineEndArr[1];
-        lineMidArr[1] = -lineMidArr[1];
+        const lineStartArr = flat(lineStart);
+        const lineEndArr = flat(lineEnd);
+        const lineMidArr = flat(lineMid);
 
         // Convert the raw value (in this.units, the model unit) into the active
         // display system with an auto-picked unit + fractional inches. Always
@@ -1281,10 +1324,20 @@ export class DimensionLine extends BaseAnnotation
      *  Delegates the DXF encoding (DIMENSION entity + baked *D block) to the
      *  DXFDocument; this method only supplies the geometry + value text.
      *  See DXFExporter.DXFDocument.addAlignedDim(). */
-    toDXF(doc:any /* DXFDocument */, layer:string='dimensions'):this
+    /** Write this dimension into a DXF document.
+     *
+     *  `to` maps model coordinates into the drawing's plane (DXFExporter's Projector) — a
+     *  dimension on a wall elevation modelled on XZ has to travel to XY with the wall, or it
+     *  lands flat on the floor. Without one the points are taken as they are, which is right
+     *  for a drawing already on XY.
+     */
+    toDXF(doc:any /* DXFDocument */, layer:string='dimensions',
+        to?:{ point:(p:any) => {x:number, y:number, z:number}, normal?:{x:number, y:number, z:number} }):this
     {
-        const dimStart = this._calculatePoint('start');
-        const dimEnd = this._calculatePoint('end');
+        const flat = (p:any) => { const v = to ? to.point(p) : p; return { x: v.x, y: v.y, z: 0 }; };
+
+        const dimStart = flat(this._calculatePoint('start', to?.normal));
+        const dimEnd = flat(this._calculatePoint('end', to?.normal));
         const textPos = {
             x: (dimStart.x + dimEnd.x) / 2,
             y: (dimStart.y + dimEnd.y) / 2,
@@ -1292,10 +1345,10 @@ export class DimensionLine extends BaseAnnotation
         };
 
         doc.addAlignedDim(
-            { x: this.targetStart.x, y: this.targetStart.y, z: 0 }, // extension origin 1
-            { x: this.targetEnd.x, y: this.targetEnd.y, z: 0 },     // extension origin 2
-            { x: dimStart.x, y: dimStart.y, z: 0 },                 // dim-line endpoint 1
-            { x: dimEnd.x, y: dimEnd.y, z: 0 },                     // dim-line endpoint 2
+            flat(this.targetStart), // extension origin 1
+            flat(this.targetEnd),   // extension origin 2
+            dimStart,               // dim-line endpoint 1
+            dimEnd,                 // dim-line endpoint 2
             textPos,
             this._formatValueText(),
             layer,

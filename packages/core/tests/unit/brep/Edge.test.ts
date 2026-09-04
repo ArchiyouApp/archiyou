@@ -1,6 +1,6 @@
 import * as brep from '../../../src/modeler/brep/index'
 
-import { test, beforeAll, expect } from 'vitest'
+import { test, beforeAll, expect, vi } from 'vitest'
 
 console.geom = console.log;
 
@@ -130,4 +130,60 @@ test("Edge perpendicularPointTo on a Spline", () =>
         const connector = f.toVector().subtracted(from.toVector()).normalize();
         expect(Math.abs(connector.dot(s.tangentAt(f)))).toBeLessThan(0.05);
     });
+})
+
+test("Edge tangent() on a Line", () =>
+{
+    const l = new brep.Edge().makeLine([0,0,0],[100,0,0]);
+    expect(l.tangent().toArray()).toEqual([1,0,0]);
+    expect(l.tangent().length()).toBeCloseTo(1);
+
+    // normalises a diagonal
+    const c = 1/Math.sqrt(3);
+    const d = new brep.Edge().makeLine([0,0,0],[10,10,10]).tangent();
+    expect(d.x).toBeCloseTo(c);
+    expect(d.y).toBeCloseTo(c);
+    expect(d.z).toBeCloseTo(c);
+
+    // follows the direction the Line was drawn in
+    expect(new brep.Edge().makeLine([100,0,0],[0,0,0]).tangent().toArray()).toEqual([-1,0,0]);
+
+    // agrees with tangentAt() everywhere along it
+    const s = new brep.Edge().makeLine([0,0,0],[100,50,0]);
+    const t = s.tangent();
+    [[0,0,0],[50,25,0],[100,50,0]].forEach( p =>
+    {
+        const at = s.tangentAt(p);
+        expect(at.x).toBeCloseTo(t.x);
+        expect(at.y).toBeCloseTo(t.y);
+        expect(at.z).toBeCloseTo(t.z);
+    });
+
+    // asking twice gives the same answer and leaves the Edge alone
+    expect(s.tangent().toArray()).toEqual(t.toArray());
+    expect(s.length()).toBeCloseTo(Math.sqrt(100*100 + 50*50));
+})
+
+test("Edge tangent() refers curved Edges to tangentAt()", () =>
+{
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const curved = [
+        new brep.Edge().makeCircle(100),
+        new brep.Edge().makeArc([0,0,0],[50,50,0],[100,0,0]),
+        new brep.Edge().makeSpline([[0,0,0],[50,50,0],[100,-50,0],[150,0,0]]),
+    ];
+
+    curved.forEach( e =>
+    {
+        warn.mockClear();
+        expect(e.tangent()).toBeNull();
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(String(warn.mock.calls[0][0])).toContain('tangentAt');
+    });
+
+    warn.mockRestore();
+
+    // tangentAt() stays the way to ask a curved Edge
+    expect(new brep.Edge().makeCircle(100).tangentAt([100,0,0]).toArray()).toEqual([0,1,0]);
 })

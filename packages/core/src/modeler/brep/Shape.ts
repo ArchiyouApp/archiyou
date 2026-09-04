@@ -102,6 +102,18 @@ export class Shape
     style:Style = new Style();
 
     _id:string = uuidv4();
+    /** Serial id: the order in which this shape entered the scene, stamped once on adoption
+     *  by the meshup SceneNode.setShape() (brep shapes live in the same meshup scene) from
+     *  the provider Modeler installs on the scene root. 0 means never adopted.
+     *
+     *  Unlike `_id` — a fresh uuid on every run — this is reproducible: the same script with
+     *  the same params, kernel and version numbers its shapes identically. It is NOT stable
+     *  across a change that adds or removes a shape, which shifts every sid adopted after
+     *  it, so it complements the scene path for cross-run identity rather than replacing it. */
+    _sid:number = 0;
+    /** The sid of the shape this one was copied from, when it is a copy. Provenance only —
+     *  a copy always earns its own `_sid`. Cf. `_cloned` below, the in-memory half. */
+    _sidFrom?:number;
     _name:string|undefined;
 
     _parent:AnyShapeOrCollection; // With selecting subshapes we keep the reference to parent
@@ -405,6 +417,16 @@ export class Shape
     dashed(dash:Array<number> = [5,5]):this
     {
         this.style.stroke = { dash };
+        return this;
+    }
+
+    /** Draw the lines of this Shape unbroken — the counterpart of dashed().
+     *  The empty dash pattern is set EXPLICITLY, so it wins in the style cascade: a Shape on a
+     *  dashed layer can opt back out without the layer having to change. Named after the
+     *  DXF/CAD linetype it exports as (CONTINUOUS). Mirrors meshup's Curve.continuous(). */
+    continuous():this
+    {
+        this.style.stroke = { dash: [] };
         return this;
     }
 
@@ -974,6 +996,7 @@ export class Shape
         const newShape = new Shape()._fromOcShape(ocBuilderCopy.Shape()) as this;
         
         newShape._copyAttributes(this);
+        newShape._inheritSid(this);
 
         // Carry the scene context, exactly like meshup Shape.copy(): the copy belongs to the
         // same modeler/scene and inherits material and (inherited) name, so the host auto-namer
@@ -3032,8 +3055,12 @@ export class Shape
         return this._intersections(others);
     }
 
-    //@addResultShapesToScene
+    /** The single shared Shape between this Shape and other(s) - the singular of
+     *  intersections(). Like intersections() the result is a NEW Shape that is added to the
+     *  active layer; this Shape is left untouched. Use intersect() to replace this Shape by
+     *  the intersection instead. */
     @checkInput('PointLikeOrAnyShapeOrCollection', 'auto')
+    @sceneAdd
     intersection(others:PointLikeOrAnyShapeOrCollection):AnyShape
     {
         let i = this._intersections(others)?.first();
@@ -4540,7 +4567,13 @@ export class Shape
     {
         // `tmp()` opts a Shape out of the scene; force overrides that.
         if(force){ this._isTmp = false; this._suppressScene = false; }
-        if(this._isTmp || this._suppressScene){ return this; }
+        if(this._isTmp || this._suppressScene)
+        {
+            console.warn(`${this.type}::addToScene(): this Shape is marked tmp() - either ` +
+                `directly or inherited from the Shape it was made from - so it stays out of ` +
+                `the scene. Use addToScene(true) to force it in.`);
+            return this;
+        }
 
         const modeler = hostModeler(this);
         if(modeler?.addToScene)
@@ -4550,9 +4583,15 @@ export class Shape
         }
 
         // No host modeler: fall back to the scene we already belong to, if any. A truly
-        // standalone Shape has no scene and this is a no-op.
+        // standalone Shape has no scene and this is a no-op - but say so, because a script
+        // that calls addToScene() clearly expected the Shape to show up.
         const layer = activeLayerOf(this);
         if(layer){ (layer as any).addShape(this) }
+        else {
+            console.warn(`${this.type}::addToScene(): this Shape does not belong to a scene ` +
+                `(no modeler and no layer), so there is nothing to add it to. It was probably ` +
+                `made by a method that does not carry the scene along.`);
+        }
 
         return this;
     }
@@ -4607,6 +4646,20 @@ export class Shape
     getId():string
     {
         return this._id;
+    }
+
+    /** Serial id: the order this shape entered the scene, or 0 if it never did. See `_sid`. */
+    sid():number
+    {
+        return this._sid;
+    }
+
+    /** Carry provenance from the source of a clone. The clone keeps sid 0 until it is
+     *  adopted, where it earns its own — this only records where it came from. */
+    _inheritSid(from:{ _sid?:number, _sidFrom?:number }):this
+    {
+        this._sidFrom = from._sid || from._sidFrom;
+        return this;
     }
 
     hide():this

@@ -32,3 +32,24 @@ the two. When a request doesn't say which kernel it means, assume meshup.
 ### Avoid these recurring problems ####
 
 - Avoid stray .js files output: If you need to do TS checking please always use --noEmit with tsc
+
+## Tests
+
+The suite is split into two vitest projects (`vitest.config.ts`):
+
+| project | path | what it is |
+| --- | --- | --- |
+| `unit` | `tests/unit/` | kernel and runtime suites — fast, hermetic |
+| `cadscripts` | `tests/cadscripts/` | whole CAD scripts run end to end through the Runner, writing models to `tests/outputs/` |
+
+* `pnpm test` (and `test:watch`) is the `unit` project only — the cadscripts are an
+  end-to-end suite, not something you want in the loop while editing `src/`.
+* `pnpm test:cadscripts` runs them; `pnpm test:all` runs both, tagged `[unit]` /
+  `[cadscripts]` in the output. `test:coverage` also covers both on purpose: the
+  cadscripts exercise large parts of `src/` that no unit test reaches.
+* The narrower `test:*` scripts (`test:brep`, `test:runner`, `test:params`, …) are path
+  filters over the `unit` project and are unaffected by the split.
+
+A red `cadscripts` test usually means a script in `tests/cadscripts/scripts/` needs
+updating, not that the kernel regressed — so don't chase it from a kernel change without
+checking that first.

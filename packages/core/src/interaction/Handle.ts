@@ -1,5 +1,5 @@
 import type { ArchiyouModules } from '../types';
-import type { HandleData, HandlePlane, HandleRangeType } from './types';
+import type { HandleData, HandleParamMap, HandlePlane, HandleRangeType } from './types';
 
 const AXIS_VECTORS: Record<string, [number, number, number]> = {
     x: [1, 0, 0],
@@ -40,6 +40,7 @@ export class Handle
     _param: string | null = null;
     paramFnSrc: string | null = null;
     paramsFnSrc: string | null = null;
+    paramMap: HandleParamMap | null = null;
 
     // Per-run call-tracking flags — read by Interactor.getManagedHandlesData()
     // to decide which ops to emit. Reset implicitly because Handles are recreated each run.
@@ -234,18 +235,74 @@ export class Handle
         return this;
     }
 
-    /** Bind this handle to a script parameter.
-     *  @param paramName  Name of the script parameter (e.g. 'X', 'SIZE').
-     *  @param fn  Optional map function `(handle, param) => newParamValue`.
-     *             When omitted (or null), autoMap is used: the handle range is
-     *             linearly remapped to the param's schema min/max (1D number params only).
-     *             `handle` exposes `{x, y, z, u, v, value, range}`. */
-    param(paramName: string, fn?: ((handle: any, param: any) => any) | null): this
+    /** Bind this handle to a script parameter, or to one element of a list param.
+     *
+     *  @param ref  Either a param name (`'WIDTH'`) or an indexed reference into a list
+     *              param (`'OPENINGS[2]'`) — the usual array syntax, so one handle can
+     *              stand for one entry of a `$PARAMS.defineObject()` list.
+     *  @param map  How the drag reaches the value. Three forms:
+     *
+     *  **Omitted** — autoMap: the handle range is linearly remapped onto the param's
+     *  schema min/max. 1D number params only.
+     *
+     *  **A map object** `{ u: 'left', v: 'sill' }` — drag axis → property, for a value
+     *  that is an object (an `object` param, or one entry of an object list). Axes are
+     *  `x`/`y`/`z` (world position) and `u`/`v` (projection onto the drag axes). How they
+     *  are applied follows range(), so the script picks the mode:
+     *
+     *      .range(0, 4000)          absolute → prop  = handle[axis]
+     *      .range('-4000', '+4000') relative → prop += handle[axis]   (a delta)
+     *
+     *  Relative is the robust default: it needs no correspondence between a property value
+     *  and a world coordinate, so it survives geometry that is offset or rotated. Under a
+     *  relative range only 'u'/'v' make sense — 'x'/'y'/'z' are world positions and adding
+     *  one as a delta is meaningless. That is checked at end of run, because range() may
+     *  be called after param().
+     *
+     *  Because the map names the PROPERTY, the viewer can snap each value to that
+     *  property's own step and clamp it to its own min/max before writing. Prefer it over
+     *  a function for anything a function is not actually needed for.
+     *
+     *  **A function** `(handle, value) => …` — the escape hatch, for anything the map
+     *  cannot say (a sign flip, a computed property, two properties from one axis). It
+     *  receives a copy of the current value and may either mutate it or return a new one.
+     *  `handle` exposes `{x, y, z, u, v, value, range}`.
+     *
+     *  For an indexed ref prefer at() over start(): the viewer keeps a dragged handle
+     *  where the user put it across a re-definition, but a handle standing for a list entry
+     *  must follow the value the script actually got — a step:10 property snaps to 1230
+     *  where the drag ended at 1234. */
+    param(
+        ref: string,
+        map?: HandleParamMap | ((handle: any, value: any) => any) | null,
+    ): this
     {
-        this._param = paramName;
-        this.paramFnSrc = (typeof fn === 'function') ? fn.toString() : null;
-        if (!this.id) this.id = paramName;
+        // Validate against the param's own name; the [index] is a reference INTO it.
+        const name = Handle.parseParamRef(ref).name;
+        const knownParamNames = this._archiyou?.interactor?.knownParamNames ?? [];
+        if (knownParamNames.length > 0 && !knownParamNames.includes(name))
+        {
+            const detail =
+                `$handle().param(): unknown param "${name}". ` +
+                `Known params: ${knownParamNames.map(k => `"${k}"`).join(', ')}. ` +
+                `Param names are case-sensitive.`;
+            this._archiyou?.console?.error(detail);
+            throw new Error(detail);
+        }
+
+        this._param      = ref;
+        this.paramFnSrc  = (typeof map === 'function') ? map.toString() : null;
+        this.paramMap    = (map && typeof map === 'object') ? { ...map } : null;
+        if (!this.id) this.id = ref;
         return this;
+    }
+
+    /** Split a param reference into its name and, for `NAME[index]`, its index.
+     *  Shared with the viewer so both ends read a reference the same way. */
+    static parseParamRef(ref: string): { name: string; index: number | null }
+    {
+        const m = /^\s*([^[\s]+)\s*\[\s*(\d+)\s*\]\s*$/.exec(ref ?? '');
+        return m ? { name: m[1], index: Number(m[2]) } : { name: (ref ?? '').trim(), index: null };
     }
 
     /** Bind this handle to multiple script parameters via a mutation function.
@@ -331,6 +388,7 @@ export class Handle
             param:        this._param,
             paramFnSrc:   this.paramFnSrc,
             paramsFnSrc:  this.paramsFnSrc,
+            paramMap:     this.paramMap ? { ...this.paramMap } : null,
         };
     }
 }

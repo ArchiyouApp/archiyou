@@ -57,6 +57,15 @@ jobs:
       - name: Core tests
         run: pnpm --filter @archiyou/core test:runner
 
+      # The param system had a silently-red suite for a while (the min/max/step
+      # aliases were dropped and nothing noticed) because test:runner does not
+      # reach tests/unit/execution/. Gate the two files that are green.
+      # NOTE: ScriptParam.test.ts and Script.test.ts in the same directory still
+      # fail on stale test data (a helper that omits `type`, one-character param
+      # names) — fix those separately, then widen this to the whole directory.
+      - name: Core param tests
+        run: pnpm --filter @archiyou/core test:params
+
       # The module contract is authored in packages/module-sdk and mirrored into
       # packages/core/src/modules/sdkTypes.ts, because core is published to npm and the
       # SDK is not — an import by name would dangle in everything core ships. Two copies
