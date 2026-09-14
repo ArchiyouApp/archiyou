@@ -27,9 +27,10 @@ import { registerLibraryRoutes } from './routes/library';
 import { registerExecuteRoutes } from './routes/execute';
 import { registerProxyRoutes } from './routes/proxy';
 import { registerModuleRoutes } from './routes/modules';
+import { registerAdminRoutes } from './routes/admin';
 import { moduleHost } from './modules/ModuleHost';
 import { ValidationError } from './validate';
-import { UserError } from './services/UserService';
+import { UserError, userService } from './services/UserService';
 import { ScriptStoreError } from './services/ScriptStore';
 import { translationQueue } from './translation/TranslationQueue';
 
@@ -63,8 +64,10 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
 
   // Rate limiting. Registered with `global: false` so it applies only where a
   // route opts in via `config.rateLimit` — the credential endpoints in
-  // routes/auth.ts. Read/library routes stay unthrottled; a blanket limit would
-  // be wrong for an editor that fans out many script requests per session.
+  // routes/auth.ts and the execute route in routes/execute.ts (the one route that
+  // runs unsandboxed code for a possibly-anonymous caller). Read/library routes stay
+  // unthrottled; a blanket limit would be wrong for an editor that fans out many
+  // script requests per session.
   await fastify.register(import('@fastify/rate-limit'), {
     global: false,
     // In-process store: fine for a single API container. With several API
@@ -119,6 +122,27 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
     }
   });
 
+  // preHandler for routes/admin.ts. Two distinct answers on purpose: 401 means "log
+  // in", 403 means "logged in, still not allowed" — collapsing them would send the
+  // editor to the login screen for an account that is already signed in.
+  //
+  // The flag is read from the database here, never from the token. Session tokens
+  // last 7 days and there is no revocation list, so an admin claim baked into a JWT
+  // would keep working for a week after the grant was withdrawn. Same reasoning as
+  // users.modules; the stakes are higher, since this role can clear a script to run
+  // unsandboxed for anonymous callers.
+  fastify.decorate('requireAdmin', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      await request.jwtVerify();
+    } catch {
+      reply.code(401).send({ success: false, error: 'Unauthorized' });
+      return;
+    }
+    if (!userService.isAdmin(request.user.sub)) {
+      reply.code(403).send({ success: false, error: 'Admin only', code: 'not_admin' });
+    }
+  });
+
   // Redis/BullMQ execution pipeline. Best-effort: read routes must still register
   // if Redis is down — only /execute degrades. Exposed only once init succeeds,
   // so the execute route returns a clean 503 while the pipeline is unavailable.
@@ -147,7 +171,7 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
 
   // Scan installed script modules now rather than on the first request, so a
   // malformed manifest is reported when the deployment happens — not hours later
-  // in a user's console. No-op when SERVER_MODULES_DIR is unset (the default).
+  // in a user's console. No-op when no module is installed (the default).
   moduleHost.load();
   if (config.modules.dev) {
     // Editing a module should not require restarting the backend.
@@ -167,7 +191,8 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   await fastify.register(registerLibraryRoutes);  // /scripts/{published,shared}/* (public)
   await fastify.register(registerExecuteRoutes);  // /scripts/published/execute/*
   await fastify.register(registerProxyRoutes);    // /proxy?url= (asset proxy for $import)
-  await fastify.register(registerModuleRoutes);   // /modules/* (gated script modules; inert without SERVER_MODULES_DIR)
+  await fastify.register(registerModuleRoutes);   // /modules/* (gated script modules; inert when none is installed)
+  await fastify.register(registerAdminRoutes);    // /admin/* (operator only — users.is_admin)
 }
 
 /** Exported so route tests can build an app that maps errors the way production
@@ -208,6 +233,7 @@ export function setupErrorHandling(fastify: FastifyInstance): void {
 declare module 'fastify' {
   interface FastifyInstance {
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    requireAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     executionManager?: ExecutionManager;
   }
 }

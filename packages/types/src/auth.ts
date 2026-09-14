@@ -59,6 +59,10 @@ export const PublicUserSchema = Type.Object({
    *  Lets the editor show a module as unlocked; it is never the authority — the
    *  server re-checks the database on every bundle fetch and module call. */
   modules: Type.Array(Type.String()),
+  /** Operator account: the editor shows the Admin entry and lets /admin render.
+   *  Presentation only — every admin route re-reads the column (routes/admin.ts),
+   *  so a stale value here buys nothing. */
+  isAdmin: Type.Boolean(),
 });
 export type PublicUser = Static<typeof PublicUserSchema>;
 

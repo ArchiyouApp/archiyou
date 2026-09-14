@@ -73,7 +73,7 @@ describe('fulfillmentExports', () =>
     expect(formats).not.toContain('obj');
   });
 
-  it('never expands a table wildcard to gsheets — there are no bytes to download', () =>
+  it('expands a table wildcard to every table format — all of them are files', () =>
   {
     const formats = fulfillmentExports(fulfillment(['default/tables/*/*'])).map(e => e.format);
     expect(formats).toEqual(['json', 'xlsx']);

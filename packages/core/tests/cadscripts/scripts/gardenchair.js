@@ -83,9 +83,9 @@ sideSeatingBeam = diagramSeatLine.copy().extend(300, 'end')
 // Curve x planar-Mesh intersection returns nothing for a zero-volume shape,
 // so intersect the beam's boundary edges directly and take the lowest hit
 sideSeatingBeamBottomHit = sideSeatingBeam.edges().toArray()
-                        .map(e => diagramBaseFrontLine.intersect(e))
-                        .filter(pts => pts && pts.length)
-                        .flat()
+                        .map(e => diagramBaseFrontLine.intersections(e))
+                        .filter(hits => hits)
+                        .flatMap(hits => hits.toArray().map(v => v.hide())) // Vertices where they cross
                         .sort((a,b) => a.z - b.z)[0]
 
 sideSeatingCutoffLine = line(

@@ -41,6 +41,9 @@ export function toPublicUser(u: UserRow): PublicUser {
     // mark modules locked/unlocked; it is NOT the authority — every bundle fetch
     // and server-module call is re-checked against the database.
     modules: normalizeModuleIds(u.modules),
+    // Lets the editor show the Admin entry. Not the authority — requireAdmin
+    // re-reads the column on every admin request.
+    isAdmin: u.isAdmin === true,
   };
 }
 
@@ -154,6 +157,9 @@ export class UserService {
       emailVerifiedAt: null,
       // New accounts have no gated modules; grants are made with `pnpm admin:modules`.
       modules: [],
+      // Never on registration — an operator is made only with `pnpm admin:users`,
+      // which needs a shell on the box.
+      isAdmin: false,
     };
     db.insert(users).values(row).run();
     return row;
@@ -237,6 +243,30 @@ export class UserService {
     if (!current) return null;
     const drop = new Set(moduleIds);
     return this.setModules(username, normalizeModuleIds(current.modules).filter((m) => !drop.has(m)));
+  }
+
+  /** Is this account an operator? Returns false for an unknown handle, so a stale
+   *  token can never widen access. Read per request by requireAdmin — never trusted
+   *  from a JWT claim, because tokens live 7 days with no revocation list and a
+   *  mistaken grant has to be undoable now, not next week. */
+  isAdmin(username: string | null | undefined): boolean {
+    if (!username) return false;
+    return this.findByUsername(username)?.isAdmin === true;
+  }
+
+  /** Grant or revoke operator rights. Returns the stored value, or null for an
+   *  unknown handle. Reachable only from `pnpm admin:users` — deliberately NOT
+   *  exposed over HTTP, so admin cannot be handed out by anyone who merely has it. */
+  setAdmin(username: string, isAdmin: boolean): boolean | null {
+    const user = this.findByUsername(username);
+    if (!user) return null;
+    db.update(users).set({ isAdmin }).where(eq(users.id, user.id)).run();
+    return isAdmin;
+  }
+
+  /** Every operator account, for `pnpm admin:users --list`. */
+  listAdmins(): UserRow[] {
+    return db.select().from(users).where(eq(users.isAdmin, true)).all();
   }
 
   /** Ensure the .env test user exists (idempotent — runs on boot). */

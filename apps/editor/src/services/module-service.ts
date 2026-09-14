@@ -18,7 +18,6 @@
 import { signal } from '@lit-labs/signals';
 import type { AyModuleCatalogEntry } from '@archiyou/module-sdk';
 
-import { registerModuleCompletions } from '@archiyou/ui/editor/completions.js';
 
 import { authService, currentUser } from './auth-service.js';
 import { netFetch } from './network.js';
@@ -88,10 +87,11 @@ export async function ensureModuleCatalog(): Promise<AyModuleCatalogEntry[]> {
     try {
       const modules = await fetchCatalog();
       moduleCatalog.set(modules);
-      // Autocomplete for entitled modules. Registered here rather than generated
-      // at build time because which modules exist is a per-deployment,
-      // per-account fact (see completions.ts).
-      registerModuleCompletions(modules);
+      // NOTE editor autocomplete for these modules is registered by <code-box>, off
+      // this signal — deliberately not from here. completions.ts pulls in CodeMirror,
+      // and this service is on the configurator's import path (via execution-service),
+      // so importing it here put a ~490KB code editor into the download of a page that
+      // never shows one.
       _loadedFor = userId;
       _loadedAt = Date.now();
       return modules;
@@ -107,4 +107,48 @@ export async function ensureModuleCatalog(): Promise<AyModuleCatalogEntry[]> {
  *  entitlement is expected to have changed server-side. */
 export function invalidateModuleCatalog(): void {
   _loadedFor = undefined;
+  _docs.clear();
+}
+
+/** Documentation markdown already fetched this session, keyed by module id. */
+const _docs = new Map<string, Promise<string | null>>();
+
+/**
+ * A module's DOCS.md as markdown, or null when the backend has none to give.
+ *
+ * This is the module's SCRIPT-FACING documentation, not its README — see
+ * AyModuleCatalogEntry.docs for why those are separate files.
+ *
+ * Cached per module for the life of the session: it is large compared to a
+ * catalog entry, and someone paging back and forth between the list and the docs
+ * should not re-download it each time. In a dev build the cache is skipped, so
+ * editing a module's DOCS.md shows up on the next open — the same bargain the
+ * catalog's DEV_TTL_MS makes.
+ *
+ * Never throws. A module whose docs cannot be fetched shows "no documentation"
+ * rather than breaking the menu it is displayed in.
+ */
+export async function fetchModuleDocs(id: string): Promise<string | null> {
+  const cached = !import.meta.env.DEV && _docs.get(id);
+  if (cached) return cached;
+
+  const pending = (async () => {
+    try {
+      const token = await authService.getToken();
+      const res = await netFetch(`${API_BASE}/modules/${encodeURIComponent(id)}/docs`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) return null;
+      const text = await res.text();
+      return text.trim() ? text : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  _docs.set(id, pending);
+  // A failed fetch must not be remembered as "this module has no docs" — the
+  // next open should be able to try again.
+  void pending.then((md) => { if (md === null) _docs.delete(id); });
+  return pending;
 }

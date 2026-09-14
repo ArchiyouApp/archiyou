@@ -58,3 +58,20 @@ test("Shape Basics", () =>
     expect(cloneBox.same(box)).toEqual(false);
     expect(cloneBox.clonedFrom().same(box)).toEqual(true);
 })
+
+test("Shape trim() is cutoffBy() with another Shape and cutoff() with an axis", () =>
+{
+    const box = () => new brep.Solid().makeBox(100);
+    const { min, max } = { min: box().bbox().min(), max: box().bbox().max() };
+    const level = min.x + 30;
+
+    const cutter = () => new brep.Solid().makeBox(100).move(70, 0, 0); // overlaps the last 30 along x
+
+    expect(box().trim(cutter()).volume()).toBeCloseTo(box().cutoffBy(cutter()).volume(), 3);
+    expect(box().trim(cutter(), true).volume()).toBeCloseTo(box().cutoffBy(cutter(), true).volume(), 3);
+    expect(box().trim(cutter(), true).volume()).toBeLessThan(box().trim(cutter()).volume());
+
+    expect(box().trim('x', level).volume()).toBeCloseTo(0.7 * 100**3, 0);
+    expect(box().trim('x', level, true).volume()).toBeCloseTo(0.3 * 100**3, 0);
+    expect(max.x - min.x).toBeCloseTo(100);
+})

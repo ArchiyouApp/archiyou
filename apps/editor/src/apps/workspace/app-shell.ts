@@ -13,7 +13,6 @@ import { customElement } from 'lit/decorators.js';
 import { initRouter } from './router.js';
 import { applySystemTheme } from '../../styles/dark-theme.js';
 import { setLocale, detectLocale } from '../../i18n/locale-config.js';
-import { warmupWorker } from '../../services/execution-service';
 
 @customElement('app-shell')
 export class AppShell extends LitElement
@@ -32,12 +31,12 @@ export class AppShell extends LitElement
     // Initialise locale (best-effort — locale modules may not exist until lit-localize build)
     setLocale(detectLocale()).catch(() => {/* source locale, no module needed */});
 
-    // Start worker + WASM warmup as early as possible so editor/configurator
-    // pages don't pay the full startup cost before their first execution.
-    warmupWorker().catch(err =>
-    {
-      console.warn('AppShell::firstUpdated(): worker warmup failed:', err);
-    });
+    // NO kernel warmup here. This runs before the router has resolved anything, so
+    // warming up would download ~26MB of CAD kernel on EVERY page — including a
+    // published configurator that is going to execute server-side and never needs
+    // one. <layout-main> warms up instead: it is the parent route of the pages that
+    // do need a kernel (/editor, /browser, /plugin) and is not in the configurator's
+    // route tree. See services/execution-service.ts.
 
     const outlet = this.renderRoot.querySelector<HTMLElement>('#outlet')!;
     initRouter(outlet);

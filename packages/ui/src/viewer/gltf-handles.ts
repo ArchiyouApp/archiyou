@@ -1,7 +1,7 @@
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as THREE from 'three';
 
-import type { HandleParamMap } from '@archiyou/core/src/interaction/types';
+import type { HandleMinimized, HandleParamMap } from '@archiyou/core/src/interaction/types';
 
 /** A serialized Handle as stored in GLB extras / execution result state. */
 export interface HandleRawData
@@ -10,6 +10,7 @@ export interface HandleRawData
   type: 'handle';
   position: [number, number, number];
   icon: string;
+  minimized?: HandleMinimized | null;
   visible: boolean;
   rangeType: '1d' | '2d';
   rangeMin: number | [number, number];
@@ -32,6 +33,7 @@ export interface HandleDef
   id: string;
   anchorLocal: THREE.Vector3;   // position in model-group-local coords (Z-up world = identity)
   icon: string;
+  minimized: HandleMinimized | null;
   visible: boolean;
   rangeType: '1d' | '2d';
   rangeMin: number | [number, number];
@@ -60,6 +62,7 @@ export function handleDefFromData(h: HandleRawData): HandleDef
     id:            h.id,
     anchorLocal:   new THREE.Vector3(h.position[0], h.position[1], h.position[2]),
     icon:          h.icon ?? 'move',
+    minimized:     h.minimized ?? null,
     visible:       h.visible !== false,
     rangeType:     h.rangeType ?? '1d',
     rangeMin:      h.rangeMin,

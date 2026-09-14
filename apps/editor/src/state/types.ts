@@ -71,6 +71,10 @@ export interface UserState
   email: string | null;
   name: string | null;
   avatarUrl: string | null;
+  /** Operator account: shows the Admin entry and lets /admin render. Presentation
+   *  only — every admin route re-reads the flag from the database, so nothing here
+   *  is load-bearing for access. */
+  isAdmin: boolean;
 }
 
 /**

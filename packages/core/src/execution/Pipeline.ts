@@ -11,7 +11,9 @@
  *          // User defined pipeline function
  *          iso = mainScope.someShape.iso(); // Make some isometric view
  *          
- *          await calc.gsheets.fromTemplate(...); // IMPORTANT: use await is essential here!
+ *          // e.g. push the model's numbers into a spreadsheet copy (cloudcalc module):
+ *          //   $module('cloudcalc'); wb = cloudcalc.open(url); wb.copy({ width: mainScope.WIDTH }, { title: 'Offer' })
+ *          // Anything asynchronous inside a pipeline still needs `await` — see NOTES below.
  * 
  *          // RETURN: after pipeline is done, results are taken from pipeline scope
             // If no return value is given the current state within the pipeline scope is outputted

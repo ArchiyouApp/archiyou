@@ -2,22 +2,29 @@
  * ModuleHost — the installed set of gated script modules on this instance.
  *
  * Modules are built and distributed OUTSIDE this repository (see modules/README.md)
- * and deployed into SERVER_MODULES_DIR as:
+ * and cloned into the `modules/` overlay, where each is:
  *
  *   <dir>/<id>/manifest.json
  *   <dir>/<id>/bundle.js     (runtime: 'client' — served to entitled browsers)
  *   <dir>/<id>/server.js     (runtime: 'server' — never leaves this machine)
+ *   <dir>/<id>/DOCS.md       (optional — the script-facing documentation, shown in the editor)
+ *
+ * A server module with `"client": true` in its manifest ships BOTH: server.js
+ * stays here, bundle.js is the wrapper served to browsers (see
+ * AyModuleManifest.client in the module SDK).
  *
  * The runtime artifact is also accepted at `<id>/dist/<name>.js`, which is where
- * a module's own build puts it. That means SERVER_MODULES_DIR can point straight
- * at the development overlay (`./modules`) and there is no copy step at all while
- * working on a module — see modules/README.md.
+ * a module's own build puts it. Together with roots being discovered under
+ * `modules/` (see discoverRoots.ts) that means a cloned module repository is read
+ * in place, with neither a copy step nor a setting — see modules/README.md.
+ *
+ * `SERVER_MODULES_DIR` still overrides the roots when a deployment keeps them
+ * elsewhere; config.modules.dir is the resolved answer either way.
  *
  * Scanned at boot, and re-scanned on change when config.modules.dev is on.
- * **With SERVER_MODULES_DIR unset the host is inert** — list() is empty, GET
- * /modules returns [], and the server behaves exactly as it does without this
- * feature. That is what keeps a plain checkout of this repository fully
- * functional.
+ * **With no module installed the host is inert** — list() is empty, GET /modules
+ * returns [], and the server behaves exactly as it does without this feature.
+ * That is what keeps a plain checkout of this repository fully functional.
  */
 
 import { readdirSync, readFileSync, statSync, existsSync, watch, type FSWatcher } from 'node:fs';
@@ -37,6 +44,12 @@ interface InstalledModule {
   dir: string;
   /** Absolute path to the runtime artifact (bundle.js or server.js). */
   entry: string;
+  /** Hybrid modules only: the client wrapper (bundle.js) served next to server.js. */
+  clientEntry?: string;
+  /** Absolute path to the module's DOCS.md, when it ships one. This is the
+   *  script-facing documentation shown in the editor's module list — NOT its
+   *  README, which is written for whoever builds and deploys the module. */
+  docs?: string;
   /** Content fingerprint of the artifact + manifest. Changes on every rebuild,
    *  which is what lets a caller distinguish "rebuilt" from "same version". */
   rev: string;
@@ -67,13 +80,41 @@ function revisionOf(entryPath: string, manifestPath: string): string {
   return (h >>> 0).toString(36);
 }
 
+/**
+ * A module's DOCS.md, if it has one.
+ *
+ * DELIBERATELY NOT README.md. The route that serves this is public, and a
+ * module's README is written for whoever builds and deploys it — build steps,
+ * environment variables, the reasoning behind its security guards. DOCS.md is
+ * the half written for the person using the module from a script, and keeping
+ * them apart makes publishing it a decision the module author takes rather than
+ * one this scan takes for them.
+ *
+ * Case-insensitive on the whole name rather than a fixed list of spellings: the
+ * file is authored by whoever wrote the module, and `docs.md` losing its
+ * documentation to a capitalisation is not a useful failure. Only the module's
+ * OWN directory is looked at — a DOCS.md nested in src/ or in a dependency is
+ * not the module's documentation.
+ */
+function findDocs(moduleDir: string): string | undefined {
+  try {
+    const name = readdirSync(moduleDir).find((f) => f.toLowerCase() === 'docs.md');
+    return name ? join(moduleDir, name) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Files whose change means a module changed. Everything else under a module
  *  directory — node_modules churn, source files, editor temp files — is ignored,
- *  or a single `pnpm install` would trigger hundreds of re-scans. */
-const WATCHED_NAMES = new Set(['manifest.json', 'bundle.js', 'server.js']);
+ *  or a single `pnpm install` would trigger hundreds of re-scans.
+ *
+ *  Compared lower-cased, so `docs.md` is watched on the same terms findDocs
+ *  accepts it. */
+const WATCHED_NAMES = new Set(['manifest.json', 'bundle.js', 'server.js', 'docs.md']);
 
 /**
- * Split SERVER_MODULES_DIR into absolute roots.
+ * Split a root list — `SERVER_MODULES_DIR`, or what discovery found — into absolute paths.
  *
  * Comma or colon separated. Colon is the PATH convention and the one people reach for, but
  * it also appears in a Windows drive letter, so a single-character segment is treated as
@@ -115,11 +156,12 @@ export class ModuleHost {
   /**
    * Scan the modules directories. Safe to call repeatedly; re-scans.
    *
-   * `dir` may name SEVERAL roots, comma- or colon-separated. One root was enough while
-   * every module lived in a single private repository; an open-source module gets its own
-   * repository, checked out alongside, and the backend has to see both. Roots are scanned
-   * in order and the first definition of an id wins, so an earlier root can deliberately
-   * shadow a later one.
+   * `dir` may name SEVERAL roots, comma- or colon-separated — which is what discovery
+   * produces when more than one module repository is cloned into `modules/`. One root was
+   * enough while every module lived in a single private repository; an open-source module
+   * gets its own repository, checked out alongside, and the backend has to see both. Roots
+   * are scanned in order and the first definition of an id wins, so an earlier root can
+   * deliberately shadow a later one.
    */
   load(dir: string = config.modules.dir): this {
     this._modules.clear();
@@ -133,6 +175,11 @@ export class ModuleHost {
     if (this._modules.size > 0) {
       const names = [...this._modules.values()].map((m) => `${m.manifest.id}@${m.manifest.version}`);
       console.log(`🧩 Loaded ${this._modules.size} script module(s): ${names.join(', ')}`);
+      // Naming the roots — and whether they were configured or found — turns
+      // "why is this module here / not here" into something readable at boot
+      // instead of something to reason out from an environment.
+      const how = config.modules.dirSource === 'discovered' ? 'found under modules/' : 'from SERVER_MODULES_DIR';
+      console.log(`   ${how}: ${this._roots.join(', ')}`);
     }
     return this;
   }
@@ -140,7 +187,7 @@ export class ModuleHost {
   /** Scan one root for `<id>/manifest.json`. */
   private _scanRoot(root: string): void {
     if (!existsSync(root)) {
-      console.warn(`⚠ SERVER_MODULES_DIR names a directory that does not exist: ${root}`);
+      console.warn(`⚠ module root does not exist: ${root} (from ${config.modules.dirSource === 'env' ? 'SERVER_MODULES_DIR' : 'modules/'})`);
       return;
     }
 
@@ -185,10 +232,25 @@ export class ModuleHost {
           continue;
         }
 
+        // A hybrid module (server + client wrapper) needs its bundle too; without
+        // it the script would get a bare stub where the manifest promised objects,
+        // so the module is skipped rather than half-served.
+        let clientEntry: string | undefined;
+        if (manifest.runtime === 'server' && manifest.client === true) {
+          clientEntry = [join(moduleDir, 'bundle.js'), join(moduleDir, 'dist', 'bundle.js')]
+            .find((p) => existsSync(p));
+          if (!clientEntry) {
+            console.warn(`⚠ module '${manifest.id}' skipped: manifest sets "client": true but bundle.js is missing (looked in ./ and ./dist)`);
+            continue;
+          }
+        }
+
         this._modules.set(manifest.id, {
           manifest,
           dir: moduleDir,
           entry,
+          clientEntry,
+          docs: findDocs(moduleDir),
           rev: revisionOf(entry, manifestPath),
         });
       } catch (err) {
@@ -238,6 +300,11 @@ export class ModuleHost {
       // A public module is available to everybody, including anonymous callers. See
       // AyModuleManifest.public — gating is the default, this is the deliberate opt-out.
       entitled: m.manifest.public === true || all || owned.has(m.manifest.id),
+      // Only the FLAG, never the text: the catalog is fetched on every run and
+      // a page of documentation is orders of magnitude larger than the rest of
+      // an entry. The editor asks for the markdown itself only when someone
+      // opens the docs.
+      ...(m.docs ? { docs: true } : {}),
       // Only in dev. In production a version bump is the cache key, and shipping
       // a per-build revision would defeat the immutable caching of bundles.
       ...(config.modules.dev ? { rev: m.rev } : {}),
@@ -268,7 +335,7 @@ export class ModuleHost {
       try {
         this._watchers.push(watch(root, { recursive: true }, (_event, filename) => {
           if (!filename) return;
-          const name = String(filename).replace(/\\/g, '/').split('/').pop() ?? '';
+          const name = (String(filename).replace(/\\/g, '/').split('/').pop() ?? '').toLowerCase();
           if (!WATCHED_NAMES.has(name)) return;
 
           // A build writes several files in quick succession; re-scanning on each
@@ -307,7 +374,8 @@ export class ModuleHost {
   }
 
   /**
-   * Absolute path of a client module's bundle, or null.
+   * Absolute path of the bundle a browser may receive — a client module's
+   * bundle.js, or a hybrid module's client wrapper — or null.
    *
    * Resolved from the in-memory map keyed by validated ids, NEVER by joining a
    * request-supplied id onto a path — that is what keeps `../` out of it. The
@@ -317,9 +385,23 @@ export class ModuleHost {
     if (!this._loaded) this.load();
     const found = this._modules.get(id);
     if (!found) return null;
-    if (found.manifest.runtime !== 'client') return null;
     if (found.manifest.version !== version) return null;
-    return found.entry;
+    if (found.manifest.runtime === 'client') return found.entry;
+    // A hybrid module serves its wrapper — and only ever the wrapper. server.js
+    // has no path out of this method.
+    return found.clientEntry ?? null;
+  }
+
+  /**
+   * Absolute path of a module's DOCS.md, or null when it ships none.
+   *
+   * Same resolution rule as bundlePath(): the path comes from the validated map,
+   * never from anything in the request, so no id can reach outside its own
+   * module directory.
+   */
+  docsPath(id: string): string | null {
+    if (!this._loaded) this.load();
+    return this._modules.get(id)?.docs ?? null;
   }
 
   /** Invoke a server module's method in a worker thread. */

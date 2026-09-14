@@ -206,6 +206,19 @@ export async function fetchFileVersions(fileId: string): Promise<string[]> {
   }
 }
 
+/** The latest stored version of the user's file that has — or used to have — `name`,
+ *  or null. Resolves references to a script by its name from before a rename. */
+export async function fetchFileByName(name: string): Promise<ScriptData | null> {
+  if (!authed() || !name) return null;
+  const user = handle();
+  if (!user) return null;
+  try {
+    return await api.get<ScriptData>(`/scripts/${user}/by-name/${encodeURIComponent(name)}`);
+  } catch {
+    return null;
+  }
+}
+
 /** Delete a file server-side. */
 export async function syncDelete(fileId: string): Promise<void> {
   if (!authed() || !fileId) return;

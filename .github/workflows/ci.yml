@@ -183,8 +183,11 @@ jobs:
           mkdir -p apps/editor/dist
           # Prod stack, at the repo root (build context `.`).
           docker compose -f docker-compose.yml config >/dev/null
-          # Dev stack, one level down (build context `../..`) — --project-directory
-          # so `env_file: .env` and ${VAR} interpolation resolve as they do in situ.
+          # Dev helper: Redis only, no build (see README → Server-side execution).
+          docker compose -f docker-compose.dev.yml config >/dev/null
+          # Containerised dev stack, one level down (build context `../..`) —
+          # --project-directory so `env_file: .env` and ${VAR} interpolation resolve
+          # as they do in situ.
           docker compose -f apps/server/docker-compose.yml \
             --project-directory apps/server config >/dev/null
 
@@ -221,8 +224,8 @@ jobs:
           mkdir -p apps/editor/dist
           docker compose -f docker-compose.yml config \
             | python3 apps/server/scripts/check-worker-env.py
-          # The dev stack runs the same unsandboxed Runner, and a dev .env is very
-          # often a copy of the production one — so it is held to the same rule.
+          # The containerised dev stack runs the same unsandboxed Runner, and a dev .env
+          # is very often a copy of the production one — so it is held to the same rule.
           docker compose -f apps/server/docker-compose.yml \
             --project-directory apps/server config \
             | python3 apps/server/scripts/check-worker-env.py

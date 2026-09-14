@@ -13,7 +13,8 @@ export { loadClientModule, clientBundleUrl, ModuleLoadError } from './loadClient
 export type { LoadClientModuleOptions } from './loadClientModule';
 
 export { serverModuleStub, ServerModuleCallError } from './serverModuleStub';
-export type { ServerModuleStubOptions } from './serverModuleStub';
+export { canCallSync } from './serverModuleStub';
+export type { ServerModuleStubOptions, SyncTransport } from './serverModuleStub';
 
 export { unavailableStub, ModuleUnavailableError } from './unavailableStub';
 
@@ -29,6 +30,7 @@ export type {
     AyModule,
     AyModuleWarmContext,
     AyModuleFactory,
+    AyModuleFactoryContext,
     AyServerModuleMethod,
     AyServerModule,
 } from './sdkTypes';

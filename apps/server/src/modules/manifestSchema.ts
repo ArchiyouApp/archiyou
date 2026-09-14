@@ -1,9 +1,8 @@
 /**
  * manifestSchema.ts — validation for an installed module's manifest.json.
  *
- * Manifests are written outside this repository and dropped into
- * SERVER_MODULES_DIR by a deployment, so they are untrusted input in the same
- * way a request body is: a typo must produce a clear startup warning and a
+ * Manifests are written outside this repository and installed by a deployment,
+ * so they are untrusted input in the same way a request body is: a typo must produce a clear startup warning and a
  * skipped module, never a half-registered one that fails mysteriously later.
  *
  * Mirrors AyModuleManifest in @archiyou/module-sdk. Validated with typebox v1,
@@ -40,6 +39,8 @@ export const ModuleManifestSchema = Type.Object({
   completions: Type.Optional(Type.Array(ModuleCompletionSchema, { maxItems: 500 })),
   /** Available without an entitlement. See AyModuleManifest.public. */
   public: Type.Optional(Type.Boolean()),
+  /** A server module that also ships a client wrapper bundle. See AyModuleManifest.client. */
+  client: Type.Optional(Type.Boolean()),
 });
 
 export type ModuleManifest = Static<typeof ModuleManifestSchema>;

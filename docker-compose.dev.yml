@@ -1,0 +1,36 @@
+# Redis only — the one piece of the execution stack you cannot just run from source.
+#
+# Everything else runs straight out of your working directory with tsx: no image is
+# built, no code is copied, and an edit to apps/server or packages/core is picked up
+# on the next run (or immediately, in `worker:dev` watch mode).
+#
+#     pnpm docker:dev         # start it
+#     pnpm dev:worker         # the worker, from source, in watch mode
+#     pnpm docker:dev:down    # stop and remove it
+#
+# The split is deliberate: `docker:*` scripts run containers, `dev:*` scripts run code
+# from your working tree. Nothing here is built into an image, so an edit to
+# apps/server or packages/core is live on the next run.
+#
+# The other two files build images and are for rehearsing a deployment rather than for
+# working: apps/server/docker-compose.yml runs api + redis + worker in containers, and
+# docker-compose.yml is the production stack.
+#
+# Published on the standard 6379 so nothing needs configuring — the server defaults to
+# localhost:6379. If you already run Redis locally you do not need this file at all.
+# Appendonly is off: a dev queue is scratch, and losing it on restart is a feature.
+
+name: archiyou-dev
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: archiyou-dev-redis
+    ports:
+      - "${SERVER_REDIS_PORT:-6379}:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 10

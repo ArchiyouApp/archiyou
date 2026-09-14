@@ -126,4 +126,15 @@ describe('collectComponentDependencies (what publishing has to share)', () =>
         expect(found.map(s => s.name)).toEqual(['TIMBERWALL'])
         expect(missing).toEqual([])
     })
+    it('resolves old names of renamed scripts through aliases, once per script', () =>
+    {
+        const root = ws('house', `$component('./oldwall').model(); $component('./wall').model();`)
+        const wall = ws('wall', `$component('./stud').model();`)
+        const workspace = [wall, ws('stud', `box(10,10,100);`)]
+
+        const { found, missing } = collectComponentDependencies(root, workspace, { oldwall: wall })
+
+        expect(found.map(s => s.name)).toEqual(['wall', 'stud'])
+        expect(missing).toEqual([])
+    })
 })

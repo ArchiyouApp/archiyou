@@ -282,11 +282,14 @@ describe('mesh ↔ brep parity', () =>
 
     describe('solids (meshup Mesh ↔ brep Solid)', () =>
     {
-        /*  Rotations pass an explicit pivot throughout: the two kernels disagree on the DEFAULT
-            pivot for linear shapes, and using an explicit one everywhere keeps the two solid and
-            linear chains reading the same way. Boolean results are rebound (`s = s.union(o)`)
-            because brep's union()/intersection() hand back a new Shape instead of mutating —
-            both divergences are pinned in kernel-divergences.test.ts. */
+        /*  Rotations pass an explicit pivot throughout. Both kernels now DEFAULT that pivot to the
+            shape's own centre (meshup Curve used to default to the world origin — that divergence
+            is fixed and gone), but the two disagree on where the centre of a solid IS: brep reports
+            the surface centroid rather than the centre of mass, which is still pinned. An explicit
+            pivot keeps that out of the rotation steps, and keeps the solid and linear chains
+            reading the same way. Boolean results are rebound (`s = s.union(o)`) because brep's
+            union()/intersection() hand back a new Shape instead of mutating — also pinned in
+            kernel-divergences.test.ts. */
 
         runChain('box: move → rotate → scale → mirror → booleans', {
             family: 'solid',

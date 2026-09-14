@@ -13,7 +13,7 @@
  * bundles must be self-contained.
  */
 
-import type { AyModule, AyModuleFactory, AyModuleManifest } from './sdkTypes';
+import type { AyModule, AyModuleFactory, AyModuleFactoryContext, AyModuleManifest } from './sdkTypes';
 
 export interface LoadClientModuleOptions
 {
@@ -24,6 +24,10 @@ export interface LoadClientModuleOptions
     fetchImpl?: typeof fetch;
     /** Injectable for tests: turn bundle source into its module namespace. */
     importImpl?: (source: string, manifest: AyModuleManifest) => Promise<any>;
+    /** Handed to the factory. For the wrapper of a hybrid module this carries
+     *  the server stub (see AyModuleFactoryContext); plain client modules get
+     *  nothing and ignore it. */
+    factoryContext?: AyModuleFactoryContext;
 }
 
 /** Raised when a module bundle cannot be fetched or instantiated. `notEntitled`
@@ -139,7 +143,7 @@ export async function loadClientModule(
     let instance: AyModule;
     try
     {
-        instance = factory();
+        instance = factory(opts.factoryContext);
     }
     catch(e)
     {

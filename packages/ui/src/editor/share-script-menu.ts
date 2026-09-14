@@ -376,9 +376,10 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
         this._dev         = prev.shared.dev ?? false;
         // Resolve onlyUsers ids into display chips (ids are handles).
         // Display-only stubs: only `id` is known here, the rest are placeholders
-        // to satisfy PublicUser (module entitlements are irrelevant to a chip).
+        // to satisfy PublicUser (module entitlements and operator rights are
+        // irrelevant to a chip).
         this._selectedUsers = (prev.shared.onlyUsers ?? []).map(
-          id => ({ id, email: null, name: null, avatarUrl: null, emailVerified: true, modules: [] }),
+          id => ({ id, email: null, name: null, avatarUrl: null, emailVerified: true, modules: [], isAdmin: false }),
         );
       }
 

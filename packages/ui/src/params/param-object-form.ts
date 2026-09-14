@@ -186,10 +186,7 @@ export class ParamObjectForm extends LitElement
             name:   `PROP_${index}`,
             type:   PARAM_TYPE_FOR[control],
             label:  propSchema?.label ?? key,
-            // A property is UNITLESS unless its schema says otherwise. param-item-number
-            // otherwise falls back to the script's model unit, so a plain count would
-            // render as "3 mm" — and unlike a top-level param, a nested property has no
-            // unit dropdown for the author to correct it with.
+            // A property is unitless unless its schema says otherwise
             units:  propSchema?.units ?? NONE_UNIT,
             schema: propSchema,
         } as ScriptParamData);

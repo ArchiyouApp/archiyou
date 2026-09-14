@@ -62,6 +62,13 @@ export class NavBar extends SignalWatcher(LitElement)
         ${user.email
           ? html`<wa-dropdown-item disabled class="account-email">${user.email}</wa-dropdown-item>`
           : nothing}
+        ${user.isAdmin
+          ? html`
+            <wa-dropdown-item value="admin">
+              <wa-icon slot="icon" library="lucide" name="shield-check"></wa-icon>
+              ${msg('Admin')}
+            </wa-dropdown-item>`
+          : nothing}
         <wa-dropdown-item value="logout">
           <wa-icon slot="icon" library="lucide" name="log-out"></wa-icon>
           ${msg('Sign out')}
@@ -90,6 +97,9 @@ export class NavBar extends SignalWatcher(LitElement)
   {
     const value = (e.detail?.item as { value?: string } | undefined)?.value;
     if (value === 'logout') this._logout();
+    // Only shown to operators, but the entry is cosmetic either way: /admin has its
+    // own guard and every route behind it re-checks the database.
+    if (value === 'admin') Router.go('/admin');
   }
 
   private _toggleTheme()

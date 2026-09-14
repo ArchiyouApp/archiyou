@@ -396,3 +396,73 @@ describe('ModuleRegistry — server runtime', () =>
         expect(loadClient).not.toHaveBeenCalled()
     })
 })
+
+describe('ModuleRegistry — server modules', () =>
+{
+    const serverEntry = (over: Partial<AyModuleCatalogEntry> = {}) => entry({ runtime: 'server', ...over })
+
+    it('hands the injected blocking transport to the stub', async () =>
+    {
+        const callSync = vi.fn(() => ({ status: 200, text: JSON.stringify({ success: true, result: 42 }) })) as any
+        const reg = new ModuleRegistry().setOptions({ callSync, moduleApiUrl: 'https://api.test' })
+
+        await reg.prepare("$module('example')\nexample.solve()", [serverEntry()])
+
+        // Plain value, no Promise: what a script inside the worker gets.
+        expect(reg.globals().example.solve({ a: 1 })).toBe(42)
+        expect(callSync).toHaveBeenCalledTimes(1)
+    })
+
+    it('wraps a hybrid module in its client bundle, built around the server stub', async () =>
+    {
+        const callSync = vi.fn(() => ({ status: 200, text: JSON.stringify({ success: true, result: { ref: 'r1' } }) })) as any
+        const loadClient = vi.fn(async (_m: any, opts: any) =>
+        {
+            // The wrapper is what the script sees; it forwards to the stub it was given.
+            const server = opts.factoryContext?.server
+            return {
+                setArchiyou() {},
+                open: (url: string) => ({ url, ...server.open({ ref: url }) }),
+            } as any
+        })
+        const reg = new ModuleRegistry().setOptions({ callSync, loadClient })
+
+        await reg.prepare("$module('example')\nexample.open('u')", [serverEntry({ client: true })])
+
+        expect(loadClient).toHaveBeenCalledTimes(1)
+        expect(loadClient.mock.calls[0][1].factoryContext.server).toBeDefined()
+        expect(reg.globals().example.open('u')).toEqual({ url: 'u', ref: 'r1' })
+        expect(JSON.parse(callSync.mock.calls[0][1].body)).toEqual({ method: 'open', args: { ref: 'u' } })
+    })
+
+    it('refreshes a cached wrapper with the new run’s stub', async () =>
+    {
+        const seen: any[] = []
+        const loadClient = vi.fn(async (_m: any, opts: any) => ({
+            setArchiyou() {},
+            setServer(s: any) { seen.push(s) },
+            _first: opts.factoryContext?.server,
+        }) as any)
+        const reg = new ModuleRegistry().setOptions({ loadClient, callSync: () => ({ status: 200, text: '{}' }) })
+
+        await reg.prepare("$module('example')\nexample.x", [serverEntry({ client: true })])
+        await reg.prepare("$module('example')\nexample.x", [serverEntry({ client: true })])
+
+        // Loaded once (cached like any client module), but told about the second
+        // run's stub — that one carries the current bearer token.
+        expect(loadClient).toHaveBeenCalledTimes(1)
+        expect(seen).toHaveLength(1)
+        expect(seen[0]).not.toBe(reg.globals().example._first)
+    })
+
+    it('does not load a bundle for a plain server module', async () =>
+    {
+        const loadClient = vi.fn(async () => fakeModule())
+        const reg = new ModuleRegistry().setOptions({ loadClient })
+
+        await reg.prepare("$module('example')\nexample.solve()", [serverEntry()])
+
+        expect(loadClient).not.toHaveBeenCalled()
+        expect(String(reg.globals().example)).toBe("[server module 'example']")
+    })
+})

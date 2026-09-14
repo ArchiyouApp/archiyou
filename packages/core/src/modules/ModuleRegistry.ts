@@ -21,11 +21,11 @@
  */
 
 import semver from 'semver';
-import type { AyArchiyou, AyModule, AyModuleCatalogEntry, AyModuleWarmContext } from './sdkTypes';
+import type { AyArchiyou, AyModule, AyModuleCatalogEntry, AyModuleFactoryContext, AyModuleWarmContext } from './sdkTypes';
 
 import { MODELER_METHODS_INTO_GLOBAL, ARCHIYOU_CORE_VERSION } from '../constants';
 import { loadClientModule, ModuleLoadError } from './loadClientModule';
-import { serverModuleStub } from './serverModuleStub';
+import { serverModuleStub, type SyncTransport } from './serverModuleStub';
 import { unavailableStub, ModuleUnavailableError } from './unavailableStub';
 
 /** Names the script scope already occupies. A module claiming one of these is
@@ -69,8 +69,14 @@ export interface ModuleRegistryOptions
     /** Core version the `engine` range is checked against. Overridable for tests. */
     coreVersion?: string;
     fetchImpl?: typeof fetch;
-    /** Full override of client-module loading, for tests. */
-    loadClient?: (manifest: AyModuleCatalogEntry, opts: ModuleRegistryOptions) => Promise<AyModule>;
+    /** Blocking transport for server-module calls. Inside the script worker the
+     *  stub finds one itself (sync XHR); this is the injection point for tests
+     *  and for hosts that provide their own bridge. */
+    callSync?: SyncTransport;
+    /** Full override of client-module loading, for tests. Also used for the
+     *  client wrapper of a hybrid module — `opts.factoryContext.server` then
+     *  carries the server stub the wrapper must be constructed with. */
+    loadClient?: (manifest: AyModuleCatalogEntry, opts: ModuleRegistryOptions & { factoryContext?: AyModuleFactoryContext }) => Promise<AyModule>;
 }
 
 /** Why a module is not usable this run. */
@@ -265,39 +271,54 @@ export class ModuleRegistry
                 return this._reject(entry, 'not available on your account');
             }
 
-            if(entry.runtime === 'server')
-            {
-                this._globals[entry.global] = serverModuleStub(entry, {
+            // A server module's stub. It is either the global itself, or — for a
+            // hybrid module (manifest.client) — what the client wrapper is built
+            // around, so it is created before the runtime split below.
+            const stub = (entry.runtime === 'server')
+                ? serverModuleStub(entry, {
                     moduleApiUrl: this._opts.moduleApiUrl ?? '',
                     authToken: this._opts.authToken,
                     fetchImpl: this._opts.fetchImpl,
-                });
+                    callSync: this._opts.callSync,
+                })
+                : null;
+
+            if(entry.runtime === 'server' && entry.client !== true)
+            {
+                this._globals[entry.global] = stub;
                 return;
             }
 
-            // client runtime.
+            // client runtime, or the client wrapper of a hybrid module.
             // `rev` is only present in module-dev mode, and it is what makes a
             // rebuild at an unchanged version count as a different module — the
             // instance cache below would otherwise happily serve the previous
             // build for the rest of the session.
+            //
+            // A hybrid wrapper is cached the same way. Its stub carries the
+            // CURRENT run's auth token, so it is refreshed on the instance each
+            // run rather than baked in at load time (see _instanceStubs).
             const key = `${entry.id}@${entry.version}${entry.rev ? `#${entry.rev}` : ''}`;
             const cached = this._instances[key];
             if(cached)
             {
+                if(stub) this._refreshStub(cached, stub);
                 this._globals[entry.global] = cached;
                 return;
             }
 
             try
             {
+                const factoryContext: AyModuleFactoryContext | undefined = stub ? { server: stub } : undefined;
                 const load = this._opts.loadClient
                     ?? ((m: AyModuleCatalogEntry) => loadClientModule(m, {
                         moduleApiUrl: this._opts.moduleApiUrl ?? '',
                         authToken: this._opts.authToken,
                         fetchImpl: this._opts.fetchImpl,
+                        factoryContext,
                     }));
 
-                const instance = await load(entry, this._opts);
+                const instance = await load(entry, { ...this._opts, factoryContext });
 
                 // Drop earlier builds of this same module. Without this a dev
                 // session that rebuilds fifty times keeps fifty instances alive,
@@ -431,6 +452,23 @@ export class ModuleRegistry
     private _isInstance(value: any): boolean
     {
         return Object.values(this._instances).includes(value);
+    }
+
+    /** Hand a cached hybrid wrapper this run's server stub.
+     *
+     *  The wrapper was constructed with the stub of the run that first loaded
+     *  it, and that stub holds the bearer token of THAT run. Tokens rotate and
+     *  users sign out, so on every later run the wrapper is told about the new
+     *  stub through the conventional `setServer(stub)` hook, if it has one. A
+     *  wrapper without the hook keeps its original stub — fine for a
+     *  single-session editor, wrong after a re-login, hence the convention. */
+    private _refreshStub(instance: AyModule, stub: any): void
+    {
+        if(typeof (instance as any).setServer === 'function')
+        {
+            try { (instance as any).setServer(stub); }
+            catch(e) { console.warn(`ModuleRegistry: module rejected its server stub: ${(e as Error)?.message}`); }
+        }
     }
 
     /** The scope globals for this run: `{ example: <module|stub> }`. Synchronous

@@ -43,6 +43,10 @@ function installModule(
   };
   writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest));
   writeFileSync(join(dir, manifest.runtime === 'client' ? 'bundle.js' : 'server.js'), entrySource);
+  // A hybrid module ships its client wrapper next to server.js.
+  if (manifest.runtime === 'server' && (manifest as any).client === true) {
+    writeFileSync(join(dir, 'bundle.js'), 'export default ({ server }) => ({ setArchiyou() {}, server });');
+  }
 }
 
 async function buildApp(): Promise<FastifyInstance> {
@@ -77,18 +81,19 @@ beforeAll(async () => {
   modulesDir = mkdtempSync(join(tmpdir(), 'ay-modulesdir-'));
   installModule('example');
   installModule('heavy', { runtime: 'server' });
+  installModule('hybrid', { runtime: 'server', client: true });
   moduleHost.load(modulesDir);
 
   await userService.register('owner@example.com', 'password123', 'owner');
   await userService.register('nobody@example.com', 'password123', 'nobody');
-  userService.setModules('owner', ['example', 'heavy']);
+  userService.setModules('owner', ['example', 'heavy', 'hybrid']);
 
   app = await buildApp();
 });
 
 beforeEach(() => {
   // Each test starts from the same entitlements, so ordering cannot leak.
-  userService.setModules('owner', ['example', 'heavy']);
+  userService.setModules('owner', ['example', 'heavy', 'hybrid']);
   userService.setModules('nobody', []);
 });
 
@@ -102,7 +107,7 @@ describe('GET /modules — the catalog', () => {
     const mods = res.json().modules;
     // Hiding them would leave a script using one failing with a bare
     // "undefined is not a function" — the entry is what makes the error good.
-    expect(mods.map((m: any) => m.id).sort()).toEqual(['example', 'heavy']);
+    expect(mods.map((m: any) => m.id).sort()).toEqual(['example', 'heavy', 'hybrid']);
     expect(mods.every((m: any) => m.entitled === false)).toBe(true);
   });
 
@@ -266,6 +271,18 @@ describe('GET /modules/:id/:version/bundle.js — client bundles', () => {
     // would defeat the entire point of a server-side module.
     expect(res.statusCode).toBe(404);
     expect(res.body).not.toContain('export default');
+  });
+
+  it('serves the client wrapper of a hybrid module, never its server code', async () => {
+    const res = await app.inject({ method: 'GET', url: '/modules/hybrid/1.0.0/bundle.js', headers: auth('owner') });
+    expect(res.statusCode).toBe(200);
+    // The wrapper's factory takes the server stub; server.js (with `methods`) stays home.
+    expect(res.body).toContain('({ server })');
+    expect(res.body).not.toContain('methods');
+
+    // And the wrapper is gated exactly like any bundle.
+    const locked = await app.inject({ method: 'GET', url: '/modules/hybrid/1.0.0/bundle.js', headers: auth('nobody') });
+    expect(locked.statusCode).toBe(403);
   });
 
   it('cannot be tricked into path traversal', async () => {

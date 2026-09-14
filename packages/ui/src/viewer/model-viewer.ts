@@ -1206,6 +1206,8 @@ export class ModelViewer extends SignalWatcher(LitElement)
     // otherwise it's an OrbitControls rotate/pan, not a selection.
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
     if (moved > 5 || performance.now() - this._pickDownTime > 500) return;
+    // Handle clicks stop at the overlay, so any click reaching the canvas deselects the active handle
+    if (activeParamEntry.get()) setActiveParamEntry(null);
     this._pickShapeAt(e);
   };
 
@@ -2059,6 +2061,9 @@ export class ModelViewer extends SignalWatcher(LitElement)
           // at()/position() mutator update ops — never from a definition re-add.
           def.anchorLocal.copy(existing.anchorLocal);
           def.plane.origin.copy(existing.plane.origin);
+          // Icon and minimized style live in the overlay's Lit template — re-render for them.
+          if (def.icon !== existing.icon
+            || JSON.stringify(def.minimized) !== JSON.stringify(existing.minimized)) idsChanged = true;
           this._htmlHandles[idx] = def;
         }
         else { this._htmlHandles.push(def); idsChanged = true; }
@@ -2108,6 +2113,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
     overlay.handles = this._htmlHandles.map((h): HandleOverlay => ({
       id:          h.id,
       icon:        h.icon,
+      minimized:   h.minimized,
       visible:     h.visible,
       param:       h.param,
       paramFnSrc:  h.paramFnSrc,

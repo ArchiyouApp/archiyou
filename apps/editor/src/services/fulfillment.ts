@@ -8,9 +8,9 @@
  *
  *   1. expand the authored `exports` into concrete output paths. FORMAT wildcards
  *      are resolved here rather than left to the runner, so a `*` can leave out
- *      'gsheets' — that one writes a Google Sheet as a side effect instead of
- *      returning bytes, and there is nothing to hand the browser. ENTITY wildcards
- *      (which table? which doc?) stay in: only the runner knows those names.
+ *      the formats a wildcard may not promise (see WILDCARD_EXCLUDED_FORMATS).
+ *      ENTITY wildcards (which table? which doc?) stay in: only the runner knows
+ *      those names.
  *   2. run the script for exactly those paths with the end-user's current param
  *      values (buildConfiguratorRequest — the same request the model on screen came
  *      from, so a download can never disagree with the preview). A doc offered as
@@ -80,8 +80,6 @@ const CATEGORY_FORMATS: Record<string, readonly string[]> = {
  * wildcard, because a wildcard promises "everything this model can give" and these
  * three depend on something the model does not control:
  *
- *   gsheets — writes a Google Sheet into someone's Drive and returns its URL; there
- *             are no bytes to hand the browser
  *   step    — needs the brep kernel (scope.exporter); on the default kernel the
  *             export throws, and one throwing format fails the whole run, taking the
  *             formats that did work down with it
@@ -91,7 +89,7 @@ const CATEGORY_FORMATS: Record<string, readonly string[]> = {
  *             deliverable: in a `*` it would ship the same drawing twice (once as
  *             the document SVG, once as page SVGs with a "-2" suffix)
  */
-const WILDCARD_EXCLUDED_FORMATS = ['gsheets', 'step', 'obj', 'svg-pages'];
+const WILDCARD_EXCLUDED_FORMATS = ['step', 'obj', 'svg-pages'];
 
 /** The file extension a format ends up as, without the dot ('svg-pages' → 'svg'). */
 export function formatExtension(format: string): string

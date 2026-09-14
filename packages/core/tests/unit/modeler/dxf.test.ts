@@ -326,13 +326,15 @@ describe('Modeler DXF export', () =>
         // from the wrong side.
         it('draws an XZ model exactly as it draws the same model on XY', () =>
         {
-            expect(drawingOf(shape => shape.rotateX(90))).toBe(drawingOf(() => {}))
+            // explicit pivot: the whole scene must turn as one rigid body, where the default
+            // pivot is each shape's own centre (which would turn each where it stands)
+            expect(drawingOf(shape => shape.rotateX(90, [0, 0, 0]))).toBe(drawingOf(() => {}))
         })
 
         it('draws a YZ model exactly as it draws the same model on XY', () =>
         {
             // 120 degrees about [1,1,1] cycles x -> y -> z -> x, landing XY on YZ.
-            expect(drawingOf(shape => shape.rotateAround(120, [1, 1, 1]))).toBe(drawingOf(() => {}))
+            expect(drawingOf(shape => shape.rotateAround(120, [1, 1, 1], [0, 0, 0]))).toBe(drawingOf(() => {}))
         })
 
         it('leaves the scene untouched', () =>

@@ -144,6 +144,30 @@ describe('brep Shape scene + style', () =>
         expect(derived._suppressScene).toBe(true);
         expect(layer.shapes().length).toEqual(0);
     })
+
+    test("addToScene() undoes tmp(), but copies of a tmp() collection stay tmp", () =>
+    {
+        const layer = SceneNode.root('root');
+        layer.setActiveLayer(layer);
+        // a tmp() Shape loses its scene, so it gets back in through the host (like Modeler.addToScene)
+        const modeler = { addToScene: (s: any) => { if(!s._suppressScene){ layer.addShape(s) } } };
+
+        const helper = new brep.Solid().makeBox(10);
+        (helper as any)._modeler = modeler;
+        layer.addShape(helper as any);
+        helper.tmp();
+
+        const copies = new brep.ShapeCollection(helper.copy(), helper.copy()).copy();
+        expect(layer.shapes().length).toEqual(0);
+
+        helper.addToScene();
+        expect(helper._suppressScene).toBe(false);
+        expect(helper._node).not.toBeNull();
+        expect(layer.shapes().length).toEqual(1);
+
+        copies.addToScene();
+        expect(layer.shapes().length).toEqual(3);
+    })
 })
 
 describe('brep layout helpers (parity with the mesh kernel)', () =>

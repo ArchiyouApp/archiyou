@@ -29,8 +29,14 @@
  *  user can read the bundle.
  *
  *  'server' — the code never leaves the backend. The script-facing global is a
- *  stub that forwards each call over HTTP, so methods are always async. Use this
- *  for heavy computation or anything that should not be distributed.
+ *  stub that forwards each call over HTTP. Inside the script worker that call is
+ *  SYNCHRONOUS (a worker may block on a request), so a script needs no `await`;
+ *  anywhere else the stub returns a Promise. Use this for heavy computation or
+ *  anything that should not be distributed.
+ *
+ *  A server module may additionally ship a small client wrapper — see
+ *  AyModuleManifest.client — so the script sees objects with methods rather than
+ *  a bag of remote procedures.
  */
 export type AyModuleRuntime = 'client' | 'server';
 
@@ -88,10 +94,24 @@ export interface AyModuleManifest {
      * thing that changes is that `entitled` is true for everybody, so the bundle
      * route and the server-call route stop checking `users.modules`.
      *
-     * Set by the DEPLOYMENT, not by the user: manifests live in SERVER_MODULES_DIR,
+     * Set by the DEPLOYMENT, not by the user: manifests live in the installed module,
      * so whoever installs a module decides whether it is public.
      */
     public?: boolean;
+    /**
+     * A `runtime: 'server'` module that ALSO ships a client wrapper bundle.
+     *
+     * The wrapper is loaded like a client module, but its factory receives the
+     * server stub (`{ server }`, see AyModuleFactoryContext) and returns the
+     * object the script sees. That is how a server module offers an object API —
+     * `wb = mod.open(url); wb.compute(...)` — instead of flat remote calls: the
+     * wrapper holds the descriptors and forwards each method to `server.*`.
+     *
+     * The wrapper is readable by every entitled user, like any client bundle. Keep
+     * secrets and heavy code on the server side; the wrapper is ergonomics only.
+     * Ignored for `runtime: 'client'`.
+     */
+    client?: boolean;
 }
 
 /** A manifest as served by `GET /modules`, annotated for the current caller.
@@ -99,6 +119,24 @@ export interface AyModuleManifest {
  *  exists and offer an upgrade path instead of failing mysteriously. */
 export interface AyModuleCatalogEntry extends AyModuleManifest {
     entitled: boolean;
+    /** True when the module ships a DOCS.md the backend can serve — `GET
+     *  /modules/:id/docs`.
+     *
+     *  DOCS.md rather than README.md: a module's README is written for whoever
+     *  builds and deploys it, and mixes the script-facing API with build steps,
+     *  environment variables and the reasoning behind its security guards. This
+     *  route is PUBLIC, so what it serves has to be the half written for the
+     *  person using the module. Splitting the file is what makes that a decision
+     *  the module author makes deliberately rather than one the editor makes by
+     *  publishing whatever happened to be in the README.
+     *
+     *  A flag rather than the text itself: documentation is far larger than the
+     *  rest of an entry, and the catalog is fetched on every run. The editor uses
+     *  it to decide whether a module card offers a "read the docs" affordance at
+     *  all, and fetches the markdown only once someone asks for it.
+     *
+     *  Unrelated to `docsUrl`, which points somewhere else entirely. */
+    docs?: boolean;
     /** Content fingerprint of the built module, present only while the backend
      *  runs in module-dev mode.
      *
@@ -192,8 +230,17 @@ export interface AyModule {
     [key: string]: any;
 }
 
-/** A client bundle's default export. */
-export type AyModuleFactory = () => AyModule;
+/** What a client bundle's factory is handed when constructed. */
+export interface AyModuleFactoryContext {
+    /** For the wrapper of a hybrid module (AyModuleManifest.client): the
+     *  server-module stub. Every member access is a call to the server's
+     *  `methods` — synchronous inside the script worker, a Promise elsewhere.
+     *  Absent for an ordinary client module. */
+    server?: any;
+}
+
+/** A client bundle's default export. A plain client module ignores the context. */
+export type AyModuleFactory = (ctx?: AyModuleFactoryContext) => AyModule;
 
 //// SERVER MODULES ////
 

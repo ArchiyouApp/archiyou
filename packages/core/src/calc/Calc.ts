@@ -7,7 +7,6 @@
  
  import { Db } from './Db'
  import { Table } from './Table'
- import { TableIO } from './TableIO'; 
  import type { Metric, MetricName, MetricOptions, TableLocation, DataRows } from './types' 
  import { isDataRows } from './typeguards'
 
@@ -24,8 +23,6 @@
     dbData:Object // raw outputted data 
     _metrics:{[key:string]:Metric} = {};
 
-    gsheets:Record<string, any>; // utils bundled in gsheet object
-
     constructor()
     {
         // use setArchiyou to init
@@ -41,7 +38,6 @@
     init()
     {
         this.db = new Db(this._archiyou);
-        this.setupGSheetUtils(); // TODO: async here
     }
 
     reset()
@@ -174,39 +170,6 @@
     {
         return Object.keys(this._metrics);
     }
-
-    //// GOOGLE SHEETS OPS ////
-    /* We bundle some CalcTableIO utils here for easy access */
-    
-    setupGSheetUtils()
-    {
-        const io = new TableIO();
-    
-        this.gsheets = {
-            exports: [], // keep track of exported sheets. Add base url to ID 
-            connect: async (googleDriveRootId:string) => await io.initGoogle(null, googleDriveRootId),
-            fromTemplate: 
-                async (templateSheetPath:string, newSheetPath:string, inputs:Record<string, any>) => 
-                {
-                    console.info('Calc::gsheets.fromTemplate(): Creating Google Sheet from template...');
-                    const savedSheetUrl = await io.googleSheetFromTemplate(templateSheetPath, newSheetPath, inputs, true, true)
-                    console.info(`Calc::gsheets.fromTemplate(): Published new sheet at "${savedSheetUrl}"`);
-
-                    // HACK: We save results in Runner.pipelineExports for now 
-                    // TODO: Find out why we can't get the scope.calc.gsheets.exports in Runner.exportPipelineTables()
-                    console.warn('============== HACK: Saving exported sheet url to Runner._pipelineExports ==============');
-                    if(!Array.isArray(this._archiyou.runner?._pipelineExports))
-                    {
-                        console.warn("Calc::gsheets.fromTemplate(): Can't reach Runner._pipelineExports to save exported sheet url!");
-                    }
-                    else {
-                        this._archiyou.runner._pipelineExports.push(savedSheetUrl);
-                    }
-                },
-        };
-    }
-
-
 
     //// UTILS ////
 

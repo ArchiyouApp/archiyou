@@ -9,11 +9,13 @@
  *  These were all found by building the same shape on both kernels and measuring after every
  *  operation — see shape-parity.test.ts for the harness.
  *
- *  Roughly in order of how much damage each one does to a script that switches kernel:
+ *  Roughly in order of how much damage each one does to a script that switches kernel. Numbers
+ *  stay put when an entry is fixed and deleted, so a gap in the list is a divergence that is
+ *  gone (3: rotate*() defaulting to a different pivot for linear shapes — meshup Curve now
+ *  turns about its own centre, like Mesh and brep).
  *
  *    1  arc(start, mid, end) draws a different curve on each kernel
  *    2  union()/intersection() mutate on mesh but not on brep
- *    3  rotate*() defaults to a different pivot for linear shapes
  *    4  brep scale() leaves a linear shape untyped, breaking the next call on it
  *    5  brep extend() ignores the transform the edge has picked up
  *    6  brep subtract() throws when the cut severs the solid
@@ -25,7 +27,7 @@
  *   12  brep pointAt() is parameter-based where mesh pointAtPerc() is arc-length-based
  *   13  is2D() uses an exact zero test on mesh and a tolerant one on brep
  *   14  Polygon.center() double-counts the closing vertex on mesh
- *   15  odds and ends: intersect(), distanceTo(), fillet()/chamfer(), circle spans
+ *   15  odds and ends: a line ∩ a closed outline, distanceTo(), fillet()/chamfer(), circle spans
  */
 import { describe, it, expect, beforeAll } from 'vitest'
 import { Modeler } from '../../../../src/modeler/Modeler'
@@ -102,41 +104,7 @@ describe('mesh ↔ brep divergences (pinned, not accepted)', () =>
         }
     })
 
-    //// ==== 3. TRANSFORM DEFAULTS ==== ////
-
-    it('3. rotate*() with no pivot turns a LINEAR shape about different points', () =>
-    {
-        /*  meshup Curve.rotateAround() defaults its pivot to the world origin; brep defaults to
-            the shape's own centre. meshup's Mesh.rotateAround() ALSO defaults to the shape centre,
-            so mesh is inconsistent with itself as well: the same script line means one thing for a
-            box and another for the rect outline next to it.
-
-            Passing an explicit pivot makes all three agree, which is what shape-parity.test.ts does.
-
-            SHOULD BE: meshup Curve.rotateAround() defaults to this.center(), like Mesh does. */
-        const rect = (m: Modeler) => (m.rect(100, 50) as any).move(10, 20, 0)
-
-        const a = rect(mesh).rotateZ(45)
-        const b = rect(brep).rotateZ(45)
-
-        expect([r4(a.bbox().center().x), r4(a.bbox().center().y)], 'mesh turns about the origin')
-            .toEqual([-7.0711, 21.2132])
-        expect([r4(b.bbox().center().x), r4(b.bbox().center().y)], 'brep turns about the shape centre')
-            .toEqual([10, 20])
-
-        // an explicit pivot brings them together
-        const ea = rect(mesh).rotateZ(45, [0, 0, 0])
-        const eb = rect(brep).rotateZ(45, [0, 0, 0])
-        expect(r4(ea.bbox().center().x)).toBeCloseTo(r4(eb.bbox().center().x), 2)
-        expect(r4(ea.bbox().center().y)).toBeCloseTo(r4(eb.bbox().center().y), 2)
-
-        // solids already agree, because meshup Mesh turns about its centre like brep does
-        const sa = (mesh.box(100, 50, 20) as any).move(10, 20, 30).rotateZ(30)
-        const sb = (brep.box(100, 50, 20) as any).move(10, 20, 30).rotateZ(30)
-        expect(r4(sa.bbox().center().x)).toBeCloseTo(r4(sb.bbox().center().x), 2)
-    })
-
-    //// ==== 4-6. BREP SHAPE-HANDLE BUGS ==== ////
+    //// ==== 4-6. BREP TRANSFORMS AND BOOLEANS ==== ////
 
     it('4. brep scale() leaves a linear shape untyped, so the next call on it throws', () =>
     {
@@ -428,19 +396,22 @@ describe('mesh ↔ brep divergences (pinned, not accepted)', () =>
 
     //// ==== 15. ODDS AND ENDS ==== ////
 
-    it('15. odds and ends: intersect(), distanceTo(), fillet()/chamfer(), circle spans', () =>
+    it('15. odds and ends: line ∩ closed outline, distanceTo(), fillet()/chamfer(), circle spans', () =>
     {
-        // intersect() is brep-only — and mesh has intersects(), a BOOLEAN PREDICATE, one letter
-        // away. A script that calls intersect() on mesh gets "not a function"; a script that
-        // reaches for intersects() on brep gets a boolean operation. Both kernels do have
-        // intersection(), which is the portable spelling.
-        // SHOULD BE: brep drops intersect() in favour of intersection(), or mesh renames
-        //            intersects() to something that cannot be confused with it.
-        expect(typeof (mesh.box(10) as any).intersect).toEqual('undefined')
-        expect(typeof (brep.box(10) as any).intersect).toEqual('function')
-        expect(typeof (mesh.box(10) as any).intersects, 'a predicate!').toEqual('function')
-        expect(typeof (mesh.box(10) as any).intersection).toEqual('function')
-        expect(typeof (brep.box(10) as any).intersection).toEqual('function')
+        // intersect() (replacing) / intersection() (non-replacing) / intersects() (predicate)
+        // now mean the same on both kernels, so what used to sit here — intersect() being
+        // brep-only, and meshup's Curve.intersect() being a point-getter — is gone.
+        // What is left is the RESULT of intersecting a line with a closed outline: mesh reads a
+        // closed Curve as a region (its own booleans already do), so the answer is the piece of
+        // the line inside the rect; brep reads a Wire as a curve, so the answer is the Vertex
+        // where the line crosses the outline.
+        // SHOULD BE: one reading of a closed outline, on both kernels.
+        const meshLine = () => mesh.line([-100, 0, 0], [100, 10, 0]) as any
+        const brepLine = () => brep.line([-100, 0, 0], [100, 10, 0]) as any
+        expect((meshLine().intersection(mesh.rect(10, 20) as any) as any).type).toEqual('Curve')
+        expect((brepLine().intersection(brep.rect(10, 20) as any) as any).type).toEqual('Vertex')
+        // ... and the crossing points are one call away on both: the mesh piece's own vertices
+        expect((meshLine().intersection(mesh.rect(10, 20) as any) as any).vertices().length).toEqual(2)
 
         // distanceTo() takes a bare point on brep but not on mesh
         // SHOULD BE: Mesh.distanceTo() accepts any PointLike, as its brep counterpart does.

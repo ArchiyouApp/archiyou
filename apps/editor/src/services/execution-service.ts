@@ -1,29 +1,94 @@
 /**
  * execution-service.ts
  *
- * Thin singleton service that owns the Archiyou core Web Worker and exposes
- * a single `runScript()` function.  Any component (editor, configurator, etc.)
- * can import this without knowing anything about Comlink or the worker lifecycle.
+ * Thin singleton service that owns script execution and exposes a single
+ * `runScript()`. Any component (editor, configurator, plugins, fulfillment
+ * downloads) can import this without knowing where the work happens.
  *
- * The underlying worker is created lazily on the first call and re-used for
- * every subsequent call — the shared `RunnerWorker` from `@archiyou/core` owns
- * the worker lifecycle.
+ * TWO BACKENDS:
+ *
+ *   local (default) — the Archiyou core Web Worker, created on first use and
+ *     reused. Loading it means loading the CAD kernel: ~1.9MB of worker bundle
+ *     plus ~14MB of base64-inlined mesh WASM. Fine for the editor, which needs a
+ *     kernel anyway.
+ *
+ *   server — POST /scripts/published/execute/:user/:scriptAndVersion, used by a
+ *     published configurator whose version an admin has marked `validated`
+ *     (apps/server/src/routes/execute.ts). The kernel is never touched, which is
+ *     the entire point: a configurator only needs to show a GLB and some metrics,
+ *     and should not download a CAD kernel to do it.
+ *
+ * The server path is opt-in per page via setServerExecutionTarget(), and it falls
+ * back to the local worker if the request cannot be made — so a configurator keeps
+ * working when Redis is down or validation has been withdrawn, at the cost of
+ * loading the kernel that one time.
+ *
+ * Both backends return the same RunnerScriptExecutionResult: the server runs the
+ * same core Runner and JSON-encodes the result, base64-wrapping binary outputs.
+ * The viewer and the download path already unwrap that form.
  */
 
-import { RunnerWorker, ArchiyouCoreLoadError } from '@archiyou/core';
+import type { RunnerWorker as RunnerWorkerType } from '@archiyou/core';
 import type { RunnerScriptExecutionRequest, RunnerScriptExecutionResult } from '@archiyou/core/src/runner/types';
 import type { ConsoleMessage } from '@archiyou/core/src/console/types';
 
+import { api, ApiError } from './api.js';
 import { authService } from './auth-service.js';
 import { ensureModuleCatalog } from './module-service.js';
-
-// Shared, lazily-initialised worker for the whole app (editor, plugins, etc.).
-const worker = new RunnerWorker();
 
 // Base URL of the backend. Same value api.ts/auth-service.ts use; '' → root-relative.
 // Feeds two core lookups that have to reach the server on their own: the $import()
 // asset proxy, and the shared-library fallback for $component('./name').
 const API_BASE_URL = (import.meta.env.SERVER_API_BASE_URL as string | undefined) ?? '';
+
+//// SERVER EXECUTION TARGET ////
+
+/** Which published script server-side runs address. */
+export interface ServerExecutionTarget
+{
+  user: string;
+  /** `name` or `name:version`, exactly as it appears in the configurator URL. */
+  scriptAndVersion: string;
+}
+
+let serverTarget: ServerExecutionTarget | null = null;
+
+/**
+ * Route every subsequent runScript() at the server instead of the local worker.
+ *
+ * Set by <page-published-configurator> when the published version is `validated`.
+ * Pass null to go back to the local worker (the fallback path does this itself).
+ *
+ * Module-level rather than per-request because it is a property of the PAGE, not of
+ * a call: the configurator, its fulfillment downloads and anything else running in
+ * that page must all agree, and none of those call sites should have to know.
+ */
+export function setServerExecutionTarget(target: ServerExecutionTarget | null): void
+{
+  serverTarget = target;
+}
+
+export function getServerExecutionTarget(): ServerExecutionTarget | null
+{
+  return serverTarget;
+}
+
+//// LOCAL WORKER ////
+
+// Loaded on demand. The import itself is dynamic so a page that only ever executes
+// server-side never pulls the core barrel (and its Comlink/worker plumbing) into its
+// critical path — `new Worker(...)` inside RunnerWorker.init() is what would fetch
+// the kernel chunks.
+let workerPromise: Promise<RunnerWorkerType> | null = null;
+
+async function getWorker(): Promise<RunnerWorkerType>
+{
+  if (!workerPromise)
+  {
+    workerPromise = import('@archiyou/core').then(({ RunnerWorker }) => new RunnerWorker());
+  }
+  return workerPromise;
+}
 
 function formatUnknownError(error: unknown): string
 {
@@ -37,6 +102,13 @@ function formatUnknownError(error: unknown): string
   {
     return String(error);
   }
+}
+
+/** Duck-typed rather than `instanceof`: the class lives behind the dynamic import
+ *  above, so it may not have been loaded yet when this runs. */
+function isCoreLoadError(error: unknown): error is Error & { details?: string[] }
+{
+  return error instanceof Error && error.name === 'ArchiyouCoreLoadError';
 }
 
 function createErrorConsoleMessage(message: string): ConsoleMessage
@@ -54,17 +126,10 @@ export function createExecutionFailureResult(
   error: unknown,
 ): RunnerScriptExecutionResult
 {
-  const normalizedError = error instanceof ArchiyouCoreLoadError
-    ? error
-    : new Error(formatUnknownError(error));
-
-  const detailLines = normalizedError instanceof ArchiyouCoreLoadError
-    ? normalizedError.details ?? []
-    : [];
-
+  const isLoadError = isCoreLoadError(error);
   const message = [
-    normalizedError.message,
-    ...detailLines,
+    formatUnknownError(error),
+    ...(isLoadError ? error.details ?? [] : []),
   ].filter(Boolean).join('\n');
 
   return {
@@ -77,20 +142,94 @@ export function createExecutionFailureResult(
       message,
       code: typeof request.script === 'string' ? request.script : (request.script as any)?.code,
     }],
-    warnings: normalizedError instanceof ArchiyouCoreLoadError
-      ? ['Kernel startup failed before script execution began.']
-      : undefined,
+    warnings: isLoadError ? ['Kernel startup failed before script execution began.'] : undefined,
     messages: [createErrorConsoleMessage(message)],
     state: {} as RunnerScriptExecutionResult['state'],
   };
 }
 
+//// SERVER EXECUTION ////
+
+interface ExecuteEnvelope
+{
+  success: boolean;
+  error?: string;
+  data?: RunnerScriptExecutionResult;
+}
+
 /**
- * Execute a script request in the shared Archiyou core worker.
- * Lazily initialises the worker on the first call.
+ * Run on the server. The script itself is NOT sent — the server loads the published
+ * version from its own database, which is the only copy it will trust anyway.
+ *
+ * Throws on a transport failure so the caller can fall back; a script that ran and
+ * failed comes back normally, as a result with status 'error'.
+ */
+async function runOnServer(
+  target: ServerExecutionTarget,
+  request: RunnerScriptExecutionRequest,
+): Promise<RunnerScriptExecutionResult>
+{
+  const path = `/scripts/published/execute/${encodeURIComponent(target.user)}/${encodeURIComponent(target.scriptAndVersion)}`;
+
+  const response = await api.post<ExecuteEnvelope>(path, {
+    params: request.params,
+    preset: request.preset,
+    outputs: request.outputs,
+    // Presentation only, but omitting it silently renders an imperial configurator
+    // in metric — the server has no other way to know.
+    unitSystem: request.unitSystem,
+  });
+
+  if (!response.data)
+  {
+    // 2xx with no payload: treat as a script/pipeline error rather than a transport
+    // one, so we surface it instead of quietly loading a 26MB kernel.
+    return createExecutionFailureResult(request, new Error(response.error ?? 'The server returned no result.'));
+  }
+
+  return {
+    ...response.data,
+    // JSON has no Date. Nothing downstream reads this today, but the type says Date
+    // and a string here would be a trap for whatever reads it next.
+    created: new Date(response.data.created ?? Date.now()),
+    // Echo back the request the CALLER made. The server echoes its own, which carries
+    // the full stored script and would otherwise replace the caller's view of it.
+    request,
+  };
+}
+
+//// PUBLIC API ////
+
+/**
+ * Execute a script request — on the server when a target is set, otherwise in the
+ * shared local worker (initialising it on first use).
  */
 export async function runScript(request: RunnerScriptExecutionRequest): Promise<RunnerScriptExecutionResult | undefined>
 {
+  const target = serverTarget;
+  if (target)
+  {
+    try
+    {
+      return await runOnServer(target, request);
+    }
+    catch (error)
+    {
+      // Transport failure: the pipeline is down (503), validation was withdrawn
+      // (401/403), we are being throttled (429), or the network is gone. Drop to the
+      // local worker and stop trying — retrying per keystroke would just be slow.
+      // NOTE a 422 lands here too, which self-heals but would also mask a genuine
+      // client/server disagreement about params; check the console if geometry is
+      // fine locally but never runs server-side.
+      const status = error instanceof ApiError ? ` (HTTP ${error.status})` : '';
+      console.warn(
+        `runScript(): server-side execution failed${status}; falling back to the local kernel.`,
+        error,
+      );
+      setServerExecutionTarget(null);
+    }
+  }
+
   try
   {
     // Point $import() at the backend asset proxy unless the caller set one.
@@ -110,6 +249,7 @@ export async function runScript(request: RunnerScriptExecutionRequest): Promise<
     request.authToken ??= (await authService.getToken()) ?? undefined;
 
     // The viewer needs the full result (scenegraph/annotations/handles), so use run().
+    const worker = await getWorker();
     return await worker.run(request);
   }
   catch (error)
@@ -120,15 +260,21 @@ export async function runScript(request: RunnerScriptExecutionRequest): Promise<
 }
 
 /**
- * Pre-warm the worker without running a script.
- * Call this as early as possible (e.g. in connectedCallback) so the WASM
- * kernel is loaded before the user triggers the first execution.
+ * Pre-warm the local worker without running a script, so the WASM kernel is loaded
+ * before the first execution.
+ *
+ * A NO-OP when a server target is set: warming up is exactly the ~26MB download the
+ * server path exists to avoid. Callers can therefore keep calling this
+ * unconditionally — <page-configurator> does.
  */
 export async function warmupWorker(): Promise<void>
 {
+  if (serverTarget) return;
+
   // Fetch the module catalog alongside the kernel so the first run doesn't wait
   // on it. Deliberately not awaited together with a failure path: a missing
   // catalog is not an error (see module-service).
   void ensureModuleCatalog();
+  const worker = await getWorker();
   await worker.init();
 }

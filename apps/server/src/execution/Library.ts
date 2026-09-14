@@ -346,7 +346,7 @@ export class Library
         const pathElems = [r?.request?.script?.author, 
                            r?.request?.script?.name, 
                            r?.request?.script?.version];
-        const scriptDir = this._getScriptPath(pathElems[0], pathElems[1], pathElems[2]);
+        const scriptDir = this._getScriptPath(pathElems[0], pathElems[1], pathElems[2], true);
 
         if (!scriptDir)
         { 
@@ -697,12 +697,36 @@ export class Library
 
     /** Get path to script (including version), being robust to casing issues
      *  Returns false if not found
+     *
+     *  `create` makes the author/script directories when they are absent, instead of
+     *  reporting "not found". Only writeResultCache passes it, and it has to: this
+     *  tree used to be created as a side effect of the library storing scripts on
+     *  disk, but scripts live in SQLite now, so for a script that has never been run
+     *  on this box nothing here exists yet. Without it the first run of every script
+     *  fails to cache, and — before the existsSync guard below — the first run failed
+     *  outright with ENOENT from readdirSync.
      */
-    _getScriptPath(author: string, scriptName: string, version: string):string|false
+    _getScriptPath(author: string, scriptName: string, version: string, create = false):string|false
     {
         const scriptNameDir = path.join(this.scriptsRoot, author.toLowerCase());
+
+        if (!fs.existsSync(scriptNameDir))
+        {
+            // A script nobody has executed on this instance yet. That is a cache MISS,
+            // not an error — the callers all treat `false` that way.
+            if (!create) return false;
+            fs.mkdirSync(scriptNameDir, { recursive: true });
+        }
+
         const scriptDir = fs.readdirSync(scriptNameDir).find(dir => dir.toLowerCase() === scriptName.toLowerCase());
-        if (!scriptDir) return false;
+        if (!scriptDir)
+        {
+            if (!create) return false;
+            // First write for this script: take the name as given. Later reads match
+            // case-insensitively, so the casing chosen here does not have to be exact.
+            fs.mkdirSync(path.join(scriptNameDir, scriptName), { recursive: true });
+            return path.join(scriptNameDir, scriptName, version);
+        }
         return path.join(scriptNameDir, scriptDir, version);
     }
 

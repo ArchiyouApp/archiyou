@@ -25,7 +25,8 @@ import { EditorState, Compartment, StateEffect, StateField } from '@codemirror/s
 import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { autocompletion, acceptCompletion, completionStatus } from '@codemirror/autocomplete';
-import { archiyouCompletions } from './completions.js';
+import { archiyouCompletions, registerModuleCompletions } from './completions.js';
+import { moduleCatalog } from '@archiyou/editor/src/services/module-service';
 
 import { SignalWatcher } from '@lit-labs/signals';
 import { executing, executionResult, perStatement, autoRun, kernel } from '@archiyou/editor/src/state/workspace';
@@ -288,6 +289,18 @@ export class CodeBox extends SignalWatcher(LitElement)
     }
     this._skipNextUpdate = false;
 
+    // Autocomplete for the entitled script modules. Driven off the catalog signal
+    // here rather than from module-service, which loads it: that service is also on
+    // the published configurator's import path, and completions.ts pulls in CodeMirror
+    // — so registering there made every configurator download a code editor it never
+    // renders. Reference comparison is enough; the service replaces the array.
+    const modules = moduleCatalog.get();
+    if (modules !== this._registeredModules)
+    {
+      this._registeredModules = modules;
+      registerModuleCompletions(modules);
+    }
+
     // Sync error-line highlight whenever the execution result signal changes
     const result = executionResult.get();
     if (result !== this._lastAppliedResult)
@@ -311,6 +324,8 @@ export class CodeBox extends SignalWatcher(LitElement)
   @state() private _optionsOpen = false;
   private _view: EditorView | null = null;
   private _skipNextUpdate = false;
+  /** Last catalog registered for autocomplete, compared by reference. */
+  private _registeredModules: unknown = null;
   private _lastAppliedResult: ReturnType<typeof executionResult.get> | undefined = undefined;
   private _darkMQ = window.matchMedia('(prefers-color-scheme: dark)');
 

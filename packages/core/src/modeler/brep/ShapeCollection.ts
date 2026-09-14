@@ -424,11 +424,21 @@ import { getOc } from './index' // OC global getter
          return this;
       }
 
-      /** Array API - For consistency with Array */
-      map(mapFunc: (element:AnyShape, index?:number, array?:Array<AnyShape>) => AnyShape ):AnyShapeCollection
+      /** Array API — with one deliberate difference from `Array.prototype.map`: when EVERY
+       *  result is a Shape (or a ShapeCollection), the results come back as a ShapeCollection,
+       *  so collection methods stay chainable the way they do off filter().
+       *  A callback that produces values (numbers, strings, Points) answers with a plain Array,
+       *  so `col.map(s => s.bbox().width())` reads back the numbers instead of losing them to
+       *  _addEntities(). This used to wrap unconditionally. Same contract as the mesh kernel's
+       *  ShapeCollection.map(), so a script behaves the same in both. */
+      map(mapFunc: (element:AnyShape, index?:number, array?:Array<AnyShape>) => AnyShapeOrCollection ):AnyShapeCollection
+      map<T>(mapFunc: (element:AnyShape, index?:number, array?:Array<AnyShape>) => T ):Array<T>
+      map<T>(mapFunc: (element:AnyShape, index?:number, array?:Array<AnyShape>) => T ):AnyShapeCollection|Array<T>
       {
-         // !!!! TODO: this functions takes it that we map new Shapes, this is not always the case with map !!!!
-         return new ShapeCollection(this.shapes.map(mapFunc) as Array<any>); // avoid TS errors
+         const results = this.shapes.map(mapFunc);
+         const allShapes = results.length > 0
+            && results.every((r:any) => isAnyShape(r) || isAnyShapeCollection(r));
+         return (allShapes) ? new ShapeCollection(results as Array<any>) : results;
       }
 
       /** Array API  */
@@ -944,7 +954,7 @@ import { getOc } from './index' // OC global getter
       copy():ShapeCollection
       {
          const newShapeCollection = this._copy();
-         newShapeCollection.addToScene();
+         newShapeCollection._addToScene(); // copies of tmp() Shapes stay tmp
          return newShapeCollection;
       }
 
@@ -2125,7 +2135,7 @@ import { getOc } from './index' // OC global getter
 
       //// STYLING AND VISIBILITY WITH Obj API ////
 
-      /**  Shape API - Add all shapes in the collection to the Scene */
+      /**  Shape API - Add all shapes in the collection to the Scene, clearing their tmp() flag */
       addToScene():ShapeCollection
       {
          // For now, flatten collection into existing layer
@@ -2133,6 +2143,13 @@ import { getOc } from './index' // OC global getter
          // this._brep.layer( this._brep.getNextLayerName(this.getName()));
          this.all().forEach(shape => shape.addToScene());
          //this._brep.resetLayers(); // return active layer to scene
+         return this;
+      }
+
+      /** Internal addToScene() that respects tmp(): tmp Shapes stay out of the scene */
+      _addToScene():ShapeCollection
+      {
+         this.all().forEach(shape => shape._addToScene());
          return this;
       }
 
@@ -2354,7 +2371,7 @@ import { getOc } from './index' // OC global getter
                   throw new Error(`layout:: Unknown layout order "${order}". Please use: 'line','grid','binpack' or 'nest'`)
             }
             
-            workShape.addToScene();
+            workShape._addToScene(); // tmp() Shapes stay out of the scene
             layoutCollection.add(workShape);
          })
 

@@ -15,6 +15,73 @@ import { connectToRedis } from './utils';
 
 //// MAIN CLASS ////
 
+/** "glTF" as a little-endian uint32 — the first 4 bytes of every GLB. */
+const GLB_MAGIC = 0x46546c67;
+/** magic + version + total length. */
+const GLB_HEADER_BYTES = 12;
+
+/** Normalize whatever the runner handed back into bytes, or null if it is not
+ *  binary at all. The health check runs the Runner directly, so this is raw output
+ *  rather than the base64 wrapper the queue path produces — but accept both, so a
+ *  change on that side turns into a clear failure rather than a silent 0-length. */
+export function toBytes(output: unknown): Uint8Array | null
+{
+    if (output instanceof Uint8Array) return output;
+    if (output instanceof ArrayBuffer) return new Uint8Array(output);
+    if (typeof output === 'object' && output !== null && 'data' in output)
+    {
+        const wrapper = output as { encoding?: string; data: unknown };
+        if (wrapper.encoding === 'base64' && typeof wrapper.data === 'string')
+        {
+            return Uint8Array.from(Buffer.from(wrapper.data, 'base64'));
+        }
+        return toBytes(wrapper.data);
+    }
+    return null;
+}
+
+/**
+ * Is this output a loadable GLB? Checks the 12-byte container header — magic "glTF",
+ * version 2, and a declared total length matching what we hold.
+ *
+ * Deliberately structural rather than a size threshold. The previous check was
+ * `size < 5000` ("a box is around 8000 bytes"); the mesh kernel exports
+ * box(10,10,10) in 2804 bytes, so it failed every time — and a failed health check
+ * exits the process, so a worker with `restart: unless-stopped` restart-looped
+ * forever without ever draining a job. A byte count silently goes stale whenever the
+ * exporter changes; the container format does not.
+ */
+export interface GlbVerdict { ok: boolean; size: number; reason?: string }
+
+export function validateGlb(output: unknown): GlbVerdict
+{
+    const bytes = toBytes(output);
+    if (!bytes || bytes.length < GLB_HEADER_BYTES)
+    {
+        return { ok: false, size: bytes?.length ?? 0, reason: `GLB output is not readable bytes (${bytes?.length ?? 0})` };
+    }
+
+    const header = new DataView(bytes.buffer, bytes.byteOffset, GLB_HEADER_BYTES);
+    const magic = header.getUint32(0, true);
+    const version = header.getUint32(4, true);
+    const declaredLength = header.getUint32(8, true);
+
+    if (magic !== GLB_MAGIC)
+    {
+        return { ok: false, size: bytes.length, reason: `GLB output is not glTF (magic 0x${magic.toString(16)})` };
+    }
+    if (version !== 2)
+    {
+        return { ok: false, size: bytes.length, reason: `GLB declares version ${version}, expected 2` };
+    }
+    if (declaredLength !== bytes.length)
+    {
+        return { ok: false, size: bytes.length, reason: `GLB is truncated — header declares ${declaredLength} bytes, got ${bytes.length}` };
+    }
+
+    return { ok: true, size: bytes.length };
+}
+
 export class ExecutionWorker 
 {
     //// SETTINGS ////
@@ -336,16 +403,16 @@ export class ExecutionWorker
                 process.exit(1);
             }
 
-            // Verify GLB has reasonable size
-            const glbSize = glbOutput.output instanceof ArrayBuffer 
-                ? glbOutput.output.byteLength 
-                : (glbOutput.output as Uint8Array).length || 0;
+            // Structural check on the GLB container, not a byte count — see validateGlb.
+            const verdict = validateGlb(glbOutput.output);
 
-            if (glbSize < 5000)  // a box is around 8000 bytes
+            if (!verdict.ok)
             {
-                console.error(`ExecutionWorker::checkHealth(): GLB output too small (${glbSize} bytes)`);
+                console.error(`ExecutionWorker::checkHealth(): ${verdict.reason}`);
                 process.exit(1);
             }
+
+            const glbSize = verdict.size;
 
             console.info(`ExecutionWorker::checkHealth(): Health check passed in ${duration}ms (GLB: ${glbSize} bytes)`);
 

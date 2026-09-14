@@ -3,8 +3,9 @@
  *
  * Two properties matter most here:
  *
- *  1. With SERVER_MODULES_DIR unset the host is INERT. That is what lets this
- *     repository ship and run with no modules at all.
+ *  1. With no root to scan the host is INERT. That is what lets this repository
+ *     ship and run with no modules at all. (Where the roots come from when there
+ *     are some is discoverRoots.test.ts.)
  *  2. A server module's timeout is enforced by terminating its thread. The
  *     script-execution path documents its own timeout as only partial, because a
  *     synchronous loop starves the timer meant to fire — so the infinite-loop
@@ -77,6 +78,24 @@ beforeAll(() => {
   install('badfields', { manifest: { id: 'badfields', global: '1nope', name: 'x', version: '1', engine: '^1', runtime: 'client' } });
   install('mismatch', { dirName: 'other-name' });
   install('noentry', { noEntry: true });
+  // A hybrid module promises a client wrapper it does not ship: skipped, like any missing artifact.
+  install('halfhybrid', {
+    manifest: { id: 'halfhybrid', global: 'halfhybrid', name: 'x', version: '1.0.0', engine: '^1.0.0', runtime: 'server', client: true },
+    source: 'export default { methods: {} };',
+  });
+  // …and one that does ship it.
+  install('hybrid', {
+    manifest: { id: 'hybrid', global: 'hybrid', name: 'x', version: '1.0.0', engine: '^1.0.0', runtime: 'server', client: true },
+    source: 'export default { methods: { echo: async (a) => a } };',
+  });
+  writeFileSync(join(root, 'hybrid', 'bundle.js'), 'export default ({ server }) => ({ setArchiyou() {}, server });');
+
+  // Documentation, in both the spellings a module author actually uses.
+  // 'hybrid' deliberately ships none, so "has no docs" stays covered — and it
+  // gets a README, which must not be mistaken for one.
+  writeFileSync(join(root, 'example', 'DOCS.md'), '# example\n\nWhat it does.\n');
+  writeFileSync(join(root, 'heavy', 'docs.md'), '# heavy\n');
+  writeFileSync(join(root, 'hybrid', 'README.md'), '# hybrid\n\nHow to build it.\n');
 });
 
 afterAll(() => {
@@ -107,7 +126,14 @@ describe('ModuleHost — scanning', () => {
 
     // A single bad manifest in the deploy directory must not take the working
     // modules down with it.
-    expect(host.list().map((m) => m.id).sort()).toEqual(['example', 'heavy']);
+    expect(host.list().map((m) => m.id).sort()).toEqual(['example', 'heavy', 'hybrid']);
+  });
+
+  it('skips a hybrid module that does not ship its client wrapper', () => {
+    const host = new ModuleHost().load(root);
+    // The manifest promised objects in the script; a bare stub would be a lie.
+    expect(host.get('halfhybrid')).toBeUndefined();
+    expect(host.get('hybrid')).toBeDefined();
   });
 
   it('skips a module whose manifest id does not match its directory', () => {
@@ -125,7 +151,7 @@ describe('ModuleHost — scanning', () => {
     const host = new ModuleHost().load(root);
     const catalog = host.catalogFor(['example']);
 
-    expect(catalog).toHaveLength(2);
+    expect(catalog).toHaveLength(3);
     expect(catalog.find((m) => m.id === 'example')!.entitled).toBe(true);
     expect(catalog.find((m) => m.id === 'heavy')!.entitled).toBe(false);
   });
@@ -146,11 +172,56 @@ describe('ModuleHost — bundle resolution', () => {
     expect(host.bundlePath('heavy', '2.0.0')).toBeNull();
   });
 
+  it('resolves a hybrid module to its client wrapper, never to server.js', () => {
+    const host = new ModuleHost().load(root);
+    expect(host.bundlePath('hybrid', '1.0.0')).toMatch(/hybrid\/bundle\.js$/);
+  });
+
   it('cannot be walked out of its directory', () => {
     const host = new ModuleHost().load(root);
     // Paths come from the validated in-memory map, never from string joining.
     expect(host.bundlePath('../../etc/passwd', '1.0.0')).toBeNull();
     expect(host.bundlePath('example/../../..', '1.0.0')).toBeNull();
+  });
+});
+
+describe('ModuleHost — documentation discovery', () => {
+  it('finds a module\u2019s DOCS.md and flags it in the catalog', () => {
+    const host = new ModuleHost().load(root);
+
+    expect(host.docsPath('example')).toMatch(/example\/DOCS\.md$/);
+    expect(host.catalogFor([]).find((m) => m.id === 'example')!.docs).toBe(true);
+  });
+
+  it('accepts a lower-cased docs.md', () => {
+    // The file is authored by whoever wrote the module; losing its documentation
+    // to a capitalisation would be a silent, baffling failure.
+    const host = new ModuleHost().load(root);
+    expect(host.docsPath('heavy')).toMatch(/heavy\/docs\.md$/);
+  });
+
+  it('never mistakes a README for documentation', () => {
+    // The whole reason these are two files: a README is written for whoever
+    // builds and deploys the module, and the route that serves DOCS.md is
+    // public. 'hybrid' has a README and no DOCS.md.
+    const host = new ModuleHost().load(root);
+
+    expect(host.docsPath('hybrid')).toBeNull();
+    // Absent rather than false: the editor tests `docs === true`, and an
+    // explicit false would only add bytes to a response fetched on every run.
+    expect(host.catalogFor([]).find((m) => m.id === 'hybrid')!.docs).toBeUndefined();
+  });
+
+  it('cannot be walked out of its directory', () => {
+    const host = new ModuleHost().load(root);
+    // Same rule as bundlePath: the path comes from the validated map, never
+    // from joining the requested id onto a directory.
+    expect(host.docsPath('../../etc/passwd')).toBeNull();
+    expect(host.docsPath('example/../../..')).toBeNull();
+  });
+
+  it('is null for an unknown module', () => {
+    expect(new ModuleHost().load(root).docsPath('nope')).toBeNull();
   });
 });
 
@@ -160,7 +231,7 @@ describe('ModuleHost — development loop', () => {
 
   it('finds the build output in dist/, so there is no copy step while developing', () => {
     // A module's own build writes dist/bundle.js. Accepting that layout is what
-    // lets SERVER_MODULES_DIR point straight at the overlay.
+    // lets a root point straight at a cloned module repository.
     const dir = mkdtempSync(join(tmpdir(), 'ay-inplace-'));
     mkdirSync(join(dir, 'inplace', 'dist'), { recursive: true });
     writeFileSync(join(dir, 'inplace', 'manifest.json'), JSON.stringify({

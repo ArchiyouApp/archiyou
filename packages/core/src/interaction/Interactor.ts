@@ -43,7 +43,7 @@
 import type { ArchiyouModules } from '../types';
 import { Handle } from './Handle';
 import { HandleRegistry } from './HandleRegistry';
-import type { HandleData, HandleParamMap, ManagedHandleOp, ManagedHandlesData } from './types';
+import type { HandleData, HandleMinimized, HandleParamMap, ManagedHandleOp, ManagedHandlesData } from './types';
 
 // Shallow equality for number tuples (position, uAxis, vAxis, …)
 const _eqArr = (a: readonly number[], b: readonly number[]): boolean =>
@@ -56,6 +56,9 @@ const _eq = (a: number | readonly number[], b: number | readonly number[]): bool
 // Param maps are small flat records of primitives — JSON is an honest comparison here.
 const _eqMap = (a: HandleParamMap | null, b: HandleParamMap | null): boolean =>
     JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+const _eqMinimized = (a: HandleMinimized | null | undefined, b: HandleMinimized | null | undefined): boolean =>
+    (a?.color ?? null) === (b?.color ?? null) && (a?.opacity ?? null) === (b?.opacity ?? null);
 
 /** World-position axes. Under a RELATIVE range the viewer adds the axis value to the
  *  property as a delta, and a world position is not a delta — so only 'u'/'v' are valid. */
@@ -266,6 +269,7 @@ export class Interactor
 
         // Icon
         if (stored.icon !== current.icon)                       return true;
+        if (!_eqMinimized(stored.minimized, current.minimized)) return true;
 
         // Declarative drag-axis → property map
         if (!_eqMap(stored.paramMap, current.paramMap))         return true;

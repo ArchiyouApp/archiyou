@@ -1,5 +1,5 @@
 import type { ArchiyouModules } from '../types';
-import type { HandleData, HandleParamMap, HandlePlane, HandleRangeType } from './types';
+import type { HandleData, HandleMinimized, HandleParamMap, HandlePlane, HandleRangeType } from './types';
 
 const AXIS_VECTORS: Record<string, [number, number, number]> = {
     x: [1, 0, 0],
@@ -27,6 +27,7 @@ export class Handle
     _pos: [number, number, number] = [0, 0, 0];
     _icon: string = 'move';
     _iconExplicit: boolean = false;
+    _minimized: HandleMinimized | null = null;
     visible: boolean = true;
     rangeType: HandleRangeType = '1d';
     rangeMin: number | [number, number] = -100;
@@ -175,6 +176,19 @@ export class Handle
     {
         this._icon = name;
         this._iconExplicit = true;
+        return this;
+    }
+
+    /** Show this handle as a small plain circle instead of the icon button —
+     *  less clutter when a model has many handles.
+     *  Defaults to black at 30% opacity: `minimized({ color: '#FFF', opacity: 0.8 })`. */
+    minimized(options: Partial<HandleMinimized> = {}): this
+    {
+        const opacity = Number(options.opacity ?? 0.3);
+        this._minimized = {
+            color:   options.color ?? '#000',
+            opacity: Number.isFinite(opacity) ? Math.min(1, Math.max(0, opacity)) : 0.3,
+        };
         return this;
     }
 
@@ -375,6 +389,7 @@ export class Handle
             type:         'handle',
             position:     [...this._pos],
             icon:         this._iconExplicit ? this._icon : Handle._autoIcon(this.rangeType, this.plane.uAxis),
+            minimized:    this._minimized ? { ...this._minimized } : null,
             visible:      this.visible,
             rangeType:    this.rangeType,
             rangeMin:     Array.isArray(this.rangeMin) ? [...this.rangeMin] : this.rangeMin,

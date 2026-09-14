@@ -10,7 +10,7 @@ import './param-help.js';
 import type { ParamUIMode } from './param-item.js';
 import type { ScriptParam } from '@archiyou/editor/src/state/workspace';
 import { paramMin, paramMax, paramStep, paramValue } from '@archiyou/editor/src/state/workspace';
-import { scriptUnitSystem, configuratorUnitSystem, scriptModelUnits } from '@archiyou/editor/src/state/workspace';
+import { scriptUnitSystem, configuratorUnitSystem } from '@archiyou/editor/src/state/workspace';
 
 import type { ModelUnits } from '@archiyou/core/src/modeler/types';
 import type { UnitSystem } from '@archiyou/core/src/units/UnitConverter';
@@ -234,14 +234,12 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
     }
 
     /** The unit the stored value/bounds are expressed in (the conversion anchor).
-     *  null when the param is explicitly unitless. Unset units default to the
-     *  script's model unit (mm unless the script sets $modeler.units()). */
+     *  null when the param is unitless: unset, the '—' sentinel, or not a known unit. */
     private _sourceUnit(): ModelUnits | null
     {
         const u = this.param?.units as string | undefined;
-        if (u === NONE_UNIT) return null;
         if (u && u in MM_PER_UNIT) return u as ModelUnits;
-        return scriptModelUnits.get();
+        return null;
     }
 
     /** The unit to display in: the source unit when already in the display

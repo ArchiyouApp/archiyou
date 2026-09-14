@@ -21,11 +21,17 @@ The rest of this document is about running it in production.
 
 The repo-root `docker-compose.yml` is a complete single-host deployment: Caddy
 (automatic HTTPS) in front of the API, Redis, and the built editor served as
-static files. The BullMQ execution worker is defined there too but commented
-out — uncomment the `worker` service to enable server-side execution. It lives at the root rather than in `apps/server/`
+static files. The BullMQ execution worker is part of that stack
+too, though it does nothing until an execution gate is opened in `.env` — see
+"Server-side execution" in the root README. The compose file lives at the root rather
+than in `apps/server/`
 because it deploys the whole monorepo — it builds from the root context and
-mounts `apps/editor/dist` and `plugins/`. (`apps/server/docker-compose.yml` is
-the *development* stack: server + Redis only.)
+mounts `apps/editor/dist` and `plugins/`. For local development there are two options. `docker-compose.dev.yml` at the repo root
+is Redis alone, no image build: `pnpm docker:dev` starts it, then `pnpm dev` and
+`pnpm dev:worker` run the API and the execution worker straight from source — use this
+to work on the code. This directory's own `docker-compose.yml` instead runs api + redis
++ worker in containers (`pnpm --filter @archiyou/server docker:dev`), building the image
+and the editor first — use that to rehearse a deployment.
 
 ```bash
 # 1. configure the deployment

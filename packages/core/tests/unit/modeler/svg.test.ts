@@ -99,29 +99,33 @@ describe('Modeler SVG export', () =>
 
         // The sharpest statement of what "draw in the model's own plane" has to mean: stood up
         // on XZ, the same shapes must produce the same drawing they do lying on XY.
+        //
+        // The pivot is explicit ([0,0,0]) because the whole SCENE has to turn as one rigid body
+        // here: the default pivot is each shape's own centre, which turns every shape where it
+        // stands and so rearranges the scene rather than standing it up.
         it('draws an XZ model exactly as it draws the same model on XY', () =>
         {
             const scene = (place: any) => { drawEverything(place); return modeler.toSVG() as string }
-            expect(drawingOf(scene, s => s.rotateX(90))).toBe(drawingOf(scene, () => {}))
+            expect(drawingOf(scene, s => s.rotateX(90, [0, 0, 0]))).toBe(drawingOf(scene, () => {}))
         })
 
         it('draws a YZ model exactly as it draws the same model on XY', () =>
         {
             const scene = (place: any) => { drawEverything(place); return modeler.toSVG() as string }
             // 120 degrees about [1,1,1] cycles x -> y -> z -> x, landing XY on YZ.
-            expect(drawingOf(scene, s => s.rotateAround(120, [1, 1, 1]))).toBe(drawingOf(scene, () => {}))
+            expect(drawingOf(scene, s => s.rotateAround(120, [1, 1, 1], [0, 0, 0]))).toBe(drawingOf(scene, () => {}))
         })
 
         it('draws in the plane through the drawing serializer too', () =>
         {
             const drawing = (place: any) => { drawEverything(place); return (modeler.all() as any).toSVG() as string }
-            expect(drawingOf(drawing, s => s.rotateX(90))).toBe(drawingOf(drawing, () => {}))
+            expect(drawingOf(drawing, s => s.rotateX(90, [0, 0, 0]))).toBe(drawingOf(drawing, () => {}))
         })
 
         it('draws in the plane through the options serializer too', () =>
         {
             const assembled = (place: any) => { drawEverything(place); return modeler.toSVG({ padding: 0.05 }) as string }
-            expect(drawingOf(assembled, s => s.rotateX(90))).toBe(drawingOf(assembled, () => {}))
+            expect(drawingOf(assembled, s => s.rotateX(90, [0, 0, 0]))).toBe(drawingOf(assembled, () => {}))
         })
 
         // What the collapse actually looked like: a 4m bent came out as a 4730 x 430 strip.

@@ -219,13 +219,17 @@ export const MAX_COMPONENT_DEPTH = 10;
  *  component-sharing service and Runner._getSharedComponentScript).
  *
  *  `root` itself is never returned, cycles terminate on the seen-set, and matching is
- *  by lowercased name — the same key Script.fromData() and the Runner use. */
+ *  by lowercased name — the same key Script.fromData() and the Runner use.
+ *
+ *  `aliases` maps extra (lowercased) names to workspace scripts — old names of renamed
+ *  scripts that references may still use. Current names always win. */
 export function collectComponentDependencies<T extends NamedScriptSource>(
     root: NamedScriptSource,
     workspace: Array<T>,
+    aliases: Record<string, T> = {},
 ): { found: Array<T>; missing: Array<string> }
 {
-    const byName = new Map<string, T>();
+    const byName = new Map<string, T>(Object.entries(aliases));
     for (const s of workspace)
     {
         if (s?.name) byName.set(s.name.toLowerCase(), s);
@@ -249,6 +253,7 @@ export function collectComponentDependencies<T extends NamedScriptSource>(
 
             const script = byName.get(name);
             if (!script) { missing.add(name); continue; }
+            if (found.includes(script) || script === root) continue; // reached by an old and a new name
 
             found.push(script);
             next.push(...localComponentNames(script.code ?? ''));

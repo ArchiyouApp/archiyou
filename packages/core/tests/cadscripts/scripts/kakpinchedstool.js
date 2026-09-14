@@ -54,7 +54,7 @@ diagLineCenterTop = diagLineCenterBottom.copy().moveZ(BEAM_WIDTH)
 layer('leg').color('green');
 
 legLineDirect = line(diagLineLeftBottom.copy().move(-OUTSET), diagLineLeftTop.copy().move(INSET)).hide();
-legLineBendPoint = diagLineCenterBottom.intersect(legLineDirect)[0]; // intersect() gives Points for open Curves
+legLineBendPoint = diagLineCenterBottom.intersection(legLineDirect).hide(); // two open Curves cross in a Vertex
 
 legLine = polyline([
                     diagLineLeftBottom.copy().move(-OUTSET).moveY(-BEAM_THICKNESS_HALF), 
@@ -74,7 +74,7 @@ leg = legLine.extrude(BEAM_THICKNESS, [0,1,0])
 
 layer('horizontals').color('red');
 
-legLineCutTop = diagLineCenterTop.intersect(legLineDirect)[0]; // intersect() gives Points for open Curves
+legLineCutTop = diagLineCenterTop.intersection(legLineDirect).hide(); // two open Curves cross in a Vertex
 
 horizontalMiddle = polyline(
     legLineBendPoint,

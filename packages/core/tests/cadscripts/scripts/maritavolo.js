@@ -66,7 +66,7 @@ diagStrutTestLine = line(
                     ).hide();
 
 
-diagStrutLineLeftEnd = diagStrutTestLine.intersect(sideHorTop.select('E||topback'))[0]; // intersect() gives Points for open Curves
+diagStrutLineLeftEnd = diagStrutTestLine.intersection(sideHorTop.select('E||topback')).hide(); // two open Curves cross in a Vertex
 
 diagStrutLeft = line(diagStrutVertexLeftBottom, diagStrutLineLeftEnd)
                 .extrude(STRUT_WIDTH, diagLineWidthVec.reversed())
@@ -139,8 +139,7 @@ diagonalStruts = trussInsideSegmentsArr.map( (segmRect,i) =>
     d.hide();
     return d;
 })
-// map() gives a plain Array - back into a collection so it has extrude()
-diagonalStruts = collection(...diagonalStruts).extrude(STRUT_WIDTH, [0,0,1])
+diagonalStruts = diagonalStruts.extrude(STRUT_WIDTH, [0,0,1])
 diagonalStruts.forEach((s,i) => s.name(`strutD`))
 
 spineStrutLeft = boxbetween([-STRUT_HEIGHT,-STRUT_WIDTH, 0],

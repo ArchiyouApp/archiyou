@@ -22,12 +22,24 @@ export type HandleAxis = 'x' | 'y' | 'z' | 'u' | 'v';
  *  which is why it is the escape hatch and not the default. */
 export type HandleParamMap = Partial<Record<HandleAxis, string>>;
 
+/** Compact display of a handle: a small plain circle instead of the icon button.
+ *  Set via Handle.minimized(); null on HandleData means the full icon handle. */
+export interface HandleMinimized
+{
+    /** CSS color of the dot. */
+    color: string;
+    /** 0..1 */
+    opacity: number;
+}
+
 export interface HandleData
 {
     id: string;
     type: HandleType;
     position: [number, number, number];
     icon: string;
+    /** Non-null → render as a small dot instead of the icon button. */
+    minimized: HandleMinimized | null;
     visible: boolean;
     rangeType: HandleRangeType;
     rangeMin: number | [number, number];

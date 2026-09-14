@@ -878,7 +878,9 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
       description:  script.description?.trim() || undefined,
       public:       this._public,
       licence:      this._licence as CCLicence,
-      validated:    false,
+      // `validated` is deliberately absent: it is admin-only state that the server owns
+      // (ScriptStore.toRow forces it off on every insert, ScriptStore.setValidated is the
+      // only writer). Sending it from here would be ignored and read as if it mattered.
       fulfillments: this._fulfillments,
     };
 
@@ -946,7 +948,8 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
         description:  editData.description?.trim() || undefined,
         public:       this._public,
         licence:      this._licence as CCLicence,
-        validated:    editData.published?.validated ?? false,
+        // Not sent — server-owned, and preserved across a metadata edit by
+        // ScriptStore.updatePublishedVersion(). See the publish path above.
         fulfillments: this._fulfillments,
       },
     };

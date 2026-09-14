@@ -6,7 +6,14 @@
  * everything else is BACKEND and prefixed `SERVER_` in the environment.
  */
 
+import { resolveModulesDir } from './modules/discoverRoots';
+
 const isProduction = process.env.NODE_ENV === 'production';
+
+/** Where the installed script modules are, and how we worked that out. Resolved
+ *  once at import: it stats a handful of directories, and every consumer —
+ *  ModuleHost, the boot log, `admin:modules --list` — must agree on the answer. */
+const modulesDir = resolveModulesDir(process.env.SERVER_MODULES_DIR);
 
 // Legacy file-based execution-result cache (execution/Library.ts) reads these
 // from the environment directly. They are no longer part of the documented
@@ -76,10 +83,18 @@ export const config = {
    * In the browser that is contained by the Web Worker boundary; on the server
    * it is not.
    *
-   * Therefore this feature is DISABLED BY DEFAULT: `allowedAuthors` is empty, so
-   * every request 403s. Set SERVER_EXECUTION_AUTHORS to a comma-separated list of
-   * script authors you trust to run arbitrary code on this machine. The route
-   * additionally requires an authenticated caller.
+   * Therefore this feature is DISABLED BY DEFAULT — BOTH gates below ship off, and
+   * either one alone is enough to run a script:
+   *
+   *   1. `allowedAuthors` (SERVER_EXECUTION_AUTHORS) — a trusted-author allowlist for
+   *      authenticated API/batch callers. Coarse: it trusts everything that author ever
+   *      publishes, including code they push tomorrow.
+   *   2. `allowValidated` (SERVER_EXECUTION_VALIDATED) — the per-script path that backs
+   *      published configurators. An admin marks one published version `validated` after
+   *      reading its code, and only that version may run. Callers may be ANONYMOUS on
+   *      this path (a configurator visitor has no account), which is why it is rate
+   *      limited and why the unit of trust is one immutable (fileId, version) code
+   *      snapshot rather than a person.
    *
    * Tracking issue: replace with a real isolate (isolated-vm / per-job container)
    * so this can be opened up again.
@@ -89,18 +104,46 @@ export const config = {
       .split(',')
       .map((a) => a.trim().toLowerCase())
       .filter(Boolean),
+    /** Master switch for the validated-script path. Off ⇒ `published.validated` is inert
+     *  and only the author allowlist can reach the executor. */
+    allowValidated: process.env.SERVER_EXECUTION_VALIDATED === '1',
+    /**
+     * Where the EXECUTION WORKER can reach this API. Stamped into the job by
+     * routes/execute.ts as the run's assetProxyUrl / componentLibraryUrl / moduleApiUrl,
+     * so a server-side run can resolve `$import()` assets, `$component('./name')` from the
+     * author's shared library, and gated module bundles — all things the browser client
+     * fills in for itself (see apps/editor/src/services/execution-service.ts).
+     *
+     * This is NOT frontendUrl and NOT a public URL: the worker is a separate container on
+     * the internal network, so under the shipped docker-compose it must be
+     * `http://api:4100`. The localhost default only fits a worker running on the host.
+     * Only the api service needs it — the worker just uses what arrives in the job.
+     */
+    internalApiUrl: process.env.SERVER_INTERNAL_API_URL ?? `http://localhost:${process.env.SERVER_PORT ?? 4100}`,
     /** Wall-clock cap on a single script run, so `while(true){}` can't pin the worker. */
     timeoutMs: Number(process.env.SERVER_EXECUTION_TIMEOUT_MS ?? 30_000),
+    /**
+     * Per-IP cap on the execute route. This is the only route that runs unsandboxed code
+     * for an unauthenticated caller, so it is also the only one where a bare loop of
+     * requests costs real CPU. Keyed on request.ip, which is only meaningful because
+     * trustProxy is set in index.ts — behind Caddy without it, every client shares one
+     * bucket. Generous by default: a configurator legitimately re-runs on every slider
+     * move (debounced to ~1 run per 300ms client-side).
+     */
+    rateLimit: {
+      max: Number(process.env.SERVER_EXECUTION_RATE_LIMIT ?? 30),
+      timeWindow: process.env.SERVER_EXECUTION_RATE_WINDOW ?? '1 minute',
+    },
   },
 
   /**
    * Gated script modules (routes/modules.ts → ModuleHost). See modules/README.md.
    *
-   * Modules are built and distributed OUTSIDE this repository and dropped into
-   * `dir` as `<id>/{manifest.json,bundle.js|server.js}`. When SERVER_MODULES_DIR
-   * is unset the whole feature is inert: nothing is installed, `GET /modules`
-   * returns [], and the server behaves exactly as it does today. That is what
-   * lets this repository stand alone as open source.
+   * Modules are built and distributed OUTSIDE this repository and cloned into
+   * `modules/`, where each is `<id>/{manifest.json,bundle.js|server.js}`. With
+   * none installed the whole feature is inert: `dir` resolves to empty, `GET
+   * /modules` returns [], and the server behaves exactly as it does today. That
+   * is what lets this repository stand alone as open source.
    *
    * Server-runtime modules are loaded into worker threads rather than the API
    * event loop — they are expected to be long-running and CPU-bound, and a worker
@@ -115,8 +158,19 @@ export const config = {
      * first definition of an id winning. One was enough while every module lived in a single
      * private repository; an open-source module gets its own repository checked out
      * alongside, and the backend has to see both.
+     *
+     * **Usually left unset**: with no `SERVER_MODULES_DIR` the roots are discovered under
+     * the checkout's `modules/` overlay (see modules/discoverRoots.ts), which is where a
+     * module repository is cloned anyway — so installing one takes no configuration, and a
+     * checkout with none installed stays exactly as inert as before. Set the variable to
+     * override that (a deployment holding modules elsewhere), or to `off` to load nothing
+     * even though something is installed.
      */
-    dir: process.env.SERVER_MODULES_DIR ?? '',
+    dir: modulesDir.dir,
+    /** 'env' | 'discovered' | 'off' | 'none' — reported at boot and by
+     *  `admin:modules --list`, so "why can the server not see my module" has a
+     *  visible answer rather than an inferred one. */
+    dirSource: modulesDir.source,
     /**
      * Development mode: watch `dir` and re-scan on change, serve bundles
      * uncached, and publish a content revision so the editor and the runner can

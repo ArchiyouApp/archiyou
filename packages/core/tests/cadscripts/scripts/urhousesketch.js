@@ -1,19 +1,19 @@
 // urhousesketch
 // Sketch design for URHOUSE
 
-$PARAMS.define('WIDTH', 'number', { label: "Width", units: "cm", order: 0, default: 400, minimum: 200, maximum: 1000, multipleOf: 1 });
-$PARAMS.define('HEIGHT', 'number', { label: "Height", units: "cm", order: 0, default: 500, minimum: 200, maximum: 1000, multipleOf: 1 });
-$PARAMS.define('DEPTH', 'number', { label: "Depth", units: "cm", order: 0, default: 500, minimum: 200, maximum: 3000, multipleOf: 1 });
+$PARAMS.define('WIDTH', 'number', { label: "Width", units: "mm", order: 0, default: 4000, minimum: 2000, maximum: 10000, multipleOf: 10 });
+$PARAMS.define('HEIGHT', 'number', { label: "Height", units: "mm", order: 0, default: 5000, minimum: 2000, maximum: 10000, multipleOf: 10 });
+$PARAMS.define('DEPTH', 'number', { label: "Depth", units: "mm", order: 0, default: 5000, minimum: 2000, maximum: 30000, multipleOf: 10 });
 $PARAMS.define('ROOF_TYPE', 'options', { label: "Roof Type", order: 0, default: "gable", options: ["gable","shed"] });
 $PARAMS.define('ROOF_ANGLE', 'number', { label: "Roof Angle", order: 0, default: 35, minimum: 10, maximum: 60, multipleOf: 1 });
 $PARAMS.define('ROOF_RIDGE_AT_PERC', 'number', { label: "Ridge at perc", order: 0, default: 50, minimum: 20, maximum: 80, multipleOf: 1 });
 $PARAMS.define('ROOF_RIDGE_SLOPES_SAME', 'options', { label: "Ride slopes same", order: 0, default: "angle", options: ["angle","height"] });
 $PARAMS.define('OVERHANGS_SAME', 'boolean', { label: "Overhangs same", order: 0, default: true });
-$PARAMS.define('OVERHANG_SIZE', 'number', { label: "Overhangs Size", units: "cm", order: 0, default: 50, minimum: 0, maximum: 200, multipleOf: 1 });
-$PARAMS.define('OVERHANG_FRONT', 'number', { label: "Overhang Front", units: "cm", order: 0, default: 50, minimum: 0, maximum: 200, multipleOf: 1 });
-$PARAMS.define('OVERHANG_LEFT', 'number', { label: "Overhang Left", order: 0, default: 50, minimum: 0, maximum: 200, multipleOf: 1 });
-$PARAMS.define('OVERHANG_RIGHT', 'number', { label: "Overhang Right", order: 0, default: 50, minimum: 0, maximum: 200, multipleOf: 1 });
-$PARAMS.define('OVERHANG_BACK', 'number', { label: "Overhang Back", order: 0, default: 50, minimum: 0, maximum: 200, multipleOf: 1 });
+$PARAMS.define('OVERHANG_SIZE', 'number', { label: "Overhangs Size", units: "mm", order: 0, default: 500, minimum: 0, maximum: 2000, multipleOf: 10 });
+$PARAMS.define('OVERHANG_FRONT', 'number', { label: "Overhang Front", units: "mm", order: 0, default: 500, minimum: 0, maximum: 2000, multipleOf: 10 });
+$PARAMS.define('OVERHANG_LEFT', 'number', { label: "Overhang Left", units: "mm", order: 0, default: 500, minimum: 0, maximum: 2000, multipleOf: 10 });
+$PARAMS.define('OVERHANG_RIGHT', 'number', { label: "Overhang Right", units: "mm", order: 0, default: 500, minimum: 0, maximum: 2000, multipleOf: 10 });
+$PARAMS.define('OVERHANG_BACK', 'number', { label: "Overhang Back", units: "mm", order: 0, default: 500, minimum: 0, maximum: 2000, multipleOf: 10 });
 $PARAMS.define('MAIN_FACADE', 'options', { label: "Main Facade side", order: 0, default: "Front", options: ["Front","Left","Right","Back"] });
 $PARAMS.define('GENERATE_OPENINGS', 'boolean', { label: "Openings", order: 0, default: true });
 $PARAMS.define('ENERGY_CALC', 'boolean', { label: "Energy calculation", default: false });
@@ -21,10 +21,10 @@ $PARAMS.define('ENERGY_AZIMUTH', 'number', { label: "azimuth", units: "deg", def
 
 // Archiyou 0.6.5
 
-units('cm')
+units('mm')
 
 WIDTH = $WIDTH; // outside width of house (excluding overhangs)
-HEIGHT = $HEIGHT; // total outside height of house in cm
+HEIGHT = $HEIGHT; // total outside height of house in mm
 DEPTH = $DEPTH; // outside depth of house (excluding overhangs)
 
 
@@ -56,18 +56,18 @@ $PARAMS.ENERGY_AZIMUTH.visibleIf($ENERGY_CALC);
 
 
 //// SETTINGS ////
-MIN_WALL_HEIGHT = 100;
-WALL_THICKNESS = 25;
-ROOF_THICKNESS = 25;
-ROOF_MINIMUM_HEIGHT = 50;
-GROUNDFLOOR_HEIGHT = 270;
-FLOOR_THICKNESS = 30;
+MIN_WALL_HEIGHT = 1000;
+WALL_THICKNESS = 250;
+ROOF_THICKNESS = 250;
+ROOF_MINIMUM_HEIGHT = 500;
+GROUNDFLOOR_HEIGHT = 2700;
+FLOOR_THICKNESS = 300;
 FIRST_FLOOR_START = GROUNDFLOOR_HEIGHT + FLOOR_THICKNESS;
-STOREY_HEIGHT = 150;
+STOREY_HEIGHT = 1500;
 
 //// CALCULATED ////
 
-NUM_FLOORS = (HEIGHT > 500) ? 2 : 1;
+NUM_FLOORS = (HEIGHT > 5000) ? 2 : 1;
 
 //// MODEL ////
 
@@ -101,7 +101,7 @@ roofLineOutside.moveZ(-roofLineOutside.bbox().minZ());
 // Test if roof already exceeds maximum height
 if(roofLineOutside.bbox().maxZ() > (HEIGHT - MIN_WALL_HEIGHT))
 {
-    print(`Your roof already exceeds given total height of ${HEIGHT} cm (and minimal wall height of ${MIN_WALL_HEIGHT}).
+    print(`Your roof already exceeds given total height of ${HEIGHT} mm (and minimal wall height of ${MIN_WALL_HEIGHT}).
     Please lower roof angle if you want to stay under that height!`);
     // Higher roof line to realize min wall height
     roofLineOutside.moveZ(MIN_WALL_HEIGHT)
@@ -118,7 +118,7 @@ roofLineOutsideOffsetted = roofLineOutside
 
 roofLineInsideLeft = roofLineOutsideOffsetted
                         .edges().first()
-                        .copy().extendTo(line([0,0,-10000],[0,0,15000]).hide())
+                        .copy().extendTo(line([0,0,-100000],[0,0,150000]).hide())
 
 roofLineInsideRightEdgeTmp = roofLineOutsideOffsetted.edges().last().copy().hide();
 
@@ -126,8 +126,8 @@ if(ROOF_TYPE === 'gable')
 {
     roofLineInsideRight = roofLineInsideRightEdgeTmp
                                 /*.copy().extendTo(
-                                        line([WIDTH,0,-10000],[WIDTH,0,15000])
-                                            .extrude(100, [0,1,0]).moveY(-50)
+                                        line([WIDTH,0,-100000],[WIDTH,0,150000])
+                                            .extrude(1000, [0,1,0]).moveY(-500)
                                         ) // BUG in intersection for large roof angles
                                 */
                                 // math solution
@@ -307,13 +307,17 @@ wallFront = wallFrontFace
             .extrude(WALL_THICKNESS, [0,1,0])
 
 wallBack = wallFront.copy().moveY(DEPTH-WALL_THICKNESS)
+// copy() first: extruding the diagram lines themselves would leave the side walls on the
+// 'diagram' layer (a shape stays on its source's layer), while a copy is made on the active
+// one - which is what puts the whole house on 'walls'.
 wallLeft = wallLeftLine
+            .copy()
             .extrude(DEPTH-WALL_THICKNESS*2, [0,1,0])
             .moveY(WALL_THICKNESS)
             .extrude(WALL_THICKNESS, [1,0,0])
             .subtract(roofSolids)
 
-wallRight = ((ROOF_TYPE === 'gable') ? wallRightLine : line([WIDTH,0,0],roofLineInsideLeft.end()))
+wallRight = ((ROOF_TYPE === 'gable') ? wallRightLine.copy() : line([WIDTH,0,0],roofLineInsideLeft.end()))
             .extrude(DEPTH-WALL_THICKNESS*2, [0,1,0])
             .moveY(WALL_THICKNESS)
             .extrude(WALL_THICKNESS, [-1,0,0])
@@ -334,8 +338,8 @@ if($GENERATE_OPENINGS && !$ENERGY_CALC) // don't generate openings for energy ca
   // Make a simple opening with frame
   function makeOpeningFrame(w,h,pivot,sill,zRot)
   {
-      const FRAME_SIZE = 10;
-      const BBOX_DEPTH = 200;
+      const FRAME_SIZE = 100;
+      const BBOX_DEPTH = 2000;
       pivot = pivot || [0,0];
       const b = box(w,FRAME_SIZE, h);
       const window = {
@@ -396,14 +400,14 @@ if($GENERATE_OPENINGS && !$ENERGY_CALC) // don't generate openings for energy ca
                           ? 0 : 90;
   mainFacadeWallLength = mainFacadeWallRotZ === 90 ? WIDTH : DEPTH;
 
-  if(mainFacadeWallBbox.height() < 250)
+  if(mainFacadeWallBbox.height() < 2500)
   {
       print(`Can't place a main facade on side "{$MAIN_FACADE}" : It's wall is too low!`)
   }
   else
   {
       // front door
-      frontDoor = makeOpeningFrame(100,200,wallXPositionToWorld(mainFacadeWall, -100-20), 0, mainFacadeWallRotZ);
+      frontDoor = makeOpeningFrame(1000,2000,wallXPositionToWorld(mainFacadeWall, -1000-200), 0, mainFacadeWallRotZ);
       frontDoorCentered = false;
 
       if(!roofSolids.toArray().find(r => r.intersects(frontDoor.frame))) // intersects is more stable than distance
@@ -416,12 +420,12 @@ if($GENERATE_OPENINGS && !$ENERGY_CALC) // don't generate openings for energy ca
           // try moving door to center
           if(mainFacadeWallRotZ === 0)
           {
-              frontDoor.frame.moveToX(WIDTH/2-50);
-              frontDoor.bbox.moveToX(WIDTH/2-50);
+              frontDoor.frame.moveToX(WIDTH/2-500);
+              frontDoor.bbox.moveToX(WIDTH/2-500);
           }
           else {
-              frontDoor.frame.moveToY(DEPTH/2-50);
-              frontDoor.bbox.moveToY(DEPTH/2-50);
+              frontDoor.frame.moveToY(DEPTH/2-500);
+              frontDoor.bbox.moveToY(DEPTH/2-500);
           }
           // OC BUG in distance between roof solids
           if(roofSolids.toArray().every(r => !r.intersects(frontDoor.frame)))
@@ -435,11 +439,11 @@ if($GENERATE_OPENINGS && !$ENERGY_CALC) // don't generate openings for energy ca
       }
 
       // kitchen window (if width is large enough)
-      if(mainFacadeWallLength > 300 && !frontDoorCentered)
+      if(mainFacadeWallLength > 3000 && !frontDoorCentered)
       {
-          kitchenWindow = makeOpeningFrame(150,100,wallXPositionToWorld(mainFacadeWall,-100-20-100-60), 100, mainFacadeWallRotZ);
+          kitchenWindow = makeOpeningFrame(1500,1000,wallXPositionToWorld(mainFacadeWall,-1000-200-1000-600), 1000, mainFacadeWallRotZ);
 
-          if(roofLineOutsideOverhangsChecked.distance(kitchenWindow.frame) <= 40
+          if(roofLineOutsideOverhangsChecked.distance(kitchenWindow.frame) <= 400
               || !mainFacadeWallBbox.containsBbox(kitchenWindow.frame.bbox()))
           {
               kitchenWindow.frame.hide();
@@ -451,15 +455,15 @@ if($GENERATE_OPENINGS && !$ENERGY_CALC) // don't generate openings for energy ca
       }
 
       // Add floor window in center below ridge (if gable) or to right (shed)
-      if(mainFacadeWallBbox.height() > 400)
+      if(mainFacadeWallBbox.height() > 4000)
       {
-          mainFacadeTopWindow = makeOpeningFrame(80,100,
+          mainFacadeTopWindow = makeOpeningFrame(800,1000,
               wallXPositionToWorld(mainFacadeWall,
-                  ((['Front','Back']).includes($MAIN_FACADE) && (ROOF_TYPE === 'gable')) ? (roofLineRidgePoint.x-WALL_THICKNESS/2)/WIDTH : 0.5), 290+70,
+                  ((['Front','Back']).includes($MAIN_FACADE) && (ROOF_TYPE === 'gable')) ? (roofLineRidgePoint.x-WALL_THICKNESS/2)/WIDTH : 0.5), 2900+700,
                   mainFacadeWallRotZ);
 
-          if(mainFacadeTopWindow.frame.bbox().maxZ() > mainFacadeWallBbox.maxZ() - 40 || roofLineOutsideOverhangsChecked.distance(mainFacadeTopWindow.frame) <= 30
-              || mainFacadeTopWindow.frame.distance(wallRight) < 15)
+          if(mainFacadeTopWindow.frame.bbox().maxZ() > mainFacadeWallBbox.maxZ() - 400 || roofLineOutsideOverhangsChecked.distance(mainFacadeTopWindow.frame) <= 300
+              || mainFacadeTopWindow.frame.distance(wallRight) < 150)
           {
               mainFacadeTopWindow.frame.hide();
           }
@@ -477,10 +481,10 @@ if($GENERATE_OPENINGS && !$ENERGY_CALC) // don't generate openings for energy ca
                           ? 0 : 90;
 
   // One big back centered opening for now
-  backOpeningSize = ((backFacadeWallRotZ === 0) ?  WIDTH : DEPTH) - (WALL_THICKNESS+10)*2;
-  if(backOpeningSize > 240) backOpeningSize = 240; // max width
-  backFacadeOpeningFrame = makeOpeningFrame(backOpeningSize, 200, wallXPositionToWorld(backFacadeWall,0.5), 0, backFacadeWallRotZ)
-  if(!roofSolids.find(s => backFacadeOpeningFrame.frame.distance(s) <= 5))
+  backOpeningSize = ((backFacadeWallRotZ === 0) ?  WIDTH : DEPTH) - (WALL_THICKNESS+100)*2;
+  if(backOpeningSize > 2400) backOpeningSize = 2400; // max width
+  backFacadeOpeningFrame = makeOpeningFrame(backOpeningSize, 2000, wallXPositionToWorld(backFacadeWall,0.5), 0, backFacadeWallRotZ)
+  if(!roofSolids.find(s => backFacadeOpeningFrame.frame.distance(s) <= 50))
   {
       backFacadeWall.subtract(backFacadeOpeningFrame.bbox);
       openingsGroundFloor.add(backFacadeOpeningFrame.frame);
@@ -494,9 +498,9 @@ if($GENERATE_OPENINGS && !$ENERGY_CALC) // don't generate openings for energy ca
   // simple repeating grid of rows of windows
   function fillFacade(wall)
   {
-      const WINDOW_WIDTH = 80;
-      const WINDOW_HEIGHT_GROUNDFLOOR = 200;
-      const WINDOW_HEIGHT_TOPFLOOR = 100;
+      const WINDOW_WIDTH = 800;
+      const WINDOW_HEIGHT_GROUNDFLOOR = 2000;
+      const WINDOW_HEIGHT_TOPFLOOR = 1000;
       const DISTANCE_BETWEEN_WINDOWS = WINDOW_WIDTH*1.8;
       const WINDOW_RANDOMNESS = DISTANCE_BETWEEN_WINDOWS*1.1;
 
@@ -520,11 +524,11 @@ if($GENERATE_OPENINGS && !$ENERGY_CALC) // don't generate openings for energy ca
                       ,
                       wallXPositionToWorld(wall,
                           WINDOW_RANDOMNESS*Math.random()-WINDOW_RANDOMNESS/2 + col*(WINDOW_WIDTH+DISTANCE_BETWEEN_WINDOWS)+startLeft),
-                      (fl === 0) ? 0 : FIRST_FLOOR_START+70, wallRotZ
+                      (fl === 0) ? 0 : FIRST_FLOOR_START+700, wallRotZ
                       )
 
               // test if windowFrame is contained by wall and underneath roof
-              if(wall.bbox().maxZ() > windowFrame.frame.bbox().maxZ() + 40 &&
+              if(wall.bbox().maxZ() > windowFrame.frame.bbox().maxZ() + 400 &&
                       !roofSolids.toArray().find(s => s.overlaps(windowFrame.frame))
                   )
               {
@@ -583,13 +587,10 @@ layer('diagram').shapes().hide();
 layer('walls');
 // The four walls abut without overlapping, so merge their polygons instead of running a
 // boolean union: unioning solids that share whole faces blows the kernel's BSP stack.
-wallsCombined = collection(
-                wallLeft.hide().copy(),
-                wallFront.hide().copy(),
-                wallRight.hide().copy(),
-                wallBack.hide().copy())
+// merge() puts the merged Shape in the scene in place of the four it was given, so the
+// walls are handed over whole - no hidden copies left behind.
+wallsCombined = collection(wallLeft, wallFront, wallRight, wallBack)
             .merge()
-            .show()
             .color('#f1c232')
 
 
@@ -598,22 +599,22 @@ wallsCombined = collection(
 
 gutterHeightMax = Math.round([roofLineOutsideOverhangsChecked.start().z,roofLineOutsideOverhangsChecked.end().z].sort()[1]);
 gutterHeightMin = Math.round(roofLineOutsideOverhangsChecked.bbox().minZ());
-floorAreaGross = Math.round((WIDTH*DEPTH)*1e-4) * NUM_FLOORS;
-floorAreaNet = Math.round(((WIDTH-2*WALL_THICKNESS)*(DEPTH-2*WALL_THICKNESS))*1e-4) * NUM_FLOORS;
+floorAreaGross = Math.round((WIDTH*DEPTH)*1e-6) * NUM_FLOORS;
+floorAreaNet = Math.round(((WIDTH-2*WALL_THICKNESS)*(DEPTH-2*WALL_THICKNESS))*1e-6) * NUM_FLOORS;
 // envelope minus walls. Done arithmetically: the walls abut without overlapping, and the
 // boolean on the merged wall solid has coincident faces that make the kernel blow its stack.
 volumeNet = Math.round((wallFrontFace.copy().tmp().extrude(DEPTH,[0,1,0]).volume()
-                - wallsCombined.volume()) * 1e-6); // cm3 => m3
+                - wallsCombined.volume()) * 1e-9); // mm3 => m3
 
 
 calc.table(
 'stats',
 [
-    ['Width','from outside', WIDTH, 'cm' ],
-    ['Depth','from outside', DEPTH, 'cm' ],
-    ['Height','~ maximum height', HEIGHT, 'cm' ],
-    ['Gutter height max', '', gutterHeightMax, 'cm'],
-    ['Gutter height min', '', gutterHeightMin, 'cm'],
+    ['Width','from outside', WIDTH, 'mm' ],
+    ['Depth','from outside', DEPTH, 'mm' ],
+    ['Height','~ maximum height', HEIGHT, 'mm' ],
+    ['Gutter height max', '', gutterHeightMax, 'mm'],
+    ['Gutter height min', '', gutterHeightMin, 'mm'],
     ['Ground floor area', 'gross', floorAreaGross , 'm2' ],
     ['Ground floor area', 'net', floorAreaNet, 'm2' ],
     ['Number of levels', 'including groundfloor', (NUM_FLOORS), '#'],
@@ -655,9 +656,9 @@ if($ENERGY_CALC)
     print('Energy calculation');
     // draw noth arrow for orientation
     layer('energy');
-    const COMPASS_RADIUS = 50;
-    compass = circle(COMPASS_RADIUS).color('red').move(-100,-100);
-    arrow = rect(2.5,COMPASS_RADIUS).align(compass, 'topbackcenter', 'topbackcenter').moveZ(1).color('black');
+    const COMPASS_RADIUS = 500;
+    compass = circle(COMPASS_RADIUS).color('red').move(-1000,-1000);
+    arrow = rect(25,COMPASS_RADIUS).align(compass, 'topbackcenter', 'topbackcenter').moveZ(10).color('black');
     layer('energy').shapes().rotateZ(-$ENERGY_AZIMUTH);
 
     // TODO: make layer('walls').hide() work too!
@@ -687,7 +688,7 @@ if($ENERGY_CALC)
             return { 
                 id: generateId(azimuth, tilt),
                 face: f, // save reference to face for coloring later
-                area_m2: (f.area()/10000).toFixed(1), // cm2 => m2
+                area_m2: (f.area()/1e6).toFixed(1), // mm2 => m2
                 azimuth_deg: azimuth, 
                 tilt_deg : tilt 
             }    
@@ -786,17 +787,17 @@ else {
 
 //// AREAS TABLE ////
 
-areaWalls = Math.round((wallFrontFace.area()*2 + wallLeftLine.copy().tmp().extrude(DEPTH).area()+wallRightLine.copy().tmp().extrude(DEPTH).area())*1e-4);
+areaWalls = Math.round((wallFrontFace.area()*2 + wallLeftLine.copy().tmp().extrude(DEPTH).area()+wallRightLine.copy().tmp().extrude(DEPTH).area())*1e-6);
 areaFacade = areaWalls * 1.1; // a little bigger
-areaRoof = Math.round((roofLineOutsideOverhangsChecked.copy().tmp().extrude(DEPTH).area()*1e-4));
+areaRoof = Math.round((roofLineOutsideOverhangsChecked.copy().tmp().extrude(DEPTH).area()*1e-6));
 
 calc.table(
     'areas',
     [
 
-        ['Total floor area', 'gross, estimation', Math.round(NUM_FLOORS*(WIDTH*DEPTH)*1e-4), 'm2' ],
-        ['Total floor area', 'net, estimation', Math.round(NUM_FLOORS*((WIDTH-2*WALL_THICKNESS)*(DEPTH-2*WALL_THICKNESS))*1e-4), 'm2' ],
-        ['Total wall length', '', Math.round((2*WIDTH+2*DEPTH)*1e-2), 'm'],
+        ['Total floor area', 'gross, estimation', Math.round(NUM_FLOORS*(WIDTH*DEPTH)*1e-6), 'm2' ],
+        ['Total floor area', 'net, estimation', Math.round(NUM_FLOORS*((WIDTH-2*WALL_THICKNESS)*(DEPTH-2*WALL_THICKNESS))*1e-6), 'm2' ],
+        ['Total wall length', '', Math.round((2*WIDTH+2*DEPTH)*1e-3), 'm'],
         ['Facade surface', 'estimation without openings',
             areaFacade,
             'm2'
@@ -806,22 +807,25 @@ calc.table(
     ['area', 'description', 'value', 'unit']
 )
 
-//// OFFER GSHEET PIPELINE ////
+//// OFFER SPREADSHEET PIPELINE ////
+// Push the model's numbers into a copy of a Google Sheet offer template. External
+// spreadsheets are handled by the `cloudcalc` module (modules/archiyou-modules/cloudcalc):
+// open the template, then copy it with the inputs filled in. The copy lands in the
+// shared drive the module is configured with and its URL is the pipeline's result.
 
 areaWindows = ($GENERATE_OPENINGS)
-    ? windows.reduce((sum,w) => sum + Math.round(w.plane.area()*1e-4),0)
+    ? windows.reduce((sum,w) => sum + Math.round(w.plane.area()*1e-6),0)
     : 0;
 numDoors = ($GENERATE_OPENINGS) ? 1 : 0; // TODO
 numSlidingDoors = ($GENERATE_OPENINGS) ? 1 : 0; // TODO
 projectId = $PROJECT_ID || 'PROJECTXYZ';
 
 $pipeline('offer', 
-          async function(scope) 
+          function(scope) 
           {
-              await calc.gsheets.connect('0AH85c2Bl1KO3Uk9PVA');
-              await calc.gsheets.fromTemplate(
-                      './db/URBUILD_OFFER_TEMPLATE', 
-                      './exports/URBUILD_OFFER_' + projectId,
+              $module('cloudcalc');
+              const template = cloudcalc.open('URBUILD_OFFER_TEMPLATE'); // a sheet name published in CLOUDCALC_SHEETS
+              return template.copy(
                   { 
                       projectid: projectId,
                       width: scope.WIDTH, 
@@ -839,8 +843,9 @@ $pipeline('offer',
                       volume_net: scope.volumeNet, 
                       gutter_min: scope.gutterHeightMin,
                       gutter_max: scope.gutterHeightMax,
-                  }
-              );
+                  },
+                  { title: 'URBUILD_OFFER_' + projectId }
+              ).url;
           }    
       )
 
@@ -864,7 +869,7 @@ function docPipeline()
 
     // subtracted() was non-mutating: copy first, then subtract in place
     wallsCombinedSection = wallsCombined.copy()
-        .subtract(box(WIDTH*2,DEPTH*2,HEIGHT).moveZ(HEIGHT/2+150).hide())
+        .subtract(box(WIDTH*2,DEPTH*2,HEIGHT).moveZ(HEIGHT/2+1500).hide())
 
     floorplan = collection(wallsCombinedSection,openingsGroundFloor)
         .project([0,0,1], true)
@@ -875,7 +880,7 @@ function docPipeline()
     // elevations
     elevationFront = allVisible.elevation('front') // elevation placed on origin
             .moveTo(FLOOR_PLAN_PIVOT_POINT)
-                .moveY(-HEIGHT/2-DEPTH/2-200);
+                .moveY(-HEIGHT/2-DEPTH/2-2000);
 
     elevationLeft = allVisible
             .elevation('left')
@@ -892,17 +897,17 @@ function docPipeline()
     elevationBack = allVisible.elevation('back') // elevation placed on origin
             .moveTo(FLOOR_PLAN_PIVOT_POINT)
                 .rotateZ(180)
-                .moveY(+HEIGHT/2+DEPTH/2+200);
+                .moveY(+HEIGHT/2+DEPTH/2+2000);
 
     // add isometries to elevations
     isoRightFront = allVisible.iso([1,-1,1])
                         .moveTo(FLOOR_PLAN_PIVOT_POINT)
-                        .move(-DEPTH*1.5, -HEIGHT/2-DEPTH/2-200)
+                        .move(-DEPTH*1.5, -HEIGHT/2-DEPTH/2-2000)
                         .rotateZ(-120);
 
     isoRightBack = allVisible.iso([1,1,1])
                     .moveTo(FLOOR_PLAN_PIVOT_POINT)
-                    .move(DEPTH*1.5, -HEIGHT/2-DEPTH/2-200)
+                    .move(DEPTH*1.5, -HEIGHT/2-DEPTH/2-2000)
                     .rotateZ(180);
 
     floorplanRect = floorplan.bbox().rect()

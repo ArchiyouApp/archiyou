@@ -33,6 +33,7 @@ import { users } from '../db/schema';
 import { userService, normalizeModuleIds } from '../services/UserService';
 import { ALL_MODULES, grantsAllModules } from '../modules/entitlements';
 import { moduleHost } from '../modules/ModuleHost';
+import { config } from '../config';
 
 //// ARGS ////
 
@@ -67,13 +68,23 @@ Usage:
 
 //// COMMANDS ////
 
+/** Why the catalog is empty, per the way `dir` was resolved (see config.modules). */
+const WHY_EMPTY: Record<typeof config.modules.dirSource, string> = {
+  none: "nothing installed under modules/, and SERVER_MODULES_DIR is unset",
+  discovered: `nothing loaded from ${config.modules.dir}`,
+  env: `nothing loaded from SERVER_MODULES_DIR=${config.modules.dir}`,
+  off: 'SERVER_MODULES_DIR is set to off',
+};
+
 /** Everyone who has any module, plus what is installed on this instance. */
 function listAll(): void {
   const installed = moduleHost.list();
   console.log(`\nInstalled modules (${installed.length}):`);
   if (installed.length === 0) {
-    // The common case on a fresh instance, and easy to mistake for a bug.
-    console.log('  (none — SERVER_MODULES_DIR is unset or empty)');
+    // The common case on a fresh instance, and easy to mistake for a bug — so say
+    // which of the three reasons it is rather than naming a setting that, these
+    // days, is usually not the one at fault.
+    console.log(`  (none — ${WHY_EMPTY[config.modules.dirSource]})`);
   } else {
     installed.forEach((m) => console.log(`  ${m.id}@${m.version}  [${m.runtime}]  ${m.name}`));
   }

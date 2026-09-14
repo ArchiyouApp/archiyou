@@ -31,7 +31,7 @@ import type { CCLicence } from '@archiyou/core/src/ScriptSchema';
 
 import { scripts, bumpScripts } from '../state/core.js';
 import { fetchSharedScript, shareScript } from './sharing.js';
-import { fetchFileVersions } from './scripts-sync.js';
+import { fetchFileByName, fetchFileVersions } from './scripts-sync.js';
 
 /** What happened to one referenced component.
  *   shared        — a new shared version was appended just now
@@ -79,7 +79,25 @@ export async function shareReferencedComponents(
   licence?: CCLicence,
 ): Promise<ComponentShareResult[]>
 {
-  const { found, missing } = collectComponentDependencies(root, scripts.get());
+  const workspace = scripts.get();
+  let { found, missing } = collectComponentDependencies(root, workspace);
+
+  // A name that matches nothing may be the old name of a renamed script. Map it onto the
+  // workspace script with the same fileId and walk again — the renamed script may pull in
+  // components of its own. Repeats while that uncovers more old names.
+  const aliases: Record<string, Script> = {};
+  const tried = new Set<string>();
+  while (missing.some(name => !tried.has(name)))
+  {
+    for (const name of missing.filter(n => !tried.has(n)))
+    {
+      tried.add(name);
+      const stored = await fetchFileByName(name);
+      const renamed = stored && workspace.find(s => s.fileId === stored.fileId && s.fileId !== root.fileId);
+      if (renamed) aliases[name] = renamed;
+    }
+    ({ found, missing } = collectComponentDependencies(root, workspace, aliases));
+  }
 
   const results: ComponentShareResult[] = missing.map(name => ({ name, action: 'not-found' as const }));
 

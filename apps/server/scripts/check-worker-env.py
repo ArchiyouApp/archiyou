@@ -26,11 +26,11 @@ def main() -> int:
 
     worker = services.get('worker')
     if worker is None:
-        # The worker service ships commented out, because server-side execution is
-        # off by default (SERVER_EXECUTION_AUTHORS is empty). No worker means no
-        # unsandboxed script process at all, which is what this check exists to
-        # contain — so this is the safest configuration, not a failure. The checks
-        # below apply again the moment the service is uncommented.
+        # A stack with no worker cannot run an unsandboxed script process at all,
+        # which is what this check exists to contain — so its absence is the safest
+        # configuration, not a failure. The production stack does define one (it is
+        # inert until an execution gate is opened in .env); this branch covers the
+        # dev helper and any deployment that strips the service out.
         print('ok: no `worker` service — server-side execution is not deployed')
         return check_api(services)
 

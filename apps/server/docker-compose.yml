@@ -38,6 +38,10 @@ services:
       - SERVER_REDIS_HOST=redis
       - SERVER_REDIS_PORT=6379
       - SERVER_DATABASE_FILE=./data/archiyou.db
+      # Where the worker reaches this API, stamped into every execution job so a
+      # server-side run can resolve $$import() assets, $$component('./name') and
+      # gated module bundles. Internal network name, not a public URL.
+      - SERVER_INTERNAL_API_URL=http://api:4100
     depends_on:
       redis:
         condition: service_healthy

@@ -143,3 +143,206 @@ describe('ScriptStore sharing', () => {
     expect(latest?.code).toBe('const a = 9;');
   });
 });
+
+/**
+ * Scripts are referenced by name ($component('./wall')), so renaming one must not break
+ * the scripts that still use its old name: an old name resolves to the latest version
+ * of the file that carried it.
+ */
+describe('ScriptStore rename fallback', () => {
+  /** Rows are ordered on a millisecond `updated`; keep consecutive writes distinct. */
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+
+  it('resolves an old name to the latest version of the renamed file (own scripts)', async () => {
+    const fileId = newFile('oldwall');
+    await tick();
+    store.saveVersion(AUTHOR, fileId, payload({ name: 'newwall', code: 'const renamed = 1;' }));
+
+    const byOld = store.getFileByName(AUTHOR, 'OldWall');
+    expect(byOld.fileId).toBe(fileId);
+    expect(byOld.name).toBe('newwall');
+    expect(byOld.code).toBe('const renamed = 1;');
+    expect(store.getFileByName(AUTHOR, 'newwall').fileId).toBe(fileId);
+  });
+
+  it('prefers a file currently holding the name over one renamed away from it', async () => {
+    const renamedId = newFile('taken');
+    await tick();
+    store.saveVersion(AUTHOR, renamedId, payload({ name: 'moved' }));
+    await tick();
+    const currentId = newFile('taken');
+
+    expect(store.getFileByName(AUTHOR, 'taken').fileId).toBe(currentId);
+  });
+
+  it('throws not_found for a name no script ever had', () => {
+    expect(() => store.getFileByName(AUTHOR, 'never-existed')).toThrow(ScriptStoreError);
+  });
+
+  it('serves the latest SHARED release of a renamed file under its old name', async () => {
+    const fileId = newFile('oldbeam');
+    await tick();
+    store.share(AUTHOR, fileId, payload({ name: 'oldbeam', version: '0.1', shared: SHARED }));
+    await tick();
+    store.share(AUTHOR, fileId, payload({ name: 'newbeam', version: '0.2', code: 'const v = 2;', shared: SHARED }));
+
+    const latest = store.getShared(AUTHOR, 'oldbeam');
+    expect(latest?.version).toBe('0.2');
+    expect(latest?.name).toBe('newbeam');
+    expect(store.getShared(AUTHOR, 'oldbeam', '0.1')?.name).toBe('oldbeam');
+    expect(store.getSharedVersions(AUTHOR, 'oldbeam')).toEqual(['0.2', '0.1']);
+  });
+
+  it('resolves an old name that was only ever used for unshared working copies', async () => {
+    const fileId = newFile('oldpost');
+    await tick();
+    store.share(AUTHOR, fileId, payload({ name: 'newpost', version: '0.1', shared: SHARED }));
+
+    expect(store.getShared(AUTHOR, 'oldpost')?.name).toBe('newpost');
+  });
+});
+
+/**
+ * `published.validated` is what opens server-side execution to anonymous callers
+ * (routes/execute.ts), so the store — not the client — must own it. The rule has two
+ * halves that pull in opposite directions and are easy to get backwards:
+ *
+ *   INSERT (save/share/publish) always forces it OFF — a new row is new `code` that
+ *   nobody has reviewed.
+ *   IN-PLACE EDIT preserves it — `code` is untouched there, so a review still stands
+ *   and an owner renaming their configurator must not knock it off (nor grant it).
+ */
+describe('ScriptStore validated flag', () => {
+  const PUBLISHED = { public: true, fulfillments: [] };
+
+  /** A published version owned by AUTHOR; returns its row id. */
+  function newPublished(name: string, over: Record<string, unknown> = {}): string {
+    const fileId = newFile(name);
+    const data = store.publish(
+      AUTHOR,
+      fileId,
+      payload({ name, version: '0.1', published: { ...PUBLISHED, ...over } }),
+    );
+    return data.id as string;
+  }
+
+  it('ignores a client trying to publish itself as validated', () => {
+    const id = newPublished('self-validate', { validated: true });
+    expect(store.findVersionById(AUTHOR, id)?.published?.validated).toBe(false);
+  });
+
+  it('ignores a client trying to share itself as validated', () => {
+    // share() goes through the same toRow() funnel, so it must be closed too.
+    const fileId = newFile('share-validate');
+    const data = store.share(
+      AUTHOR,
+      fileId,
+      payload({
+        name: 'share-validate',
+        version: '0.1',
+        shared: SHARED,
+        published: { ...PUBLISHED, validated: true },
+      }),
+    );
+    expect(data.published?.validated).toBe(false);
+  });
+
+  it('reports validated as an explicit false, never undefined', () => {
+    // Callers gate execution on this, so `undefined` vs `false` must not be a
+    // distinction any of them has to make.
+    const id = newPublished('explicit-false');
+    expect(store.findVersionById(AUTHOR, id)?.published?.validated).toBe(false);
+  });
+
+  it('setValidated turns it on and back off', () => {
+    const id = newPublished('toggle');
+    expect(store.setValidated(id, true).published?.validated).toBe(true);
+    expect(store.findVersionById(AUTHOR, id)?.published?.validated).toBe(true);
+    expect(store.setValidated(id, false).published?.validated).toBe(false);
+  });
+
+  it('setValidated does not touch `updated`', () => {
+    // Validating is not a content edit: it must not reshuffle "newest first" ordering.
+    const id = newPublished('no-reorder');
+    const before = store.findVersionById(AUTHOR, id)?.updated;
+    store.setValidated(id, true);
+    expect(store.findVersionById(AUTHOR, id)?.updated).toBe(before);
+  });
+
+  it('setValidated refuses a version that is not published', () => {
+    const fileId = newFile('unpublished');
+    const working = store.listVersions(AUTHOR, fileId)[0].id;
+    expect(() => store.setValidated(working, true)).toThrow(ScriptStoreError);
+  });
+
+  it('preserves validated across an owner metadata edit', () => {
+    const id = newPublished('metadata-edit');
+    store.setValidated(id, true);
+    const edited = store.updatePublishedVersion(AUTHOR, id, {
+      ...PUBLISHED,
+      title: 'a new title',
+    });
+    expect(edited.published?.validated).toBe(true);
+  });
+
+  it('an owner cannot clear validated by editing metadata', () => {
+    const id = newPublished('cannot-clear');
+    store.setValidated(id, true);
+    const edited = store.updatePublishedVersion(AUTHOR, id, { ...PUBLISHED, validated: false });
+    expect(edited.published?.validated).toBe(true);
+  });
+
+  it('an owner cannot grant validated by editing metadata', () => {
+    const id = newPublished('cannot-grant');
+    const edited = store.updatePublishedVersion(AUTHOR, id, { ...PUBLISHED, validated: true });
+    expect(edited.published?.validated).toBe(false);
+  });
+
+  it('a newly published version starts unvalidated even when an earlier one is validated', () => {
+    // The core reason validation is per-version: republishing ships new code.
+    const fileId = newFile('bump');
+    const v1 = store.publish(
+      AUTHOR, fileId,
+      payload({ name: 'bump', version: '0.1', published: PUBLISHED }),
+    );
+    store.setValidated(v1.id as string, true);
+
+    const v2 = store.publish(
+      AUTHOR, fileId,
+      payload({ name: 'bump', version: '0.2', code: 'const evil = 1;', published: PUBLISHED }),
+    );
+    expect(v2.published?.validated).toBe(false);
+    expect(store.findVersionById(AUTHOR, v1.id as string)?.published?.validated).toBe(true);
+  });
+});
+
+describe('ScriptStore.listAllPublished', () => {
+  it('spans authors and filters on the validated flag', () => {
+    const mine = store.publish(
+      AUTHOR, newFile('admin-list-a'),
+      payload({ name: 'admin-list-a', version: '0.1', published: { public: true, fulfillments: [] } }),
+    );
+    store.create('someoneelse', payload({ name: 'admin-list-b' }));
+    store.setValidated(mine.id as string, true);
+
+    const validated = store.listAllPublished({ validated: true });
+    expect(validated.scripts.map((s) => s.id)).toContain(mine.id);
+
+    const unvalidated = store.listAllPublished({ validated: false });
+    expect(unvalidated.scripts.map((s) => s.id)).not.toContain(mine.id);
+    // Rows predating the feature have no `validated` key at all; `IS NOT 1` must
+    // still count them as unvalidated rather than dropping them from the list.
+    expect(unvalidated.total).toBeGreaterThan(0);
+  });
+
+  it('filters by author and reports a total independent of the limit', () => {
+    const all = store.listAllPublished({ author: AUTHOR });
+    expect(all.scripts.length).toBeGreaterThan(1);
+
+    const paged = store.listAllPublished({ author: AUTHOR, limit: 1 });
+    expect(paged.scripts).toHaveLength(1);
+    expect(paged.total).toBe(all.total);
+
+    expect(store.listAllPublished({ author: 'nobody' }).total).toBe(0);
+  });
+});

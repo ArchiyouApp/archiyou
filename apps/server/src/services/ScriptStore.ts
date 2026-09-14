@@ -35,6 +35,11 @@ export interface VersionMeta {
   updated: number;
 }
 
+/** `published` with `validated` forced off, whatever the caller sent. */
+function unvalidated(published: ScriptData['published']): ScriptData['published'] {
+  return published ? { ...published, validated: false } : null;
+}
+
 export class ScriptStore {
   /** Validate + normalize an incoming payload via the core Script model. */
   private normalize(data: unknown): ScriptData {
@@ -47,11 +52,17 @@ export class ScriptStore {
    *  FRONTEND_URL. The stored value is stamped at publish time, so a row published
    *  against a different environment (or before FRONTEND_URL was set) keeps handing
    *  out a dead `http://localhost:5173/…` link. Author/name/version are stable for a
-   *  published version, so re-deriving is always safe. */
+   *  published version, so re-deriving is always safe.
+   *
+   *  `validated` is normalized to an explicit boolean here (rows predating the feature
+   *  have no such key). Callers gate server-side execution on it — see routes/execute.ts
+   *  — so `undefined` vs `false` must never be a distinction they have to make. */
   private publishedWithCurrentUrl(row: ScriptVersionRow): ScriptData['published'] {
     const published = (row.published ?? null) as ScriptData['published'];
-    if (!published || !row.author || !row.name || !row.version) return published;
-    return { ...published, url: configuratorUrl(row.author, row.name, row.version) };
+    if (!published) return published;
+    const validated = published.validated === true;
+    if (!row.author || !row.name || !row.version) return { ...published, validated };
+    return { ...published, validated, url: configuratorUrl(row.author, row.name, row.version) };
   }
 
   /** Turn a DB row into the ScriptData wire shape (ISO dates like Script.toData). */
@@ -93,7 +104,13 @@ export class ScriptStore {
       code: data.code,
       params: (data.params ?? null) as ScriptData['params'],
       presets: (data.presets ?? null) as ScriptData['presets'],
-      published: (data.published ?? null) as ScriptData['published'],
+      // `validated` is admin-only state and is forced off here, on the one funnel every
+      // INSERT goes through (save/share/publish) — so a client cannot publish itself into
+      // server-side execution. That is also the right semantics: an insert is a new
+      // (fileId, version) carrying new `code`, which nobody has reviewed yet. Only
+      // setValidated() turns it on; updatePublishedVersion() carries an existing one
+      // forward, because editing metadata leaves `code` untouched.
+      published: unvalidated(data.published),
       shared: opts.shared,
       // Server-stamped URL only (routes/scripts.ts writes the file first). Clients cannot
       // set this to an arbitrary value: the routes overwrite it before we ever get here.
@@ -185,14 +202,51 @@ export class ScriptStore {
     return this.latestReleasePerFile(rows).map((r) => this.rowToData(r));
   }
 
-  /** All rows in a library for an author/name (any version), newest first. */
+  /** The fileId an author/name refers to — rename-aware.
+   *
+   *  Scripts are referenced by name (`$component('./wall')`, library URLs), but a name
+   *  lives on each version row, so renaming a file leaves its older versions under the
+   *  old name. Resolution order:
+   *    1. a file whose LATEST row carries the name (the name as it is today);
+   *    2. otherwise the file that most recently carried it — a renamed script, so old
+   *       references keep resolving to that same file.
+   *  With `col`, only files that have rows in that library count. Case-insensitive,
+   *  like library URLs. */
+  resolveFileIdByName(author: string, name: string, col?: AnyColumn): string | null {
+    const a = author.toLowerCase();
+    const named = db
+      .select({ fileId: scriptVersions.fileId })
+      .from(scriptVersions)
+      .where(and(eq(scriptVersions.author, a), sql`lower(${scriptVersions.name}) = ${name.toLowerCase()}`))
+      .orderBy(desc(scriptVersions.updated))
+      .all();
+
+    const candidates = [...new Set(named.map((r) => r.fileId))].filter(
+      (fileId) =>
+        !col ||
+        db
+          .select({ id: scriptVersions.id })
+          .from(scriptVersions)
+          .where(and(eq(scriptVersions.author, a), eq(scriptVersions.fileId, fileId), isNotNull(col)))
+          .get() !== undefined,
+    );
+    if (candidates.length === 0) return null;
+
+    const current = candidates.find((fileId) => this.fileRows(a, fileId)[0]?.name?.toLowerCase() === name.toLowerCase());
+    return current ?? candidates[0];
+  }
+
+  /** All rows in a library for an author/name (any version), newest first.
+   *  Rename-aware (see resolveFileIdByName): an old name yields the rows of the file
+   *  that carried it, including the versions saved under its new name. */
   private libraryRows(col: AnyColumn, author: string, name: string): ScriptVersionRow[] {
+    const a = author.toLowerCase();
+    const fileId = this.resolveFileIdByName(a, name, col);
+    if (!fileId) return [];
     return db
       .select()
       .from(scriptVersions)
-      // Case-insensitive name match: names are stored with their original case
-      // but addressed case-insensitively in library URLs.
-      .where(and(eq(scriptVersions.author, author.toLowerCase()), sql`lower(${scriptVersions.name}) = ${name.toLowerCase()}`, isNotNull(col)))
+      .where(and(eq(scriptVersions.author, a), eq(scriptVersions.fileId, fileId), isNotNull(col)))
       .orderBy(desc(scriptVersions.updated))
       .all();
   }
@@ -247,9 +301,60 @@ export class ScriptStore {
       });
   }
 
+  /** Every published version across ALL authors, newest `updated` first — the admin
+   *  configurator list (routes/admin.ts). The only list here that is not author-scoped.
+   *
+   *  `validated` filtering is done in SQL against the JSON blob rather than in JS so the
+   *  LIMIT is applied by SQLite: json_extract returns 1 for a JSON `true`, and `IS NOT 1`
+   *  is what also catches rows predating the feature, where the key is simply absent.
+   *  `q` matches the script name or the author handle. */
+  listAllPublished(opts: {
+    author?: string;
+    validated?: boolean;
+    q?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): { total: number; scripts: ScriptData[] } {
+    const filters = [isNotNull(scriptVersions.published)];
+    if (opts.author) filters.push(eq(scriptVersions.author, opts.author.toLowerCase()));
+    if (opts.validated === true) {
+      filters.push(sql`json_extract(${scriptVersions.published}, '$.validated') = 1`);
+    } else if (opts.validated === false) {
+      filters.push(sql`json_extract(${scriptVersions.published}, '$.validated') IS NOT 1`);
+    }
+    if (opts.q) {
+      const like = `%${opts.q.toLowerCase()}%`;
+      filters.push(sql`(lower(${scriptVersions.name}) LIKE ${like} OR lower(${scriptVersions.author}) LIKE ${like})`);
+    }
+    const where = and(...filters);
+
+    const total = db
+      .select({ n: sql<number>`count(*)` })
+      .from(scriptVersions)
+      .where(where)
+      .get()?.n ?? 0;
+
+    const rows = db
+      .select()
+      .from(scriptVersions)
+      .where(where)
+      .orderBy(desc(scriptVersions.updated))
+      .limit(opts.limit ?? 50)
+      .offset(opts.offset ?? 0)
+      .all();
+
+    return { total, scripts: rows.map((r) => this.rowToData(r)) };
+  }
+
   /** Update the `published` metadata of a single already-published version IN PLACE
    *  (the version + code snapshot are unchanged — editing a configurator must not
-   *  create a new version). Ownership-checked by row id + author. */
+   *  create a new version). Ownership-checked by row id + author.
+   *
+   *  The stored `validated` is carried forward and the caller's value ignored. This is
+   *  the one write path that must NOT reset it (unlike toRow(), which forces it off on
+   *  every insert): `code` is untouched here, so an admin's review still stands, and the
+   *  owner editing their own title must not knock their configurator off server-side
+   *  execution — nor be able to grant it. */
   updatePublishedVersion(author: string, versionId: string, published: ScriptData['published']): ScriptData {
     const row = db
       .select()
@@ -257,12 +362,43 @@ export class ScriptStore {
       .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
       .get();
     if (!row) throw new ScriptStoreError('not_found', `Version ${versionId} not found`);
+    const stored = (row.published ?? null) as ScriptData['published'];
+    const next = published ? { ...published, validated: stored?.validated === true } : null;
     const now = new Date();
     db.update(scriptVersions)
-      .set({ published: published ?? null, updated: now })
+      .set({ published: next, updated: now })
       .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
       .run();
-    return this.rowToData({ ...row, published: (published ?? null) as ScriptVersionRow['published'], updated: now });
+    return this.rowToData({ ...row, published: next as ScriptVersionRow['published'], updated: now });
+  }
+
+  /** Turn server-side execution on or off for one published version. ADMIN ONLY —
+   *  deliberately not author-scoped, unlike every other mutator here, because the whole
+   *  point is that the owner cannot vouch for their own code (routes/admin.ts holds the
+   *  requireAdmin gate).
+   *
+   *  Like stampThumbnail() this does NOT touch `updated`: validating is not a content edit
+   *  and must not reshuffle the "newest first" ordering of any list. */
+  setValidated(versionId: string, validated: boolean): ScriptData {
+    const row = db.select().from(scriptVersions).where(eq(scriptVersions.id, versionId)).get();
+    if (!row) throw new ScriptStoreError('not_found', `Version ${versionId} not found`);
+    const stored = (row.published ?? null) as ScriptData['published'];
+    if (!stored) throw new ScriptStoreError('invalid', `Version ${versionId} is not published`);
+    const next = { ...stored, validated };
+    db.update(scriptVersions)
+      .set({ published: next })
+      .where(eq(scriptVersions.id, versionId))
+      .run();
+    return this.rowToData({ ...row, published: next as ScriptVersionRow['published'] });
+  }
+
+  /** One version by id from ANY author, or null. The admin review screen
+   *  (routes/admin.ts) is the only caller: every other read here is deliberately
+   *  scoped to its owner, so this stays separate rather than making `author`
+   *  optional on findVersionById and inviting an accidental unscoped read. */
+  findAnyVersionById(versionId: string): ScriptData | null {
+    const row = db.select().from(scriptVersions).where(eq(scriptVersions.id, versionId)).get();
+    return row ? this.rowToData(row) : null;
   }
 
   /** One version by id, or null. Unlike getVersion() this needs no fileId and never
@@ -390,6 +526,14 @@ export class ScriptStore {
 
   getFile(author: string, fileId: string): ScriptData {
     return this.rowToData(this.latestRow(author, fileId));
+  }
+
+  /** Latest version of the author's own file that has — or used to have — `name`.
+   *  Lets a `$component('./oldname')` survive a rename. */
+  getFileByName(author: string, name: string): ScriptData {
+    const fileId = this.resolveFileIdByName(author, name);
+    if (!fileId) throw new ScriptStoreError('not_found', `No script named "${name}"`);
+    return this.getFile(author, fileId);
   }
 
   listVersions(author: string, fileId: string): VersionMeta[] {

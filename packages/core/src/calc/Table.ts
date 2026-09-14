@@ -29,13 +29,21 @@ export class Table
     _idColumn:string; // name of the column used as identity/default group key (see id())
     _component:string; // component name if this table came from a component
     _footers:Array<{ spec:FooterSpec, options:FooterOptions }> = []; // footer aggregation blocks, kept separate from row data
+    _xlsx:ArrayBuffer = null; // a ready-made workbook that replaces the generated one in toExcel() — see xlsx()
 
     KNOWN_AGG_KEYWORDS:Array<FooterAggKeyword> = ['sum','average','avg','mean'];
 
     /** Make Table from rows with Objects or values */
     constructor(data:DataRows, columns:Array<string>=null)
     {
-        if(isDataRowsValues(data)) 
+        if(Array.isArray(data) && data.length === 0)
+        {
+            // An empty table is legitimate: rows come later with addRow(), or the
+            // table only carries a file (see xlsx()). The typeguards below would
+            // read data[0] and throw.
+            this._dataRows = [];
+        }
+        else if(isDataRowsValues(data)) 
         {
             // only rows with values [[r1v1,r1v2],[r2v1,r2v2]], make up column names
             // Set the columns later with setColumns()
@@ -202,7 +210,7 @@ export class Table
     /** Get size of table in rows and columns */
     shape():Array<number> // [rows,columns]
     {
-        return [this._dataRows.length, Object.keys(this._dataRows[0])?.length];
+        return [this._dataRows.length, this._dataRows[0] ? Object.keys(this._dataRows[0]).length : 0];
     }
     
     size():Array<number>
@@ -518,12 +526,45 @@ export class Table
         return this._dataRows
     }
 
+    /**
+     * Attach a ready-made .xlsx to this table. toExcel() — and with it the
+     * `<pipeline>/tables/<name>/xlsx` output — then delivers these bytes instead
+     * of a workbook generated from the rows.
+     *
+     * This is how a module hands the script a spreadsheet it produced (the
+     * cloudcalc module's `wb.fill(input).export(name)`, for instance) without
+     * the output machinery having to know about it. Accepts the bytes, or a
+     * base64 string as they arrive over a JSON hop.
+     */
+    xlsx(data:ArrayBuffer|Uint8Array|string):this
+    {
+        if(typeof data === 'string')
+        {
+            this._xlsx = base64ToArrayBuffer(data);
+        }
+        else if(data instanceof Uint8Array)
+        {
+            this._xlsx = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+        }
+        else if(data instanceof ArrayBuffer)
+        {
+            this._xlsx = data;
+        }
+        else {
+            throw new Error(`Table::xlsx(): expected an ArrayBuffer, Uint8Array or base64 string, got ${typeof data}`);
+        }
+        return this;
+    }
+
     /** Export this Table to Excel format in ArrayBuffer 
      * We use write-excel-file (https://www.npmjs.com/package/write-excel-file)
-     *  And use automatic value type detection
+     *  And use automatic value type detection.
+     *  A workbook attached with xlsx() is returned as-is.
     */
     async toExcel():Promise<ArrayBuffer>
     {
+        if(this._xlsx){ return this._xlsx; }
+
         // header row
         const headerRow = this.columns().map( colName => ({ value: colName, fontWeight: 'bold' }) );
         const dataRows = this._dataRows.map( row => 
@@ -638,4 +679,18 @@ export class Table
     {
         return Array.from({length: (endIndex - startIndex)}, (v, k) => k + startIndex);
     }
+}
+
+/** Decode base64 into an ArrayBuffer, in the browser (atob) and in Node (Buffer). */
+function base64ToArrayBuffer(b64:string):ArrayBuffer
+{
+    if(typeof atob === 'function')
+    {
+        const bin = atob(b64);
+        const out = new Uint8Array(bin.length);
+        for(let i = 0; i < bin.length; i++){ out[i] = bin.charCodeAt(i); }
+        return out.buffer;
+    }
+    const buf = Buffer.from(b64, 'base64');
+    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
 }

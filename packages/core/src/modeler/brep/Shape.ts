@@ -545,7 +545,8 @@ export class Shape
     }
 
     /** Mark this Shape as temporary: take it out of the scene and keep it out. The flag is
-     *  sticky and propagates to derived Shapes, so helper geometry stays invisible. */
+     *  sticky and propagates to derived Shapes, so helper geometry stays invisible.
+     *  addToScene() clears the flag again. */
     tmp():this
     {
         this._suppressScene = true;
@@ -2889,11 +2890,18 @@ export class Shape
         return this;
     }
 
-    /** Alias of cutoffBy */
-    @checkInput(['AnyShape',['Boolean', false]], ['auto', 'auto'])
-    trim(other:AnyShape, keepSmallest?:boolean)
+    /** Trim this Shape with an axis-aligned plane - the same as cutoff() */
+    trim(axisNormal:MainAxis, level?:number, smallest?:boolean):this;
+    /** Trim this Shape with another Shape - the same as cutoffBy() */
+    trim(other:AnyShape, keepSmallest?:boolean):this;
+    /** Trim this Shape, like meshup's Mesh.trim(), Polygon.trim() and Curve.trim():
+     *  - `trim(other, keepSmallest?)`: cut by another Shape and keep a piece - see cutoffBy()
+     *  - `trim(axisNormal, level?, smallest?)`: cut by the plane `{ <axis> = level }` - see cutoff() */
+    trim(otherOrAxis:AnyShape|MainAxis, keepOrLevel?:boolean|number, smallest?:boolean):this
     {
-        return this.cutoffBy(other)
+        return isMainAxis(otherOrAxis)
+            ? this.cutoff(otherOrAxis, keepOrLevel as number, smallest)
+            : this.cutoffBy(otherOrAxis, keepOrLevel as boolean);
     }
 
 
@@ -4561,19 +4569,22 @@ export class Shape
 
     /** Add this Shape to the host Modeler's scene, at the active layer.
      *
+     *  Clears the sticky `tmp()` flag — `addToScene()` is the documented way back in.
      *  A standalone Shape (one not created through a Modeler) has no scene to join, so this
      *  is a no-op there — brep is usable on its own. Mirrors meshup Shape.addToScene(). */
-    addToScene(force:boolean=false):Shape
+    addToScene():Shape
     {
-        // `tmp()` opts a Shape out of the scene; force overrides that.
-        if(force){ this._isTmp = false; this._suppressScene = false; }
-        if(this._isTmp || this._suppressScene)
-        {
-            console.warn(`${this.type}::addToScene(): this Shape is marked tmp() - either ` +
-                `directly or inherited from the Shape it was made from - so it stays out of ` +
-                `the scene. Use addToScene(true) to force it in.`);
-            return this;
-        }
+        this._isTmp = false;
+        this._suppressScene = false;
+        return this._addToScene();
+    }
+
+    /** Internal addToScene() that respects `tmp()`: a Shape marked tmp (directly or inherited
+     *  from the Shape it was made from) silently stays out of the scene. Use this, not the
+     *  public addToScene(), when adding the results of an operation. */
+    _addToScene():Shape
+    {
+        if(this._isTmp || this._suppressScene){ return this; }
 
         const modeler = hostModeler(this);
         if(modeler?.addToScene)
@@ -5268,13 +5279,16 @@ export class Shape
     }
 
     //// SHAPECOLLECTION API ////
-    /* For robustness give warning if user 
-        uses the most common ShapeCollection methods.
+    /* For robustness a single Shape answers the most common ShapeCollection methods too:
+        an op that MAY split (cutoffBy, difference, intersections) hands back one Shape or a
+        collection depending on the geometry, and a script cannot know which in advance.
     */
 
-    first()
+    /** The first Shape of a single Shape is the Shape itself. Used to be an empty stub that
+     *  returned undefined, so `shape.cutoffBy(other).first()` silently lost the shape. */
+    first():this
     {
-        
+        return this;
     }
 
     //// EXPORT ////

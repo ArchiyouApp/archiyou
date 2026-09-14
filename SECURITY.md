@@ -30,14 +30,36 @@ separate process.
   `process.env`.
 
 Server-side execution is therefore **disabled by default**. `POST
-/scripts/published/execute/...` requires authentication *and* the script's author
-must appear in `SERVER_EXECUTION_AUTHORS`, which ships empty. Only add authors
-whose code you are willing to run on that machine.
+/scripts/published/execute/...` has two independent gates and both ship off; with
+neither set, every request 403s.
 
-If you enable it, keep the hardening in the root `docker-compose.yml`: the worker runs
-as a non-root user with all capabilities dropped, gets `cpus`/`mem_limit`/
-`pids_limit`, and is deliberately given a minimal environment that excludes
-`SERVER_JWT_SECRET` and the Mailgun key.
+1. **Trusted authors.** An authenticated caller, where the *script's* author appears
+   in `SERVER_EXECUTION_AUTHORS` (ships empty). Coarse-grained: it trusts everything
+   that author ever publishes, including code pushed after you added them.
+2. **Admin-validated scripts.** `SERVER_EXECUTION_VALIDATED=1` plus a specific
+   published version marked `published.validated` by an admin. The caller may be
+   **anonymous** — a published configurator's visitor has no account — so this path
+   is per-IP rate limited (`SERVER_EXECUTION_RATE_LIMIT`).
+
+The second path deliberately trades caller identity for code review. What is being
+trusted is one immutable `(fileId, version)` snapshot: a published row's `code` never
+changes, publishing a new version starts unvalidated, and `validated` is writable only
+by an admin — `ScriptStore.toRow()` forces it off on every insert, so a client cannot
+publish itself into server-side execution. **Validate a script only after reading its
+code**; the `/admin` screen shows the source for exactly that reason. Anonymous
+execution is still arbitrary code running unsandboxed in the worker, so keep the
+container hardening below.
+
+The worker that runs those scripts is part of the standard `docker-compose.yml` stack,
+so it starts with everything else. **That on its own enables nothing**: with both gates
+above unset the API never enqueues a job and the worker idles on an empty queue. The
+`.env` settings are the switch, not the container.
+
+Keep the hardening on that service: it runs as a non-root user with all capabilities
+dropped, gets `cpus`/`mem_limit`/`pids_limit`, mounts the code read-only, and is
+deliberately given a minimal environment that excludes `SERVER_JWT_SECRET` and the
+Mailgun key. That last rule is enforced in CI against the rendered config
+(`apps/server/scripts/check-worker-env.py`).
 
 `SERVER_EXECUTION_TIMEOUT_MS` bounds a run, but **only partially**: script code
 shares the worker's event loop, so a tight synchronous loop (`while(true){}`)
@@ -97,6 +119,9 @@ arbitrary hosts.
       The server refuses to boot in production without it.
 - [ ] `SERVER_EXECUTION_AUTHORS` left empty unless you truly need server-side
       execution.
+- [ ] `SERVER_EXECUTION_VALIDATED` left unset unless you intend to run
+      admin-validated scripts for anonymous callers, and you have someone reading
+      script code before validating it.
 - [ ] `REDIS_PASW` set **in the repo-root `.env`** — that is where compose reads
       it from, and without it the root `docker-compose.yml` starts Redis with
       `--requirepass ""`, i.e. no password. Compose only warns; it does not fail.

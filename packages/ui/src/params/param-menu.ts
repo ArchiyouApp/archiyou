@@ -803,6 +803,7 @@ export class ParamMenu extends SignalWatcher(LitElement)
     }
 
     .tab-delete-btn {
+      margin-left: var(--space-md); /* keep it clear of the label so it isn't hit by accident */
       opacity: 0;
       transition: opacity 0.1s;
     }
@@ -842,10 +843,9 @@ export class ParamMenu extends SignalWatcher(LitElement)
       flex-shrink: 0;
       /* The ONE scroll container for the params. Object-list rows no longer cap their own
          height, so a fully expanded opening — five entry rows plus a six-field form — has to
-         fit here. Still capped, because this menu is flex-shrink:0 above the code box and
-         unbounded growth would eat the editor; 70vh leaves the code box a usable strip on a
-         short screen, and the scrollbar covers the rest. */
-      max-height: min(70vh, 640px);
+         fit here. Capped at 30vh because this menu is flex-shrink:0 above the code box and
+         unbounded growth would eat the editor; the scrollbar covers the rest. */
+      max-height: 30vh;
       overflow-y: auto;
     }
 

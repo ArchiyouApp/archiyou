@@ -115,7 +115,7 @@ which ones it can produce:
 | --- | --- | --- |
 | model | `default/model/glb` | `glb`, `gltf`, `step`, `stl`, `svg`, `dxf`, `obj`, `dae`, `amf` |
 | docs | `default/docs/spec/pdf` | `pdf`, `svg`, `svg-pages`, `json` |
-| tables | `default/tables/parts/xlsx` | `xlsx`, `json`, `gsheets` |
+| tables | `default/tables/parts/xlsx` | `xlsx`, `json` |
 | metrics | `default/metrics/weight/json` | `json`, `xlsx` |
 
 The name segment accepts a wildcard, so `default/docs/*/svg` renders every documentation page a

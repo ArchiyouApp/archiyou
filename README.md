@@ -118,7 +118,7 @@ The editor's API base URL is baked in **at build time** — see
 
 ## Deploying
 
-The `docker-compose.yml` in the root of this monorepo offers a complete single-host deployment: `Caddy` as proxy and automatic HTTPS in front of the API, Editor webapp and server-side execution stack (`BullMQ` and `Redis`). Currently the last one is disabled by default. Uncomment the worker service in the `docker-compose.yml` to enable server-side execution. 
+The `docker-compose.yml` in the root of this monorepo offers a complete single-host deployment: `Caddy` as proxy and automatic HTTPS in front of the API, Editor webapp and server-side execution stack (`BullMQ` and `Redis`). The last one is off by default — see [Server-side execution](#server-side-execution) below.
 
 ### Configuration
 
@@ -131,6 +131,72 @@ cp .env.example .env
 pnpm docker:prod          
 # or just: docker compose up
 ```
+
+### Server-side execution
+
+By default every script runs in the visitor's browser, inside a Web Worker. A published
+configurator therefore downloads the CAD kernel — roughly 26MB — before it can draw
+anything.
+
+Running a script on the server instead removes that download entirely, at a real cost:
+**the Runner has no sandbox**, so a script executed server-side gets full Node capability
+in the worker process. Read [SECURITY.md](SECURITY.md) before enabling any of this.
+
+There are two independent ways to let a script through, and both ship off:
+
+| | Who may call | What is trusted |
+|---|---|---|
+| `SERVER_EXECUTION_AUTHORS` | authenticated | an **author** — everything they ever publish, including code pushed later |
+| `SERVER_EXECUTION_VALIDATED` | anyone, including anonymous | one **version** an admin validated after reading its code |
+
+The second is what makes published configurators light: a visitor has no account, and a
+published row's `(fileId, version)` is unique with immutable `code`, so validating binds
+to exactly the bytes that were reviewed. Republishing starts unvalidated.
+
+```bash
+# 1. in the repo-root .env
+SERVER_EXECUTION_VALIDATED=1
+#    REDIS_PASW must be set here too — compose only WARNS if it is missing,
+#    and Redis then starts with no password at all.
+
+# 2. start the stack. The execution worker is part of it and needs no extra flag —
+#    with step 1 unset it would simply have idled on an empty queue.
+pnpm docker:prod
+
+# 3. make yourself an operator. There is no HTTP route for this on purpose —
+#    holding admin must not let you hand admin out.
+docker compose exec api pnpm admin:users --user <handle> --grant-admin
+```
+
+Then open `/admin` in the editor, read a configurator's code, and switch it to validated.
+That version now runs server-side and its configurator stops loading a kernel; append
+`?exec=client` to any configurator URL to force the browser path and compare.
+
+To turn it off again, unset `SERVER_EXECUTION_VALIDATED` and restart: the API goes back
+to 403ing every execution request, and the worker goes back to idling.
+
+#### Working on it locally
+
+No image build, no containers except Redis — the worker runs straight out of your
+working directory via `tsx`, so an edit to `apps/server` or `packages/core` is picked up
+on save:
+
+```bash
+pnpm build:meshup   # once — the worker loads the mesh kernel from packages/meshup/dist
+pnpm docker:dev     # Redis (the only piece that needs a container)
+pnpm dev:worker     # the execution worker, from source, in watch mode
+pnpm dev            # editor + API, in another terminal
+```
+
+`docker:*` scripts run containers, `dev:*` scripts run code from your working tree —
+so an edit to `apps/server` or `packages/core` is live on the next run. Set
+`SERVER_EXECUTION_VALIDATED=1` in your `.env` too, or the API will refuse to enqueue
+anything. `pnpm docker:dev:down` stops Redis when you are finished.
+
+If you would rather run the whole thing in containers — to rehearse a deployment rather
+than to work on the code — `apps/server/docker-compose.yml` starts api + redis + worker
+that way (`pnpm --filter @archiyou/server docker:dev`). It builds the monorepo image and
+runs a full editor build first, so expect minutes, not seconds.
 
 There is no build step to run: The Docker stack uses the code in the monorepo, installs dependencies, sets up the workspaces and builds the web app. A fresh deploy is as simple as:
 

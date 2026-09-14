@@ -15,7 +15,7 @@ export type ScriptOutputFormatInternal = 'internal'; // basics
 
 export type ScriptOutputFormatModel = 'buffer'|'gltf'|'glb'|'step'|'stl'|'svg'|'dae'|'obj'|'dxf'|'amf'; // TODO:brep,dxf
 export type ScriptOutputFormatMetric = 'json'|'xlsx';
-export type ScriptOutputFormatTable = 'json'|'xlsx'|'gsheets';
+export type ScriptOutputFormatTable = 'json'|'xlsx';
 export type ScriptOutputFormatDoc = 'json'|'pdf'|'svg'|'svg-pages';
 export type ScriptOutputFormat = ScriptOutputFormatInternal|ScriptOutputFormatModel
                                 |ScriptOutputFormatMetric|ScriptOutputFormatTable|

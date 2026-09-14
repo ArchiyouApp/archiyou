@@ -22,7 +22,7 @@ dotEnvConfig();
 
 //// SET SCRIPT TO EXECUTE ////
 const SCRIPT_AUTHOR = 'test'; // archiyou
-const SCRIPT_NAME =  'pipeline';  // 'gsheets', urhousesketch'; // pipeline
+const SCRIPT_NAME =  'pipeline';  // 'urhousesketch'; // pipeline
 //// END SETTINGS ////
 
 const broker = await new ExecutionBroker().init(); // default Redis config is used
@@ -55,7 +55,6 @@ const taskResult = await broker.submitTask(
             //'techdraw/model/dxf' // NOTE:text-based
             //'default/model/dae'
             //'default/model/obj'
-            //'offer/tables/*/gsheets' // TODO: Make more robust - now it still checks tables
             // 'extra/model/glb'
             'techdraw/model/dxf'
         ],

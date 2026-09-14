@@ -116,3 +116,29 @@ describe('calc.Table id / sort / group / append', () =>
         expect(a.numRows()).toBe(3) // first bad row aborts before push
     })
 })
+
+describe('Table — attached workbook (xlsx())', () =>
+{
+    it('can be created empty', () =>
+    {
+        const t = new Table([]);
+        expect(t.numRows()).toBe(0);
+        expect(t.columns()).toEqual([]);
+    });
+
+    it('returns the attached bytes from toExcel() instead of generating a workbook', async () =>
+    {
+        const bytes = new Uint8Array([0x50, 0x4b, 3, 4, 9, 9]);
+        const t = new Table([]).xlsx(bytes);
+        expect(new Uint8Array(await t.toExcel())).toEqual(bytes);
+
+        // base64, as it arrives from a server module over JSON
+        const fromB64 = new Table([]).xlsx(Buffer.from(bytes).toString('base64'));
+        expect(new Uint8Array(await fromB64.toExcel())).toEqual(bytes);
+    });
+
+    it('rejects anything that is not bytes', () =>
+    {
+        expect(() => new Table([]).xlsx(42 as any)).toThrow(/expected an ArrayBuffer/);
+    });
+});

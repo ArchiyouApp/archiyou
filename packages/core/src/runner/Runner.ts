@@ -100,11 +100,15 @@ export class Runner
     /** Where to look up a $component('./name') that nothing linked in — the author's
      *  shared library. Set per run from the request (componentLibraryUrl + the script's
      *  author); null in the editor, where local scripts are linked instead. */
-    private _componentLibrary: { url: string; author: string } | null = null;
+    private _componentLibrary: { url: string; author: string; authToken?: string; fileId?: string } | null = null;
     /** In-flight/settled shared-library lookups by local component name. A script that
      *  uses the same component four times (and the double prefetch on execute) must not
      *  cause four fetches — and a miss must be remembered as a miss. */
     private _sharedComponentFetches: Record<string, Promise<Script|null>> = {};
+    /** Same memo for the rename fallback (_getRenamedComponentScript), keyed by old name.
+     *  Holds the server's ScriptData rather than a Script: linked scripts are re-linked
+     *  every run, so the matching working copy is looked up again each time. */
+    private _renamedComponentFetches: Record<string, Promise<ScriptData|null>> = {};
     /** The chain of components currently being executed, innermost last, by reference.
      *  A component already on it would recurse forever, so it is refused with the chain
      *  in the message. Also caps how deep nesting may go. Unwound in the finally of
@@ -129,7 +133,6 @@ export class Runner
      *  bundle. Empty and inert unless the request carries a module catalog. */
     private _moduleRegistry: ModuleRegistry = new ModuleRegistry();
     private _pipelines:Array<Pipeline> = []; // keep track of defined pipelines
-    _pipelineExports:Array<any> = []; // HACK: if we want to dump some outputs - for example in pipelines (see calc.gsheets pipeline)
 
 
     //// SETTINGS ////
@@ -1296,8 +1299,6 @@ ${contextLines.join('\n')}
         const knownParamNames = Object.keys(request?.script?.params ?? {});
         scope._archiyou.interactor?.beginRun(scriptKey, knownParamNames, request?.selection ?? [], scope._paramManager);
         // scope._archiyou.gizmos = []; // TODO AFTER REFACTOR
-
-        this._pipelineExports = []; // reset pipelineExports (to avoid from previous runs)
     }
 
     //// EXECUTION COMPONENT SCRIPTS ////
@@ -1729,16 +1730,8 @@ ${contextLines.join('\n')}
             // set of Scripts handed to runner.linkComponentScripts(). Names are
             // already lowercased by Script.fromData(), so compare lowercased.
             const localName = path.slice(2).toLowerCase();
-            const linked = this._linkedComponentScripts.find(s => s.name === localName);
-            if (linked)
-            {
-                console.info(`$component('${path}')::_prepareComponentScript(): Resolved against linked component '${linked.name}'.`);
-                return linked;
-            }
-            // Nothing linked: a published configurator, where the visitor holds no copy of
-            // the author's workspace. Fall back to the author's shared library.
-            const shared = await this._getSharedComponentScript(localName);
-            if (shared) return shared;
+            const resolved = await this._resolveLocalComponentScript(localName);
+            if (resolved) return resolved;
 
             console.warn(`$component('${path}')::_prepareComponentScript(): No linked component matched local name '${localName}'.`);
             return null;
@@ -1762,18 +1755,32 @@ ${contextLines.join('\n')}
         else if(!path.includes('/') && !path.includes('.') && !path.includes('://'))
         {
             // Bare script name like 'timberwall' — resolve against linked component scripts
-            const localName = path.toLowerCase();
-            const linked = this._linkedComponentScripts.find(s => s.name === localName);
-            if (linked)
-            {
-                console.info(`$component('${path}')::_prepareComponentScript(): Resolved bare name against linked component '${linked.name}'.`);
-                return linked;
-            }
-            return await this._getSharedComponentScript(localName); // same fallback as './name'
+            return await this._resolveLocalComponentScript(path.toLowerCase()); // same as './name'
         }
         else {
             return null;
         }
+    }
+
+    /** Resolve a workspace-local component name ('./wall' or bare 'wall'), in order:
+     *    1. a linked script with that name (the editor's workspace);
+     *    2. a linked script that USED to have that name — it was renamed, and the
+     *       referencing script still uses the old one (see _getRenamedComponentScript);
+     *    3. the author's shared library (a published configurator) — which is itself
+     *       rename-aware server-side. */
+    async _resolveLocalComponentScript(localName:string):Promise<Script|null>
+    {
+        const linked = this._linkedComponentScripts.find(s => s.name === localName);
+        if (linked)
+        {
+            console.info(`$component('./${localName}')::_resolveLocalComponentScript(): Resolved against linked component '${linked.name}'.`);
+            return linked;
+        }
+
+        const renamed = await this._getRenamedComponentScript(localName);
+        if (renamed) return renamed;
+
+        return await this._getSharedComponentScript(localName);
     }
 
     //// COMPONENTS FROM THE AUTHOR'S SHARED LIBRARY ////
@@ -1782,7 +1789,7 @@ ${contextLines.join('\n')}
      *  one. Needs both halves: where the backend is (componentLibraryUrl, possibly '' for
      *  a root-relative same-origin call) and whose workspace to look in (the script's
      *  author). A Script/string request carries neither, so those never get a fallback. */
-    _getComponentLibraryFromRequest(request:string|Script|RunnerScriptExecutionRequest):{ url:string; author:string }|null
+    _getComponentLibraryFromRequest(request:string|Script|RunnerScriptExecutionRequest):{ url:string; author:string; authToken?:string; fileId?:string }|null
     {
         if(typeof request !== 'object' || request === null || Script.isScript(request)) return null;
 
@@ -1793,7 +1800,54 @@ ${contextLines.join('\n')}
         const author = (req.script as any)?.author;
         if(!author || typeof author !== 'string') return null;
 
-        return { url, author };
+        return { url, author, authToken: req.authToken, fileId: (req.script as any)?.fileId };
+    }
+
+    /** Rename fallback for linked (workspace) components.
+     *
+     *  A script references its components by name, so renaming a component breaks every
+     *  script that still uses the old name. Name history lives server-side (each version
+     *  row keeps the name it was saved under), so ask the author's own store which file
+     *  carried `localName` and take the linked script with that same fileId — the latest
+     *  (possibly unsaved) working copy. If that file is not linked, the stored latest
+     *  version is used instead.
+     *
+     *  Owner-only route, so it needs the run's authToken and linked scripts (i.e. the
+     *  author working in the editor). Returns null (never throws) on any failure. */
+    async _getRenamedComponentScript(localName:string):Promise<Script|null>
+    {
+        const lib = this._componentLibrary;
+        if(!lib?.authToken || this._linkedComponentScripts.length === 0) return null;
+
+        const cacheKey = `${lib.author}/${localName}`;
+        const url = `${lib.url}/scripts/${encodeURIComponent(lib.author)}/by-name/${encodeURIComponent(localName)}`;
+
+        this._renamedComponentFetches[cacheKey] ??= (async ():Promise<ScriptData|null> =>
+        {
+            try
+            {
+                const res = await fetch(url, { headers: { Authorization: `Bearer ${lib.authToken}` } });
+                if(!res.ok) return null; // 404: no script ever had this name
+                const body = await res.json();
+                const data = body?.data ?? body; // owner routes return ScriptData raw
+                return data?.fileId ? data : null;
+            }
+            catch(e)
+            {
+                console.error(`$component('./${localName}')::_getRenamedComponentScript(): Failed to fetch '${url}': ${(e as Error)?.message ?? e}`);
+                return null;
+            }
+        })();
+
+        const data = await this._renamedComponentFetches[cacheKey];
+        // The running script itself used to have this name: never import it into itself.
+        if(!data || data.fileId === lib.fileId) return null;
+
+        const script = this._linkedComponentScripts.find(s => s.fileId === data.fileId) ?? Script.fromData(data);
+        if(!script) return null;
+
+        console.warn(`$component('./${localName}')::_getRenamedComponentScript(): '${localName}' was renamed to '${script.name}'. Using its latest version — update the reference to $component('./${script.name}').`);
+        return script;
     }
 
     /** Fetch a component the author shared, by its local name — how a published
@@ -2245,8 +2299,6 @@ ${contextLines.join('\n')}
                     if(!pipelineResults){ console.error(`Runner::getScopeResultOutputs: No results from pipeline '${pipelineName}'`); }
                     else { // Add the results to outputs of main scope
                         outputs.push(...pipelineResults.outputs);
-                        // Make sure it is empty (TODO-better)
-                        this._pipelineExports = [];
                     }
                 }
             }
@@ -2545,53 +2597,6 @@ ${contextLines.join('\n')}
                         output: (typeof xlsxBuffer === 'object') ? Object.values(xlsxBuffer)[0] : null
                     } as ScriptOutputData);
                     break;
-                case 'gsheets':
-                    
-                    /* 
-                        Exports to Google Sheets work a bit differently
-                        We can have template exports (where no internal Table is involved) or Table exports to Google Sheet
-                        The first case is implemented here
-                    */
-
-                    /* Exporting data through a Google Sheet template document is done by the user
-                        mostly in a pipeline like this:
-                        
-                        $pipeline('gsheettemplate', 
-                            async () =>
-                            { 
-                                await calc.gsheets.connect('<<DRIVE_ID>>'); // TODO: auth - now archiyou by default
-                                await calc.gsheets.fromTemplate(
-                                    './db/TEMPLATE_SHEET', 
-                                    './ex                ports/OUTPUT_SHEET',
-                                    { ... }) 
-                            })
-
-                        WARNING: We can't access scope.calc.gsheets.exports from here directly - Don't know why
-                        HACK: So we store them in Runner instance variable _pipelineExports
-                        TODO: Figure out why this happens
-
-                        This saves exports in runner._pipelineExports by output sheet path 
-                        runner._pipelineExports = [ 
-                            'https://docs.google.com/spreadsheets/d/{{SHEET_ID}}',
-                             ...
-                        ]
-                        
-                        Below we simply return all these outputs 
-
-                    */
-
-                    console.info(`Runner::_exportPipelineTables(): Exporting to Google Sheets from template(s)...`);
-                    console.info(JSON.stringify(scope.calc.gsheets.exports));
-                    console.info(scope.ay.runner._pipelineExports);
-                    
-                    outputs.push({
-                        path: outputPathTable.toData(),
-                        output: scope.ay.runner._pipelineExports
-                    });
-
-                    // TODO: straight export from tables to Google Sheets! 
-                    break;
-
                 default:
                     throw new Error(`Runner::_getScopeRunnerScriptExecutionResult(): Unknown table export format '${outputPathTable.format}'`);
             }

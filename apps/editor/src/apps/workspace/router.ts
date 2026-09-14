@@ -1,11 +1,16 @@
 /**
  * Central route configuration.
  *
- * No auth guard — all routes are public.
- * Login is opt-in via the nav-bar Sign in button.
+ * Routes are public and login is opt-in via the nav-bar Sign in button — with one
+ * exception: /admin redirects anyone who is not an operator. That guard is a
+ * courtesy, not a control. It only keeps a non-operator from landing on a screen
+ * whose every request would 403; the actual gate is requireAdmin on the server
+ * (apps/server/src/routes/admin.ts), which re-reads users.is_admin per request.
  */
 
 import { Router, type Route } from '@vaadin/router';
+
+import { userState } from '../../state/core.js';
 
 export const routes: Route[] = [
   // --- OAuth pages (no layout) ---
@@ -78,6 +83,17 @@ export const routes: Route[] = [
         path: 'plugin',
         component: 'page-plugin',
         action: async () => { await import('../../pages/plugin.js'); },
+      },
+      {
+        path: 'admin',
+        component: 'page-admin',
+        action: async (_ctx, commands) => {
+          // userState is derived from the auth service's restored session, so this is
+          // already settled by the time a route resolves.
+          if (!userState.get().isAdmin) return commands.redirect('/editor');
+          await import('../../pages/admin.js');
+          return undefined;
+        },
       },
     ],
   },

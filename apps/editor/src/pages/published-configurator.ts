@@ -6,12 +6,21 @@
  * loads it as the active (read-only) script via openSharedScript(), then renders
  * the shared <page-configurator>. The configurator warms up the worker and runs
  * the script on mount, so it is only rendered once the script is loaded.
+ *
+ * This is also where the execution backend is chosen. A version an admin has marked
+ * `published.validated` runs SERVER-SIDE, which means this page never loads the CAD
+ * kernel — ~26MB it would otherwise download just to show a GLB and a metrics bar.
+ * The decision has to be made here, before <page-configurator> mounts and calls
+ * warmupWorker(). `?exec=client` forces the browser kernel for debugging (comparing
+ * the two backends is how you check a server result renders identically).
  */
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
 import { type RouterLocation } from '@vaadin/router';
+
+import type { ScriptData } from '@archiyou/core/src/execution/types';
 
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -21,6 +30,7 @@ import { openSharedScript } from '../state/workspace';
 import { applyConfiguratorParamsFromQuery } from '../state/configurator-url';
 import { applyLocaleFromQuery } from '../state/locale';
 import { fetchPublishedScriptVersion } from '../services/publishing.js';
+import { setServerExecutionTarget, type ServerExecutionTarget } from '../services/execution-service.js';
 
 @customElement('page-published-configurator')
 export class PagePublishedConfigurator extends SignalWatcher(LitElement)
@@ -37,6 +47,16 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
     // open in that language for whoever follows it.
     applyLocaleFromQuery(window.location.search);
     void this._load();
+  }
+
+  override disconnectedCallback()
+  {
+    super.disconnectedCallback();
+    // The target is module-scoped, so it MUST NOT outlive this page: navigating on to
+    // the editor would otherwise leave it POSTing this configurator's script instead of
+    // running the one being edited. <layout-main> clears it too, so neither teardown
+    // order can leave a stale one behind.
+    setServerExecutionTarget(null);
   }
 
   private async _load()
@@ -63,6 +83,10 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
       }
       // Load read-only as the active script; the configurator picks it up.
       openSharedScript(data as unknown as Record<string, any>);
+      // Before <page-configurator> mounts: it calls warmupWorker() on connect, which
+      // is a no-op once a server target is set. Getting here late would download the
+      // kernel anyway and waste the whole point.
+      setServerExecutionTarget(this._serverTarget(user, scriptAndVersion, data));
       // ?WIDTH=1200&SHELVES=4 — a shared link opens on that exact model. Applied
       // after the script is loaded (its params are what type the raw strings) and
       // before <page-configurator> mounts, so the first run is already the right one.
@@ -74,6 +98,20 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
       this._status = 'error';
       this._error = (err as Error)?.message ?? 'Failed to load the configurator.';
     }
+  }
+
+  /** Server-side when an admin validated this version, unless ?exec=client says
+   *  otherwise. Null ⇒ run in the browser, as before.
+   *
+   *  `validated` is server-owned (the API stamps it on read and refuses client
+   *  writes), so trusting it here is safe — and it is only a hint regardless: the
+   *  execute endpoint re-checks it and 401s if it is not actually set. */
+  private _serverTarget(user: string, scriptAndVersion: string, data: ScriptData): ServerExecutionTarget | null
+  {
+    const exec = new URLSearchParams(window.location.search).get('exec');
+    if (exec === 'client') return null;
+    if (data.published?.validated !== true) return null;
+    return { user, scriptAndVersion };
   }
 
   override render()

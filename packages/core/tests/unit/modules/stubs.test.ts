@@ -11,7 +11,7 @@
 import { describe, it, expect, vi } from 'vitest'
 
 import { unavailableStub, ModuleUnavailableError } from '../../../src/modules/unavailableStub'
-import { serverModuleStub, ServerModuleCallError } from '../../../src/modules/serverModuleStub'
+import { serverModuleStub, ServerModuleCallError, canCallSync } from '../../../src/modules/serverModuleStub'
 import type { AyModuleManifest } from '@archiyou/module-sdk'
 
 const manifest: AyModuleManifest = {
@@ -51,7 +51,7 @@ describe('unavailableStub', () =>
 describe('serverModuleStub', () =>
 {
     const okFetch = (payload: any) => vi.fn(async () => ({
-        ok: true, status: 200, json: async () => payload,
+        ok: true, status: 200, text: async () => JSON.stringify(payload),
     })) as any
 
     it('posts method and args, and unwraps the result', async () =>
@@ -85,7 +85,7 @@ describe('serverModuleStub', () =>
     it('reports the server explanation and status on refusal', async () =>
     {
         const fetchImpl = vi.fn(async () => ({
-            ok: false, status: 403, json: async () => ({ error: 'not entitled' }),
+            ok: false, status: 403, text: async () => JSON.stringify({ error: 'not entitled' }),
         })) as any
         const stub = serverModuleStub(manifest, { moduleApiUrl: '', fetchImpl })
 
@@ -96,7 +96,7 @@ describe('serverModuleStub', () =>
     it('survives a non-JSON error body', async () =>
     {
         const fetchImpl = vi.fn(async () => ({
-            ok: false, status: 502, json: async () => { throw new Error('not json') },
+            ok: false, status: 502, text: async () => 'not json',
         })) as any
         const stub = serverModuleStub(manifest, { moduleApiUrl: '', fetchImpl })
 
@@ -109,5 +109,72 @@ describe('serverModuleStub', () =>
         const stub = serverModuleStub(manifest, { moduleApiUrl: '', fetchImpl })
 
         await expect(stub.solve({})).rejects.toThrow(/could not reach the server \(offline\)/)
+    })
+})
+
+describe('serverModuleStub — synchronous transport', () =>
+{
+    const okSync = (payload: any) => vi.fn(() => ({ status: 200, text: JSON.stringify(payload) })) as any
+
+    it('returns the plain result when a blocking transport is available', () =>
+    {
+        const callSync = okSync({ success: true, result: 7 })
+        const stub = serverModuleStub(manifest, { moduleApiUrl: 'https://api.test', authToken: 't', callSync })
+
+        const out = stub.solve({ n: 3 })
+        // No Promise: the whole point is that a script needs no `await`.
+        expect(out).toBe(7)
+
+        const [url, init] = callSync.mock.calls[0]
+        expect(url).toBe('https://api.test/modules/example/call')
+        expect(JSON.parse(init.body)).toEqual({ method: 'solve', args: { n: 3 } })
+        expect(init.headers.Authorization).toBe('Bearer t')
+        expect(init.timeoutMs).toBeGreaterThan(60_000)
+    })
+
+    it('still works for a script written with await', async () =>
+    {
+        const stub = serverModuleStub(manifest, { moduleApiUrl: '', callSync: okSync({ success: true, result: 1 }) })
+        // Awaiting a plain value is a no-op, so old scripts are unaffected.
+        expect(await stub.solve({})).toBe(1)
+        expect(stub.then).toBeUndefined()
+    })
+
+    it('reports the server explanation and status on refusal', () =>
+    {
+        const callSync = vi.fn(() => ({ status: 403, text: JSON.stringify({ error: 'not entitled' }) })) as any
+        const stub = serverModuleStub(manifest, { moduleApiUrl: '', callSync })
+
+        expect(() => stub.solve({})).toThrow(ServerModuleCallError)
+        try { stub.solve({}) } catch(e) { expect((e as ServerModuleCallError).status).toBe(403) }
+        expect(() => stub.solve({})).toThrow(/example\.solve\(\): not entitled/)
+    })
+
+    it('survives a non-JSON error body', () =>
+    {
+        const stub = serverModuleStub(manifest, { moduleApiUrl: '', callSync: () => ({ status: 502, text: '<html>bad gateway</html>' }) })
+        expect(() => stub.solve({})).toThrow(/HTTP 502/)
+    })
+
+    it('reports a network failure distinctly from a rejection', () =>
+    {
+        const stub = serverModuleStub(manifest, { moduleApiUrl: '', callSync: () => ({ status: 0, text: 'offline' }) })
+        expect(() => stub.solve({})).toThrow(/could not reach the server \(offline\)/)
+    })
+
+    it('treats a body that says success:false as a failure', () =>
+    {
+        const stub = serverModuleStub(manifest, { moduleApiUrl: '', callSync: okSync({ success: false, error: 'sheet not found' }) })
+        expect(() => stub.solve({})).toThrow(/sheet not found/)
+    })
+
+    it('stays asynchronous outside a worker when no transport is injected', () =>
+    {
+        // vitest runs in Node: no XMLHttpRequest, no WorkerGlobalScope.
+        expect(canCallSync({})).toBe(false)
+        const stub = serverModuleStub(manifest, { moduleApiUrl: '', fetchImpl: vi.fn(async () => ({
+            ok: true, status: 200, text: async () => JSON.stringify({ success: true, result: 2 }),
+        })) as any })
+        expect(typeof stub.solve({}).then).toBe('function')
     })
 })

@@ -138,6 +138,13 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
     },
   );
 
+  // Latest version of the file that has — or used to have — a name. Rename fallback for
+  // $component('./oldname') in the editor (Runner._getRenamedComponentScript). Registered
+  // as a static segment, so it wins over `/:user/:fileId/versions`.
+  fastify.get<{ Params: { user: string; name: string } }>('/scripts/:user/by-name/:name', auth, async (request) => {
+    return scriptStore.getFileByName(request.user.sub, request.params.name);
+  });
+
   // Latest version of one file.
   fastify.get<{ Params: { user: string; fileId: string } }>('/scripts/:user/:fileId', auth, async (request) => {
     return scriptStore.getFile(request.user.sub, request.params.fileId);

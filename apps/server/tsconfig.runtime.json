@@ -1,0 +1,44 @@
+{
+  // Used ONLY at runtime, by `pnpm worker` (tsx --tsconfig). Never by `pnpm typecheck`,
+  // which keeps using tsconfig.json — so widening `include` here costs nothing there.
+  //
+  // WHY THIS FILE EXISTS
+  //
+  // The execution worker is the only process that loads the CAD kernel, so it is the
+  // only one that pulls in code written against LEGACY (experimentalDecorators)
+  // decorators: packages/core/src/decorators.ts and packages/meshup/src/sceneDecorators.ts.
+  //
+  // tsx hands esbuild ONE tsconfig, and applies its options only to files matching that
+  // config's `include`. apps/server/tsconfig.json includes just "src", so every workspace
+  // package the worker imports was being compiled with NO options — meaning standard TC39
+  // decorators, whose signature is (value, context) rather than (target, key, descriptor).
+  // The first decorated class then dies with "Cannot read properties of undefined
+  // (reading 'value')", thrown several layers down from a file that looks unrelated.
+  //
+  // TWO PACKAGES, TWO ANSWERS — deliberately:
+  //
+  //   @archiyou/core   — `include`d below. Its own tsconfig sets the two options that
+  //                      change semantics (experimentalDecorators: true,
+  //                      useDefineForClassFields: false) to the same values as
+  //                      apps/server's, so compiling it with these is equivalent.
+  //
+  //   @archiyou/meshup — redirected to its BUILT output instead. Its tsconfig does not
+  //                      set useDefineForClassFields, so it expects the ES2022 default
+  //                      (true) and compiling it with `false` would quietly change class
+  //                      field semantics. dist/ also needs no transform at all, and is
+  //                      the artifact the Docker entrypoint already builds before boot.
+  //                      Requires `pnpm build:meshup`; src/execution/worker.ts checks.
+  //
+  // The browser is unaffected either way: Vite compiles both from source with the
+  // editor's own tsconfig, which has always resolved this correctly.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@archiyou/core": ["../../packages/core/src/index.ts"],
+      "@archiyou/core/src/*": ["../../packages/core/src/*"],
+      "@archiyou/types": ["../../packages/types/src/index.ts"],
+      "@archiyou/meshup": ["../../packages/meshup/dist/index.js"]
+    }
+  },
+  "include": ["src", "../../packages/core/src", "../../packages/types/src"]
+}

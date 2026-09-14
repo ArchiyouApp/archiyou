@@ -2,11 +2,12 @@
 #   caddy   — TLS reverse proxy (auto HTTPS) → api
 #   redis   — queue backend (password-protected; set REDIS_PASW in .env)
 #   api     — combined API (/api editor backend + / library + /execute)
-#   worker  — BullMQ execution worker
+#   worker  — BullMQ execution worker (inert until .env opens an execution gate)
 #
 # Lives at the monorepo root because it deploys the whole monorepo, not just
 # apps/server: it builds from the root context and serves apps/editor/dist and
-# plugins/. The dev stack (server + redis only) stays at apps/server/docker-compose.yml.
+# plugins/. For local development see docker-compose.dev.yml (Redis only, everything
+# else from source) or apps/server/docker-compose.yml (the whole stack in containers).
 #
 # Run (from the repo root):  pnpm docker:prod   —  or plain `docker compose up -d`
 
@@ -77,6 +78,12 @@ services:
       # matches the prefix caddy strips in the Caddyfile; set an absolute URL
       # only if you split the editor and API across hostnames.
       - SERVER_API_BASE_URL=${SERVER_API_BASE_URL:-/api}
+      # Where the WORKER reaches this API, stamped into every execution job so a
+      # server-side run can resolve $$import() assets, $$component('./name') from the
+      # author's shared library, and gated module bundles. A service name on the
+      # internal network, NOT a public URL — the worker never leaves this network.
+      # Only the api needs it; the worker uses whatever arrives in the job.
+      - SERVER_INTERNAL_API_URL=${SERVER_INTERNAL_API_URL:-http://api:4100}
     depends_on:
       redis:
         condition: service_healthy
@@ -98,51 +105,64 @@ services:
     networks:
       - archiyou-network
 
-  # Executes user-authored scripts. The Runner has NO sandbox (see
-  # apps/server/src/config.ts → execution), so treat this container as the one
-  # most likely to be compromised and give it as little as possible:
-  #   - NO env_file: an explicit allowlist of variables only, so a compromised
-  #     script cannot read SERVER_JWT_SECRET (forging tokens for any user) or the
-  #     Mailgun key out of process.env. config.jwtSecret is lazy, so the worker
-  #     boots fine without it.
+  # Executes user-authored scripts taken off the Redis queue.
+  #
+  # ⚠️  Running this container does NOT by itself enable server-side execution. The API
+  # refuses to enqueue anything until one of the two gates in .env is open —
+  # SERVER_EXECUTION_VALIDATED=1 (admin-validated scripts, callers may be anonymous) or
+  # SERVER_EXECUTION_AUTHORS (trusted authors, authenticated). Both ship empty, so on a
+  # default deployment this worker simply idles on a queue nothing writes to. The .env
+  # settings are the switch; read SECURITY.md before opening either.
+  #
+  # The Runner has NO sandbox (see apps/server/src/config.ts → execution), so once you do
+  # open it, treat this container as the one most likely to be compromised and give it as
+  # little as possible:
+  #   - NO env_file: an explicit allowlist of variables only, so a compromised script
+  #     cannot read SERVER_JWT_SECRET (forging tokens for any user) or the Mailgun key
+  #     out of process.env. config.jwtSecret is lazy, so the worker boots fine without
+  #     it. Enforced in CI by apps/server/scripts/check-worker-env.py.
   #   - non-root (USER node in the Dockerfile), all capabilities dropped
   #   - cpu/memory/pid ceilings, because the in-process execution timeout cannot
   #     interrupt a tight synchronous loop (see ExecutionWorker.executeWithTimeout)
-  # Disabled for now — uncomment to enable server-side execution.
-  #worker:
-  #  build:
-  #    context: .
-  #    dockerfile: apps/server/Dockerfile
-  #  container_name: archiyou-worker
-  #  # Runs from WORKDIR /archiyou/apps/server, so this is @archiyou/server's
-  #  # `worker` script. From the workspace root the same line fails with
-  #  # ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL ("Command \"worker\" not found").
-  #  command: pnpm worker
-  #  environment:
-  #    - NODE_ENV=production
-  #    - SERVER_REDIS_HOST=redis
-  #    - SERVER_REDIS_PORT=6379
-  #    - SERVER_REDIS_PASSWORD=${REDIS_PASW}
-  #    - SERVER_EXECUTION_TIMEOUT_MS=${SERVER_EXECUTION_TIMEOUT_MS:-30000}
-  #    - WORKER_ID=worker
-  #  volumes:
-  #    # Same code mount as api. Read-only: the worker runs untrusted user
-  #    # scripts and has no reason to write to the checkout — it takes jobs from
-  #    # Redis and returns results there, never touching the SQLite DB.
-  #    - ./:/archiyou:ro
-  #  depends_on:
-  #    redis:
-  #      condition: service_healthy
-  #  restart: unless-stopped
-  #  cap_drop:
-  #    - ALL
-  #  security_opt:
-  #    - no-new-privileges:true
-  #  pids_limit: 256
-  #  mem_limit: 2g
-  #  cpus: 1.5
-  #  networks:
-  #    - archiyou-network
+  worker:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    container_name: archiyou-worker
+    # Runs from WORKDIR /archiyou/apps/server, so this is @archiyou/server's `worker`
+    # script. From the workspace root the same line fails with
+    # ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL ("Command \"worker\" not found").
+    #
+    # That script loads the mesh kernel from packages/meshup/dist (see
+    # apps/server/tsconfig.runtime.json for why it cannot use the TypeScript source).
+    # The entrypoint builds meshup before running this, and worker.ts checks for it and
+    # says so plainly if it is missing.
+    command: pnpm worker
+    environment:
+      - NODE_ENV=production
+      - SERVER_REDIS_HOST=redis
+      - SERVER_REDIS_PORT=6379
+      - SERVER_REDIS_PASSWORD=${REDIS_PASW}
+      - SERVER_EXECUTION_TIMEOUT_MS=${SERVER_EXECUTION_TIMEOUT_MS:-30000}
+      - WORKER_ID=worker
+    volumes:
+      # Same code mount as api. Read-only: the worker runs untrusted user scripts and
+      # has no reason to write to the checkout — it takes jobs from Redis and returns
+      # results there, never touching the SQLite DB.
+      - ./:/archiyou:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 1.5
+    networks:
+      - archiyou-network
 
 volumes:
   redis_data:

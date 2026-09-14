@@ -8,8 +8,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "worker": "tsx src/execution/worker.ts",
-    "worker:dev": "tsx watch src/execution/worker.ts",
+    "worker": "tsx --tsconfig ./tsconfig.runtime.json src/execution/worker.ts",
+    "worker:dev": "tsx watch --tsconfig ./tsconfig.runtime.json src/execution/worker.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:own": "node ../../scripts/typecheck-own.mjs apps/server",
     "db:generate": "drizzle-kit generate",
@@ -18,9 +18,10 @@
     "admin:import-cadscripts": "tsx src/admin/import-cadscripts.ts",
     "admin:backup": "tsx src/admin/backup.ts",
     "admin:modules": "tsx src/admin/modules.admin.ts",
+    "admin:users": "tsx src/admin/users.admin.ts",
+    "docker:dev": "docker compose -f docker-compose.yml up --force-recreate",
     "test": "vitest run ./tests/unit/",
     "test:unit": "vitest run ./tests/unit/",
-    "docker:dev": "docker compose -f docker-compose.yml up --force-recreate",
     "test:parity": "vitest run ./tests/parity/"
   },
   "dependencies": {
@@ -58,9 +59,6 @@
     "@types/semver": "^7.7.0",
     "ajv": "^8.18.0",
     "drizzle-kit": "^0.31.10",
-    "google-auth-library": "^10.6.1",
-    "google-spreadsheet": "^5.2.0",
-    "googleapis": "^166.0.0",
     "testcontainers": "^11.12.0",
     "tsx": "^4.21.0",
     "typescript": "^5.7.3",

@@ -157,8 +157,8 @@ export function saveCore(): void
 export const userState = computed<UserState>(() => {
   const u = currentUser.get();
   return u
-    ? { anonymous: false, id: u.id, email: u.email, name: u.name, avatarUrl: u.avatarUrl }
-    : { anonymous: true, id: null, email: null, name: null, avatarUrl: null };
+    ? { anonymous: false, id: u.id, email: u.email, name: u.name, avatarUrl: u.avatarUrl, isAdmin: u.isAdmin === true }
+    : { anonymous: true, id: null, email: null, name: null, avatarUrl: null, isAdmin: false };
 });
 
 // Hydration: load collection first, then active, then ensure the active

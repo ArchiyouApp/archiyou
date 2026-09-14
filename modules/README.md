@@ -215,6 +215,8 @@ locally, because those importers are deliberately absent from the committed lock
 modules/<repo>/fem/
   package.json          name it @archiyou/module-<id>, private: true, type: module
   manifest.json         the contract the backend and runner read
+  README.md             for whoever builds and deploys this module — NOT published
+  DOCS.md               for whoever writes scripts with it — shown in the editor, see below
   ts/                   your code (src/ is equally fine)
   tests/                the module's own tests — see below
   dist/bundle.js        build output — runtime: 'client'
@@ -277,6 +279,39 @@ misbehave:
 
 `id` must equal the directory name at deploy time, or the backend skips the module with a warning.
 
+### `DOCS.md` — the documentation the editor shows
+
+A module's `DOCS.md` is served by `GET /modules/<id>/docs` and rendered inside the editor's module
+list: clicking a card slides the list aside and shows the page in place. Nothing declares it — the
+backend picks up `DOCS.md` (any capitalisation) from the module's own directory at scan time, sets
+`docs: true` on the catalog entry, and the editor shows the affordance only for the modules that
+have one. Editing it takes effect on the next open in dev, no restart.
+
+**It is a different file from `README.md`, and that is the point.** A README is written for whoever
+builds and deploys the module: build commands, `MODULE_*` environment variables, how the security
+guards work and why. This route is **public** — it serves the page for a module the caller is not
+entitled to, and to anonymous callers, on the same reasoning that lists locked modules at all —
+so publishing a README wholesale would put deployment detail and threat-model notes in front of
+every visitor. `README.md` is never read by the backend; only `DOCS.md` is.
+
+So the split is: **`DOCS.md` is everything a script author needs** — what the module does, the
+script API, conventions, worked examples, and the limits and caveats that change what someone
+writes. **`README.md` keeps the rest** — build, tests, configuration, deployment, licence, and how
+it works inside.
+
+It is written as markdown and rendered as markdown: headings, code fences, tables, lists,
+blockquotes and links all work. Three things do not, and are worth knowing before writing:
+
+- **Raw HTML is escaped, not rendered.** A `DOCS.md` is authored outside this repository, so
+  nothing in it is allowed to become live markup.
+- **Relative links and images do not resolve.** `./docs/diagram.png` and `[types](ts/types.ts)`
+  are paths in the module's own repository, which the editor cannot follow. Use an absolute URL
+  for an image that must appear; a relative image degrades to its alt text.
+- **Only the first 256 KiB is served.** Past that the response is truncated.
+
+The page opens in a fairly narrow pane with the first heading at the top, so lead with what the
+module does and a short example. `cloudcalc/DOCS.md` is the worked shape.
+
 ### `public` — opting out of entitlement
 
 Everything else in this system assumes a module is gated: the catalog marks it `entitled: false`
@@ -291,8 +326,8 @@ What does **not** change: a public module still appears in the catalog, still ha
 range checked against the running core, and is still refused outright if its `global` collides
 with a name Archiyou already uses. `public` affects entitlement, and only entitlement.
 
-It is set by the **deployment**, not by a user — manifests live in `SERVER_MODULES_DIR`, so
-whoever installs a module decides whether it is public. The schema accepts only a literal
+It is set by the **deployment**, not by a user — manifests live in the installed module's own
+directory, so whoever installs a module decides whether it is public. The schema accepts only a literal
 `true`; `"yes"` or `1` is a malformed manifest and the module is skipped.
 
 ---
@@ -388,43 +423,107 @@ export default defineServerModule({
 ```
 
 ```js
-// in a user script — note the await
-result = await fem.solve({ nodes, elements, loads })
+// in a user script — no await needed
+result = fem.solve({ nodes, elements, loads })
 ```
 
 `methods` is an explicit allowlist: only names on it are reachable, and only own properties
 count, so `constructor` and friends cannot be called. Arguments and return values cross the
 network as JSON, so both must be JSON-serializable.
 
+The call is **synchronous from the script's point of view**. Scripts run in a dedicated Web
+Worker, and a worker may block on a request (a synchronous `XMLHttpRequest`), so the stub waits
+for the server and returns the plain result. Outside the worker — Node, tests — the same stub
+returns a Promise, and `await` on a plain value is a no-op, so a script written either way works
+in both places.
+
 Each call runs in a **fresh worker thread** with an empty environment — module code cannot read
 the JWT signing key or mail credentials — and is killed after
-`SERVER_MODULES_CALL_TIMEOUT_MS` (default 60 s).
+`SERVER_MODULES_CALL_TIMEOUT_MS` (default 60 s). Nothing survives between calls, so a server
+module is stateless by construction: whatever a later call needs, the script has to pass back.
+
+### Hybrid: a server module with a client wrapper
+
+Flat remote calls (`mod.compute({ sheet, input })`) get awkward once there is a thing to hold
+on to. A server module can therefore also ship a **client wrapper**: set `"client": true` in
+the manifest and build a `bundle.js` next to `server.js`. The wrapper is loaded like a client
+module, but its factory receives the server stub and returns the object the script sees:
+
+```ts
+// src/client/index.ts  →  dist/bundle.js
+import { defineModule } from '@archiyou/module-sdk';
+
+export default defineModule(({ server }) => ({
+  setArchiyou(ay) { /* keep it if you need calc/docs */ },
+  // Called on every later run with that run's stub (fresh bearer token).
+  setServer(s) { server = s; },
+  open(url) {
+    const descriptor = server.open({ ref: url });          // one sync call
+    return {
+      ...descriptor,
+      compute: (input) => server.compute({ ref: descriptor.ref, input }),
+    };
+  },
+}));
+```
+
+```js
+wb = cloudcalc.open('https://docs.google.com/spreadsheets/d/…')
+out = wb.compute({ width: 300 })
+```
+
+The wrapper is readable by every entitled user, like any client bundle: keep it to ergonomics
+(objects, defaults, argument checks) and leave secrets and heavy code in `server.js`. Both
+artifacts are gated by the same entitlement; the bundle route serves the wrapper and never
+`server.js`.
 
 ---
 
 ## The development loop
 
-Point the backend at **this directory** — not at a copy — and there is no deploy step at all:
+Clone the module repository into `modules/` and you are done — **there is nothing to configure
+and no deploy step**. The backend reads the checkout in place, and finds it on its own:
 
 ```bash
-# apps/server/.env  (once)
-# Point at the directory whose CHILDREN are modules — i.e. the repo you cloned,
-# not modules/ itself. The backend scans one level: <dir>/<id>/manifest.json.
-SERVER_MODULES_DIR=../../modules/archiyou-private-modules
+git clone git@…:archiyou-private-modules.git modules/archiyou-private-modules
 ```
 
-**Several roots at once.** `SERVER_MODULES_DIR` accepts a comma- or colon-separated list, which
-is what you want as soon as more than one module repository is checked out — a private one and
-an open-source one, say, since they cannot share a repository:
+Both shapes a clone produces are recognised, one level deep each:
+
+```
+modules/<repo>/<id>/manifest.json   a repository holding several modules
+modules/<id>/manifest.json          a single module cloned straight in
+```
+
+**Several repositories at once** is the normal case — a private one and an open-source one, say,
+since they cannot share a repository — and needs no more than cloning both. Each becomes a
+*root*: a directory whose children are modules.
+
+Roots are scanned in order and the **first definition of an id wins**, so a module cloned
+straight into `modules/` shadows the same id inside a repository — which is how you test a local
+build against the deployed copy. A duplicate is reported at boot, naming both directories. A
+root that does not exist is warned about and skipped; it does not take the others down with it.
+
+At boot the backend says which roots it used and how it got them, so an unexpected set of
+modules is readable rather than something to deduce:
+
+```
+🧩 Loaded 1 script module(s): struct@0.1.0
+   found under modules/: /…/modules/archiyou-private-modules
+```
+
+**Overriding the search.** `SERVER_MODULES_DIR` still names the roots outright — a comma- or
+colon-separated list — for a deployment that keeps them somewhere other than the checkout. It
+replaces the search rather than adding to it, including when the path is wrong (that is reported,
+not quietly corrected):
 
 ```bash
-SERVER_MODULES_DIR=../../modules/archiyou-private-modules,../../modules/struct
+# apps/server/.env — only when modules live outside the checkout
+SERVER_MODULES_DIR=/srv/archiyou-modules,/srv/struct
 ```
 
-Roots are scanned in order and the **first definition of an id wins**, so an earlier root can
-deliberately shadow a later one — useful for testing a local build against a deployed copy. A
-duplicate is reported at boot, naming both directories. A root that does not exist is warned
-about and skipped; it does not take the others down with it.
+Set it to `off` (or `none`/`false`/`0`) to load nothing even though modules are installed, which
+is how you reproduce an open-source-only instance without moving the checkout.
 
 ```bash
 # one command: rebuilds modules on change, runs editor + backend
@@ -437,10 +536,12 @@ pnpm --filter @archiyou/server admin:modules --user <your-handle> --grant fem
 pnpm --filter @archiyou/server admin:modules --user <your-handle> --grant '*'
 ```
 
-> **Without `SERVER_MODULES_DIR` the catalog is empty**, and every `$module('x')` fails with
+> **With nothing installed the catalog is empty**, and every `$module('x')` fails with
 > *"no such module — check the name, or it is not installed on this server"*. That message covers
-> both "you typed it wrong" and "this instance has no modules at all", so check the setting first:
-> `admin:modules --list` prints what the backend can actually see.
+> both "you typed it wrong" and "this instance has no modules at all", so start with
+> `admin:modules --list`: it prints what the backend can actually see, and when that is nothing it
+> says which of the reasons it is — nothing cloned into `modules/`, a `SERVER_MODULES_DIR` that
+> found nothing, or the feature switched off.
 
 Then: **edit your module → save → hit Run in the editor.** That is the whole loop. No copying,
 no server restart, no browser reload.
@@ -474,9 +575,13 @@ Production expects a *flatter* layout — manifest and the one artifact side by 
 directory named for the id:
 
 ```
-$SERVER_MODULES_DIR/fem/manifest.json
-$SERVER_MODULES_DIR/fem/server.js      # or bundle.js for a client module
+<root>/fem/manifest.json
+<root>/fem/server.js      # or bundle.js for a client module
 ```
+
+…where `<root>` is a directory under `modules/` (found automatically) or one named by
+`SERVER_MODULES_DIR`. The docker-compose deployment mounts the whole checkout, so a production
+install is the same `git clone` into `modules/` that development uses.
 
 Both layouts are accepted (`<id>/bundle.js` is checked before `<id>/dist/bundle.js`), so the same
 backend code serves a real deployment and your working tree.
@@ -510,6 +615,7 @@ per request, so there is no restart, no re-login, and no token to expire.
 | `$module('x')` says no such module, but it is installed | The argument must be a plain string literal — a computed one cannot be read before the run. |
 | Bundle 404s but the module exists | The URL's version must match the manifest exactly. Bump `version` when you redeploy. |
 | Editor autocomplete missing | Only entitled modules are registered, from `manifest.completions`. |
+| No docs arrow on the module's card | No `DOCS.md` in the module's own directory — check `"docs": true` in `GET /modules`. A `README.md` is deliberately not used, and a `DOCS.md` nested in `src/` or `dist/` is not picked up. |
 | Edits have no effect, old code keeps running | Dev mode is off. Check for `👀 Watching script modules` at boot and `"rev"` in `GET /modules`; force with `SERVER_MODULES_DEV=1`. |
 | Edits have no effect, and `rev` *is* changing | The build did not run. Check the `build` pane of `pnpm dev:modules`. |
 | `pnpm-lock.yaml` shows hundreds of changed lines after `pnpm install` | Expected — pnpm wrote an importer per overlay module. Run `pnpm lockfile:public`; never commit it. |

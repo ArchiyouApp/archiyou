@@ -1,11 +1,14 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
+import { styleMap } from 'lit/directives/style-map.js';
+import type { HandleMinimized } from '@archiyou/core/src/interaction/types';
 
 export interface HandleOverlay
 {
   id: string;
   icon: string;
+  minimized?: HandleMinimized | null;
   visible: boolean;
   param: string | null;
   paramFnSrc: string | null;
@@ -59,17 +62,20 @@ export class ViewerHandlesOverlay extends LitElement
       {
         const dragging = this._draggingId === h.id;
         const active   = this.activeId === h.id;
+        // Minimized handles expand back to the full icon handle while selected or dragged
+        const min      = (dragging || active) ? null : h.minimized;
         return html`
           <div
             class="ay-handle-anchor"
             data-id=${h.id}
           >
             <div
-              class="ay-handle ${dragging ? 'ay-handle--dragging' : ''} ${active ? 'ay-handle--active' : ''}"
+              class="ay-handle ${min ? 'ay-handle--minimized' : ''} ${dragging ? 'ay-handle--dragging' : ''} ${active ? 'ay-handle--active' : ''}"
               part="handle"
+              style=${styleMap(min ? { '--ay-handle-min-color': min.color, '--ay-handle-min-opacity': String(min.opacity) } : {})}
               @pointerdown=${(e: PointerEvent) => this._onPointerDown(h, e)}
             >
-              <wa-icon library="lucide" name=${h.icon}></wa-icon>
+              ${min ? '' : html`<wa-icon library="lucide" name=${h.icon}></wa-icon>`}
             </div>
           </div>
         `;
@@ -200,6 +206,25 @@ export class ViewerHandlesOverlay extends LitElement
        so it can combine with the hover and dragging states instead of fighting them. */
     .ay-handle--active {
       box-shadow: var(--ay-handle-shadow), 0 0 0 2px var(--ay-handle-ring-active);
+    }
+
+    /* Minimized: a small plain dot, only while idle (active/dragging render the full
+       handle). The pseudo-element keeps a finger-sized hit area. */
+    .ay-handle--minimized,
+    .ay-handle--minimized:hover {
+      --ay-handle-size: 12px;
+      border-radius: 50%;
+      box-shadow: none;
+      background: color-mix(in srgb, var(--ay-handle-min-color, #000) calc(var(--ay-handle-min-opacity, 0.3) * 100%), transparent);
+    }
+    .ay-handle--minimized::before {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+    }
+    .ay-handle--minimized:hover {
+      transform: translate(-50%, -50%) scale(1.3);
     }
 
     .ay-handle wa-icon {

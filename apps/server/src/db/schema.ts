@@ -45,6 +45,14 @@ export const users = sqliteTable('users', {
    *  make a grant or a revoke take up to a week to take effect. A column makes
    *  both immediate, at the cost of one indexed lookup. */
   modules: text('modules', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
+  /** Operator account: may reach /admin (routes/admin.ts), whose only power today is
+   *  marking a published version `validated` — i.e. clearing it to run server-side,
+   *  unsandboxed, for anonymous callers. Granted only with `pnpm admin:users`.
+   *
+   *  Read from here on every request for the same reason as `modules` above, and it
+   *  matters more here: a stale admin claim in a week-long token is a far worse thing
+   *  to be unable to revoke than a stale module grant. */
+  isAdmin: integer('is_admin', { mode: 'boolean' }).notNull().default(false),
 }, (t) => ({
   usernameUnique: uniqueIndex('users_username_unique').on(t.username),
   emailUnique: uniqueIndex('users_email_unique').on(t.email),
@@ -83,6 +91,9 @@ export const scriptVersions = sqliteTable('script_versions', {
   // Partial index: only rows that are actually shared — powers the "shared scripts" list.
   // Unqualified column ref: SQLite rejects table-qualified names in index WHERE clauses.
   byShared: index('sv_by_shared').on(t.shared).where(sql`shared IS NOT NULL`),
+  // Same partial-index trick for the admin configurator list, which spans every author
+  // and so cannot lean on sv_by_author.
+  byPublished: index('sv_by_published').on(t.published).where(sql`published IS NOT NULL`),
   // One stored script per concrete version (SQLite treats NULL versions as distinct).
   fileVersionUnique: uniqueIndex('sv_file_version').on(t.fileId, t.version),
 }));
