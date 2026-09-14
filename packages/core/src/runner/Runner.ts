@@ -2453,6 +2453,24 @@ ${contextLines.join('\n')}
                     }
                     break;
 
+                case 'fcstd': // FreeCAD document: recipes become parametric features, see FCStdExporter.ts
+                {
+                    const script = request.script as any;
+                    outp = await scope.modeler.toFCStd({
+                        ...(outputPath?.formatOptions as any ?? {}),
+                        params: scope._paramManager?.getParams?.() ?? [],
+                        meta: { script: script?.name, version: script?.version, variant: request.variantId },
+                    });
+                    if(outp)
+                    {
+                        outputs.push({
+                            path: outputPathData,
+                            output: outp
+                        } as ScriptOutputData);
+                    }
+                    break;
+                }
+
                 case 'amf': // AMF document of all scene meshes (via the new Modeler pipeline)
                     outp = scope.modeler.toAMF();
                     if(outp)

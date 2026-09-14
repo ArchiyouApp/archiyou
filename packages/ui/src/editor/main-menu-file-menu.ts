@@ -86,6 +86,10 @@ export class MainMenuFileMenu extends SignalWatcher(LitElement)
             <wa-icon slot="icon" library="lucide" name="pen-tool"></wa-icon>
             DXF 2D
           </wa-dropdown-item>
+          <wa-dropdown-item slot="submenu" value="export-fcstd">
+            <wa-icon slot="icon" library="lucide" name="cog"></wa-icon>
+            FreeCAD
+          </wa-dropdown-item>
           <wa-dropdown-item slot="submenu" value="export-script-data">
             <wa-icon slot="icon" library="lucide" name="file-code"></wa-icon>
             Script JS

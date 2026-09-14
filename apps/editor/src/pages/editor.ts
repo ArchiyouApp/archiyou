@@ -45,7 +45,7 @@ import { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
 import type { ScriptData, ScriptParamData } from '@archiyou/core/src/execution/types';
 
 /** Model formats offered in the main menu ▸ Export to… (see _exportModel()) */
-type ExportModelFormat = 'glb'|'stl'|'amf'|'dae'|'svg'|'dxf';
+type ExportModelFormat = 'glb'|'stl'|'amf'|'dae'|'svg'|'dxf'|'fcstd';
 
 @customElement('page-editor')
 export class PageEditor extends SignalWatcher(LitElement)
@@ -931,16 +931,18 @@ export class PageEditor extends SignalWatcher(LitElement)
    *  DXF gets `?annotations=true` so Modeler.toDXF() bakes in the dimension lines. */
   private async _exportModel(format: ExportModelFormat)
   {
-    const EXPORT_FORMATS: Record<string, { path: string, mimeType: string, emptyMsg: string }> = {
+    const EXPORT_FORMATS: Record<string, { path: string, mimeType: string, emptyMsg: string, ext?: string }> = {
       glb: { path: 'default/model/glb', mimeType: 'model/gltf-binary', emptyMsg: 'the model produced no geometry.' },
       stl: { path: 'default/model/stl', mimeType: 'model/stl', emptyMsg: 'the model produced no 3D geometry.' },
       amf: { path: 'default/model/amf', mimeType: 'application/x-amf', emptyMsg: 'the model produced no 3D geometry.' },
       dae: { path: 'default/model/dae', mimeType: 'model/vnd.collada+xml', emptyMsg: 'the model produced no geometry.' },
       svg: { path: 'default/model/svg', mimeType: 'image/svg+xml', emptyMsg: 'the model produced no 2D geometry.' },
       dxf: { path: 'default/model/dxf?annotations=true', mimeType: 'application/dxf', emptyMsg: 'the model produced no 2D geometry.' },
+      // FreeCAD's file dialogs filter on the exact-case extension
+      fcstd: { path: 'default/model/fcstd', mimeType: 'application/x-extension-fcstd', emptyMsg: 'the model produced no geometry.', ext: 'FCStd' },
     };
 
-    const { path: requestPath, mimeType, emptyMsg } = EXPORT_FORMATS[format];
+    const { path: requestPath, mimeType, emptyMsg, ext } = EXPORT_FORMATS[format];
 
     const result = await runScript(
       this._buildRequest([requestPath], ['error'])
@@ -961,7 +963,7 @@ export class PageEditor extends SignalWatcher(LitElement)
       return;
     }
 
-    this._downloadFile(output, format, mimeType);
+    this._downloadFile(output, ext ?? format, mimeType);
   }
 
   private _handleScriptImporterImport(e: CustomEvent<ScriptData>)

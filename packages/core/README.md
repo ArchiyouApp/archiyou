@@ -113,7 +113,7 @@ which ones it can produce:
 
 | Category | Path | Formats |
 | --- | --- | --- |
-| model | `default/model/glb` | `glb`, `gltf`, `step`, `stl`, `svg`, `dxf`, `obj`, `dae`, `amf` |
+| model | `default/model/glb` | `glb`, `gltf`, `step`, `stl`, `svg`, `dxf`, `obj`, `dae`, `amf`, `fcstd` |
 | docs | `default/docs/spec/pdf` | `pdf`, `svg`, `svg-pages`, `json` |
 | tables | `default/tables/parts/xlsx` | `xlsx`, `json` |
 | metrics | `default/metrics/weight/json` | `json`, `xlsx` |
@@ -121,6 +121,13 @@ which ones it can produce:
 The name segment accepts a wildcard, so `default/docs/*/svg` renders every documentation page a
 script defines, and `default/tables/*/xlsx` returns every table. `getOutput(result, path)` pulls
 one out of a `run()` result; `execute()` does that for you.
+
+`fcstd` is a FreeCAD document that stays editable: boxes, cylinders, spheres and the booleans
+between them become FreeCAD's own `Part` features, the script parameters become a spreadsheet,
+and dimensions that equal a parameter are bound to it. A run that requests it records how each
+shape was made (see `src/modeler/Recipe.ts`); shapes whose history FreeCAD features cannot
+express are exported as geometry. Press Recompute once in FreeCAD to rebuild curved surfaces
+exactly.
 
 ## In Node
 

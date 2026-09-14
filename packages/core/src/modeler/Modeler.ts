@@ -45,6 +45,7 @@ import { buildSVG, buildProjectionSVG, buildThumbnailSVG, buildThumbnailSVGFromC
 // Type-only: ./DAEExporter is reached through a dynamic import in toDAE() so the COLLADA
 // writer and its ~171 KB of base64 WASM stay out of the eager bundle. See DAEExporter.ts.
 import type { toDAEOptions } from "./DAEExporter";
+import type { toFCStdOptions } from "./FCStdExporter";
 
 // Meshup namespace — imported as value (for instanceof) and type
 import * as meshup from '@archiyou/meshup'
@@ -1142,6 +1143,17 @@ export class Modeler
     {
         const { buildDAE } = await import('./DAEExporter')
         return buildDAE(this._exportScene(), { units: this.units(), ...(options ?? {}) })
+    }
+
+    /** FreeCAD document (.FCStd). Shapes with a recipe become FreeCAD parametric features, the rest
+     *  baked geometry. Walks the live scene, not the tessellated export scene: recipes live on the
+     *  original shapes, and brep shapes are written exactly. See FCStdExporter.ts. */
+    async toFCStd(options?: toFCStdOptions): Promise<Uint8Array | null>
+    {
+        const { buildFCStd } = await import('./FCStdExporter')
+        const result = await buildFCStd(this.scene(), { units: this.units(), ...(options ?? {}) })
+        if (result) console.info(`Modeler::toFCStd(): ${result.report.toString()}`)
+        return result?.data ?? null
     }
 
     /** Build the ArchiyouStateData payload (scenegraph + annotations + managedHandles) used by
