@@ -62,6 +62,21 @@ describe('Runner — FreeCAD export', () =>
         expect(xml).toContain('key="archiyou.script" value="plate"')
     })
 
+    it('does the same on the brep kernel', async () =>
+    {
+        const runner = await new Runner().load()
+        const result = await runner.execute({
+            kernel: 'brep',
+            script: { code: CODE, name: 'plate' },
+            outputs: ['default/model/fcstd'],
+        } as unknown as RunnerScriptExecutionRequest)
+
+        expect(result.status, JSON.stringify(result.errors)).toBe('success')
+        const xml = documentXml(result.outputs!.find(o => o.path.requestedPath === 'default/model/fcstd')!.output as Uint8Array)
+        expect(xml).toContain('type="Part::Cut"')
+        expect(xml).toMatch(/<Expression path="Length" expression="ArchiyouParams\.WIDTH \* 1 mm"\/>/)
+    }, 60000)
+
     it('switches recording off again for a run without a recipe format', async () =>
     {
         const runner = await new Runner().load()

@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import * as meshup from '@archiyou/meshup'
 
 import { Modeler } from '../../../src/modeler/Modeler'
+import * as brep from '../../../src/modeler/brep/index'
+import { brepShapeToMeshup } from '../../../src/modeler/brep/toMeshup'
 import type { ArchiyouModules } from '../../../src/types'
 import {
     installRecipeRecorder, uninstallRecipeRecorder, setRecipeRecording, isRecipeRecording,
@@ -53,12 +55,12 @@ describe('Recipe', () =>
     const tree = (s: unknown) => resolveRecipe(recipe(s))
 
     /** Largest distance of any vertex of `shape` from the surface of the single leaf of its recipe. */
-    function surfaceError(shape: meshup.Mesh, leaf: LeafNode): number
+    function surfaceError(shape: meshup.Mesh | Array<{ x: number; y: number; z: number }>, leaf: LeafNode): number
     {
         const inv = affineInverse(leaf.matrix)!
         const scale = Math.max(...affineFrame(leaf.matrix).scales)
         let worst = 0
-        for (const p of shape.positions())
+        for (const p of Array.isArray(shape) ? shape : shape.positions())
         {
             const [x, y, z] = affineApply(inv, [p.x, p.y, p.z])
             let e: number
@@ -82,6 +84,14 @@ describe('Recipe', () =>
                 case 'sphere':
                     e = Math.abs(Math.hypot(x, y, z) - leaf.step.radius)
                     break
+                case 'cone':
+                {
+                    const { r1, r2, height: h } = leaf.step
+                    const rAt = r1 + (r2 - r1) * Math.min(1, Math.max(0, z / h))
+                    const r = Math.hypot(x, y)
+                    e = Math.min(Math.min(Math.abs(z), Math.abs(z - h)) + Math.max(0, r - Math.max(r1, r2)), Math.abs(r - rAt) + Math.max(0, -z, z - h))
+                    break
+                }
                 default:
                     e = Infinity
             }
@@ -516,3 +526,157 @@ describe('Recipe', () =>
     })
 })
 
+/**
+ * The same capture for the brep kernel. Moves and rotations are not rows there: OpenCascade changes
+ * a shape's Location in place, and the recorder reads it back as a placement.
+ */
+describe('Recipe on the brep kernel', () =>
+{
+    let modeler: Modeler
+
+    beforeAll(async () =>
+    {
+        await brep.init()
+        modeler = new Modeler('brep')
+        await modeler.load()
+        modeler.setArchiyou({ modeler } as unknown as ArchiyouModules)
+        expect(installRecipeRecorder({ mesh: meshup, brep }).missingRows).toEqual([])
+    }, 60000)
+
+    afterAll(() => uninstallRecipeRecorder())
+
+    beforeEach(() =>
+    {
+        modeler.reset()
+        setRecipeRecording(true)
+    })
+
+    const recipe = (s: unknown): Recipe =>
+    {
+        const r = recipeOf(s)
+        expect(r, 'shape has a recipe').not.toBeNull()
+        return r as Recipe
+    }
+    const tree = (s: unknown) => resolveRecipe(recipe(s))
+
+    /** Vertices of the brep shape's tessellation: they lie on the exact surfaces */
+    function vertices(shape: any): Array<{ x: number; y: number; z: number }>
+    {
+        const out = brepShapeToMeshup(shape) as any
+        const mesh = meshup.ShapeCollection.isShapeCollection(out) ? out.toArray().find((m: any) => m instanceof meshup.Mesh) : out
+        return mesh.positions()
+    }
+
+    function leafError(shape: any, leaf: LeafNode): number
+    {
+        const inv = affineInverse(leaf.matrix)!
+        let worst = 0
+        for (const p of vertices(shape))
+        {
+            const [x, y, z] = affineApply(inv, [p.x, p.y, p.z])
+            let e = Infinity
+            const step = leaf.step
+            if (step.op === 'box')
+            {
+                const [hw, hd, hh] = step.size.map(v => v / 2)
+                e = Math.abs(Math.max(Math.abs(x) - hw, Math.abs(y) - hd, Math.abs(z) - hh))
+            }
+            else if (step.op === 'cylinder')
+            {
+                const r = Math.hypot(x, y)
+                e = Math.min(Math.min(Math.abs(z), Math.abs(z - step.height)) + Math.max(0, r - step.radius), Math.abs(r - step.radius) + Math.max(0, -z, z - step.height))
+            }
+            else if (step.op === 'sphere') e = Math.abs(Math.hypot(x, y, z) - step.radius)
+            else if (step.op === 'cone')
+            {
+                const r = Math.hypot(x, y), rAt = step.r1 + (step.r2 - step.r1) * Math.min(1, Math.max(0, z / step.height))
+                e = Math.min(Math.min(Math.abs(z), Math.abs(z - step.height)) + Math.max(0, r - Math.max(step.r1, step.r2)), Math.abs(r - rAt) + Math.max(0, -z, z - step.height))
+            }
+            worst = Math.max(worst, e)
+        }
+        return worst
+    }
+
+    function expectOnLeaf(shape: any, tolerance = 1e-5)
+    {
+        const node = tree(shape)
+        expect(node.kind, explainRecipe(shape)).toBe('leaf')
+        expect(leafError(shape, node as LeafNode), explainRecipe(shape)).toBeLessThan(tolerance)
+        expect(verifyRecipe(shape).ok, `${explainRecipe(shape)}\n${JSON.stringify(verifyRecipe(shape))}`).toBe(true)
+    }
+
+    it('records primitives with the moves the kernel makes while building them', () =>
+    {
+        const box = modeler.box(10, 20, 30, [5, 6, 7]) as any
+        expect(recipe(box).steps[0]).toEqual({ op: 'box', size: [10, 20, 30] })
+        expectOnLeaf(box)
+
+        expectOnLeaf(modeler.cylinder(5, 40, [3, 4, 5]))
+        expectOnLeaf(modeler.sphere(7, [10, 0, 0]))
+        expectOnLeaf(modeler.cone(20, 5, 30, [0, 0, 10]))
+    })
+
+    it('reads moves and rotations back from the Location', () =>
+    {
+        const box = modeler.box(10, 20, 30) as any
+        box.move(50, 0, 0)
+        box.rotateAround(30, [0, 0, 1], [0, 0, 0])
+        box.rotateX(15)
+        box.moveTo(1, 2, 3)
+        expectOnLeaf(box)
+        expect(recipe(box).steps.map(s => s.op)).toContain('rotate')
+    })
+
+    it('records mirror, which returns a new shape, and scale, which rebuilds in place', () =>
+    {
+        const cyl = modeler.cylinder(5, 40, [30, 0, 0]) as any
+        cyl.rotateY(20)
+        const mirrored = cyl._mirrored([10, 0, 0], [1, 0, 0])
+        expect(recipeOf(cyl)!.steps.some(s => s.op === 'mirror')).toBe(false)
+        expectOnLeaf(mirrored)
+
+        const box = modeler.box(10, 10, 10, [20, 0, 0]) as any
+        box.scale(2)
+        expectOnLeaf(box)
+    })
+
+    it('records subtract in place, and union and intersect as new shapes', () =>
+    {
+        const plate = modeler.box(100, 50, 20) as any
+        plate.subtract(modeler.cylinder(5, 40, [10, 0, -20]))
+        expect(tree(plate)).toMatchObject({ kind: 'boolean', op: 'cut' })
+        expect(verifyRecipe(plate).ok, explainRecipe(plate)).toBe(true)
+
+        const a = modeler.box(20) as any
+        const fused = a.union(modeler.sphere(12, [10, 0, 0]))
+        expect(tree(fused)).toMatchObject({ kind: 'boolean', op: 'fuse' })
+        expect(verifyRecipe(fused).ok, explainRecipe(fused)).toBe(true)
+
+        const b = modeler.box(20) as any
+        const common = b.intersect(modeler.sphere(12))
+        expect(tree(common)).toMatchObject({ kind: 'boolean', op: 'common' })
+        expect(verifyRecipe(common).ok, explainRecipe(common)).toBe(true)
+    })
+
+    it('gives copies their own recipe', () =>
+    {
+        const a = modeler.box(10) as any
+        const b = a.copy()
+        b.move(100, 0, 0)
+        expectOnLeaf(a)
+        expectOnLeaf(b)
+        expect(affineApply((tree(b) as LeafNode).matrix, [0, 0, 0])[0]).toBeCloseTo(100, 9)
+    })
+
+    it('bakes partial primitives and geometry rebuilt by unrecorded operations', () =>
+    {
+        const segment = new brep.Solid().makeCylinder(5, 10, [0, 0, 0], 90)
+        expect(recipe(segment).steps).toEqual([{ op: 'baked', reason: 'a 90° cylinder segment' }])
+
+        const box = modeler.box(20) as any
+        box.fillet(2)
+        const r = recipe(box)
+        expect(isRecipeLive(r)).toBe(false)
+        expect(r.steps.at(-1)).toEqual({ op: 'baked', reason: 'fillet() is not recorded' })
+    })
+})

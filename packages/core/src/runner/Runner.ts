@@ -719,7 +719,11 @@ export class Runner
         const wanted = outputsNeedRecipes(outputs);
         if (!wanted && !this._recipe) return;
         this._recipe ??= await import('../modeler/Recipe');
-        if (wanted) this._recipe.installRecipeRecorder();
+        if (wanted)
+        {
+            this._recipe.installRecipeRecorder();   // meshup
+            if (this._modeler?.mode() === 'brep') this._recipe.installRecipeRecorder({ brep: this._modeler.kernel() });
+        }
         this._recipe.setRecipeRecording(wanted);
     }
 

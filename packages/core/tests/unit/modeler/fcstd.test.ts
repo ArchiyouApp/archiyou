@@ -553,7 +553,45 @@ describe('FCStd export', () =>
 
     //// the brep kernel ////
 
-    it('writes brep kernel shapes as exact OpenCascade geometry', async () =>
+    it('exports recorded brep shapes as features, with the exact result as the cache', async () =>
+    {
+        const m = new Modeler('brep')
+        await m.load()
+        m.setArchiyou({ modeler: m } as unknown as ArchiyouModules)
+        installRecipeRecorder({ brep })
+
+        const plate = m.box(100, 50, 20) as any
+        plate.rotateZ(30)
+        plate.subtract(m.cylinder(5, 40, [10, 0, -20]))
+        ;(plate as any).name?.('plate')
+        const lone = m.box(10, 20, 30, [200, 0, 0]) as any
+        lone.rotateAround(40, [1, 1, 0], [200, 0, 0])
+
+        const result = await buildFCStd(m.scene(), { units: 'mm' })
+        const entries = unzip(result!.data)
+        const objects = objectsOf(parseXml(entries[0].text))
+        expect(objects.map(o => o.type)).toEqual(expect.arrayContaining(['Part::Cut', 'Part::Box', 'Part::Cylinder']))
+
+        // The cut's cache is OpenCascade's own exact solid
+        const cut = objects.find(o => o.type === 'Part::Cut')!
+        const read = readBrep(entries.find(e => e.name === cut.props.Shape.children[0].attrs.file)!.text)
+        expect(read.valid).toBe(true)
+        expect(read.volume).toBeCloseTo(100 * 50 * 20 - Math.PI * 25 * 20, 3)
+
+        // The lone box's FreeCAD corners are the brep box's vertices
+        const fcBox = objects.filter(o => o.type === 'Part::Box').find(o => o.name !== value(cut, 'Base'))!
+        const [L, W, H] = ['Length', 'Width', 'Height'].map(p => num(fcBox, p))
+        const corners: V3[] = []
+        for (const x of [0, L]) for (const y of [0, W]) for (const z of [0, H]) corners.push(placementApply(fcBox, [x, y, z]))
+        const vertices = lone.vertices().toArray().map((v: any) => [v.x, v.y, v.z])
+        expect(vertices).toHaveLength(8)
+        for (const v of vertices)
+        {
+            expect(Math.min(...corners.map(c => Math.hypot(c[0] - v[0], c[1] - v[1], c[2] - v[2])))).toBeLessThan(1e-6)
+        }
+    }, 60000)
+
+    it('bakes brep kernel shapes as exact OpenCascade geometry', async () =>
     {
         const solid = new brep.Solid().makeCylinder(10, 30)
         const root = new meshup.SceneNode('Scene')
@@ -561,7 +599,7 @@ describe('FCStd export', () =>
         ;(child as any)._shape = solid
         root.addChild(child)
 
-        const result = await buildFCStd(root, { units: 'mm' })
+        const result = await buildFCStd(root, { units: 'mm', parametric: false })
         const entries = unzip(result!.data)
         const objects = objectsOf(parseXml(entries[0].text))
         expect(objects.map(o => o.type)).toEqual(['Part::Feature'])

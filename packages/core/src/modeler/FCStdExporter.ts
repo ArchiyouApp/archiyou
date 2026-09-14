@@ -991,7 +991,7 @@ export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = 
         };
 
         let emitted: Emitted;
-        const recipe = options.parametric && shape.type === 'Mesh' ? recipeOf(shape) : null;
+        const recipe = options.parametric && (shape.type === 'Mesh' || isBrepShape(shape)) ? recipeOf(shape) : null;
         if (recipe)
         {
             const tree = resolveRecipe(recipe);
@@ -1011,7 +1011,7 @@ export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = 
         else
         {
             emitted = baked();
-            report.add({ subject: label, status: 'baked', reason: options.parametric ? (shape.type === 'Mesh' ? 'shape was not recorded' : `${kind} is exported as geometry`) : 'parametric export is off', notes: [], tags: [] });
+            report.add({ subject: label, status: 'baked', reason: options.parametric ? (shape.type === 'Mesh' || isBrepShape(shape) ? 'shape was not recorded' : `${kind} is exported as geometry`) : 'parametric export is off', notes: [], tags: [] });
         }
 
         for (const o of draft) { o.color ??= color; o.transparency ??= transparency; }
