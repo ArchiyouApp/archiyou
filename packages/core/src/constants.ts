@@ -35,6 +35,23 @@ export const MODELER_METHODS_INTO_GLOBAL = [
 
 export const SCRIPT_OUTPUT_CATEGORIES = ['model','metrics','tables','docs'] // see types: ScriptOutputCategory
 export const SCRIPT_OUTPUT_MODEL_FORMATS = ['gltf','glb','step','stl','svg', 'dae', 'obj', 'dxf', 'amf'] // see types: ScriptOutputModelFormat
+/** Model formats whose exporter reads shape recipes (see src/modeler/Recipe.ts). A run that
+ *  requests one of these records how every shape was made; every other run records nothing. */
+export const SCRIPT_OUTPUT_RECIPE_FORMATS = ['fcstd']
+
+/** Does any requested output path ask for a format that reads recipes? A model wildcard counts,
+ *  because it resolves to every model format. Lives here so the Runner can decide without
+ *  loading src/modeler/Recipe.ts. */
+export function outputsNeedRecipes(outputs: readonly string[] | null | undefined): boolean
+{
+    return (outputs ?? []).some(path =>
+    {
+        const segments = String(path).split('?')[0].split('/');
+        if (!segments.includes('model')) return false;
+        const format = segments[segments.length - 1];
+        return format === '*' || SCRIPT_OUTPUT_RECIPE_FORMATS.includes(format);
+    });
+}
 export const SCRIPT_OUTPUT_METRIC_FORMATS = ['json','xlsx'] // see types: ScriptOutputMetricFormat
 export const METRIC_DEFAULT_ICON = 'gauge' // default icon for metrics without an explicit icon set (Lucide icon name)
 export const SCRIPT_OUTPUT_TABLE_FORMATS = ['json','xlsx'] // see types: ScriptOutputTableFormat

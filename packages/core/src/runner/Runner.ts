@@ -64,7 +64,7 @@ import { MaterialManager } from '../materials/MaterialManager';
 import { ModuleRegistry } from '../modules/ModuleRegistry'; // optional, entitlement-gated script modules
 
 // Settings
-import { MODELER_METHODS_INTO_GLOBAL, SCRIPT_OUTPUT_GLTF_OPTIONS_DEFAULT } from '../constants'; 
+import { MODELER_METHODS_INTO_GLOBAL, SCRIPT_OUTPUT_GLTF_OPTIONS_DEFAULT, outputsNeedRecipes } from '../constants'; 
 import { ParamManager } from '../execution/ParamManager';
 
 /** How many component execution results the Runner memoises before evicting the
@@ -90,6 +90,8 @@ export class Runner
     private _localScopes: Record<string, any> = {}; // TODO: more specific typing for Proxy
     private _activeScope: RunnerActiveScope; // scope in given context (local or worker) and name
     private _activeExecRequest: RunnerScriptExecutionRequest;
+    /** src/modeler/Recipe.ts, loaded the first time a run requests a format that reads recipes */
+    private _recipe: typeof import('../modeler/Recipe') | null = null;
 
     /** Persistent Interactor instance — survives across runs so the internal HandleRegistry
      *  can track which handles have been emitted to the viewer. Re-linked each run. */
@@ -696,6 +698,9 @@ export class Runner
         // loading is async and the per-scope setup (_executionStartRunInScope) is not.
         await this._ensureKernel(request.kernel);
 
+        // Record how shapes are made only when an exporter will read it (FreeCAD and friends)
+        await this._syncRecipeRecording(request.outputs);
+
         // Per-statement mode: split the script and execute statement-by-statement so a
         // single failure halts with a partial model instead of losing the whole run, and
         // each statement is timed. Opt-in via request.perStatement (editor on, server off).
@@ -705,6 +710,17 @@ export class Runner
         }
 
         return await this._execute(request, true, true);
+    }
+
+    /** Switch shape recipe recording on for runs that request a recipe format, off for all others.
+     *  Recording stays on through the export at the end of the run, which is what reads it. */
+    private async _syncRecipeRecording(outputs: string[] | undefined): Promise<void>
+    {
+        const wanted = outputsNeedRecipes(outputs);
+        if (!wanted && !this._recipe) return;
+        this._recipe ??= await import('../modeler/Recipe');
+        if (wanted) this._recipe.installRecipeRecorder();
+        this._recipe.setRecipeRecording(wanted);
     }
 
     private _finalizeExecutionDuration(result: RunnerScriptExecutionResult | null | undefined, executeStartTime: number): void
