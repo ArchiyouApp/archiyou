@@ -1529,8 +1529,13 @@ export class ModelViewer extends SignalWatcher(LitElement)
   {
     if (style.mesh === null)
     {
-      this._hiddenObjects.push(mesh);
-      mesh.visible = false;
+      // Hide the surface through its material, NOT mesh.visible: a solid's edge lines are
+      // children of its mesh, and an invisible object hides its whole subtree - so the
+      // wireframe style would hide the very edges it is meant to show.
+      this._savedMaterials.set(mesh, mesh.material);
+      const hiddenMat = new THREE.MeshBasicMaterial({ visible: false });
+      this._overrideMaterials.push(hiddenMat);
+      mesh.material = hiddenMat;
     }
     else if (style.mesh !== undefined)
     {

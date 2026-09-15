@@ -296,6 +296,7 @@ export class Docs
     hline(input?:string|number|DocGraphicInputOrthoLine, thickness?:number|string, color?:string):Document { return this.checkAndMakeDefaultDoc().hline(input, thickness, color); }
     vline(input?:string|number|DocGraphicInputOrthoLine, thickness?:number|string, color?:string):Document { return this.checkAndMakeDefaultDoc().vline(input, thickness, color); }
     var(name:string):Document { return this.checkAndMakeDefaultDoc().var(name); }
+    tag(name:string):Document { return this.checkAndMakeDefaultDoc().tag(name); }
     set(name:string, value:string):Document { return this.checkAndMakeDefaultDoc().set(name, value); }
     titleblock(data?:TitleBlockInput):Document { return this.checkAndMakeDefaultDoc().titleblock(data); }
     labelblock(labels:string|Array<string>, texts:string|Array<string>, options?:LabelBlockOptions):Document { return this.checkAndMakeDefaultDoc().labelblock(labels, texts, options); }

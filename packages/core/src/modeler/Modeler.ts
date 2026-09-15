@@ -46,6 +46,20 @@ import { buildSVG, buildProjectionSVG, buildThumbnailSVG, buildThumbnailSVGFromC
 // writer and its ~171 KB of base64 WASM stay out of the eager bundle. See DAEExporter.ts.
 import type { toDAEOptions } from "./DAEExporter";
 import type { toFCStdOptions } from "./FCStdExporter";
+import type { toSCADOptions } from "./SCADExporter";
+import type { BuildIFCOptions } from "./IFC4Exporter";
+
+/** The IFC classifier and exporter, loaded on demand like the other exporters: it is large and most
+ *  runs never use it. toIFC() loads it itself. explainIFC() is synchronous for scripts, so the Runner
+ *  loads it before running a script that calls explainIFC() (Runner._loadIFCWhenUsed). */
+let ifcModule: typeof import("./IFC4Exporter") | null = null;
+
+/** Load the IFC module once; later calls resolve immediately. */
+export async function loadIFCModule(): Promise<typeof import("./IFC4Exporter")>
+{
+    ifcModule ??= await import("./IFC4Exporter");
+    return ifcModule;
+}
 
 // Meshup namespace — imported as value (for instanceof) and type
 import * as meshup from '@archiyou/meshup'
@@ -1154,6 +1168,60 @@ export class Modeler
         const result = await buildFCStd(this.scene(), { units: this.units(), ...(options ?? {}) })
         if (result) console.info(`Modeler::toFCStd(): ${result.report.toString()}`)
         return result?.data ?? null
+    }
+
+    /** IFC4 file (.ifc) of the scene. Every product is classified automatically (walls, slabs, roofs, studs,
+     *  rafters, insulation, openings, doors, windows...) and written with tessellated bodies, materials,
+     *  quantities and an 'Archiyou' property set that records why each element got its class.
+     *  See IFC4Exporter.ts. */
+    async toIFC(options?: Partial<BuildIFCOptions>): Promise<string | null>
+    {
+        const { buildIFC } = await loadIFCModule()
+        const { text, classification } = buildIFC(this.scene(), { units: this.units(), timestamp: Math.round(Date.now() / 1000), ...(options ?? {}) })
+        if (!classification.products.length) { console.warn('Modeler::toIFC(): the model has no products to export'); return null }
+        console.info(`Modeler::toIFC(): ${classification.products.length} products in ${classification.storeys.length} storey(s)`)
+        return text
+    }
+
+    /** Load the IFC classifier, which explainIFC() needs. Scripts never call this: the Runner does it for them. */
+    async loadIFC(): Promise<void>
+    {
+        await loadIFCModule()
+    }
+
+    /** Print how the model would export to IFC: every product with its IFC entity, PredefinedType and
+     *  the evidence for it, as a tree of storeys, elements and their parts. Classification is
+     *  automatic, from the scene hierarchy, names and shape proportions. Returns the same text.
+     *
+     *  @example
+     *  // at the end of a script
+     *  explainIFC()
+     *  // wallFront   IfcWall.ELEMENTEDWALL   children: thin horizontal, 17 vertical sticks
+     *  //   studs/stud0 .. stud6 x7   IfcMember.STUD   name: 'stud' · stick, vertical
+     */
+    explainIFC(): string
+    {
+        if (!ifcModule)
+        {
+            throw new Error('explainIFC(): the IFC classifier is not loaded. Scripts get it automatically; '
+                + 'when calling the Modeler directly, await modeler.loadIFC() first.')
+        }
+        const { result } = ifcModule.classifyScene(this.scene(), { units: this.units() })
+        const text = ifcModule.explainIfc(result)
+        const log = (console as any).user ?? console.info
+        log.call(console, text)
+        return text
+    }
+
+    /** OpenSCAD file (.scad). Shapes with a recipe become OpenSCAD CSG (cube, cylinder, linear_extrude,
+     *  difference...), the rest closed polyhedra. Fixed numbers, no Customizer parameters. Walks the live
+     *  scene, where the recipes are. See SCADExporter.ts. */
+    async toSCAD(options?: toSCADOptions): Promise<string | null>
+    {
+        const { buildSCAD } = await import('./SCADExporter')
+        const result = buildSCAD(this.scene(), { units: this.units(), ...(options ?? {}) })
+        if (result) console.info(`Modeler::toSCAD(): ${result.report.toString()}`)
+        return result?.text ?? null
     }
 
     /** Build the ArchiyouStateData payload (scenegraph + annotations + managedHandles) used by

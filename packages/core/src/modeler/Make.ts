@@ -1633,6 +1633,15 @@ export class Make
             return { type: isBeam ? 'beam' : 'plate', width, thickness, length };
         };
 
+        /** Strip a trailing index from a shape name so numbered copies collapse
+         *  into one subpart: 'purlin1' → 'purlin', 'stud_12' → 'stud'.
+         *  Names that are only a number are kept as is. */
+        const baseSubpartName = (shapeName: string): string =>
+        {
+            const base = shapeName.replace(/[\s_\-.]*\d+$/, '');
+            return base || shapeName;
+        };
+
         console.info(
             `Make::partList(shapes, name): Got ${shapes.length} shape(s) to make a part list with. Naming and grouping shapes improves the result.`
         );
@@ -1647,11 +1656,10 @@ export class Make
 
                 const dims = classify(shape);
                 if (!dims) return;
-                ``;
                 // part (0), subpart (1), type (2), section (3), length (4), quantity (5)
                 partRowsAll.push([
                     groupName,
-                    (shape as any).name?.() ?? '',
+                    baseSubpartName((shape as any).name?.() ?? ''),
                     dims.type,
                     `${Math.round(dims.width)}x${Math.round(dims.thickness)}`,
                     Math.round(dims.length),
@@ -1661,7 +1669,7 @@ export class Make
         });
 
         // Merge identical parts (same part, type, section & length); accumulate subpart names + quantity
-        const groupedPartRows: Record<string, Array<any>> = {};
+        const groupedPartRows: Record<string, { row: Array<any>; subparts: Set<string> }> = {};
         const genId = (row: Array<any>) =>
             `${row[0]}-${row[2]}-${row[3]}-${row[4]}`; // part, type, section, length
 
@@ -1670,26 +1678,28 @@ export class Make
             const id = genId(row);
             if (!groupedPartRows[id])
             {
-                groupedPartRows[id] = [...row];
+                groupedPartRows[id] = { row: [...row], subparts: new Set() };
             }
             else
             {
-                const subpart = row[1];
-                if (
-                    subpart &&
-                    groupedPartRows[id][1].indexOf(subpart) === -1
-                ) // avoid repeating names
-                {
-                    groupedPartRows[id][1] += groupedPartRows[id][1]
-                        ? `,${subpart}`
-                        : subpart;
-                }
-                groupedPartRows[id][5] += 1; // quantity
+                groupedPartRows[id].row[5] += 1; // quantity
             }
+            if (row[1]) groupedPartRows[id].subparts.add(row[1]); // avoid repeating names
         });
 
-        // After grouping flatten again into Array
-        const groupedRows = Object.values(groupedPartRows) as Array<Array<any>>; // [ [row1], [row2], ...]
+        // After grouping flatten again into Array, most frequent parts first
+        const groupedRows = Object.values(groupedPartRows)
+            .map(({ row, subparts }) =>
+            {
+                row[1] = [...subparts].join(',');
+                return row;
+            })
+            .sort((a, b) =>
+                b[5] - a[5] || // quantity (desc)
+                String(a[0]).localeCompare(String(b[0])) || // part
+                String(a[1]).localeCompare(String(b[1])) || // subpart
+                b[4] - a[4] // length (desc)
+            );
 
         // Make Calc table
         const tableName =

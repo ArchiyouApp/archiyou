@@ -32,7 +32,7 @@ import type { RunnerActiveScope,
 
 import { RunnerComponentImporter } from './RunnerComponentImporter'; // helper for importing components in scope
 import { ScriptExitSignal, isScriptExitSignal, SCRIPT_EXIT_WARNING } from './ScriptExit';
-import { extractTopLevelComponentCalls, extractFirstArg, MAX_COMPONENT_DEPTH, type ComponentCall } from './componentRefs'; // $component() reference parsing (shared with the editor)
+import { extractTopLevelComponentCalls, extractFirstArg, parseAuthoredComponentRef, parseVersionedLocalComponentRef, DEV_COMPONENT_VERSION, MAX_COMPONENT_DEPTH, type ComponentCall } from './componentRefs'; // $component() reference parsing (shared with the editor)
 import { Importer as AssetImporter } from '../importer/Importer'; // $import: fetch+parse remote assets
 import type { AssetPayload } from '../importer/Importer';
 
@@ -53,7 +53,7 @@ import { Db } from '../calc/Db';
 
 // Archiyou modules
 import { Console, NATIVE_CONSOLE } from '../console/Console';
-import { Modeler } from '../modeler/Modeler';
+import { Modeler, loadIFCModule } from '../modeler/Modeler';
 import type { ModelMode } from '../modeler/types';
 import { isAnyShape } from '../modeler/types';
 import { Annotator } from '../annotator/Annotator';
@@ -99,18 +99,22 @@ export class Runner
 
     private _linkedComponentScripts: Array<Script> = [];
     private _componentScripts: Record<string, Script> = {}; // prefetched component scripts by name=url=path
-    /** Where to look up a $component('./name') that nothing linked in — the author's
-     *  shared library. Set per run from the request (componentLibraryUrl + the script's
-     *  author); null in the editor, where local scripts are linked instead. */
-    private _componentLibrary: { url: string; author: string; authToken?: string; fileId?: string } | null = null;
+    /** Where to look up a component that nothing linked in — the shared library. Set per
+     *  run from the request (componentLibraryUrl, and the script's author for bare names).
+     *  Without an author only `@author/name` references can use it. */
+    private _componentLibrary: { url: string; author?: string; authToken?: string; fileId?: string } | null = null;
     /** In-flight/settled shared-library lookups by local component name. A script that
      *  uses the same component four times (and the double prefetch on execute) must not
      *  cause four fetches — and a miss must be remembered as a miss. */
     private _sharedComponentFetches: Record<string, Promise<Script|null>> = {};
     /** Same memo for the rename fallback (_getRenamedComponentScript), keyed by old name.
      *  Holds the server's ScriptData rather than a Script: linked scripts are re-linked
-     *  every run, so the matching working copy is looked up again each time. */
+     *  every run, so the matching working copy is looked up again each time. Cleared per run:
+     *  it resolves own scripts to their latest stored version, which changes between runs. */
     private _renamedComponentFetches: Record<string, Promise<ScriptData|null>> = {};
+    /** Other authors' components readable from the shared library (`@author/name`), for
+     *  $component().list(). Fetched before a run that lists them, see _prefetchComponentScripts. */
+    private _sharedComponentNames: Array<string> = [];
     /** The chain of components currently being executed, innermost last, by reference.
      *  A component already on it would recurse forever, so it is refused with the chain
      *  in the message. Also caps how deep nesting may go. Unwound in the finally of
@@ -353,6 +357,8 @@ export class Runner
                 JSON: JSON, // for debugging
                 Array: Array,
                 Object: Object,
+                Set: Set,
+                Map: Map,
                 // Primitive constructors/parsers: scripts need these to convert values,
                 // most commonly an options param (always a string) used as a number
                 Number: Number,
@@ -477,9 +483,11 @@ export class Runner
     _addMetaMethodsToScopeState(state:Record<string,any>)
     {
         // Import component
-        state.$component = (name:string, params?: Record<string, any>) =>
+        state.$component = (name?:string, params?: Record<string, any>) =>
         {
             const componentImporter = new RunnerComponentImporter(this, this.getActiveScope(), name);
+            // No name: show what can be used, so $component() alone is a lookup
+            if (!name) componentImporter.list();
             if (params && typeof params === 'object') componentImporter.params(params);
             // Don't execute yet, wait for componentImporter.get()
             return componentImporter;
@@ -668,16 +676,14 @@ export class Runner
         // that building the scope stays synchronous.
         await this._prepareModules(request);
 
-        console.info(`==== Runner::execute() - prefetched components: ${Object.keys(this._componentScripts).length } ====`);
-        Object.entries(this._componentScripts).forEach(([name, script]) => {
-            console.info(`- ${name}: <<<${script.code}>>>`); // library path, url, inline code
-        });
-        console.info('==== end components cache ====')
+        // Names only: logging every component's full source on each run was tens of KB of
+        // console text per execution, which is not free in a Web Worker.
+        console.info(`Runner::execute(): ${Object.keys(this._componentScripts).length} prefetched component(s): ${Object.values(this._componentScripts).map(s => s._component).join(', ')}`);
 
         if (missing.length > 0)
         {
             const names = missing.map(n => `'${n}'`).join(', ');
-            const errorMessage = `Component not found: ${names}. Make sure the script exists in your workspace.`;
+            const errorMessage = `Component not found: ${names}. Make sure the script exists in your workspace, or use $component().list() to see the available components.`;
             return {
                 created: new Date(),
                 status: 'error',
@@ -700,6 +706,9 @@ export class Runner
 
         // Record how shapes are made only when an exporter will read it (FreeCAD and friends)
         await this._syncRecipeRecording(request.outputs);
+
+        // The IFC classifier loads on demand; explainIFC() is synchronous, so load it up front when used
+        await this._loadIFCWhenUsed(request);
 
         // Per-statement mode: split the script and execute statement-by-statement so a
         // single failure halts with a partial model instead of losing the whole run, and
@@ -725,6 +734,15 @@ export class Runner
             if (this._modeler?.mode() === 'brep') this._recipe.installRecipeRecorder({ brep: this._modeler.kernel() });
         }
         this._recipe.setRecipeRecording(wanted);
+    }
+
+    /** Load the IFC module before a run whose script, or any of its components, calls explainIFC():
+     *  that script-facing call is synchronous and cannot wait for a dynamic import. Components are
+     *  already prefetched at this point. */
+    private async _loadIFCWhenUsed(request: RunnerScriptExecutionRequest): Promise<void>
+    {
+        const codes = [request.script?.code, ...Object.values(this._componentScripts).map(s => (s as any)?.code)];
+        if (codes.some(code => typeof code === 'string' && /\bexplainIFC\s*\(/.test(code))) await loadIFCModule();
     }
 
     private _finalizeExecutionDuration(result: RunnerScriptExecutionResult | null | undefined, executeStartTime: number): void
@@ -1336,6 +1354,70 @@ ${contextLines.join('\n')}
         }
     }
 
+    /** The components a script can use: first the author's own (linked workspace) scripts
+     *  as `@author/name:dev` (their latest version), then the shared ones as `@author/name`,
+     *  own shares included. Each group sorted. Own scripts are listed by bare name when the
+     *  author is unknown (anonymous, tests). Used by $component().list(). */
+    listComponentGroups():{ own:Array<string>; shared:Array<string> }
+    {
+        const me = this._ownComponentAuthor();
+        const sorted = (names:Array<string>) => Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
+
+        const own = sorted(this._linkedComponentScripts
+            .filter(s => s.name)
+            .map(s => (s.author ?? me) ? `@${s.author ?? me}/${s.name}:${DEV_COMPONENT_VERSION}` : s.name as string));
+        const shared = sorted(this._sharedComponentNames);
+        return { own, shared };
+    }
+
+    /** listComponentGroups(), own first, as one list. */
+    listComponentNames():Array<string>
+    {
+        const { own, shared } = this.listComponentGroups();
+        return [...own, ...shared];
+    }
+
+    /** The author whose workspace `@author/name:dev` resolves locally for: the author of the
+     *  running script, else of the linked scripts. Undefined when nobody is known. */
+    _ownComponentAuthor():string|undefined
+    {
+        return this._componentLibrary?.author?.toLowerCase()
+            ?? this._linkedComponentScripts.find(s => s.author)?.author;
+    }
+
+    /** Fill _sharedComponentNames from the shared library: community shares plus, with a
+     *  token, those shared with the user. Never throws; without a library it stays empty. */
+    async _fetchSharedComponentNames():Promise<void>
+    {
+        const lib = this._componentLibrary;
+        if(!lib){ this._sharedComponentNames = []; return; }
+
+        const get = async (path:string, headers:Record<string,string> = {}):Promise<Array<ScriptData>> =>
+        {
+            try
+            {
+                const res = await fetch(`${lib.url}${path}`, { headers });
+                if(!res.ok) return [];
+                const body = await res.json();
+                const data = body?.data ?? body;
+                return Array.isArray(data) ? data : [];
+            }
+            catch(e)
+            {
+                console.error(`Runner::_fetchSharedComponentNames(): Failed to fetch '${path}': ${(e as Error)?.message ?? e}`);
+                return [];
+            }
+        };
+
+        const lists = await Promise.all([
+            get('/scripts/shared'),
+            lib.authToken ? get('/scripts/shared/with-me', { Authorization: `Bearer ${lib.authToken}` }) : Promise.resolve([]),
+        ]);
+        this._sharedComponentNames = lists.flat()
+            .filter(d => d?.author && d?.name)
+            .map(d => `@${String(d.author).toLowerCase()}/${String(d.name).toLowerCase()}`);
+    }
+
     /** Execute a component script in a seperate scope
      *  This is always done in local context 
      *   because executing components comes from within execution scope and context
@@ -1404,9 +1486,6 @@ ${contextLines.join('\n')}
 
          console.info(`Runner:_executeLocalComponent(): Executing script in active component context: '${this._activeScope.name}'`);
          console.info(`* With execution request settings: { params: ${JSON.stringify(request.params)} and outputs: ${JSON.stringify(request.outputs)} }`);
-         console.info(`====== component code ======`)
-         console.info(`${request.script.code}`);
-         console.info(`============================`)
 
          this._activeExecRequest = request;
          const executeStartTime = performance.now()
@@ -1506,6 +1585,11 @@ ${contextLines.join('\n')}
         if(level === 0)
         {
             this._componentLibrary = this._getComponentLibraryFromRequest(request);
+            // Latest script versions (own stored ones, others' ':dev' copies) change between runs
+            this._renamedComponentFetches = {};
+            Object.keys(this._sharedComponentFetches)
+                .filter(key => key.endsWith(`:${DEV_COMPONENT_VERSION}`))
+                .forEach(key => delete this._sharedComponentFetches[key]);
         }
 
         if(!scriptCode)
@@ -1529,15 +1613,19 @@ ${contextLines.join('\n')}
         // Fetch all top-level component scripts
         const preparedComponentScripts: Array<Script> = [];
         const missing: string[] = [];
+        let listsShared = false;
 
         for(let i = 0; i < componentMatches.length; i++)
         {
             const match = componentMatches[i];
             const name = match.content;
 
+            // $component() without a name only lists the available components (.list()),
+            // which includes the shared library: fetch that list now, the listing is sync
             if(!name.trim())
             {
-                console.warn(`Runner::_prefetchComponentScripts(): Component name not found in match: ${JSON.stringify(match)}`);
+                if(level === 0 && !listsShared){ listsShared = true; await this._fetchSharedComponentNames(); }
+                continue;
             }
 
             // Already walked on this pass? Then it is cached (or already reported missing)
@@ -1702,6 +1790,36 @@ ${contextLines.join('\n')}
     {
         if(!path && typeof path !== 'string'){ throw new Error(`$component('${path}')::_prefetchComponentScript(): Cannot fetch. Component name not set!`);}
 
+        // '@author/name[:version]': the shared library, the same for own scripts as for
+        // anyone else's. ':dev' is the latest script version instead.
+        const authored = parseAuthoredComponentRef(path);
+        if(authored)
+        {
+            if(authored.version === DEV_COMPONENT_VERSION)
+            {
+                return await this._getDevComponentScript(authored.name, authored.author);
+            }
+            return await this._getSharedComponentScript(authored.name, authored.author, authored.version);
+        }
+
+        // 'wall:dev' / './wall:0.6': a versioned own script, like '@me/wall:dev' / '@me/wall:0.6'
+        const versioned = parseVersionedLocalComponentRef(path);
+        if(versioned)
+        {
+            const me = this._ownComponentAuthor();
+            if(versioned.version === DEV_COMPONENT_VERSION)
+            {
+                // A workspace name, like './wall': the linked script of that name, whoever the
+                // workspace says wrote it (it can hold scripts of several accounts)
+                const linked = this._linkedComponentScripts.find(s => s.name === versioned.name);
+                if(linked) return linked;
+                return me
+                    ? await this._getDevComponentScript(versioned.name, me)
+                    : await this._resolveLocalComponentScript(versioned.name);
+            }
+            return await this._getSharedComponentScript(versioned.name, me, versioned.version);
+        }
+
         // Local file path like './myComponent.ts' (in node) for local scripting and debug
         if(path.includes('.js'))
         {
@@ -1782,6 +1900,36 @@ ${contextLines.join('\n')}
         }
     }
 
+    /** '@author/name:dev': the latest script version, not a shared one.
+     *    - own script: the workspace copy (possibly unsaved), else the latest stored version;
+     *    - another author's: their latest working copy, if they shared it with dev access.
+     *  When neither is readable (a visitor of a published configurator, or no dev access)
+     *  the latest shared version is used, with a warning. */
+    async _getDevComponentScript(name:string, author:string):Promise<Script|null>
+    {
+        const me = this._ownComponentAuthor();
+        if(!me || author === me)
+        {
+            // When the own author is unknown, only a linked script that does not say it
+            // belongs to someone else counts
+            const linked = this._linkedComponentScripts.find(s => s.name === name && (!s.author || s.author === author));
+            if(linked) return linked;
+
+            const stored = await this._getRenamedComponentScript(name);
+            if(stored) return stored;
+        }
+
+        const dev = await this._getSharedComponentScript(name, author, DEV_COMPONENT_VERSION);
+        if(dev) return dev;
+
+        const shared = await this._getSharedComponentScript(name, author);
+        if(shared)
+        {
+            console.warn(`$component('@${author}/${name}:dev'): The latest script version is not readable. Using shared version ${shared.version ?? 'latest'} instead.`);
+        }
+        return shared;
+    }
+
     /** Resolve a workspace-local component name ('./wall' or bare 'wall'), in order:
      *    1. a linked script with that name (the editor's workspace);
      *    2. a linked script that USED to have that name — it was renamed, and the
@@ -1800,7 +1948,14 @@ ${contextLines.join('\n')}
         const renamed = await this._getRenamedComponentScript(localName);
         if (renamed) return renamed;
 
-        return await this._getSharedComponentScript(localName);
+        const shared = await this._getSharedComponentScript(localName);
+        if (shared && this._linkedComponentScripts.length > 0)
+        {
+            // In the editor an own script should never come from the shared library: that is
+            // a released version, not the latest code. Only reached without a (valid) login.
+            console.warn(`$component('./${localName}')::_resolveLocalComponentScript(): Not in your workspace. Using shared version ${shared.version ?? 'latest'}, which may be older than your latest code.`);
+        }
+        return shared;
     }
 
     //// COMPONENTS FROM THE AUTHOR'S SHARED LIBRARY ////
@@ -1809,7 +1964,7 @@ ${contextLines.join('\n')}
      *  one. Needs both halves: where the backend is (componentLibraryUrl, possibly '' for
      *  a root-relative same-origin call) and whose workspace to look in (the script's
      *  author). A Script/string request carries neither, so those never get a fallback. */
-    _getComponentLibraryFromRequest(request:string|Script|RunnerScriptExecutionRequest):{ url:string; author:string; authToken?:string; fileId?:string }|null
+    _getComponentLibraryFromRequest(request:string|Script|RunnerScriptExecutionRequest):{ url:string; author?:string; authToken?:string; fileId?:string }|null
     {
         if(typeof request !== 'object' || request === null || Script.isScript(request)) return null;
 
@@ -1817,10 +1972,15 @@ ${contextLines.join('\n')}
         const url = req.componentLibraryUrl;
         if(typeof url !== 'string') return null; // not '!url' — '' is a valid (same-origin) base
 
+        // No author (a new or not yet synced script): bare names have no library to fall back
+        // to, but '@author/name' still does
         const author = (req.script as any)?.author;
-        if(!author || typeof author !== 'string') return null;
-
-        return { url, author, authToken: req.authToken, fileId: (req.script as any)?.fileId };
+        return {
+            url,
+            author: (typeof author === 'string' && author) ? author.toLowerCase() : undefined,
+            authToken: req.authToken,
+            fileId: (req.script as any)?.fileId,
+        };
     }
 
     /** Rename fallback for linked (workspace) components.
@@ -1837,7 +1997,7 @@ ${contextLines.join('\n')}
     async _getRenamedComponentScript(localName:string):Promise<Script|null>
     {
         const lib = this._componentLibrary;
-        if(!lib?.authToken || this._linkedComponentScripts.length === 0) return null;
+        if(!lib?.author || !lib.authToken || this._linkedComponentScripts.length === 0) return null;
 
         const cacheKey = `${lib.author}/${localName}`;
         const url = `${lib.url}/scripts/${encodeURIComponent(lib.author)}/by-name/${encodeURIComponent(localName)}`;
@@ -1866,6 +2026,13 @@ ${contextLines.join('\n')}
         const script = this._linkedComponentScripts.find(s => s.fileId === data.fileId) ?? Script.fromData(data);
         if(!script) return null;
 
+        // Not renamed, just not linked: the latest stored version of the own script
+        if(script.name === localName)
+        {
+            console.info(`$component('./${localName}')::_getRenamedComponentScript(): Resolved to the latest stored version of own script '${script.name}'.`);
+            return script;
+        }
+
         console.warn(`$component('./${localName}')::_getRenamedComponentScript(): '${localName}' was renamed to '${script.name}'. Using its latest version — update the reference to $component('./${script.name}').`);
         return script;
     }
@@ -1879,26 +2046,29 @@ ${contextLines.join('\n')}
      *  Resolves to the LATEST shared version, so re-sharing a component updates every
      *  configurator that uses it. Returns null (never throws) on any failure — an
      *  unresolvable component is reported by the caller as a missing component. */
-    async _getSharedComponentScript(localName:string):Promise<Script|null>
+    async _getSharedComponentScript(localName:string, author?:string, version?:string):Promise<Script|null>
     {
         const lib = this._componentLibrary;
-        if(!lib) return null;
+        author ??= lib?.author;
+        if(!lib || !author) return null;
 
-        const cacheKey = `${lib.author}/${localName}`;
+        const nameAndVersion = version ? `${localName}:${version}` : localName;
+        const cacheKey = `${author}/${nameAndVersion}`;
         if(this._sharedComponentFetches[cacheKey]) return this._sharedComponentFetches[cacheKey];
 
-        const url = `${lib.url}/scripts/shared/${encodeURIComponent(lib.author)}/${encodeURIComponent(localName)}`;
+        const url = `${lib.url}/scripts/shared/${encodeURIComponent(author)}/${encodeURIComponent(localName)}${version ? `:${encodeURIComponent(version)}` : ''}`;
 
         const fetching = (async ():Promise<Script|null> =>
         {
             try
             {
                 console.info(`$component('./${localName}')::_getSharedComponentScript(): Fetching from the author's shared library at '${url}'...`);
-                const res = await fetch(url);
+                // A token lets a share restricted to this user (onlyUsers) through
+                const res = await fetch(url, lib.authToken ? { headers: { Authorization: `Bearer ${lib.authToken}` } } : undefined);
                 if(!res.ok)
                 {
                     // 404 = never shared; 403 = shared but restricted with onlyUsers.
-                    console.error(`$component('./${localName}')::_getSharedComponentScript(): '${lib.author}/${localName}' is not readable (HTTP ${res.status}). The author must share it for this configurator to work.`);
+                    console.error(`$component('./${localName}')::_getSharedComponentScript(): '${author}/${nameAndVersion}' is not readable (HTTP ${res.status}). The author must share it for this configurator to work.`);
                     return null;
                 }
                 const body = await res.json();
@@ -1909,7 +2079,7 @@ ${contextLines.join('\n')}
                     console.error(`$component('./${localName}')::_getSharedComponentScript(): Invalid script data returned by '${url}'.`);
                     return null;
                 }
-                console.info(`$component('./${localName}')::_getSharedComponentScript(): Resolved to shared '${lib.author}/${script.name}:${script.version ?? 'latest'}'.`);
+                console.info(`$component('./${localName}')::_getSharedComponentScript(): Resolved to shared '${author}/${script.name}:${script.version ?? 'latest'}'.`);
                 return script;
             }
             catch(e)
@@ -2346,6 +2516,9 @@ ${contextLines.join('\n')}
 
         this._addMetaToResult(scope, request, result);
 
+        // Param definitions, for RunnerComponentImporter.info()
+        result.params = (scope._paramManager?.getParams?.() ?? []).map((p:any) => p.toData?.() ?? p);
+
         // Outputs
         if(request.outputs)
         {
@@ -2456,6 +2629,43 @@ ${contextLines.join('\n')}
                         });
                     }
                     break;
+
+                case 'ifc': // IFC4 building model, classified automatically, see IFC4Exporter.ts
+                {
+                    const script = request.script as any;
+                    outp = await scope.modeler.toIFC({
+                        ...(outputPath?.formatOptions as any ?? {}),
+                        name: script?.name,
+                        version: script?.version,
+                    });
+                    if(outp)
+                    {
+                        outputs.push({
+                            path: outputPathData,
+                            output: outp
+                        } as ScriptOutputData);
+                    }
+                    break;
+                }
+
+                case 'scad': // OpenSCAD: recipes become CSG, the rest polyhedra, see SCADExporter.ts
+                {
+                    const script = request.script as any;
+                    outp = await scope.modeler.toSCAD({
+                        ...(outputPath?.formatOptions as any ?? {}),
+                        name: script?.name,
+                        version: script?.version,
+                        params: scope._paramManager?.getParams?.() ?? [],
+                    });
+                    if(outp)
+                    {
+                        outputs.push({
+                            path: outputPathData,
+                            output: outp
+                        } as ScriptOutputData);
+                    }
+                    break;
+                }
 
                 case 'fcstd': // FreeCAD document: recipes become parametric features, see FCStdExporter.ts
                 {

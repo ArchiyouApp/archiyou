@@ -240,6 +240,7 @@ export class ScriptManagerItem extends LitElement
 
     /* Same pill as the configurator header's version badge. */
     .version {
+      display: inline-block;
       flex-shrink: 0;
       font-family: var(--font-mono, monospace);
       font-size: var(--text-x-xs, 0.625rem);
@@ -249,8 +250,11 @@ export class ScriptManagerItem extends LitElement
       background: var(--color-gray-light, #eee);
       border: 1px solid var(--color-border, #cfcfcf);
       border-radius: var(--radius-full, 9999px);
-      padding: 3px 7px;
+      padding: 4px 7px;
       white-space: nowrap;
+      /* Trim the line box to the digits (cap height to baseline): line-height alone
+         centers the font's ascent/descent, which leaves the text riding high. */
+      text-box: trim-both cap alphabetic;
     }
 
     .actions {

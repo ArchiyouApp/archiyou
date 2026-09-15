@@ -11,7 +11,7 @@
  * semver is assigned only when publishing/sharing, and is unique per file).
  */
 
-import { eq, and, desc, isNotNull, sql, type AnyColumn } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNotNull, sql, type AnyColumn } from 'drizzle-orm';
 import semver from 'semver';
 
 import { Script } from '@archiyou/core/src/Script';
@@ -26,6 +26,17 @@ export class ScriptStoreError extends Error {
   constructor(public readonly code: 'invalid' | 'not_found', message: string) {
     super(message);
   }
+}
+
+/** One published configurator (file) with its published versions, newest first. */
+export interface PublishedConfigurator {
+  fileId: string;
+  author: string;
+  /** The name of the newest version. */
+  name: string;
+  /** ISO time of the most recently updated version. */
+  updated: string;
+  versions: ScriptData[];
 }
 
 export interface VersionMeta {
@@ -292,30 +303,40 @@ export class ScriptStore {
       .all();
     return rows
       .map((r) => this.rowToData(r))
-      .sort((a, b) => {
-        const av = semver.coerce(a.version ?? '') ?? '0.0.0';
-        const bv = semver.coerce(b.version ?? '') ?? '0.0.0';
-        const cmp = semver.rcompare(av, bv);
-        if (cmp !== 0) return cmp;
-        return (Date.parse(b.updated ?? '') || 0) - (Date.parse(a.updated ?? '') || 0);
-      });
+      .sort((a, b) => this.compareNewestVersionFirst(a, b));
   }
 
-  /** Every published version across ALL authors, newest `updated` first — the admin
-   *  configurator list (routes/admin.ts). The only list here that is not author-scoped.
+  /** Newest semver first, tiebreak newest `updated`. */
+  private compareNewestVersionFirst(a: ScriptData, b: ScriptData): number {
+    const av = semver.coerce(a.version ?? '') ?? '0.0.0';
+    const bv = semver.coerce(b.version ?? '') ?? '0.0.0';
+    const cmp = semver.rcompare(av, bv);
+    if (cmp !== 0) return cmp;
+    return (Date.parse(b.updated ?? '') || 0) - (Date.parse(a.updated ?? '') || 0);
+  }
+
+  /** Every published configurator across ALL authors, one entry per file with its versions
+   *  — the admin configurator list (routes/admin.ts). The only list here that is not
+   *  author-scoped.
    *
-   *  `validated` filtering is done in SQL against the JSON blob rather than in JS so the
-   *  LIMIT is applied by SQLite: json_extract returns 1 for a JSON `true`, and `IS NOT 1`
-   *  is what also catches rows predating the feature, where the key is simply absent.
-   *  `q` matches the script name or the author handle. */
-  listAllPublished(opts: {
+   *  Files are ordered by their most recently updated version, newest first, and paged as
+   *  files (not versions). Each file's versions are newest semver first, as in
+   *  listPublishedVersionsForAuthor(). Rows without a version are left out: they predate
+   *  versioned publishing.
+   *
+   *  The filters apply per version, so a file shows only its matching versions.
+   *  `validated` filtering is done in SQL against the JSON blob so the LIMIT is applied by
+   *  SQLite: json_extract returns 1 for a JSON `true`, and `IS NOT 1` is what also catches
+   *  rows predating the feature, where the key is simply absent. `q` matches the script
+   *  name or the author handle. */
+  listPublishedConfigurators(opts: {
     author?: string;
     validated?: boolean;
     q?: string;
     limit?: number;
     offset?: number;
-  } = {}): { total: number; scripts: ScriptData[] } {
-    const filters = [isNotNull(scriptVersions.published)];
+  } = {}): { total: number; configurators: PublishedConfigurator[] } {
+    const filters = [isNotNull(scriptVersions.published), isNotNull(scriptVersions.version)];
     if (opts.author) filters.push(eq(scriptVersions.author, opts.author.toLowerCase()));
     if (opts.validated === true) {
       filters.push(sql`json_extract(${scriptVersions.published}, '$.validated') = 1`);
@@ -329,21 +350,38 @@ export class ScriptStore {
     const where = and(...filters);
 
     const total = db
-      .select({ n: sql<number>`count(*)` })
+      .select({ n: sql<number>`count(distinct ${scriptVersions.fileId})` })
       .from(scriptVersions)
       .where(where)
       .get()?.n ?? 0;
 
-    const rows = db
-      .select()
+    const latest = sql<number>`max(${scriptVersions.updated})`;
+    const page = db
+      .select({ fileId: scriptVersions.fileId })
       .from(scriptVersions)
       .where(where)
-      .orderBy(desc(scriptVersions.updated))
+      .groupBy(scriptVersions.fileId)
+      .orderBy(desc(latest), scriptVersions.fileId)
       .limit(opts.limit ?? 50)
       .offset(opts.offset ?? 0)
-      .all();
+      .all()
+      .map((r) => r.fileId);
+    if (page.length === 0) return { total, configurators: [] };
 
-    return { total, scripts: rows.map((r) => this.rowToData(r)) };
+    const byFile = new Map<string, ScriptData[]>(page.map((fileId) => [fileId, []]));
+    db.select()
+      .from(scriptVersions)
+      .where(and(where, inArray(scriptVersions.fileId, page)))
+      .all()
+      .forEach((r) => byFile.get(r.fileId)?.push(this.rowToData(r)));
+
+    const configurators = page.map((fileId) => {
+      const versions = (byFile.get(fileId) ?? []).sort((a, b) => this.compareNewestVersionFirst(a, b));
+      // ISO strings of one format sort as the times they name
+      const updated = versions.reduce((max, v) => ((v.updated ?? '') > max ? v.updated as string : max), '');
+      return { fileId, author: versions[0]?.author ?? '', name: versions[0]?.name ?? '', updated, versions };
+    });
+    return { total, configurators };
   }
 
   /** Update the `published` metadata of a single already-published version IN PLACE

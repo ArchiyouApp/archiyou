@@ -9,12 +9,12 @@ import {
     installRecipeRecorder, uninstallRecipeRecorder, setRecipeRecording, isRecipeRecording,
     recipeOf, resolveRecipe, verifyRecipe, explainRecipe, explainNode, isRecipeLive,
     affineInverse, affineApply, affineCompose, rotationMatrix, mirrorMatrix, affineFrame, axesToQuaternion,
-    asCuboid, leafNodes, classify, mapRecipe, RecipeReport, outputsNeedRecipes,
+    asCuboid, leafNodes, classify, mapRecipe, RecipeReport, outputsNeedRecipes, nodeBounds,
     type Recipe, type RecipeNode, type LeafNode, type RecipeMapping, type ClassificationRule,
 } from '../../../src/modeler/Recipe'
 
 /**
- * Recipe capture for the mesh kernel. See src/modeler/Recipe.ts and plans/RECIPE.md.
+ * Recipe capture for the mesh kernel. See src/modeler/Recipe.ts and plans/OPENSCAD.md.
  *
  * The central assertion is `expectOnLeaves()`: every vertex of the real mesh, mapped back through
  * the inverse of its leaf's matrix, must lie on that primitive's surface. Bounds alone cannot see a
@@ -52,6 +52,7 @@ describe('Recipe', () =>
         return r as Recipe
     }
     const ops = (s: unknown) => recipe(s).steps.map(step => step.op)
+    const nodeBoundsOf = (n: RecipeNode) => nodeBounds(n)!
     const tree = (s: unknown) => resolveRecipe(recipe(s))
 
     /** Largest distance of any vertex of `shape` from the surface of the single leaf of its recipe. */
@@ -363,8 +364,197 @@ describe('Recipe', () =>
 
         it('marks new meshes from unrecorded constructors with their origin', () =>
         {
-            const between = meshup.Mesh.BoxBetween([0, 0, 0], [10, 10, 10])
-            expect(recipe(between).steps).toEqual([{ op: 'baked', reason: 'made by Mesh.BoxBetween()' }])
+            const flat = meshup.Mesh.fromPolygons([[[0, 0, 0], [10, 0, 0], [10, 10, 0]]])
+            expect(recipe(flat).steps).toEqual([{ op: 'baked', reason: 'made by Mesh.fromPolygons()' }])
+        })
+    })
+
+
+    //// boxbetween, extrusions and cuts ////
+
+    /** An extrusion recipe is exact: the mesh has exactly the ring and the moved ring as corners,
+     *  and the prism's volume (ring area times the sweep across the ring's plane). */
+    function expectExtrusion(shape: unknown, volume?: number)
+    {
+        const node = tree(shape) as LeafNode
+        expect(node.kind, explainRecipe(shape)).toBe('leaf')
+        expect(node.step.op).toBe('extrude')
+        const step = node.step as Extract<LeafNode['step'], { op: 'extrude' }>
+        const corners = [...step.ring, ...step.ring.map(p => [p[0] + step.vector[0], p[1] + step.vector[1], p[2] + step.vector[2]] as const)]
+            .map(p => affineApply(node.matrix, p))
+        const key = (p: ArrayLike<number>) => Array.from(p).map(v => Math.round(v * 1e4) / 1e4 + 0).join(',')
+        const expected = new Set(corners.map(key))
+        const actual = new Set(mesh(shape).positions().map(p => key([p.x, p.y, p.z])))
+        expect([...actual].sort(), explainRecipe(shape)).toEqual([...expected].sort())
+        expect(verifyRecipe(shape).ok, explainRecipe(shape)).toBe(true)
+        if (volume !== undefined) expect(mesh(shape).volume()).toBeCloseTo(volume, 3)
+    }
+
+    describe('boxbetween', () =>
+    {
+        it('records a box between two corners in any order, with the midpoint as its move', () =>
+        {
+            const a = meshup.Mesh.BoxBetween([10, 0, 0], [0, 20, -30])
+            expect(recipe(a).steps).toEqual([{ op: 'box', size: [10, 20, 30] }, { op: 'translate', v: [5, 10, -15] }])
+            expectOnLeaf(a)
+
+            const b = modeler.boxBetween([0, 0, 0], [100, 38, 89]) as meshup.Mesh
+            expectOnLeaf(b)
+            expect(asCuboid(tree(b))?.size).toEqual([100, 38, 89])
+        })
+
+        it('keeps a boolean on a boxbetween procedural', () =>
+        {
+            const panel = modeler.boxBetween([0, 0, 0], [600, 18, 800]) as meshup.Mesh
+            panel.subtract(modeler.boxBetween([100, -5, 100], [500, 25, 700]) as meshup.Mesh)
+            expect(tree(panel)).toMatchObject({ kind: 'boolean', op: 'cut' })
+            expect(verifyRecipe(panel).ok, explainRecipe(panel)).toBe(true)
+        })
+    })
+
+    describe('extrusions', () =>
+    {
+        it('records line → extrude → extrude as a prism of the face', () =>
+        {
+            const face = modeler.line([0, 0, 0], [100, 0, 0]).extrude(20, [0, 1, 0]) as unknown as meshup.Polygon
+            expect(face).toBeInstanceOf(meshup.Polygon)
+            const beam = face.extrude(10)
+            expectExtrusion(beam, 100 * 20 * 10)
+        })
+
+        it('records a negative length and an axis direction', () =>
+        {
+            const face = modeler.line([0, 0, 0], [0, 0, 300]).extrude(38, [1, 0, 0]) as unknown as meshup.Polygon
+            expectExtrusion(face.extrude(-89), 300 * 38 * 89)
+            const other = modeler.line([0, 0, 0], [0, 0, 300]).extrude(38, [1, 0, 0]) as unknown as meshup.Polygon
+            expectExtrusion(other.extrude(89, [0, -1, 0]), 300 * 38 * 89)
+        })
+
+        it('records an oblique direction as the sheared prism the kernel builds', () =>
+        {
+            const face = modeler.line([0, 0, 0], [100, 0, 0]).extrude(50, [0, 1, 0]) as unknown as meshup.Polygon
+            const sheared = face.extrude(30, [1, 0, 1])
+            // area 100 × 50, swept 30 along a 45° direction: height across the plane is 30 / √2
+            expectExtrusion(sheared, 100 * 50 * 30 / Math.SQRT2)
+        })
+
+        it('records the vertex → line → face → solid chain', () =>
+        {
+            const edge = (modeler.vertex(10, 20, 30) as any).extrude(100, [1, 0, 0])
+            const solid = edge.extrude(40, [0, 1, 0]).extrude(-5)
+            expectExtrusion(solid, 100 * 40 * 5)
+        })
+
+        it('records rect, rectBetween and polyline faces, and closed curves through their face', () =>
+        {
+            expectExtrusion((modeler.rectBetween([0, 0, 0], [400, 300, 0]) as any).extrude(18), 400 * 300 * 18)
+            const l = (modeler.polyline([[0, 0, 0], [100, 0, 0], [100, 50, 0], [0, 80, 0]]) as any).close()
+            expectExtrusion(l.extrude(10), 100 * 65 * 10)
+        })
+
+        it('records every member of an extruded collection, and a face of a mesh', () =>
+        {
+            const faces = new meshup.ShapeCollection([
+                modeler.rectBetween([0, 0, 0], [10, 10, 0]) as any,
+                modeler.rectBetween([20, 0, 0], [40, 10, 0]) as any,
+            ])
+            const solids = faces.extrude(5, [0, 0, 1]).toArray()
+            expect(solids).toHaveLength(2)
+            solids.forEach(s => expectExtrusion(s))
+
+            const top = mesh(makeBox(10, 20, 30)).polygons().toArray().find(p => p.normal().z > 0.5)!
+            expectExtrusion(top.extrude(7), 10 * 20 * 7)
+        })
+
+        it('records a single-face surface mesh, and bakes a folded one', () =>
+        {
+            const plate = meshup.Mesh.planeBetween([0, 0, 0], [30, 20, 0])
+            expectExtrusion(plate.extrude(4), 30 * 20 * 4)
+
+            const closed = makeBox(10)
+            const hull = mesh(closed).extrude(5)!
+            expect(recipe(hull).steps).toEqual([{ op: 'baked', reason: 'extrude of a surface with 6 faces' }])
+        })
+
+        it('bakes a polygon with holes, which the kernel extrudes without them', () =>
+        {
+            const ring = new meshup.Polygon([[0, 0, 0], [100, 0, 0], [100, 100, 0], [0, 100, 0]])
+            ring.addHole([[25, 25, 0], [25, 75, 0], [75, 75, 0], [75, 25, 0]])
+            expect(ring.hasHoles()).toBe(true)
+            const solid = ring.extrude(10)
+            expect(recipe(solid).steps[0]).toEqual({ op: 'baked', reason: 'extrude of a polygon with holes (the kernel drops the holes)' })
+        })
+
+        it('keeps transforms and booleans on an extrusion procedural', () =>
+        {
+            const beam = (modeler.line([0, 0, 0], [100, 0, 0]).extrude(20, [0, 1, 0]) as any).extrude(10) as meshup.Mesh
+            beam.rotateZ(30)
+            beam.move(5, 5, 5)
+            expectExtrusion(beam)
+            beam.subtract(makeBox(10, 100, 100))
+            expect(isRecipeLive(recipe(beam)), explainRecipe(beam)).toBe(true)
+            expect(tree(beam)).toMatchObject({ kind: 'boolean', op: 'cut', base: { kind: 'leaf', step: { op: 'extrude' } } })
+            expect(verifyRecipe(beam).ok, explainRecipe(beam)).toBe(true)
+            expect(explainRecipe(beam)).toContain('extrude(4 corners, vector=[0, 0, 10])')
+        })
+    })
+
+    describe('cutoff and cutoffBy', () =>
+    {
+        it('records cutoff as a cut by the half-space the kernel removed', () =>
+        {
+            const bar = makeBox(100, 10, 10)          // x from -50 to 50
+            bar.cutoff('x', 20)                        // keeps the larger piece, x < 20
+            expect(ops(bar)).toEqual(['box', 'cut'])
+            expect(verifyRecipe(bar).ok, explainRecipe(bar)).toBe(true)
+            const b = mesh(bar).bbox()
+            expect([b.min().x, b.max().x]).toEqual([-50, 20])
+
+            const other = makeBox(100, 10, 10)
+            other.cutoff('x', 20, true)                // the smaller piece, x > 20
+            expect(ops(other)).toEqual(['box', 'cut'])
+            const tool = (tree(other) as any).tools[0]
+            expect(nodeBoundsOf(tool).max[0]).toBeCloseTo(20, 9)
+        })
+
+        it('records nothing when cutoff misses the shape', () =>
+        {
+            const bar = makeBox(100, 10, 10)
+            bar.cutoff('x', 80)
+            expect(ops(bar)).toEqual(['box'])
+        })
+
+        it('bakes a cutoff that keeps one piece of a side that fell apart', () =>
+        {
+            // a U: a bottom slab with two prongs; above z = 0 only the two separate prongs remain
+            const u = makeBox(100, 10, 40)
+            u.subtract(makeBox(60, 20, 30).move(0, 0, 10))
+            u.cutoff('z', 0, true)                     // the smallest piece is one prong
+            const r = recipe(u)
+            expect(isRecipeLive(r)).toBe(false)
+            expect(r.steps.at(-1)).toEqual({ op: 'baked', reason: "cutoff() at z=0 kept one piece of a side that fell apart" })
+        })
+
+        it('records cutoffBy a solid as a cut or a common, whichever piece the kernel kept', () =>
+        {
+            const bar = makeBox(100, 10, 10)
+            bar.cutoffBy(makeBox(50, 50, 50).move(50, 0, 0))            // outside (x < 25) is larger
+            expect(tree(bar)).toMatchObject({ kind: 'boolean', op: 'cut' })
+            expect(verifyRecipe(bar).ok, explainRecipe(bar)).toBe(true)
+
+            const other = makeBox(100, 10, 10)
+            other.cutoffBy(makeBox(50, 50, 50).move(50, 0, 0), true)    // inside (x > 25) is smaller
+            expect(tree(other)).toMatchObject({ kind: 'boolean', op: 'common' })
+            expect(verifyRecipe(other).ok, explainRecipe(other)).toBe(true)
+        })
+
+        it('keeps a later boolean after a cutoff procedural', () =>
+        {
+            const beam = (modeler.line([0, 0, 0], [100, 0, 100]).extrude(20, [0, 1, 0]) as any).extrude(10) as meshup.Mesh
+            beam.cutoff('z', 20)
+            expect(ops(beam)).toEqual(['extrude', 'cut'])
+            beam.subtract(makeBox(5, 100, 100))
+            expect(isRecipeLive(recipe(beam)), explainRecipe(beam)).toBe(true)
         })
     })
 
@@ -614,6 +804,13 @@ describe('Recipe on the brep kernel', () =>
         expectOnLeaf(modeler.cylinder(5, 40, [3, 4, 5]))
         expectOnLeaf(modeler.sphere(7, [10, 0, 0]))
         expectOnLeaf(modeler.cone(20, 5, 30, [0, 0, 10]))
+    })
+
+    it('records makeBoxBetween with corners in any order', () =>
+    {
+        const box = modeler.boxBetween([10, 0, 0], [0, 20, 30]) as any
+        expect(recipe(box).steps[0]).toEqual({ op: 'box', size: [10, 20, 30] })
+        expectOnLeaf(box)
     })
 
     it('reads moves and rotations back from the Location', () =>

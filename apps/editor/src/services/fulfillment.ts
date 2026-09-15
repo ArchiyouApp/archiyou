@@ -56,6 +56,8 @@ const FORMAT_META: Record<string, { ext: string, mime: string }> = {
   dae:   { ext: 'dae',  mime: 'model/vnd.collada+xml' },
   amf:   { ext: 'amf',  mime: 'application/x-amf' },
   fcstd: { ext: 'FCStd', mime: 'application/x-extension-fcstd' },
+  ifc:   { ext: 'ifc',  mime: 'application/x-step' },
+  scad:  { ext: 'scad', mime: 'application/x-openscad' },
   dxf:   { ext: 'dxf',  mime: 'application/dxf' },
   svg:   { ext: 'svg',  mime: 'image/svg+xml' },
   // docs

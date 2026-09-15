@@ -25,11 +25,43 @@ import { EditorState, Compartment, StateEffect, StateField } from '@codemirror/s
 import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { autocompletion, acceptCompletion, completionStatus } from '@codemirror/autocomplete';
-import { archiyouCompletions, registerModuleCompletions } from './completions.js';
+import { archiyouCompletions, registerModuleCompletions, registerComponentNames } from './completions.js';
 import { moduleCatalog } from '@archiyou/editor/src/services/module-service';
+import { authService } from '@archiyou/editor/src/services/auth-service';
+import { fetchPublicShared, fetchSharedWithMe } from '@archiyou/editor/src/services/sharing';
 
 import { SignalWatcher } from '@lit-labs/signals';
-import { executing, executionResult, perStatement, autoRun, kernel } from '@archiyou/editor/src/state/workspace';
+import { executing, executionResult, perStatement, autoRun, kernel, scripts, editorScript } from '@archiyou/editor/src/state/workspace';
+
+// ── Shared components for $component() completions ───────────────────────────
+/** How long a fetched list of shared components is used before fetching it again. */
+const SHARED_COMPONENTS_TTL_MS = 60_000;
+let _sharedComponents: { user: string | undefined; at: number; labels: string[] } | null = null;
+let _sharedComponentsLoading = false;
+
+/** All shared scripts, own shares included, as `@author/name`, sorted. Returns the cached list at
+ *  once (empty the first time) and refreshes it in the background when stale or when
+ *  the user changed — completion sources are synchronous. */
+function sharedComponentNames(user: string | undefined): string[]
+{
+  const cached = _sharedComponents;
+  const fresh = cached !== null && cached.user === user && Date.now() - cached.at < SHARED_COMPONENTS_TTL_MS;
+  if (!fresh && !_sharedComponentsLoading)
+  {
+    _sharedComponentsLoading = true;
+    Promise.all([fetchPublicShared(), fetchSharedWithMe()])
+      .then(lists =>
+      {
+        const labels = lists.flat()
+          .filter(d => d?.author && d?.name)
+          .map(d => `@${d.author}/${d.name}`.toLowerCase());
+        _sharedComponents = { user, at: Date.now(), labels: Array.from(new Set(labels)).sort((a, b) => a.localeCompare(b)) };
+      })
+      .catch(() => { _sharedComponents = { user, at: Date.now(), labels: [] }; })
+      .finally(() => { _sharedComponentsLoading = false; });
+  }
+  return cached && cached.user === user ? cached.labels : [];
+}
 
 const lightTheme = EditorView.theme({}, { dark: false });
 const themeCompartment = new Compartment();
@@ -160,6 +192,25 @@ export class CodeBox extends SignalWatcher(LitElement)
   // ── 3. Lifecycle ──
   override firstUpdated()
   {
+    // $component('@author/name') completions: the own workspace scripts minus the one being
+    // edited (a script cannot be its own component) as `:dev` (their latest version), then
+    // everything shared, own shares included. Read when
+    // completing, not here: editorScript changes on every edit, and reading it during a
+    // Lit update would re-render the codebox per keystroke.
+    registerComponentNames(() =>
+    {
+      const me = authService.getUser()?.id;
+      const active = editorScript.get();
+      const own = scripts.get()
+        .filter(s => s.fileId !== active?.fileId && s.name)
+        .map(s => ({ label: me ? `@${s.author ?? me}/${s.name}:dev` : s.name as string, own: true }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+      const shared = sharedComponentNames(me)
+        .filter(label => !own.some(o => o.label === label))
+        .map(label => ({ label, own: false }));
+      return [...own, ...shared];
+    });
+
     const container = this.renderRoot.querySelector<HTMLElement>('.cm-container')!;
 
     this._view = new EditorView({

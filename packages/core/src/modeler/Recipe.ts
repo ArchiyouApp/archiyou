@@ -3,7 +3,7 @@
  *
  * A kernel-neutral record of HOW a shape was made, read by the procedural exporters (FreeCAD,
  * STEP, IFC, BTLx, OpenSCAD) so they can emit parametric constructs instead of facets.
- * Design and rationale: plans/RECIPE.md.
+ * Design and rationale: plans/OPENSCAD.md (capture of boxbetween, extrude and cutoff).
  *
  * The pipeline is three stages, each readable on its own:
  *
@@ -52,6 +52,7 @@ export type LeafStep =
     | { op: 'cylinder'; radius: Value; height: Value }           // axis +Z, base at z = 0
     | { op: 'sphere'; radius: Value }                            // centred on the origin
     | { op: 'cone'; r1: Value; r2: Value; height: Value }        // axis +Z, base (r1) at z = 0
+    | { op: 'extrude'; ring: readonly Vec3[]; vector: Vec3 }     // planar outer ring as built, swept along vector (any direction)
 
 export type TransformStep =
     | { op: 'translate'; v: Vec3 }
@@ -97,7 +98,7 @@ export function nodeKey(node: RecipeNode): NodeKey
     }
 }
 
-const LEAF_OPS: ReadonlySet<string> = new Set(['box', 'cylinder', 'sphere', 'cone']);
+const LEAF_OPS: ReadonlySet<string> = new Set(['box', 'cylinder', 'sphere', 'cone', 'extrude']);
 const TRANSFORM_OPS: ReadonlySet<string> = new Set(['translate', 'rotate', 'scale', 'mirror']);
 const BOOLEAN_OPS: ReadonlySet<string> = new Set(['cut', 'fuse', 'common']);
 
@@ -320,6 +321,8 @@ function normalize(a: Vec3): Vec3
     return l > 0 ? [a[0] / l, a[1] / l, a[2] / l] : [0, 0, 0];
 }
 function sub(a: Vec3, b: Vec3): Vec3 { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function add(a: Vec3, b: Vec3): Vec3 { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+function scale(a: Vec3, f: number): Vec3 { return [a[0] * f, a[1] * f, a[2] * f]; }
 
 //// 3. CAPTURE TABLE ////
 
@@ -337,6 +340,13 @@ function sub(a: Vec3, b: Vec3): Vec3 { return [a[0] - b[0], a[1] - b[1], a[2] - 
  *  - `measuredTranslate`  an in-place pure translation whose amount is easiest to read off the
  *               bbox before and after (moveToCenter, place).
  *  - `copy`     the result is a clone of `self` and shares its recipe.
+ *  - `after`    an in-place op whose effect is only known once the kernel has run (cutoff() keeps
+ *               whichever piece is largest). `before` reads what `after` needs from the pre-state;
+ *               `after` returns the step, PASS_THROUGH when the kernel left the shape alone, or
+ *               `{ baked }`. Both run in a closed frame, so kernel calls they make record nothing.
+ *
+ *  A `leaf` also receives the receiver (`self`) as its last argument, for constructors that are
+ *  instance methods (Polygon.extrude builds a new Mesh from the polygon it is called on).
  *
  *  `nested` lets rows called from inside this one record too. Leave it off unless the row records
  *  only part of what the method does (rotateQuaternion records the rotation; the re-centring
@@ -344,8 +354,10 @@ function sub(a: Vec3, b: Vec3): Vec3 { return [a[0] - b[0], a[1] - b[1], a[2] - 
 export interface OpRow<K = any>
 {
     on: (k: K) => [owner: object, method: string]
-    leaf?: (args: any[], result: any, k: K) => LeafCapture
+    leaf?: (args: any[], result: any, k: K, self: any) => LeafCapture
     step?: (self: any, args: any[], k: K) => RecipeStep | typeof PASS_THROUGH
+    before?: (self: any, args: any[], k: K) => any
+    after?: (self: any, args: any[], k: K, before: any) => RecipeStep | typeof PASS_THROUGH | { baked: string }
     derive?: true
     measuredTranslate?: true
     copy?: true
@@ -410,6 +422,34 @@ export const MESH_OPS: Readonly<Record<string, OpRow<typeof meshup>>> = {
     'Mesh.Sphere': {
         on: k => [k.Mesh, 'Sphere'],
         leaf: ([radius]) => ({ step: { op: 'sphere', radius }, canonicalCenter: [0, 0, 0] }),
+    },
+    'Mesh.BoxBetween': {   // the spans between two corners, in any order; the measured centre is the move
+        on: k => [k.Mesh, 'BoxBetween'],
+        leaf: ([from, to], _result, k) =>
+        {
+            const a = vec(k.Point.from(from)), b = vec(k.Point.from(to));
+            return { step: { op: 'box', size: [Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2])] }, canonicalCenter: [0, 0, 0] };
+        },
+    },
+
+    //// extrusions: line().extrude().extrude(), rect/polyline faces, collections and polygons() all end in Polygon.extrude ////
+
+    'Polygon.extrude': {   // the prism of the outer ring along direction (default: the normal) × length
+        on: k => [k.Polygon.prototype, 'extrude'],
+        leaf: ([length, direction], _result, k, self) =>
+        {
+            if (self.hasHoles?.()) return { baked: 'extrude of a polygon with holes (the kernel drops the holes)' };
+            return extrudeCapture(polygonRing(self.vertices().toArray()), direction ? vec(k.Vector.from(direction)) : vec(self.normal()), length);
+        },
+    },
+    'Mesh.extrude': {   // a single-face surface sweeps into the same prism; a folded one does not
+        on: k => [k.Mesh.prototype, 'extrude'],
+        leaf: ([length, direction = [0, 0, 1]], _result, k, self) =>
+        {
+            const faces = self.polygons().toArray();
+            if (faces.length !== 1) return { baked: `extrude of a surface with ${faces.length} faces` };
+            return extrudeCapture(polygonRing(faces[0].vertices().toArray()), vec(k.Vector.from(direction)), length);
+        },
     },
 
     //// in-place transforms ////
@@ -498,10 +538,110 @@ export const MESH_OPS: Readonly<Record<string, OpRow<typeof meshup>>> = {
             : PASS_THROUGH,
     },
 
+    //// cuts that keep one piece: known only after the kernel has chosen ////
+
+    'Mesh.cutoff': {   // an axis-aligned half-space; the kernel keeps the largest (or smallest) piece
+        on: k => [k.Mesh.prototype, 'cutoff'],
+        before: (self) => ({ volume: self.volume(), bbox: boundsOf(self), clone: self._detachedClone() }),
+        after: (self, [axis, coord = 0], k, before) =>
+        {
+            const i = 'xyz'.indexOf(axis);
+            const now = boundsOf(self);
+            if (i < 0 || !before.bbox || !now) return PASS_THROUGH;
+            const tol = 1e-6 * Math.max(1, length(sub(before.bbox.max, before.bbox.min)));
+            if (Math.abs(self.volume() - before.volume) <= tol && sameBounds(now, before.bbox, tol)) return PASS_THROUGH;
+            // the side the kernel kept, and the half-space box that removes the other side
+            const keptPositive = now.min[i] >= coord - tol;
+            const keptNegative = now.max[i] <= coord + tol;
+            if (keptPositive === keptNegative) return { baked: `cutoff() at ${axis}=${coord} kept a piece on both sides` };
+            const margin = 4 * length(sub(before.bbox.max, before.bbox.min)) + 1;
+            const min = before.bbox.min.map(v => v - margin) as unknown as Vec3;
+            const max = before.bbox.max.map(v => v + margin) as unknown as Vec3;
+            const toolMin: [number, number, number] = [min[0], min[1], min[2]], toolMax: [number, number, number] = [max[0], max[1], max[2]];
+            if (keptPositive) toolMax[i] = coord; else toolMin[i] = coord;
+            // the kernel keeps one connected piece: a side that fell apart is not the half-space cut
+            const expected = before.clone._difference(k.Mesh.BoxBetween(toolMin as any, toolMax as any)).volume();
+            if (Math.abs(expected - self.volume()) > 1e-6 * Math.max(1, before.volume)) return { baked: `cutoff() at ${axis}=${coord} kept one piece of a side that fell apart` };
+            return { op: 'cut', tools: [boxRecipe(toolMin, toolMax)] };
+        },
+    },
+    'Mesh.cutoffBy': {   // a solid cutter: the kernel keeps the largest piece of this − cutter or this ∩ cutter
+        on: k => [k.Mesh.prototype, 'cutoffBy'],
+        before: (self) => ({ volume: self.volume(), snapshot: self._mesh, clone: self._detachedClone() }),
+        after: (self, [other, keepSmallest = false], k, before) =>
+        {
+            if (self._mesh === before.snapshot) return PASS_THROUGH;
+            if (!(other instanceof k.Mesh)) return { baked: 'cutoffBy() with a plane or polygon' };
+            const kept = self.volume();
+            const inside = before.clone._intersection(other).volume();
+            const outside = before.volume - inside;
+            const tol = 1e-6 * Math.max(1, before.volume);
+            // on a tie the kernel keeps the outside for the largest, the inside for the smallest
+            if (Math.abs(kept - outside) <= tol && !(keepSmallest && Math.abs(kept - inside) <= tol)) return { op: 'cut', tools: [toolRecipe(other)] };
+            if (Math.abs(kept - inside) <= tol) return { op: 'common', tools: [toolRecipe(other)] };
+            return { baked: 'cutoffBy() kept one piece of a side that fell apart' };
+        },
+    },
+
     //// copies: copy(), replicate(), row(), grid(), array() and intersection() clone through _copy ////
 
     'Mesh._copy': { on: k => [k.Mesh.prototype, '_copy'], copy: true },
 };
+
+/** A polygon's outer ring as a plain ring: positions only, without the closing duplicate. */
+function polygonRing(vertices: any[]): Vec3[]
+{
+    const ring: Vec3[] = vertices.map(v => [v.x, v.y, v.z]);
+    const [first, last] = [ring[0], ring[ring.length - 1]];
+    if (ring.length > 1 && Math.abs(first[0] - last[0]) < 1e-9 && Math.abs(first[1] - last[1]) < 1e-9 && Math.abs(first[2] - last[2]) < 1e-9) ring.pop();
+    return ring;
+}
+
+/** An extrusion as the kernel builds it: the ring and the ring moved by normalize(direction) × length. */
+function extrudeCapture(ring: Vec3[], direction: Vec3, amount: number): LeafCapture
+{
+    if (ring.length < 3) return { baked: 'extrude of a profile with fewer than three corners' };
+    if (length(direction) < 1e-12) return { baked: 'extrude along a zero direction' };
+    if (!Number.isFinite(amount) || Math.abs(amount) < 1e-12) return { baked: 'extrude by zero' };
+    const vector = scale(normalize(direction), amount);
+    const n = ringNormal(ring);
+    if (Math.abs(dot(normalize(n), normalize(vector))) < 1e-9) return { baked: 'extrude parallel to its own profile' };
+    return { step: { op: 'extrude', ring, vector }, then: [] };
+}
+
+/** Newell normal of a ring: its length is twice the area, its direction follows the winding */
+function ringNormal(ring: readonly Vec3[]): Vec3
+{
+    const n: [number, number, number] = [0, 0, 0];
+    ring.forEach((p, i) =>
+    {
+        const q = ring[(i + 1) % ring.length];
+        n[0] += (p[1] - q[1]) * (p[2] + q[2]);
+        n[1] += (p[2] - q[2]) * (p[0] + q[0]);
+        n[2] += (p[0] - q[0]) * (p[1] + q[1]);
+    });
+    return n;
+}
+
+/** A box between two corners as a recipe, for tools the kernel builds out of sight */
+function boxRecipe(min: Vec3, max: Vec3): Recipe
+{
+    return freezeRecipe([
+        { op: 'box', size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] },
+        { op: 'translate', v: [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2] },
+    ]);
+}
+
+function boundsOf(shape: any): Bounds | null
+{
+    const b = shape?.bbox?.();
+    return b ? { min: vec(b.min()), max: vec(b.max()) } : null;
+}
+
+function sameBounds(a: Bounds, b: Bounds, tol: number): boolean
+{
+    return [0, 1, 2].every(i => Math.abs(a.min[i] - b.min[i]) <= tol && Math.abs(a.max[i] - b.max[i]) <= tol);
+}
 
 const fullTurn = (angle: unknown) => angle === undefined || angle === null || Math.abs(Number(angle) - 360) < 1e-9;
 
@@ -518,6 +658,17 @@ export const BREP_OPS: Readonly<Record<string, OpRow<any>>> = {
         {
             const w = width ?? 50, d = depth || w, h = height || w;
             return { step: { op: 'box', size: [w, d, h] }, then: [{ op: 'translate', v: [w / 2, d / 2, h / 2] }] };
+        },
+    },
+    'Solid.makeBoxBetween': {   // BRepPrimAPI_MakeBox between two corners, already in place
+        on: b => [b.Solid.prototype, 'makeBoxBetween'],
+        leaf: ([from, to]) =>
+        {
+            const a = pointLike(from, [0, 0, 0]), c = pointLike(to, [0, 0, 0]);
+            return {
+                step: { op: 'box', size: [Math.abs(c[0] - a[0]), Math.abs(c[1] - a[1]), Math.abs(c[2] - a[2])] },
+                then: [{ op: 'translate', v: [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2, (a[2] + c[2]) / 2] }],
+            };
         },
     },
     'Solid.makeCylinder': {   // base centre on the origin, axis +Z, then moved to its position
@@ -912,7 +1063,7 @@ function wrapRow(label: string, row: OpRow, orig: Function, adapter: KernelAdapt
         {
             const result = inFrame(false, () => orig.apply(this, args));
             if (!adapter.owns(result)) return result;
-            const capture = row.leaf(args, result, k);
+            const capture = row.leaf(args, result, k, this);
             if ('baked' in capture)
             {
                 setRecipe(result, bakedRecipe(capture.baked), adapter);
@@ -961,9 +1112,11 @@ function wrapRow(label: string, row: OpRow, orig: Function, adapter: KernelAdapt
         let step: RecipeStep | typeof PASS_THROUGH | null = null;
         let readError: unknown = null;
         let before: Vec3 | undefined;
+        let pre: any;
         try
         {
             if (row.measuredTranslate) before = bboxCenter(this);
+            else if (row.after) pre = inFrame(false, () => row.before?.(this, args, k));
             else if (row.step) step = row.step(this, args, k);
         }
         catch (e) { readError = e; }
@@ -992,6 +1145,23 @@ function wrapRow(label: string, row: OpRow, orig: Function, adapter: KernelAdapt
         {
             setRecipe(this, bakedRecipe(`could not read the arguments of ${label}(): ${String(readError)}`, state.recipe), adapter);
             return result;
+        }
+        if (row.after)
+        {
+            let outcome: RecipeStep | typeof PASS_THROUGH | { baked: string };
+            try { outcome = inFrame(false, () => row.after!(this, args, k, pre)); }
+            catch (e) { outcome = { baked: `could not read the result of ${label}(): ${String(e)}` }; }
+            if (outcome === PASS_THROUGH)
+            {
+                if (!adapter.sameGeometry(this, beforeSnapshot)) setRecipe(this, bakedRecipe(`${label}() changed the shape in a way its row did not recognise`, state.recipe), adapter);
+                return result;
+            }
+            if ('baked' in outcome)
+            {
+                setRecipe(this, bakedRecipe(outcome.baked, state.recipe), adapter);
+                return result;
+            }
+            step = outcome;
         }
         if (row.measuredTranslate)
         {
@@ -1147,6 +1317,11 @@ function leafBounds(node: LeafNode): Bounds
             return merge(disk(affineApply(M, [0, 0, 0]), step.radius), disk(affineApply(M, [0, 0, step.height]), step.radius));
         case 'cone':
             return merge(disk(affineApply(M, [0, 0, 0]), step.r1), disk(affineApply(M, [0, 0, step.height]), step.r2));
+        case 'extrude':
+        {
+            const corners = [...step.ring, ...step.ring.map(p => add(p, step.vector))].map(p => affineApply(M, p));
+            return corners.reduce<Bounds>((b, c) => merge(b, { min: c, max: c }), { min: corners[0], max: corners[0] });
+        }
     }
 }
 
@@ -1194,11 +1369,12 @@ export function verifyRecipe(shape: any, recipe: Recipe | null = recipeOf(shape)
 
 function chordTolerance(node: RecipeNode): number
 {
-    if (node.kind !== 'leaf' || node.step.op === 'box') return 0;
+    if (node.kind !== 'leaf' || node.step.op === 'box' || node.step.op === 'extrude') return 0;
     const quality: any = (meshup as any).getQuality?.() ?? {};
     const segments = Math.max(3, Math.min(quality.cylinderSegmentsRadial ?? 16, quality.sphereSegmentsWidth ?? 16, quality.sphereSegmentsHeight ?? 16));
     const scale = Math.max(...affineFrame(node.matrix).scales);
-    const radius = node.step.op === 'cone' ? Math.max(node.step.r1, node.step.r2) : node.step.radius;
+    const step = node.step;
+    const radius = step.op === 'cone' ? Math.max(step.r1, step.r2) : step.op === 'cylinder' || step.op === 'sphere' ? step.radius : 0;
     // Between rings a sphere's facets also sag inwards, so allow two chord depths
     return 2 * radius * scale * (1 - Math.cos(Math.PI / segments));
 }
@@ -1461,6 +1637,7 @@ function explainStep(step: RecipeStep): string
         case 'cylinder': return `cylinder(radius=${fmt(step.radius)}, height=${fmt(step.height)})`;
         case 'sphere': return `sphere(radius=${fmt(step.radius)})`;
         case 'cone': return `cone(r1=${fmt(step.r1)}, r2=${fmt(step.r2)}, height=${fmt(step.height)})`;
+        case 'extrude': return `extrude(${step.ring.length} corners, vector=${fmtVec(step.vector)})`;
         case 'translate': return `translate${fmtVec(step.v).replace('[', '(').replace(']', ')')}`;
         case 'rotate': return `rotate(${fmt(step.angle)}°, axis=${fmtVec(step.axis)}, pivot=${fmtVec(step.pivot)})`;
         case 'scale': return `scale(${fmtVec(step.f)}, origin=${fmtVec(step.origin)})`;

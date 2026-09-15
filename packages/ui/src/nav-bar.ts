@@ -28,7 +28,7 @@ export class NavBar extends SignalWatcher(LitElement)
     const dark = isDarkTheme();
 
     return html`
-      <span class="brand" @click=${() => Router.go('/editor')}>
+      <span class="brand" @click=${() => Router.go('/browser')}>
         <!-- Absolute: the editor is served from nested paths too
              (/editor/{author}/{name}), where a relative src would 404. -->
         <img src="/img/ay_logo_white.png" alt="Archiyou">

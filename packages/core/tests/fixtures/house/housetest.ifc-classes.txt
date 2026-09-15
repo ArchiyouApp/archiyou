@@ -1,0 +1,77 @@
+Building                                                        IfcBuilding (synthesised)
+  Storey 0                                                      IfcBuildingStorey (synthesised) elevation 0
+    wallFront                                                   IfcWall.ELEMENTEDWALL                   children: thin horizontal, 2173 x 200 x 4547, sticks 17 vertical, 6 horizontal, 2 sloped, 2 slope sets
+      wall/studs/stud0, stud1, stud3 x3                         IfcMember.STUD                          name: 'stud' · stick, vertical
+      wall/studs/endstud                                        IfcMember.STUD                          name: 'endstud' · stick, vertical
+      wall/plates/bottomplate                                   IfcMember.PLATE                         name: 'bottomplate' · stick, horizontal, touches bottom, below an opening
+      wall/plates/topPlateLeft, topPlateRight x2                IfcMember.PLATE                         name: 'plate' · stick, sloped, touches top
+      wall/cripplesTop/crippleTop                               IfcMember.STUD                          name: 'cripple' · stick, vertical
+      wall/cripplesBottom/crippleBottom                         IfcMember.STUD                          name: 'cripple' · stick, horizontal, short
+      wall/openingFramesHorizontals/openingHorizontal[0]        IfcMember.MEMBER(SILL)                  shape: stick, horizontal, below an opening, short
+      wall/openingFramesHorizontals/openingHorizontal[1]        IfcBeam.LINTEL                          shape: stick, horizontal, above an opening, short
+      wall/openingFramesVerticals/openingVertical[0], openingVertical[1] x2 IfcMember.STUD                          shape: stick, vertical
+      wall/openingKingStuds/openingKingStudLeft, openingKingStudRight x2 IfcMember.STUD                          name: 'stud' · stick, vertical
+      wall/openingJackStuds/openingJackLeftBottom, openingJackRightBottom x2 IfcMember.STUD                          name: 'jack' · stick, horizontal, short
+      wall/openingJackStuds/openingJackLeftTop, openingJackRightTop x2 IfcMember.STUD                          name: 'jack' · stick, vertical
+      wall/openingDiagrams/opening0                             IfcOpeningElement.OPENING               name: hidden polygon named 'opening'
+      wall/insulation/insulation0, insulation1[0], insulation1[1] x3 IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical, not a box
+      wall/insulation/insulation1[2], insulation2[0] x2         IfcBuildingElementPart.INSULATION       name: 'insulation' · block, horizontal, short  (or IfcMember)
+      wall/insulation/insulation2[1], insulation2[2], insulation3 x3 IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical, not a box
+    wallLeft                                                    IfcWall.ELEMENTEDWALL                   children: thin horizontal, 4000 x 200 x 2550, sticks 23 vertical, 4 horizontal, 0 sloped
+      wall/studs/stud0 .. stud6 x6                              IfcMember.STUD                          name: 'stud' · stick, vertical
+      wall/studs/endstud                                        IfcMember.STUD                          name: 'endstud' · stick, vertical
+      wall/plates/bottomplate                                   IfcMember.PLATE                         name: 'bottomplate' · stick, horizontal, touches bottom
+      wall/plates/topplate                                      IfcMember.PLATE                         name: 'topplate' · stick, horizontal, touches top
+      wall/cripplesTop/crippleTop                               IfcMember.STUD                          name: 'cripple' · stick, vertical, short
+      wall/cripplesBottom/crippleBottom                         IfcMember.STUD                          name: 'cripple' · block, vertical, short
+      wall/openingFramesHorizontals/openingHorizontal[0]        IfcMember.MEMBER(SILL)                  shape: stick, horizontal, below an opening, short
+      wall/openingFramesHorizontals/openingHorizontal[1]        IfcBeam.LINTEL                          shape: stick, horizontal, above an opening, short
+      wall/openingFramesVerticals/openingVertical[0], openingVertical[1] x2 IfcMember.STUD                          shape: stick, vertical, short
+      wall/openingKingStuds/openingKingStudLeft, openingKingStudRight x2 IfcMember.STUD                          name: 'stud' · stick, vertical
+      wall/openingJackStuds/openingJackLeftBottom, openingJackRightBottom x2 IfcMember.STUD                          name: 'jack' · block, vertical, short
+      wall/openingJackStuds/openingJackLeftTop, openingJackRightTop x2 IfcMember.STUD                          name: 'jack' · stick, vertical, short
+      wall/openingDiagrams/opening0                             IfcOpeningElement.OPENING               name: hidden polygon named 'opening'
+      wall/openingDiagrams/opening0                             IfcWindow.WINDOW                        opening: fills the opening, 600 x 1000, sill 500
+      wall/insulation/insulation0, insulation1[0] x2            IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical
+      wall/insulation/insulation1[1]                            IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical, short
+      wall/insulation/insulation1[2], insulation2[0] x2         IfcBuildingElementPart.INSULATION       name: 'insulation' · block, vertical, short
+      wall/insulation/insulation2[1]                            IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical, short
+      wall/insulation/insulation2[2] .. insulation6 x5          IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical
+    wallRight                                                   IfcWall.ELEMENTEDWALL                   children: thin horizontal, 4000 x 200 x 2550, sticks 15 vertical, 2 horizontal, 0 sloped
+      wall/studs/stud0 .. stud6 x7                              IfcMember.STUD                          name: 'stud' · stick, vertical
+      wall/studs/endstud                                        IfcMember.STUD                          name: 'endstud' · stick, vertical
+      wall/plates/bottomplate                                   IfcMember.PLATE                         name: 'bottomplate' · stick, horizontal, touches bottom
+      wall/plates/topplate                                      IfcMember.PLATE                         name: 'topplate' · stick, horizontal, touches top
+      wall/insulation/insulation0 .. insulation6 x7             IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical
+    wallBack[0]                                                 IfcWall.ELEMENTEDWALL                   children: thin horizontal, 2173 x 200 x 4547, sticks 9 vertical, 1 horizontal, 2 sloped, 2 slope sets
+      wall/studs/stud0 .. stud3 x4                              IfcMember.STUD                          name: 'stud' · stick, vertical
+      wall/studs/endstud                                        IfcMember.STUD                          name: 'endstud' · stick, vertical
+      wall/plates/bottomplate                                   IfcMember.PLATE                         name: 'bottomplate' · stick, horizontal, touches bottom
+      wall/plates/topPlateLeft, topPlateRight x2                IfcMember.PLATE                         name: 'plate' · stick, sloped, touches top
+      wall/insulation/insulation0 .. insulation3 x4             IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical, not a box
+    wallBack[1]                                                 IfcRoof.GABLE_ROOF                      children: 5108 x 3572 x 3460, sticks 0 vertical, 6 horizontal, 28 sloped, 2 slope sets  !! name 'wall' says IfcWall
+      diagram/rafter1                                           IfcMember.RAFTER                        name: 'rafter' · stick, sloped, touches top, touches bottom
+      purlins/purlin0, purlin1, purlin2 x3                      IfcMember.PURLIN                        name: 'purlin' · stick, horizontal
+      purlins/purlinsBlocksFront, purlinsBlocksBack x2          IfcMember.MEMBER(BLOCKING)              name: 'block' · stick, sloped, not a box
+      raftersLeft/rafter2 .. rafterFaciaFront[1] x11            IfcMember.RAFTER                        name: 'rafter' · stick, sloped, touches top, touches bottom
+      raftersRight/rafter1[0] .. rafterFaciaFront[1] x12        IfcMember.RAFTER                        name: 'rafter' · stick, sloped, touches top, touches bottom
+      purlinsRight/purlin0, purlin1, purlin2 x3                 IfcMember.PURLIN                        name: 'purlin' · stick, horizontal
+      purlinsRight/purlinsBlocksBack, purlinsBlocksFront x2     IfcMember.MEMBER(BLOCKING)              name: 'block' · stick, sloped, not a box
+
+Entities
+  IfcBeam.LINTEL                                  2
+  IfcBuildingElementPart.INSULATION               30
+  IfcMember.MEMBER                                6
+  IfcMember.PLATE                                 10
+  IfcMember.PURLIN                                6
+  IfcMember.RAFTER                                24
+  IfcMember.STUD                                  44
+  IfcOpeningElement.OPENING                       2
+  IfcRoof.GABLE_ROOF                              1
+  IfcWall.ELEMENTEDWALL                           4
+  IfcWindow.WINDOW                                1
+
+Skipped: 8 hidden curve, 4 hidden polygon, 36 curve, 1 opening without a door or window, 4 point, 1 layer without solids
+Dissolved layers: 44
+Proxies: 0
+Conflicts: 1 - wallBack[1] (name 'wall' says IfcWall)

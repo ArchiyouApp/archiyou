@@ -118,7 +118,6 @@ export const VIEW_STYLES: ViewStyle[] = [
     label: 'Wireframe',
     icon: 'grid-2x2',
     description: 'Show only edges and lines, mesh surfaces hidden',
-    background: 0x111827,
     shadows: false,
     toneMapping: THREE.LinearToneMapping,
     toneMappingExposure: 1.0,
@@ -126,7 +125,7 @@ export const VIEW_STYLES: ViewStyle[] = [
     ambientLight: { enabled: true, color: 0xffffff, intensity: 0.5 },
     spotlight: { enabled: false },
     mesh: null,
-    lines: { color: 0x00eeff },
+    lines: undefined, // keep line colours: a shape's edges already carry its colour
     grid: { visible: false },
   },
   {

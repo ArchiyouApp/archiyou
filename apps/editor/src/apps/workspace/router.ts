@@ -60,7 +60,8 @@ export const routes: Route[] = [
         action: (_ctx, commands) => commands.redirect('/editor'),
       },
       {
-        path: 'browser',
+        // /browser/{section}; /browser is Home (pages/browser.ts)
+        path: 'browser/:section?',
         component: 'page-browser',
         action: async () => { await import('../../pages/browser.js'); },
       },
@@ -85,7 +86,8 @@ export const routes: Route[] = [
         action: async () => { await import('../../pages/plugin.js'); },
       },
       {
-        path: 'admin',
+        // /admin/{section}; /admin shows the first section (pages/admin.ts)
+        path: 'admin/:section?',
         component: 'page-admin',
         action: async (_ctx, commands) => {
           // userState is derived from the auth service's restored session, so this is

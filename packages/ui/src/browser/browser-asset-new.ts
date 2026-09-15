@@ -1,17 +1,19 @@
 /**
  * <browser-asset-new> — the leading "create new asset" tile in the asset grid.
  *
- * Card-shaped with a gray background; holds the new-asset actions
- * (currently "New script").
+ * Card-shaped with a gray background; holds the new-asset actions (currently
+ * "New script"). Emits `create` (detail = 'script') and leaves creating to the page,
+ * the same as the header's Create menu.
  */
 
 import { LitElement, html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { msg } from '@lit/localize';
-import { Router } from '@vaadin/router';
 
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+
+import type { BrowserCreateKind } from './browser-header.js';
 
 @customElement('browser-asset-new')
 export class BrowserAssetNew extends LitElement
@@ -30,7 +32,11 @@ export class BrowserAssetNew extends LitElement
   // ── 4. Behaviour & Methods ──
   private _newScript()
   {
-    Router.go('/editor');
+    this.dispatchEvent(new CustomEvent<BrowserCreateKind>('create', {
+      detail: 'script',
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   // ── 5. Styles ──

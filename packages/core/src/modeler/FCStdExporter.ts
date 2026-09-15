@@ -43,11 +43,15 @@
  */
 
 import * as meshup from '@archiyou/meshup'
-import { Color, Style } from '@archiyou/meshup'
 
 import type { ModelUnits } from './types'
 import { MM_PER_UNIT } from '../units/UnitConverter'
 import { isBrepShape } from './brep/toMeshup'
+import { cascadedStyle, isVisible, toRgb01 } from './exportStyle'
+import {
+    Welder, weldFaces, meshFaces, newell, dot, sub, add, scale, cross, len, unit,
+    type PlanarFace, type WeldedFace,
+} from './exportGeometry'
 import {
     recipeOf, resolveRecipe, mapRecipe, affineApply, affineFrame, affineInverse, axesToQuaternion, leafNodes,
     RecipeReport, fmt,
@@ -96,11 +100,8 @@ export interface FCStdResult
 
 //// 2. PLANAR BREP WRITER ////
 
-export interface BRepFace
-{
-    outer: Vec3[]
-    holes?: Vec3[][]
-}
+/** A planar face with optional holes; the writer's input. Same shape as exportGeometry's PlanarFace. */
+export type BRepFace = PlanarFace;
 
 export interface BRepText
 {
@@ -108,56 +109,6 @@ export interface BRepText
     /** 'solid' when every edge is shared by exactly two faces in opposite directions */
     kind: 'solid' | 'shell' | 'wires'
     faces: number
-}
-
-const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-const scale = (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s];
-const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const len = (a: Vec3) => Math.hypot(a[0], a[1], a[2]);
-const unit = (a: Vec3): Vec3 => { const l = len(a); return l > 0 ? [a[0] / l, a[1] / l, a[2] / l] : [0, 0, 0]; };
-
-/** Newell normal of a ring: its length is twice the ring's area. */
-function newell(ring: Vec3[]): Vec3
-{
-    let x = 0, y = 0, z = 0;
-    for (let i = 0; i < ring.length; i++)
-    {
-        const a = ring[i], b = ring[(i + 1) % ring.length];
-        x += (a[1] - b[1]) * (a[2] + b[2]);
-        y += (a[2] - b[2]) * (a[0] + b[0]);
-        z += (a[0] - b[0]) * (a[1] + b[1]);
-    }
-    return [x, y, z];
-}
-
-/** Welds points within `tolerance`, looking in neighbouring grid cells so a cell border never
- *  splits two points that belong together. */
-class Welder
-{
-    readonly points: Vec3[] = [];
-    private cells = new Map<string, number[]>();
-    constructor(private tolerance: number) {}
-
-    id(p: Vec3): number
-    {
-        const t = this.tolerance;
-        const c = [Math.floor(p[0] / t), Math.floor(p[1] / t), Math.floor(p[2] / t)];
-        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++)
-        {
-            for (const i of this.cells.get(`${c[0] + dx},${c[1] + dy},${c[2] + dz}`) ?? [])
-            {
-                if (len(sub(this.points[i], p)) <= t) return i;
-            }
-        }
-        const i = this.points.length;
-        this.points.push(p);
-        const key = `${c[0]},${c[1]},${c[2]}`;
-        if (!this.cells.has(key)) this.cells.set(key, []);
-        this.cells.get(key)!.push(i);
-        return i;
-    }
 }
 
 /** Number for the .brp text: shortest exact form, which OpenCascade's strtod reads back exactly. */
@@ -206,71 +157,10 @@ class BRepShapeSet
  *  they are local coordinates and the shape is placed by it. */
 export function writePlanarBRep(input: BRepFace[], tolerance = 1e-6, location?: Affine): BRepText | null
 {
-    const welder = new Welder(tolerance);
-    const cleanRing = (ring: Vec3[]): number[] =>
-    {
-        const ids: number[] = [];
-        for (const p of ring)
-        {
-            const id = welder.id(p);
-            if (ids[ids.length - 1] !== id) ids.push(id);
-        }
-        while (ids.length > 1 && ids[0] === ids[ids.length - 1]) ids.pop();
-        return ids;
-    };
-
-    let faces = input
-        .map(f => ({ outer: cleanRing(f.outer), holes: (f.holes ?? []).map(cleanRing).filter(h => h.length >= 3) }))
-        .filter(f => f.outer.length >= 3);
-
-    // Booleans leave T-junctions: a vertex of one face sitting in the middle of a neighbour's
-    // edge. Split those edges so the two faces share their boundary exactly and the shell closes.
-    faces = splitTJunctions(faces, welder.points, tolerance);
-
-    const P = welder.points;
-    const ringPoints = (ids: number[]) => ids.map(i => P[i]);
-    type Face = { outer: number[]; holes: number[][]; normal: Vec3 };
-    let planar: Face[] = [];
-    for (const f of faces)
-    {
-        const n = newell(ringPoints(f.outer));
-        if (len(n) < tolerance * tolerance) continue; // zero area
-        const normal = unit(n);
-        // holes run the other way round the normal than the outer boundary
-        const holes = f.holes.map(h => dot(newell(ringPoints(h)), normal) > 0 ? [...h].reverse() : h);
-        planar.push({ outer: f.outer, holes, normal });
-    }
-    if (!planar.length) return null;
-
-    // Directed edge use decides closedness
-    const uses = new Map<string, number>();
-    const rings = (f: Face) => [f.outer, ...f.holes];
-    for (const f of planar) for (const ring of rings(f)) for (let i = 0; i < ring.length; i++)
-    {
-        const key = `${ring[i]}>${ring[(i + 1) % ring.length]}`;
-        uses.set(key, (uses.get(key) ?? 0) + 1);
-    }
-    let closed = true;
-    for (const [key, count] of uses)
-    {
-        const [a, b] = key.split('>');
-        if (count !== 1 || uses.get(`${b}>${a}`) !== 1) { closed = false; break; }
-    }
-
-    // A closed shell whose faces point inwards is turned inside out
-    if (closed)
-    {
-        let volume = 0;
-        for (const f of planar) for (const ring of rings(f))
-        {
-            const pts = ringPoints(ring);
-            for (let i = 1; i < pts.length - 1; i++) volume += dot(pts[0], cross(pts[i], pts[i + 1]));
-        }
-        if (volume < 0)
-        {
-            planar = planar.map(f => ({ outer: [...f.outer].reverse(), holes: f.holes.map(h => [...h].reverse()), normal: scale(f.normal, -1) }));
-        }
-    }
+    const welded = weldFaces(input, tolerance);
+    if (!welded) return null;
+    const { points: P, faces: planar, closed } = welded;
+    const rings = (f: WeldedFace) => [f.outer, ...f.holes];
 
     const set = new BRepShapeSet();
     const tol = brepNum(Math.max(1e-7, tolerance));
@@ -352,44 +242,6 @@ export function writePlanarBRep(input: BRepFace[], tolerance = 1e-6, location?: 
     const root = closed ? set.add(idx => `So\n\n1100000\n+${idx(shell)} 0 *\n`) : shell;
 
     return { text: set.toString(root, location), kind: closed ? 'solid' : 'shell', faces: planar.length };
-}
-
-function splitTJunctions(faces: Array<{ outer: number[]; holes: number[][] }>, P: Vec3[], tolerance: number)
-{
-    const uses = new Map<string, number>();
-    const all = (f: { outer: number[]; holes: number[][] }) => [f.outer, ...f.holes];
-    for (const f of faces) for (const ring of all(f)) for (let i = 0; i < ring.length; i++)
-    {
-        const a = ring[i], b = ring[(i + 1) % ring.length];
-        const key = a < b ? `${a}-${b}` : `${b}-${a}`;
-        uses.set(key, (uses.get(key) ?? 0) + 1);
-    }
-    const open = [...uses].filter(([, c]) => c === 1).map(([k]) => k.split('-').map(Number));
-    if (!open.length) return faces;
-
-    // T-junction vertices are endpoints of other open edges
-    const candidates = [...new Set(open.flat())];
-    const splitRing = (ring: number[]) =>
-    {
-        const out: number[] = [];
-        ring.forEach((a, i) =>
-        {
-            const b = ring[(i + 1) % ring.length];
-            out.push(a);
-            const key = a < b ? `${a}-${b}` : `${b}-${a}`;
-            if (uses.get(key) !== 1) return;
-            const pa = P[a], d = sub(P[b], pa), l2 = dot(d, d);
-            if (l2 === 0) return;
-            const inner = candidates
-                .filter(c => c !== a && c !== b)
-                .map(c => ({ c, t: dot(sub(P[c], pa), d) / l2 }))
-                .filter(({ c, t }) => t > 0 && t < 1 && len(sub(P[c], add(pa, scale(d, t)))) <= tolerance)
-                .sort((u, v) => u.t - v.t);
-            inner.forEach(({ c }) => out.push(c));
-        });
-        return out;
-    };
-    return faces.map(f => ({ outer: splitRing(f.outer), holes: f.holes.map(splitRing) }));
 }
 
 /** Wires from polylines (closed when the last point repeats the first), as a compound. */
@@ -497,6 +349,16 @@ function leafFaces(node: LeafNode, mm: number, segments: number): BRepFace[]
                 else faces.push(face([a, b, c, d]));
             }
             return faces;
+        }
+        case 'extrude':
+        {
+            // caps and one wall per ring edge; outward when the sweep follows the ring's winding
+            const ring = step.ring as Vec3[];
+            const top = ring.map((p): Vec3 => [p[0] + step.vector[0], p[1] + step.vector[1], p[2] + step.vector[2]]);
+            const n = newell(ring);
+            const along = n[0] * step.vector[0] + n[1] * step.vector[1] + n[2] * step.vector[2] >= 0;
+            const faces: Vec3[][] = [[...ring].reverse(), top, ...ring.map((p, i) => [p, ring[(i + 1) % ring.length], top[(i + 1) % ring.length], top[i]])];
+            return faces.map(f => face(along ? f : [...f].reverse()));
         }
     }
 }
@@ -771,6 +633,11 @@ function leafExtent(node: LeafNode): number
         case 'cylinder': return Math.max(2 * step.radius, step.height);
         case 'cone': return Math.max(2 * step.r1, 2 * step.r2, step.height);
         case 'sphere': return 2 * step.radius;
+        case 'extrude':
+        {
+            const points = [...step.ring, ...step.ring.map(p => [p[0] + step.vector[0], p[1] + step.vector[1], p[2] + step.vector[2]])]
+            return Math.max(...[0, 1, 2].map(i => Math.max(...points.map(p => p[i])) - Math.min(...points.map(p => p[i]))))
+        }
     }
 }
 
@@ -844,41 +711,8 @@ function buildSheet(params: FCStdParam[], allocate: (label: string, fallback: st
 
 //// 7. SCENE WALK ////
 
-function toRgb01(color: unknown): [number, number, number]
-{
-    let rgb: number[] = [0x99, 0x99, 0x99];
-    try { if (color !== undefined && color !== null) rgb = new Color(color as any).toRgb(); }
-    catch { /* unparseable: keep grey */ }
-    return [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255];
-}
-
-/** The node's effective style cascaded onto its shape, as the DAE and glTF exporters do */
-function cascadedStyle(node: any, shape: any): any
-{
-    try
-    {
-        const merged = new Style(node.effectiveStyle().toData());
-        merged.merge(shape.style.explicitData());
-        return merged;
-    }
-    catch { return shape?.style; }
-}
-
-const isVisible = (owner: any) => owner?.style?.visible !== false;
-
-function meshFaces(mesh: any, mm: number): BRepFace[]
-{
-    const inner = mesh.inner?.();
-    if (!inner) return [];
-    // Merge coplanar triangles into real faces. Called on the raw kernel mesh: the Mesh method
-    // is @sceneReplace and would detach the shape from the scene.
-    const ngons = inner.reconstructNgons?.() ?? inner;
-    const position = (v: any): Vec3 => { const p = v.position(); return [p.x * mm, p.y * mm, p.z * mm]; };
-    return (ngons.polygons?.() ?? []).map((poly: any) => ({
-        outer: (poly.vertices() as any[]).map(position),
-        holes: ((poly.holes?.() ?? []) as any[][]).map(h => h.map(position)),
-    }));
-}
+/** Grey for shapes without a colour of their own, FreeCAD's usual part colour */
+const FC_DEFAULT_RGB = [0x99, 0x99, 0x99] as const;
 
 async function brepShapeText(shape: any, mm: number): Promise<string | null>
 {
@@ -916,7 +750,7 @@ export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = 
     {
         const label = String(shape.name?.() || node.name || shape.type || 'Shape');
         const style = cascadedStyle(node, shape);
-        const color = toRgb01(style?.color);
+        const color = toRgb01(style?.color, FC_DEFAULT_RGB);
         const transparency = Math.round((1 - (style?.opacity ?? 1)) * 100);
         const visible = isVisible(node) && isVisible(shape);
 

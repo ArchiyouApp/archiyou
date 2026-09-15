@@ -22,6 +22,12 @@
  *      dist/, and consumer bundlers resolve those at BUILD time. A missing file is a
  *      "Module not found" in the consumer's build that no runtime fallback can rescue.
  *    - the worker entry still pointing at ./runner.worker.ts (see tsup.config.ts onSuccess).
+ *    - an exporter that is meant to load on demand (OpenSCAD, FreeCAD, IFC) becoming part of what
+ *      every consumer loads up front. The entry itself is a small stub that statically imports shared
+ *      chunks, so size alone cannot see it: the check follows the static imports from both entries and
+ *      fails when a lazy exporter's code is in that graph. Dynamic `import()` edges are not followed.
+ *    - a test-only package (the GPL OpenSCAD WASM build, web-ifc) reaching the bundle or the
+ *      dependencies.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -64,8 +70,24 @@ const MUST_EXCLUDE = [
     'package/tsup.config.ts',
 ];
 
-/** Unpublished workspace packages. Must never be runtime dependencies. */
-const MUST_NOT_BE_DEPS = ['@archiyou/module-sdk'];
+/** Unpublished workspace packages, and packages only the tests use (openscad-wasm-prebuilt is GPL:
+ *  shipping it would put core under the GPL). Must never be runtime dependencies. */
+const MUST_NOT_BE_DEPS = ['@archiyou/module-sdk', 'openscad-wasm-prebuilt', 'web-ifc'];
+
+/** Test-only packages whose name must not appear anywhere in the built JavaScript */
+const MUST_NOT_BE_BUNDLED = ['openscad-wasm-prebuilt', 'web-ifc'];
+
+/** Exporters loaded on demand through `await import(...)`. Each marker is a string only that exporter's
+ *  code contains. The marker must be somewhere in dist (so the check cannot pass vacuously) and never
+ *  in a chunk the entries import statically. */
+const LAZY_ONLY = [
+    { what: 'the OpenSCAD exporter (SCADExporter.ts)', marker: 'Archiyou -> OpenSCAD' },
+    { what: 'the FreeCAD exporter (FCStdExporter.ts)', marker: 'FreeCAD Document, see https://www.freecad.org' },
+    { what: 'the IFC classifier and exporter (IFC4Exporter.ts)', marker: 'ViewDefinition [ReferenceView_V1.2]' },
+    { what: 'the shared faceted-geometry helpers (exportGeometry.ts)', marker: 'function splitTJunctions(' },
+];
+
+const ENTRIES = ['index.js', 'runner.worker.js'];
 
 /** Published workspace packages core depends on. A `workspace:` protocol left in the packed
  *  manifest means pnpm did not rewrite it to a real version, and the tarball is uninstallable. */
@@ -146,12 +168,40 @@ try
         }
     }
 
+    // Lazy exporters: the chunk graph the entries load statically must not contain them
+    const chunks = files.filter(f => /^package\/dist\/[^/]+\.js$/.test(f));
+    execFileSync('tar', ['-xzf', packed, '-C', out, ...chunks]);
+    const code = new Map(chunks.map(f => [f.slice('package/dist/'.length), readFileSync(join(out, f), 'utf8')]));
+    const eager = new Set<string>();
+    const staticImports = (text: string) =>
+        [...text.matchAll(/(?:^|[;\n])\s*(?:import|export)\s*(?:[^'"();]*?\sfrom\s*)?["']\.\/([^"']+\.js)["']/g)].map(m => m[1]);
+    const visit = (name: string) =>
+    {
+        if (eager.has(name) || !code.has(name)) return;
+        eager.add(name);
+        staticImports(code.get(name)!).forEach(visit);
+    };
+    ENTRIES.forEach(visit);
+    for (const { what, marker } of LAZY_ONLY)
+    {
+        const holders = [...code].filter(([, text]) => text.includes(marker)).map(([name]) => name);
+        if (!holders.length) fail.push(`${what} is not in dist at all (marker "${marker}"): the check would pass without looking`);
+        const loadedUpFront = holders.filter(name => eager.has(name));
+        if (loadedUpFront.length) fail.push(`${what} is loaded up front: ${loadedUpFront.join(', ')} is statically imported from ${ENTRIES.join(' or ')}; reach it through await import() only`);
+    }
+    for (const pkg of MUST_NOT_BE_BUNDLED)
+    {
+        const hits = [...code].filter(([, text]) => text.includes(pkg)).map(([name]) => name);
+        if (hits.length) fail.push(`test-only package ${pkg} is referenced by the bundle: ${hits.join(', ')}`);
+    }
+    const eagerKB = [...eager].reduce((total, name) => total + Buffer.byteLength(code.get(name)!), 0) / 1024;
+
     const entry = readFileSync(join(out, 'package/dist/index.js'), 'utf8');
     const entryKB = Buffer.byteLength(entry) / 1024;
     if (entryKB > MAX_ENTRY_KB) { fail.push(`dist/index.js is ${entryKB.toFixed(0)} KB, over ${MAX_ENTRY_KB} KB — tsup splitting is probably off`); }
     if (entry.includes('./runner.worker.ts')) { fail.push('dist/index.js still points at ./runner.worker.ts; the onSuccess rewrite in tsup.config.ts did not run'); }
 
-    console.log(`packed ${mb.toFixed(1)} MB, ${files.filter(Boolean).length} files, entry ${entryKB.toFixed(1)} KB`);
+    console.log(`packed ${mb.toFixed(1)} MB, ${files.filter(Boolean).length} files, entry ${entryKB.toFixed(1)} KB, loaded up front ${eager.size} chunks ${eagerKB.toFixed(0)} KB`);
 }
 finally
 {

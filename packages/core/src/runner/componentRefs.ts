@@ -39,49 +39,14 @@ export function extractTopLevelComponentCalls(code: string): Array<ComponentCall
         const startIndex = match.index;
         const contentStart = match.index + match[0].length;
 
-        // Check if this $component is nested inside another one
-        // by counting unbalanced parentheses before this match
-        let isNested = false;
-        let depth = 0;
+        // Find the matching closing parenthesis of this $component call.
+        // Calls nested INSIDE it (inline component code) are skipped by resuming the search
+        // after it - see pattern.lastIndex below. Calls inside other function calls, like
+        // collection(ys.map(y => $component('wall'))), are still top-level components.
+        let depth = 1;
+        let i = contentStart;
         let inString: string | null = null;
         let escaped = false;
-
-        for (let i = 0; i < startIndex; i++)
-        {
-            const char = code[i];
-
-            if (escaped) { escaped = false; continue; }
-            if (char === '\\') { escaped = true; continue; }
-
-            // Track string boundaries
-            if ((char === '"' || char === "'" || char === '`') && !inString) {
-                inString = char;
-            } else if (char === inString) {
-                inString = null;
-            }
-
-            // Count parentheses outside strings
-            if (!inString) {
-                if (char === '(') depth++;
-                if (char === ')') depth--;
-            }
-        }
-
-        // If depth > 0, we're inside another function call (nested)
-        if (depth > 0) {
-            isNested = true;
-        }
-
-        // Skip nested $component calls
-        if (isNested) {
-            continue;
-        }
-
-        // Now find the matching closing parenthesis for this top-level $component
-        depth = 1;
-        let i = contentStart;
-        inString = null;
-        escaped = false;
 
         while (i < code.length && depth > 0)
         {
@@ -121,6 +86,7 @@ export function extractTopLevelComponentCalls(code: string): Array<ComponentCall
             }
 
             results.push({ full: fullMatch, content: content });
+            pattern.lastIndex = i; // skip $component calls nested inside this one
         }
     }
 
@@ -158,16 +124,66 @@ export function extractFirstArg(argsText: string): string
     return argsText;
 }
 
+/** A reference that names its author: `@author/name[:version]`, like `@archiyou/timberwall`.
+ *  Resolves against the shared library, the same for the author's own scripts as for
+ *  anyone else's: no version is the latest shared version, a version that one, and
+ *  `dev` the latest script version (not shared). */
+export interface AuthoredComponentRef
+{
+    author: string;
+    name: string;
+    version?: string;
+}
+
+/** The version that stands for the latest script version instead of a shared one. */
+export const DEV_COMPONENT_VERSION = 'dev';
+
+/** The author, script name and optional version of an `@author/name[:version]`
+ *  reference, all lowercased (like Script.fromData() stores them), or null for any
+ *  other kind of reference. */
+export function parseAuthoredComponentRef(ref: string): AuthoredComponentRef | null
+{
+    const m = (ref ?? '').trim().match(/^@([a-z0-9_.-]+)\/([a-z0-9 _-]+?)(?::([a-z0-9.+-]+))?$/i);
+    if (!m) return null;
+    const version = m[3]?.toLowerCase();
+    return { author: m[1].toLowerCase(), name: m[2].trim().toLowerCase(), ...(version ? { version } : {}) };
+}
+
+/** The name and version of a versioned workspace reference: `name:version` or
+ *  `./name:version`, like `wall:dev` or `./wall:0.6`. Lowercased. Null without a version
+ *  (a plain local reference) or for any other kind of reference. */
+export function parseVersionedLocalComponentRef(ref: string): { name: string; version: string } | null
+{
+    const m = (ref ?? '').trim().match(/^(?:\.\/)?([a-z0-9 _-]+?):([a-z0-9.+-]+)$/i);
+    return m ? { name: m[1].trim().toLowerCase(), version: m[2].toLowerCase() } : null;
+}
+
 /** The workspace-local script name a reference points at, lowercased, or null when
- *  the reference is not local — inline code, a `.js` file path, or a library path
- *  like 'archiyou/wall:1.0'. Mirrors the './name' and bare-name branches of
- *  Runner._prepareComponentScript(); keep the two in step.
+ *  the reference is not local — inline code, a `.js` file path, a library path
+ *  like 'archiyou/wall:1.0', or `@someone-else/name`. Mirrors the './name', bare-name
+ *  and `@author/name` branches of Runner._prepareComponentScript(); keep them in step.
  *
- *  Script names are lowercased by Script.fromData(), so callers can compare directly. */
-export function localComponentName(ref: string): string | null
+ *  `author` is the owner of the referencing script: `@author/name` and `@author/name:dev`
+ *  are local only for them (a pinned version is not: it already is a shared version). Script names are lowercased by Script.fromData(), so callers can compare directly. */
+export function localComponentName(ref: string, author?: string): string | null
 {
     const path = (ref ?? '').trim();
     if (!path) return null;
+
+    // 'wall:dev' is the workspace script itself; 'wall:0.6' a shared version of it
+    const versioned = parseVersionedLocalComponentRef(path);
+    if (versioned)
+    {
+        return (versioned.version === DEV_COMPONENT_VERSION) ? versioned.name : null;
+    }
+
+    const authored = parseAuthoredComponentRef(path);
+    if (authored)
+    {
+        const pinned = authored.version && authored.version !== DEV_COMPONENT_VERSION;
+        return (author && authored.author === author.toLowerCase() && !pinned) ? authored.name : null;
+    }
+
     if (path.includes('.js')) return null;                 // local file path (node only)
 
     if (path.startsWith('./'))
@@ -187,12 +203,12 @@ export function localComponentName(ref: string): string | null
 
 /** Every workspace-local component name referenced in the code, deduplicated and
  *  lowercased. Non-local references (inline code, library paths) are ignored. */
-export function localComponentNames(code: string): Array<string>
+export function localComponentNames(code: string, author?: string): Array<string>
 {
     const names = new Set<string>();
     for (const call of extractTopLevelComponentCalls(code ?? ''))
     {
-        const name = localComponentName(call.content);
+        const name = localComponentName(call.content, author);
         if (name) names.add(name);
     }
     return Array.from(names);
@@ -204,6 +220,7 @@ export interface NamedScriptSource
 {
     name?: string;
     code?: string;
+    author?: string;
 }
 
 /** How deep the dependency walk follows nested components. Matches
@@ -220,6 +237,9 @@ export const MAX_COMPONENT_DEPTH = 10;
  *
  *  `root` itself is never returned, cycles terminate on the seen-set, and matching is
  *  by lowercased name — the same key Script.fromData() and the Runner use.
+ *
+ *  `@author/name` references are followed when the author is root's own author; other
+ *  authors' components are theirs to share, so they are not collected.
  *
  *  `aliases` maps extra (lowercased) names to workspace scripts — old names of renamed
  *  scripts that references may still use. Current names always win. */
@@ -242,7 +262,10 @@ export function collectComponentDependencies<T extends NamedScriptSource>(
     const rootName = root.name?.toLowerCase();
     if (rootName) seen.add(rootName);
 
-    let frontier = localComponentNames(root.code ?? '');
+    // `@author/name` counts as local for the root's author — the whole walk stays in
+    // their workspace.
+    const author = root.author ?? undefined;
+    let frontier = localComponentNames(root.code ?? '', author);
     for (let depth = 0; depth < MAX_COMPONENT_DEPTH && frontier.length; depth++)
     {
         const next: Array<string> = [];
@@ -256,7 +279,7 @@ export function collectComponentDependencies<T extends NamedScriptSource>(
             if (found.includes(script) || script === root) continue; // reached by an old and a new name
 
             found.push(script);
-            next.push(...localComponentNames(script.code ?? ''));
+            next.push(...localComponentNames(script.code ?? '', author));
         }
         frontier = next;
     }

@@ -27,6 +27,8 @@
     "test:brep": "vitest run tests/unit/brep/",
     "test:kernels": "vitest run tests/unit/modeler/kernels/",
     "test:modeler": "vitest run tests/unit/modeler/*test.ts",
+    "test:scad": "vitest run tests/unit/modeler/scad.test.ts tests/unit/modeler/scad.roundtrip.test.ts tests/unit/runner/runner.scad.test.ts tests/unit/modeler/exportGeometry.test.ts tests/unit/modeler/recipe.test.ts",
+    "test:ifc": "vitest run tests/unit/modeler/ifc.features.test.ts tests/unit/modeler/ifc.export.test.ts tests/unit/modeler/ifc.house.test.ts",
     "test:make": "vitest run tests/unit/make/make.test.ts",
     "test:layouter": "vitest run tests/unit/modeler/layouter.test.ts",
     "test:docs": "vitest run tests/unit/docs/Docs.test.ts",
@@ -61,12 +63,14 @@
     "@archiyou/module-sdk": "workspace:*",
     "@types/node": "^25.5.2",
     "@vitest/coverage-v8": "^4.1.4",
+    "openscad-wasm-prebuilt": "1.2.0",
     "ts-morph": "^25.0.1",
     "tsup": "^8.5.1",
     "tsx": "^4.19.3",
     "typescript": "^6.0.2",
     "vite": "^8.0.8",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.4",
+    "web-ifc": "0.0.77"
   },
   "dependencies": {
     "@archiyou/collada-wasm": "workspace:^",

@@ -43,6 +43,13 @@
       "when": 1789062880317,
       "tag": "0005_crazy_post",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789414671038,
+      "tag": "0006_wide_luke_cage",
+      "breakpoints": true
     }
   ]
 }

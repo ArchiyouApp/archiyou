@@ -1,0 +1,17 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`housetest — classification > has a stable entity histogram 1`] = `
+{
+  "IfcBeam.LINTEL": 2,
+  "IfcBuildingElementPart.INSULATION": 30,
+  "IfcMember.MEMBER": 6,
+  "IfcMember.PLATE": 10,
+  "IfcMember.PURLIN": 6,
+  "IfcMember.RAFTER": 24,
+  "IfcMember.STUD": 44,
+  "IfcOpeningElement.OPENING": 2,
+  "IfcRoof.GABLE_ROOF": 1,
+  "IfcWall.ELEMENTEDWALL": 4,
+  "IfcWindow.WINDOW": 1,
+}
+`;

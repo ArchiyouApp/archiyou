@@ -316,33 +316,71 @@ describe('ScriptStore validated flag', () => {
   });
 });
 
-describe('ScriptStore.listAllPublished', () => {
+describe('ScriptStore.listPublishedConfigurators', () => {
+  const PUBLIC = { public: true, fulfillments: [] };
+
   it('spans authors and filters on the validated flag', () => {
     const mine = store.publish(
       AUTHOR, newFile('admin-list-a'),
-      payload({ name: 'admin-list-a', version: '0.1', published: { public: true, fulfillments: [] } }),
+      payload({ name: 'admin-list-a', version: '0.1', published: PUBLIC }),
     );
     store.create('someoneelse', payload({ name: 'admin-list-b' }));
     store.setValidated(mine.id as string, true);
 
-    const validated = store.listAllPublished({ validated: true });
-    expect(validated.scripts.map((s) => s.id)).toContain(mine.id);
+    const versionIds = (list: ReturnType<ScriptStore['listPublishedConfigurators']>) =>
+      list.configurators.flatMap((c) => c.versions.map((v) => v.id));
 
-    const unvalidated = store.listAllPublished({ validated: false });
-    expect(unvalidated.scripts.map((s) => s.id)).not.toContain(mine.id);
+    expect(versionIds(store.listPublishedConfigurators({ validated: true }))).toContain(mine.id);
+
+    const unvalidated = store.listPublishedConfigurators({ validated: false });
+    expect(versionIds(unvalidated)).not.toContain(mine.id);
     // Rows predating the feature have no `validated` key at all; `IS NOT 1` must
     // still count them as unvalidated rather than dropping them from the list.
     expect(unvalidated.total).toBeGreaterThan(0);
   });
 
-  it('filters by author and reports a total independent of the limit', () => {
-    const all = store.listAllPublished({ author: AUTHOR });
-    expect(all.scripts.length).toBeGreaterThan(1);
+  it('groups versions per file, newest version first, and orders files by their latest update', async () => {
+    const older = newFile('admin-group-older');
+    store.publish(AUTHOR, older, payload({ name: 'admin-group-older', version: '0.1', published: PUBLIC }));
+    // A minute back, so the order does not hang on two publishes landing in one millisecond
+    const { db } = await import('../../src/db/client');
+    const { scriptVersions } = await import('../../src/db/schema');
+    const { eq } = await import('drizzle-orm');
+    db.update(scriptVersions).set({ updated: new Date(Date.now() - 60_000) })
+      .where(eq(scriptVersions.fileId, older)).run();
 
-    const paged = store.listAllPublished({ author: AUTHOR, limit: 1 });
-    expect(paged.scripts).toHaveLength(1);
+    const grouped = newFile('admin-group');
+    const v1 = store.publish(AUTHOR, grouped, payload({ name: 'admin-group', version: '0.9', published: PUBLIC }));
+    const v2 = store.publish(AUTHOR, grouped, payload({ name: 'admin-group', version: '0.10', published: PUBLIC }));
+
+    const { configurators } = store.listPublishedConfigurators({ q: 'admin-group' });
+    expect(configurators.map((c) => c.fileId)).toEqual([grouped, older]);
+    expect(configurators[0].name).toBe('admin-group');
+    expect(configurators[0].versions.map((v) => v.id)).toEqual([v2.id, v1.id]); // semver, not string order
+    expect(configurators[0].updated).toBe(v2.updated);
+  });
+
+  it('leaves out published rows without a version', async () => {
+    const fileId = newFile('admin-unversioned');
+    const { db } = await import('../../src/db/client');
+    const { scriptVersions } = await import('../../src/db/schema');
+    const { eq } = await import('drizzle-orm');
+    db.update(scriptVersions).set({ published: PUBLIC as ScriptData['published'] })
+      .where(eq(scriptVersions.fileId, fileId)).run();
+
+    const { configurators } = store.listPublishedConfigurators({ q: 'admin-unversioned' });
+    expect(configurators).toEqual([]);
+  });
+
+  it('filters by author and pages by file, with a total independent of the limit', () => {
+    const all = store.listPublishedConfigurators({ author: AUTHOR });
+    expect(all.configurators.length).toBeGreaterThan(1);
+    expect(all.total).toBe(all.configurators.length);
+
+    const paged = store.listPublishedConfigurators({ author: AUTHOR, limit: 1 });
+    expect(paged.configurators).toHaveLength(1);
     expect(paged.total).toBe(all.total);
 
-    expect(store.listAllPublished({ author: 'nobody' }).total).toBe(0);
+    expect(store.listPublishedConfigurators({ author: 'nobody' }).total).toBe(0);
   });
 });

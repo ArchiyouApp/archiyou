@@ -99,4 +99,28 @@ describe('Runner: $component() of a renamed script', () =>
         const { missing } = await runner._prefetchComponentScripts(request(`$component('./oldhouse').model();`))
         expect(missing).toEqual(['./oldhouse'])
     })
+
+    it('resolves an own, unlinked script to its latest stored version, not the shared one', async () =>
+    {
+        const runner = await new Runner().load()
+        const LATEST = { fileId: 'file-wall', name: 'wall', author: 'archiyou', code: `latest = box(2);` }
+        let stored = LATEST
+        const fetchSpy = stubFetch((url) => url.includes('by-name')
+            ? { body: stored }
+            : { body: { success: true, data: { ...LATEST, version: '0.6', code: `shared = box(1);` } } })
+        runner.linkComponentScripts([Script.fromData({ fileId: 'x', name: 'other', code: `a = 1;` })!])
+
+        for(const ref of [`./wall`, `@archiyou/wall:dev`])
+        {
+            const { missing } = await runner._prefetchComponentScripts(request(`$component('${ref}').model();`))
+            expect(missing).toEqual([])
+            expect(runner.getComponentScriptFromCache(ref)!.code).toBe(`latest = box(2);`)
+        }
+        expect(fetchSpy.mock.calls.some(c => String(c[0]).includes('/shared/'))).toBe(false)
+
+        // A new save is picked up on the next run
+        stored = { ...LATEST, code: `newer = box(3);` }
+        await runner._prefetchComponentScripts(request(`$component('@archiyou/wall:dev').model();`))
+        expect(runner.getComponentScriptFromCache('@archiyou/wall:dev')!.code).toBe(`newer = box(3);`)
+    })
 })

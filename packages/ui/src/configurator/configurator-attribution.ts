@@ -2,9 +2,9 @@
  * configurator-attribution — the small "made with Archiyou" bar that floats over
  * the bottom-right corner of the configurator viewer, plus a feedback affordance.
  *
- * The feedback form is intentionally local for now: it collects the message and
- * emits a `configurator-feedback` event. Wiring it to a backend route is a
- * follow-up (there is no feedback endpoint on apps/server yet).
+ * Sending posts the message to the server (services/feedback.ts → POST /feedback),
+ * where operators read it on /admin/feedback. The form stays open with the message
+ * intact when that fails, so nothing typed is lost.
  */
 
 import { LitElement, html, css, nothing } from 'lit';
@@ -13,13 +13,10 @@ import { customElement, state } from 'lit/decorators.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 
+import { sendConfiguratorFeedback } from '@archiyou/editor/src/services/feedback';
+
 /** Where the Archiyou logo links to. */
 const ARCHIYOU_URL = 'https://archiyou.com';
-
-export interface ConfiguratorFeedbackDetail
-{
-  message: string;
-}
 
 @customElement('configurator-attribution')
 export class ConfiguratorAttribution extends LitElement
@@ -76,9 +73,10 @@ export class ConfiguratorAttribution extends LitElement
           @input=${(e: InputEvent) => (this._message = (e.target as HTMLTextAreaElement).value)}
           @keydown=${this._onKeydown}
         ></textarea>
+        ${this._error ? html`<div class="error" role="alert">${this._error}</div>` : nothing}
         <div class="panel-actions">
-          <button class="btn-send" ?disabled=${!this._message.trim()} @click=${this._send}>
-            Send
+          <button class="btn-send" ?disabled=${!this._message.trim() || this._sending} @click=${this._send}>
+            ${this._sending ? 'Sending…' : 'Send'}
           </button>
         </div>
       </div>
@@ -89,6 +87,8 @@ export class ConfiguratorAttribution extends LitElement
   @state() private _open = false;
   @state() private _sent = false;
   @state() private _message = '';
+  @state() private _sending = false;
+  @state() private _error = '';
 
   private _sentTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -115,6 +115,7 @@ export class ConfiguratorAttribution extends LitElement
   {
     this._open = false;
     this._sent = false;
+    this._error = '';
   }
 
   private _onKeydown(e: KeyboardEvent)
@@ -123,16 +124,29 @@ export class ConfiguratorAttribution extends LitElement
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) this._send();
   }
 
-  private _send()
+  private async _send()
   {
     const message = this._message.trim();
-    if (!message) return;
+    if (!message || this._sending) return;
 
-    this.dispatchEvent(new CustomEvent<ConfiguratorFeedbackDetail>('configurator-feedback', {
-      detail:   { message },
-      bubbles:  true,
-      composed: true,
-    }));
+    this._sending = true;
+    this._error = '';
+    try
+    {
+      await sendConfiguratorFeedback(message);
+    }
+    catch (err)
+    {
+      const status = (err as { status?: number })?.status;
+      this._error = status === 429
+        ? 'Too much feedback at once. Please try again in a few minutes.'
+        : 'Could not send your feedback. Please try again.';
+      return;
+    }
+    finally
+    {
+      this._sending = false;
+    }
 
     this._message = '';
     this._sent = true;
@@ -284,6 +298,12 @@ export class ConfiguratorAttribution extends LitElement
     }
 
     .message:focus { border-color: var(--color-primary); }
+
+    .error
+    {
+      font-size: var(--text-xs);
+      color: var(--color-alert, #f10827);
+    }
 
     .panel-actions
     {

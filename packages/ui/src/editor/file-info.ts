@@ -115,11 +115,20 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
                 @dblclick=${(e: Event) => { if (readOnly) return; e.stopPropagation(); this._startNameEdit(displayName); }}
               >${displayName}</span>
 
-              ${script?.version
-                ? html`<span class="script-version">v${script.version}</span>`
-                : this._fallbackVersion()
-                  ? html`<span class="script-version" title="Last shared/published version — this working copy has unsaved changes since">v${this._fallbackVersion()}</span>`
-                  : nothing}
+              ${this._displayVersion()
+                ? html`
+                    <span
+                      id=${`fm-version-${this._uid}`}
+                      class="script-version"
+                    ><span class="version-text">${this._displayVersion()}</span>${this._isChangedSinceVersion()
+                      ? html`<wa-icon class="version-changed" library="lucide" name="file-diff" label="Changed since this version"></wa-icon>`
+                      : nothing}</span>
+                    <wa-tooltip for=${`fm-version-${this._uid}`} placement="bottom">
+                      ${this._isChangedSinceVersion()
+                        ? `Shared/published as ${this._displayVersion()}, but the code changed since. Others using this script get ${this._displayVersion()}; share or publish again to update it. Your own scripts always use the latest code.`
+                        : `Shared/published version.`}
+                    </wa-tooltip>`
+                : nothing}
 
               ${readOnly
                 ? html`
@@ -201,8 +210,10 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
   private _renderBody()
   {
     const script  = editorScript.get();
-    const fallbackVersion = this._fallbackVersion();
-    const version = script?.version ?? (fallbackVersion ? `${fallbackVersion} (last shared/published — unsaved changes since)` : '—');
+    const displayVersion = this._displayVersion();
+    const version = displayVersion
+        ? `${displayVersion}${this._isChangedSinceVersion() ? ' (last shared/published — code changed since)' : ''}`
+        : '—';
 
     return html`
       <div class="body">
@@ -359,6 +370,27 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
     return shared ?? published;
   }
 
+  /** Does the working copy's code differ from the shared/published version shown in
+   *  the header? Unknown (not fetched yet) counts as unchanged. */
+  private _isChangedSinceVersion(): boolean
+  {
+    const shown = this._displayVersion();
+    if (!shown) return false;
+    const libCode = (shown === this._lastSharedVersion) ? this._lastSharedCode
+      : (shown === this._lastPublishedVersion?.version) ? this._lastPublishedCode
+      : null;
+    const code = editorScript.get()?.code;
+    return libCode !== null && typeof code === 'string' && code.trim() !== libCode.trim();
+  }
+
+  /** The version shown in the header and Version field: the working copy's own (the
+   *  local copy keeps it after saving; only the server resets it), else the last
+   *  shared/published one. */
+  private _displayVersion(): string | null
+  {
+    return editorScript.get()?.version ?? this._fallbackVersion();
+  }
+
   /** Public URLs for the latest shared/published version of this script — shown
    *  under the Links field. Neither shared nor published ⇒ a hint to do so. */
   private _renderLinks()
@@ -471,6 +503,13 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
    *  the file has never been shared/published. */
   @state() private _lastSharedVersion: string | null = null;
   @state() private _lastPublishedVersion: { version: string; url?: string } | null = null;
+  /** Code of those versions, to flag a working copy that changed since. */
+  @state() private _lastSharedCode: string | null = null;
+  @state() private _lastPublishedCode: string | null = null;
+
+  /** The active script's own version at the last render: sharing or publishing sets
+   *  it, the next save resets it to null — then the library versions are stale. */
+  private _seenVersion: string | null = null;
 
   /** Tracks the fileId of the script the form is currently bound to,
    *  so we can re-populate when the active script changes (e.g. after
@@ -534,12 +573,18 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
         clearTimeout(this._nameErrorTimer);
         this._nameErrorTimer = null;
       }
+      this._seenVersion  = script?.version ?? null;
       void this._loadLastLibraryVersions(script, fid);
+    }
+    else if ((script?.version ?? null) !== this._seenVersion)
+    {
+      this._seenVersion = script?.version ?? null;
+      void this._loadLastLibraryVersions(script, fid); // shared/published since
     }
   }
 
-  /** Look up the last shared/published version of the active file when its own
-   *  `version` is null (see the field comment on `_lastSharedVersion`). Guards
+  /** Look up the last shared/published version of the active file, also when its own
+   *  `version` is set: its code is compared to flag a changed working copy. Guards
    *  against a stale response landing after the user has already switched to a
    *  different script. */
   private async _loadLastLibraryVersions(
@@ -549,7 +594,9 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
   {
     this._lastSharedVersion    = null;
     this._lastPublishedVersion = null;
-    if (!script || script.version || !script.author || !script.name) return;
+    this._lastSharedCode       = null;
+    this._lastPublishedCode    = null;
+    if (!script || !script.author || !script.name) return;
 
     const [shared, published] = await Promise.all([
       fetchSharedScript(script.author, script.name),
@@ -558,6 +605,8 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
     if (this._activeFileId !== fid) return; // stale — active script has changed
 
     this._lastSharedVersion    = shared?.version ?? null;
+    this._lastSharedCode       = shared?.version ? (shared.code ?? null) : null;
+    this._lastPublishedCode    = published?.version ? (published.code ?? null) : null;
     this._lastPublishedVersion = published?.version
       ? { version: published.version, url: published.published?.url ?? undefined }
       : null;
@@ -808,13 +857,35 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
       cursor: default;
     }
 
+    /* Same pill as the configurator header's version badge. */
     .script-version
     {
-      font-size: var(--text-sm);
-      line-height: 20px;
-      color: var(--color-gray-dark, #666);
-      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
       flex-shrink: 0;
+      font-family: var(--font-mono, monospace);
+      font-size: var(--text-x-xs, 0.625rem);
+      line-height: 1;
+      color: var(--color-gray-dark, #666);
+      background: var(--color-gray-light, #eee);
+      border: 1px solid var(--color-border, #cfcfcf);
+      border-radius: var(--radius-full, 9999px);
+      padding: 4px 7px;
+      white-space: nowrap;
+    }
+
+    .version-text
+    {
+      /* Trim the line box to the digits (cap height to baseline): line-height alone
+         centers the font's ascent/descent, which leaves the text riding high. */
+      text-box: trim-both cap alphabetic;
+    }
+
+    .version-changed
+    {
+      font-size: 0.625rem;
+      color: var(--color-alert, #ef4444);
     }
 
     .name-input

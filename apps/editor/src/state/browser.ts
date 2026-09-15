@@ -1,17 +1,17 @@
 /**
  * state/browser.ts — browser (asset manager) UI state.
  *
- * Stub: the browser components currently keep this state component-local
- * (search query, active tab, sort). Signals are declared here so the
- * structure is in place; wiring the components to them is a follow-up.
+ * The section is not here: it lives in the URL (/browser/{section}), so back/forward
+ * and links work. What is here survives moving between sections and back from the
+ * editor within a session: the search query and the sort.
  */
 
 import { signal } from '@lit-labs/signals';
 
-export const browserSearch    = signal<string>('');
-export const browserActiveTab = signal<string>('all');
-export const browserSort      = signal<string>('modified');
+export type BrowserSortValue = 'modified' | 'name' | 'type';
+
+export const browserSearch = signal<string>('');
+export const browserSort   = signal<BrowserSortValue>('modified');
 
 export function setBrowserSearch(q: string): void { browserSearch.set(q); }
-export function setBrowserActiveTab(tab: string): void { browserActiveTab.set(tab); }
-export function setBrowserSort(sort: string): void { browserSort.set(sort); }
+export function setBrowserSort(sort: BrowserSortValue): void { browserSort.set(sort); }

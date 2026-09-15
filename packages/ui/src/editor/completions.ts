@@ -243,6 +243,108 @@ export function registerModuleCompletions(modules: ReadonlyArray<ModuleCompletio
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Components: $component('name')                                     */
+/* ------------------------------------------------------------------ */
+
+/** A component offered in $component('…'): its reference, like `@archiyou/timberwall`
+ *  (latest shared version) or `@mark/wall:dev` (latest script version, for own scripts),
+ *  and whether it is one of the user's own workspace scripts (listed first). */
+export interface ComponentNameSource
+{
+  label: string;
+  own: boolean;
+}
+
+/** The components usable in $component('@author/name'). Like the modules they are only
+ *  known at runtime, so the editor registers a provider, asked on every completion so
+ *  the list is never stale. */
+let componentNamesProvider: () => ReadonlyArray<ComponentNameSource> = () => [];
+
+/** Set where the component names come from. Called by the editor. */
+export function registerComponentNames(provider: () => ReadonlyArray<ComponentNameSource>): void
+{
+  componentNamesProvider = provider;
+}
+
+const COMPONENT_SECTIONS = {
+  own:    { name: 'Your scripts', rank: 0 },
+  shared: { name: 'Shared',       rank: 1 },
+};
+
+/** Methods of the importer $component('name') returns (RunnerComponentImporter). */
+const componentImporterMembers: Completion[] = [
+  { label: 'params',  type: 'method', detail: '(params: object): this',     info: 'Set the param values of the component' },
+  { label: 'pipeline',type: 'method', detail: '(name: string): this',       info: 'Select the pipeline to get outputs from (default: "default")' },
+  { label: 'noCache', type: 'method', detail: '(): this',                   info: 'Execute again instead of using a memoised result' },
+  { label: 'info',    type: 'method', detail: '(): this',                   info: 'Print the params and outputs of the component to the console' },
+  { label: 'model',   type: 'method', detail: '(): ShapeCollection',        info: 'Execute the component and get its model' },
+  { label: 'docs',    type: 'method', detail: '(name?: string): Document|Document[]', info: 'Execute the component and get all its documents, or the one with the given name' },
+  { label: 'get',     type: 'method', detail: '(...outputs: string|string[])', info: 'Execute the component and get outputs by path, like "default/docs/*"' },
+  { label: 'all',     type: 'method', detail: '()',                         info: 'Execute the component and get all outputs of the pipeline' },
+  { label: 'list',    type: 'method', detail: '(): string[]',               info: 'Print and return the names of the available components' },
+];
+
+/** Importer methods that return the importer itself, so a chain stays completable. */
+const COMPONENT_CHAIN_METHODS = new Set(['params', 'pipeline', 'noCache', 'info']);
+
+/** Completion inside `$component(` / `$component('@ma`. Without a quote typed yet, the
+ *  reference is inserted quoted. Own scripts come first, in their own section. */
+function componentNameCompletion(context: CompletionContext): CompletionResult | null
+{
+  const m = context.matchBefore(/\$component\(\s*['"`]?[@\w./: -]*$/);
+  if (!m) return null;
+
+  const seen = new Set<string>();
+  const sources = componentNamesProvider().filter(c => !seen.has(c.label) && seen.add(c.label));
+  if (sources.length === 0) return null;
+
+  const quoted = /\(\s*['"`]/.test(m.text);
+  const nameStart = m.text.search(/[@\w./: -]*$/);
+
+  return {
+    from: m.from + nameStart,
+    options: sources.map(c => ({
+      label: c.label,
+      type: 'constant',
+      detail: c.own ? 'your latest version' : 'latest shared version',
+      section: c.own ? COMPONENT_SECTIONS.own : COMPONENT_SECTIONS.shared,
+      boost: c.own ? 1 : 0,
+      apply: quoted ? c.label : `'${c.label}'`,
+    })),
+    validFor: /^[@\w./: -]*$/,
+  };
+}
+
+/** True when `textBefore` (up to a `.`) ends in `$component(...)`, optionally followed by
+ *  importer methods that return the importer (params, pipeline, …). */
+function endsInComponentImporter(textBefore: string): boolean
+{
+  const statement = (textBefore.split(/[;\n]/).pop() ?? '');
+  const start = statement.lastIndexOf('$component(');
+  if (start < 0) return false;
+
+  // Walk the chain after $component, skipping balanced (...) argument lists.
+  let rest = statement.slice(start + '$component'.length);
+  for (;;)
+  {
+    if (!rest.startsWith('(')) return false;
+    let depth = 0, i = 0;
+    for (; i < rest.length; i++)
+    {
+      if (rest[i] === '(') depth++;
+      else if (rest[i] === ')' && --depth === 0) break;
+    }
+    if (depth !== 0) return false;
+    rest = rest.slice(i + 1).trim();
+    if (rest === '') return true;
+
+    const call = rest.match(/^\.(\w+)\s*/);
+    if (!call || !COMPONENT_CHAIN_METHODS.has(call[1])) return false;
+    rest = rest.slice(call[0].length);
+  }
+}
+
 /** Map from class name → static completions (Point, Vector, Bbox, OBbox) */
 const staticMap = new Map<string, Completion[]>();
 
@@ -317,6 +419,10 @@ export function archiyouCompletions(
   context: CompletionContext,
 ): CompletionResult | null
 {
+  // $component('… → the names of the workspace components
+  const componentNames = componentNameCompletion(context);
+  if (componentNames) return componentNames;
+
   // ClassName. → static completions (Point.from, Vector.from, etc.)
   const dotMatch = context.matchBefore(/\b([A-Z]\w*)\.(\w*)$/);
   if (dotMatch)
@@ -350,6 +456,16 @@ export function archiyouCompletions(
       return {
         from: memberMatch.from + 1,
         options: moduleMembers,
+        validFor: /^\w*$/,
+      };
+    }
+
+    // `$component('wall').` → the importer's methods
+    if (endsInComponentImporter(textBefore))
+    {
+      return {
+        from: memberMatch.from + 1,
+        options: componentImporterMembers,
         validFor: /^\w*$/,
       };
     }

@@ -6,6 +6,7 @@
  *    Ensures the file exists server-side first (mirrors sharing.ts).
  *  - fetchPublishedScript(): the latest published version of a file (author/name),
  *    used to prefill the publish menu (last version + description/licence/fulfillments).
+ *  - fetchPublishedConfigurators(): the whole published library, for the browser.
  *
  * The published library GET wraps its payload in `{ success, data }`; the
  * owner-scoped `/scripts/{user}/…/publish` endpoint returns the ScriptData raw.
@@ -37,6 +38,13 @@ export async function fetchPublishedScript(author: string, name: string): Promis
   } catch {
     return null;
   }
+}
+
+/** The latest published version of every configurator, across all authors — the browser's
+ *  Configurators section. Includes non-public ones: the caller decides what to show. */
+export async function fetchPublishedConfigurators(): Promise<ScriptData[]> {
+  const res = await api.get<Envelope<ScriptData[]>>('/scripts/published');
+  return res.data ?? [];
 }
 
 /** A published script by `user` and `name[:version]` (the URL segment used by the

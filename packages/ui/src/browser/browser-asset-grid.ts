@@ -1,15 +1,19 @@
 /**
  * <browser-asset-grid> — the asset browser ("asset-grid-viewer").
  *
- * A tab bar to filter by asset type with a sort dropdown on the right, above a
- * flex-wrapped grid of asset cards.
+ * A tab bar of sections with a sort dropdown on the right, above a flex-wrapped grid
+ * of asset cards. Presentational: the page decides which assets are shown, in which
+ * order, and what the tabs and sort do (it keeps both in the URL / state).
  *
- * Stub: cards are driven by hard-coded mock data; filtering and sorting are
- * not yet wired up.
+ * Emits:
+ *   section-select  detail = section id    a tab was chosen
+ *   sort-change     detail = BrowserSort   a sort was chosen
+ *   asset-open      detail = BrowserAsset  a card was activated
+ *   create          detail = 'script'      the "New script" tile was used
  */
 
-import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { LitElement, html, css, nothing } from 'lit';
+import { customElement, property } from 'lit/decorators.js';
 import { msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/tab-group/tab-group.js';
@@ -18,17 +22,36 @@ import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import './browser-asset-card.js';
 import './browser-asset-new.js';
 
-interface MockAsset
+export type BrowserAssetKind = 'script' | 'shared' | 'configurator';
+
+/** One thing in the browser, whatever it is. `id` is unique per kind. */
+export interface BrowserAsset
 {
   id: string;
-  type: string;
+  kind: BrowserAssetKind;
   name: string;
-  author: string;
-  preview: string;
+  /** Author handle; left out for the user's own scripts. */
+  author?: string;
+  version?: string | null;
+  /** Epoch ms of the last change, for sorting and display. */
+  updated?: number;
+  /** Absolute thumbnail URL. */
+  thumbnail?: string;
 }
+
+export interface BrowserSection
+{
+  id: string;
+  /** Tab label. */
+  label: string;
+  disabled?: boolean;
+}
+
+export type BrowserSort = 'modified' | 'name' | 'type';
 
 @customElement('browser-asset-grid')
 export class BrowserAssetGrid extends LitElement
@@ -38,86 +61,89 @@ export class BrowserAssetGrid extends LitElement
   {
     return html`
       <div class="bar">
-        <wa-tab-group
-          @wa-tab-show=${(e: CustomEvent<{ name: string }>) =>
-            { this._activeTab = e.detail.name; }}
-        >
-          <wa-tab panel="all" ?active=${this._activeTab === 'all'}>
-            ${msg('View all')}
-          </wa-tab>
-          <wa-tab panel="scripts">${msg('Scripts')}</wa-tab>
-          <wa-tab panel="shared">${msg('Shared Scripts')}</wa-tab>
-          <wa-tab panel="designs">${msg('Designs')}</wa-tab>
-          <wa-tab panel="configurators">${msg('Configurators')}</wa-tab>
-          <wa-tab panel="projects">${msg('Projects')}</wa-tab>
+        <wa-tab-group active=${this.section} @wa-tab-show=${this._onTabShow}>
+          ${this.sections.map(s => html`
+            <wa-tab slot="nav" panel=${s.id} ?disabled=${s.disabled}
+              title=${s.disabled ? msg('Coming soon') : s.label}>${s.label}</wa-tab>`)}
         </wa-tab-group>
 
-        <wa-dropdown
-          @wa-select=${(e: CustomEvent<{ item: { value: string } }>) =>
-            { this._sort = e.detail.item.value; }}
-        >
+        <wa-dropdown placement="bottom-end" @wa-select=${this._onSort}>
           <wa-button slot="trigger" appearance="outlined" size="small" with-caret>
             <wa-icon slot="start" library="lucide" name="arrow-up-down"></wa-icon>
-            ${msg('Sort')}
+            ${this._sortLabels()[this.sort]}
           </wa-button>
-          <wa-dropdown-item value="name">${msg('Name')}</wa-dropdown-item>
-          <wa-dropdown-item value="modified">${msg('Last modified')}</wa-dropdown-item>
-          <wa-dropdown-item value="type">${msg('Type')}</wa-dropdown-item>
+          ${(Object.entries(this._sortLabels()) as Array<[BrowserSort, string]>).map(([value, label]) => html`
+            <wa-dropdown-item type="checkbox" value=${value} ?checked=${this.sort === value}>${label}</wa-dropdown-item>`)}
         </wa-dropdown>
       </div>
 
-      <div class="grid">
-        <browser-asset-new></browser-asset-new>
-        ${this._visibleAssets.map(a => html`
-          <browser-asset-card
-            name=${a.name}
-            type=${a.type}
-            author=${a.author}
-            preview=${a.preview}
-          ></browser-asset-card>
-        `)}
-      </div>
+      ${this._renderBody()}
     `;
   }
 
-  // ── 2. State ──
-  @state() private _activeTab = 'all';
-  @state() private _sort = 'modified';
-
-  /**
-   * Filtered + sorted view of the assets.
-   * Stub: filtering/sorting over mock data; swap in a real data source later.
-   */
-  private get _visibleAssets(): MockAsset[]
+  private _renderBody()
   {
-    const byTab: Record<string, string> = {
-      scripts: 'Script',
-      shared: 'Script',
-      designs: 'Design',
-      configurators: 'Configurator',
-      projects: 'Project',
-    };
-    const wanted = byTab[this._activeTab];
-    const list = wanted
-      ? BrowserAssetGrid._mockAssets.filter(a => a.type === wanted)
-      : [...BrowserAssetGrid._mockAssets];
+    if (this.loading && this.assets.length === 0)
+    {
+      return html`<div class="state"><wa-spinner></wa-spinner></div>`;
+    }
 
-    if (this._sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name));
-    else if (this._sort === 'type') list.sort((a, b) => a.type.localeCompare(b.type));
-    // 'modified' — TODO: no timestamps on mock data yet, keep insertion order.
-
-    return list;
+    return html`
+      <div class="grid">
+        ${this.showNew ? html`<browser-asset-new></browser-asset-new>` : nothing}
+        ${this.assets.map(a => html`
+          <browser-asset-card
+            .asset=${a}
+            @click=${() => this._open(a)}
+          ></browser-asset-card>
+        `)}
+        ${this.assets.length === 0 && !this.showNew
+          ? html`<div class="state empty">${this.emptyText}</div>`
+          : nothing}
+      </div>
+      ${this.error ? html`<div class="error" role="alert">${this.error}</div>` : nothing}
+    `;
   }
 
-  // ── 3. Mock data (stub) ──
-  private static readonly _mockAssets: MockAsset[] = [
-    { id: '1', type: 'Script',       name: 'Parametric Chair',   author: 'Mark',  preview: '' },
-    { id: '2', type: 'Design',       name: 'Pavilion Roof',      author: 'Wessel', preview: '' },
-    { id: '3', type: 'Configurator', name: 'Shelf Builder',      author: 'Mark',  preview: '' },
-    { id: '4', type: 'Script',       name: 'Voronoi Facade',     author: 'Anna',  preview: '' },
-    { id: '5', type: 'Project',      name: 'Tiny House',         author: 'Mark',  preview: '' },
-    { id: '6', type: 'Design',       name: 'Lamp Shade',         author: 'Wessel', preview: '' },
-  ];
+  // ── 2. Properties ──
+  @property({ type: Array }) sections: BrowserSection[] = [];
+  /** Id of the active section. */
+  @property({ type: String }) section = '';
+  @property({ type: Array }) assets: BrowserAsset[] = [];
+  @property({ type: String }) sort: BrowserSort = 'modified';
+  /** Show the leading "New script" tile. */
+  @property({ type: Boolean }) showNew = false;
+  @property({ type: Boolean }) loading = false;
+  @property({ type: String }) error = '';
+  @property({ type: String }) emptyText = '';
+
+  // ── 4. Behaviour & Methods ──
+  /** Built per call so the labels follow the locale. */
+  private _sortLabels(): Record<BrowserSort, string>
+  {
+    return { modified: msg('Last modified'), name: msg('Name'), type: msg('Type') };
+  }
+
+  private _onTabShow(e: CustomEvent<{ name: string }>)
+  {
+    if (e.detail.name === this.section) return;
+    this._emit('section-select', e.detail.name);
+  }
+
+  private _onSort(e: CustomEvent<{ item: { value: string } }>)
+  {
+    this._emit('sort-change', e.detail.item.value as BrowserSort);
+  }
+
+  private _open(asset: BrowserAsset)
+  {
+    this._emit('asset-open', asset);
+  }
+
+  private _emit<T>(name: string, detail: T)
+  {
+    this.dispatchEvent(new CustomEvent<T>(name, { detail, bubbles: true, composed: true }));
+  }
 
   // ── 5. Styles ──
   static override styles = css`
@@ -132,22 +158,32 @@ export class BrowserAssetGrid extends LitElement
       align-items: center;
       justify-content: space-between;
       gap: var(--space-md);
-      padding: var(--space-sm) var(--space-lg);
-      border-bottom: 1px solid var(--color-border);
+      padding: var(--space-sm) var(--space-lg) 0;
     }
 
     .bar wa-tab-group {
       flex: 1;
       min-width: 0;
+      /* navigation only: no track, the active tab's own underline is the only line */
+      --track-color: transparent;
+      --indicator-color: transparent;
     }
 
-    /* smaller tab labels */
+    .bar wa-tab-group::part(body) { display: none; }
+
     .bar wa-tab::part(base) {
       font-size: var(--text-sm);
     }
 
+    /* Inset shadow rather than the group's indicator border, which the browser rounds
+       down to one device pixel below 100% zoom. */
+    .bar wa-tab[active]::part(base) {
+      box-shadow: inset 0 -2px 0 var(--color-primary);
+    }
+
     .bar wa-dropdown {
       flex-shrink: 0;
+      padding-bottom: var(--space-sm);
     }
 
     .grid {
@@ -159,6 +195,30 @@ export class BrowserAssetGrid extends LitElement
       align-content: flex-start;
       gap: var(--space-lg);
       padding: var(--space-lg);
+    }
+
+    .state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      min-height: 160px;
+      padding: var(--space-lg);
+    }
+
+    .empty {
+      width: 100%;
+      font-size: var(--text-sm);
+      color: var(--color-text-muted);
+    }
+
+    .error {
+      margin: 0 var(--space-lg) var(--space-lg);
+      padding: var(--space-sm) var(--space-lg);
+      border: 1px solid var(--color-warning);
+      border-radius: var(--radius-md);
+      font-size: var(--text-sm);
+      color: var(--color-warning);
     }
   `;
 }

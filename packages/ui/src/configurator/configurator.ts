@@ -18,8 +18,6 @@ import './configurator-metric-bar.js';
 import './configurator-attribution.js';
 import './configurator-viewer-actions.js';
 
-import type { ConfiguratorFeedbackDetail } from './configurator-attribution.js';
-
 @customElement('page-configurator')
 export class PageConfigurator extends SignalWatcher(LitElement)
 {
@@ -51,10 +49,7 @@ export class PageConfigurator extends SignalWatcher(LitElement)
             class="viewer-actions"
             ?preview=${this.preview}
           ></configurator-viewer-actions>
-          <configurator-attribution
-            class="viewer-attribution"
-            @configurator-feedback=${this._handleFeedback}
-          ></configurator-attribution>
+          <configurator-attribution class="viewer-attribution"></configurator-attribution>
         </div>
       </wa-split-panel>
 
@@ -108,14 +103,6 @@ export class PageConfigurator extends SignalWatcher(LitElement)
   }
 
   // ── 4. Behaviour & Methods ──
-
-  /** Feedback from the attribution bar. There is no feedback endpoint on
-   *  apps/server yet, so this only logs for now — swap in the API call once the
-   *  route exists. */
-  private _handleFeedback(e: CustomEvent<ConfiguratorFeedbackDetail>)
-  {
-    console.info('Configurator feedback:', e.detail.message);
-  }
 
   private _handleParamsChanged()
   {

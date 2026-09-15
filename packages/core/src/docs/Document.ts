@@ -500,13 +500,20 @@ export class Document
         if(typeof name !== 'string' || name.length === 0){ throw new Error(`Document::var(name): Please supply a variable name as string!`); }
         if(!this._activeContainer){ throw new Error(`Document::var(name): No active container to set variable for!`); }
 
-        if(name in Object.keys(this._variables))
+        if(name in this._variables)
         {
-            console.warn(`Document::var(name): Overwriting existing variable "${name}" that refers to container "${this._variables[name].name}"!`);
+            console.user(`Document::var(name): Overwriting existing variable "${name}" that refers to container "${this._variables[name].name}"!`);
         }
         this._variables[name] = this._activeContainer;
 
         return this;
+    }
+
+    /** Alias of var(): name the active container to set its content later with set(name, value) */
+    tag(name:string):this
+    {
+        console.user(`Document::tag(name): tag() is an alias of var(). Please use var("${name}") instead.`);
+        return this.var(name);
     }
 
     /** Set variable that sets content of a container */
@@ -515,7 +522,8 @@ export class Document
         if(typeof name !== 'string' || name.length === 0){ throw new Error(`Document::set(name, value): Please supply a variable name as string!`); }
         if(!value){ throw new Error(`Document::set(name, value): Please supply a variable value!`); }
         if(!(name in this._variables)){ 
-            throw new Error(`Document::set(name, value): Variable "${name}" does not exist. Available are: ${Object.keys(this._variables).join(', ')}`); }
+            const available = Object.keys(this._variables);
+            throw new Error(`Document::set(name, value): Variable "${name}" does not exist. ${(available.length > 0) ? `Available are: ${available.join(', ')}` : 'No vars available'}`); }
 
         this._variables[name].setContent(value);
 
@@ -1066,6 +1074,17 @@ export class Document
                     // NOTE: this should not happen!
                     console.warn(`Document::merge: Page "${page.name}" already exists in Document "${this._name}". Skipping it!`);
                 }
+            });
+
+            // Take over the variables so they can be set on this document after merging
+            Object.entries(doc._variables).forEach(([name, container]) =>
+            {
+                if(name in this._variables)
+                {
+                    console.user(`Document::merge: Variable "${name}" from Document "${mergedDocName}" already exists in Document "${this._name}". Set it on the merged Document before merging!`);
+                    return;
+                }
+                this._variables[name] = container;
             });
 
         })

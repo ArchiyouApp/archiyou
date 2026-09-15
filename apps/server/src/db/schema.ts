@@ -100,3 +100,33 @@ export const scriptVersions = sqliteTable('script_versions', {
 
 export type ScriptVersionRow = typeof scriptVersions.$inferSelect;
 export type NewScriptVersionRow = typeof scriptVersions.$inferInsert;
+
+/**
+ * Visitor feedback, sent from the "Give feedback" button on a configurator
+ * (<configurator-attribution>). Anyone may post — visitors are usually anonymous —
+ * so `username` is only set when the sender happened to be signed in. The script
+ * columns are a denormalized snapshot of what was on screen (not a foreign key):
+ * feedback must outlive the version it was about. Read and moderated on /admin.
+ */
+export const feedback = sqliteTable('feedback', {
+  id: text('id').primaryKey(),                  // uuid
+  message: text('message').notNull(),
+  // What the visitor was looking at. All nullable: the preview in the editor may
+  // show a script that was never saved.
+  scriptId: text('script_id'),
+  fileId: text('file_id'),
+  scriptAuthor: text('script_author'),
+  scriptName: text('script_name'),
+  scriptVersion: text('script_version'),
+  /** The page address, params included, so the configuration can be reproduced. */
+  url: text('url'),
+  /** Handle of the sender when signed in, else null. */
+  username: text('username'),
+  starred: integer('starred', { mode: 'boolean' }).notNull().default(false),
+  created: integer('created', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`),
+}, (t) => ({
+  byCreated: index('feedback_by_created').on(t.created),
+}));
+
+export type FeedbackRow = typeof feedback.$inferSelect;
+export type NewFeedbackRow = typeof feedback.$inferInsert;

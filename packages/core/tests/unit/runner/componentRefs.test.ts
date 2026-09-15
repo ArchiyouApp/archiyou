@@ -4,6 +4,7 @@ import {
     localComponentName,
     localComponentNames,
     collectComponentDependencies,
+    parseAuthoredComponentRef,
     extractTopLevelComponentCalls,
 } from '../../../src/runner/componentRefs'
 
@@ -74,6 +75,17 @@ describe('localComponentNames (all local references in a script)', () =>
         expect(extractTopLevelComponentCalls(code)).toHaveLength(1)
         expect(localComponentNames(code)).toEqual([])
     })
+
+    it('finds $component() calls inside other function calls, like a map callback', () =>
+    {
+        const code = `
+            bents = collection(ys.map((y,i) =>
+                $component('ur_bent', { SPAN: max(1,2) }).info().model().moveToY(y)
+            ));
+            walls = group($component('./wall').model());
+        `
+        expect(localComponentNames(code)).toEqual(['ur_bent', 'wall'])
+    })
 })
 
 describe('collectComponentDependencies (what publishing has to share)', () =>
@@ -135,6 +147,39 @@ describe('collectComponentDependencies (what publishing has to share)', () =>
         const { found, missing } = collectComponentDependencies(root, workspace, { oldwall: wall })
 
         expect(found.map(s => s.name)).toEqual(['wall', 'stud'])
+        expect(missing).toEqual([])
+    })
+})
+
+describe('@author/name references', () =>
+{
+    it('are local only for the given author', () =>
+    {
+        expect(localComponentName('@mark/Wall', 'mark')).toBe('wall')
+        expect(localComponentName('@archiyou/wall', 'mark')).toBeNull()
+        expect(localComponentName('@mark/wall')).toBeNull()
+        expect(localComponentName('@mark/wall:dev', 'mark')).toBe('wall')
+        expect(localComponentName('@mark/wall:0.6', 'mark')).toBeNull() // pinned: already shared
+        expect(localComponentName('wall:dev')).toBe('wall')
+        expect(localComponentName('./Wall:DEV')).toBe('wall')
+        expect(localComponentName('./wall:0.6')).toBeNull()
+    })
+
+    it('parse an optional version', () =>
+    {
+        expect(parseAuthoredComponentRef('@Mark/Wall')).toEqual({ author: 'mark', name: 'wall' })
+        expect(parseAuthoredComponentRef('@mark/wall:DEV')).toEqual({ author: 'mark', name: 'wall', version: 'dev' })
+        expect(parseAuthoredComponentRef('@mark/wall:0.6')).toEqual({ author: 'mark', name: 'wall', version: '0.6' })
+        expect(parseAuthoredComponentRef('@mark/wall:')).toBeNull()
+        expect(parseAuthoredComponentRef('mark/wall:0.6')).toBeNull()
+    })
+
+    it('are followed as dependencies for the root author only', () =>
+    {
+        const wall = { name: 'wall', code: `$component('@archiyou/timberwall')` }
+        const root = { name: 'house', author: 'mark', code: `$component('@mark/wall')` }
+        const { found, missing } = collectComponentDependencies(root, [wall])
+        expect(found).toEqual([wall])
         expect(missing).toEqual([])
     })
 })

@@ -1,7 +1,8 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
 import { msg } from '@lit/localize';
+import { Router } from '@vaadin/router';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
@@ -10,6 +11,7 @@ import './main-menu-file-menu.js';
 import '../configurator/configurator.js';
 
 import { pluginMode } from '@archiyou/editor/src/state/plugin-mode';
+import { userState } from '@archiyou/editor/src/state/workspace';
 import '@archiyou/editor/src/pages/plugin-app.js';
 
 type MenuItem = 'info' | 'code' | 'history' | 'files' | 'templates' | 'help' | 'settings';
@@ -63,12 +65,22 @@ export class MainMenu extends SignalWatcher(LitElement)
           : ''}
       </wa-dialog>
 
-      <!-- bottom: templates, help, settings -->
+      <!-- bottom: admin (operators only), templates, help, settings -->
       <div class="bottom">
+        ${userState.get().isAdmin
+          ? html`
+            <wa-button
+              id="btn-admin"
+              appearance="plain"
+              @click=${() => Router.go('/admin')}
+            ><wa-icon library="lucide" name="shield-check" label="Admin"></wa-icon></wa-button>
+            <wa-tooltip for="btn-admin" placement="right">${msg('Admin')}</wa-tooltip>`
+          : nothing}
+
         <wa-button
           id="btn-templates"
           appearance="plain"
-          class=${this._active === 'templates' ? 'active' : ''}
+          class=${'dimmed ' + (this._active === 'templates' ? 'active' : '')}
           @click=${() => this._select('templates')}
         ><wa-icon library="lucide" name="rocket" label="Templates"></wa-icon></wa-button>
         <wa-tooltip for="btn-templates" placement="right">${msg('Templates')}</wa-tooltip>
@@ -76,7 +88,7 @@ export class MainMenu extends SignalWatcher(LitElement)
         <wa-button
           id="btn-help"
           appearance="plain"
-          class=${this._active === 'help' ? 'active' : ''}
+          class=${'dimmed ' + (this._active === 'help' ? 'active' : '')}
           @click=${() => this._select('help')}
         ><wa-icon library="lucide" name="circle-help" label="Help"></wa-icon></wa-button>
         <wa-tooltip for="btn-help" placement="right">${msg('Help')}</wa-tooltip>
@@ -84,7 +96,7 @@ export class MainMenu extends SignalWatcher(LitElement)
         <wa-button
           id="btn-settings"
           appearance="plain"
-          class=${this._active === 'settings' ? 'active' : ''}
+          class=${'dimmed ' + (this._active === 'settings' ? 'active' : '')}
           @click=${() => this._select('settings')}
         ><wa-icon library="lucide" name="settings" label="Settings"></wa-icon></wa-button>
         <wa-tooltip for="btn-settings" placement="right">${msg('Settings')}</wa-tooltip>
@@ -182,6 +194,11 @@ export class MainMenu extends SignalWatcher(LitElement)
       align-items: center;
       gap: var(--space-1, 4px);
       margin-top: auto;
+    }
+
+    /* Not built yet: present, but kept in the background. */
+    wa-button.dimmed {
+      opacity: 0.2;
     }
 
     wa-button.active::part(base) {

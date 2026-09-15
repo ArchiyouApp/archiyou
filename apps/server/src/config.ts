@@ -233,6 +233,12 @@ export const config = {
     timeWindow: process.env.SERVER_AUTH_RATE_WINDOW ?? '5 minutes',
   },
 
+  /** Per-IP rate limit on POST /feedback, which anonymous visitors may call. */
+  feedbackRateLimit: {
+    max: Number(process.env.SERVER_FEEDBACK_RATE_LIMIT ?? 10),
+    timeWindow: process.env.SERVER_FEEDBACK_RATE_WINDOW ?? '10 minutes',
+  },
+
   /**
    * Maximum request body size. Fastify's default is 1 MiB, which script bodies were
    * already approaching (code + params + presets) before thumbnails added an SVG on

@@ -11,6 +11,7 @@ import { dataToModuleString } from '@archiyou/core/src/utils';
 import '../plugins/plugin-part-frame';
 
 import { createExecutionFailureResult, runScript, warmupWorker } from '../services/execution-service';
+import { authService } from '../services/auth-service';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
@@ -45,7 +46,7 @@ import { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
 import type { ScriptData, ScriptParamData } from '@archiyou/core/src/execution/types';
 
 /** Model formats offered in the main menu ▸ Export to… (see _exportModel()) */
-type ExportModelFormat = 'glb'|'stl'|'amf'|'dae'|'svg'|'dxf'|'fcstd';
+type ExportModelFormat = 'glb'|'stl'|'amf'|'dae'|'svg'|'dxf'|'fcstd'|'ifc'|'scad';
 
 @customElement('page-editor')
 export class PageEditor extends SignalWatcher(LitElement)
@@ -87,6 +88,14 @@ export class PageEditor extends SignalWatcher(LitElement)
           <wa-icon library="lucide" name="link-2-off"></wa-icon>
           <span class="link-error-text">${this._linkError}</span>
           <button class="link-error-close" title="Dismiss" @click=${() => (this._linkError = '')}>
+            <wa-icon library="lucide" name="x"></wa-icon>
+          </button>
+        </div>` : ''}
+      ${this._notice && !this._linkError ? html`
+        <div class="link-error notice" role="status">
+          <wa-icon library="lucide" name="info"></wa-icon>
+          <span class="link-error-text">${this._notice}</span>
+          <button class="link-error-close" title="Dismiss" @click=${() => (this._notice = '')}>
             <wa-icon library="lucide" name="x"></wa-icon>
           </button>
         </div>` : ''}
@@ -195,6 +204,9 @@ export class PageEditor extends SignalWatcher(LitElement)
   @state() private _editConfigurator: ScriptData | null = null;
   // Why a /editor/{…} deep link could not be opened (empty = no problem).
   @state() private _linkError = '';
+  // Informational popup, same look as the link error (empty = hidden). See _showNotice().
+  @state() private _notice = '';
+  private _noticeTimer?: ReturnType<typeof setTimeout>;
 
   // Plugin mode (isolated session; personal scripts untouched)
   @state() private _pluginSchema: ScriptParamData[] | null = null;
@@ -456,6 +468,9 @@ export class PageEditor extends SignalWatcher(LitElement)
     // default, order, units, _value) via toData().
     const active = editorScript.get();
     const scriptData = active?.toData() as any;
+    // A script that is not synced yet has no author, but it is the signed-in user's. Without
+    // it the Runner cannot tell whose '@author/name:dev' and 'name:0.6' are the own ones.
+    if (scriptData && !scriptData.author) scriptData.author = authService.getUser()?.id ?? undefined;
     const params = scriptParams.get();
 
     const paramValues: Record<string, any> = Object.fromEntries(
@@ -557,6 +572,14 @@ export class PageEditor extends SignalWatcher(LitElement)
   }
 
 
+  /** Show a short informational popup at the top of the editor; it hides itself after a while. */
+  private _showNotice(text: string, durationMs = 6000)
+  {
+    this._notice = text;
+    clearTimeout(this._noticeTimer);
+    this._noticeTimer = setTimeout(() => (this._notice = ''), durationMs);
+  }
+
   private _handleMenuAction(e: CustomEvent<string>)
   {
     const value = e.detail;
@@ -574,6 +597,13 @@ export class PageEditor extends SignalWatcher(LitElement)
     if (value === 'open-script')
     {
       this._showScriptManager = true;
+      return;
+    }
+
+    if (value === 'save')
+    {
+      // Nothing to do: scripts save themselves. Tell the user so they don't wonder.
+      this._showNotice('Saving is automatic in Archiyou: either to the server, or in your browser when you are offline.');
       return;
     }
 
@@ -940,6 +970,8 @@ export class PageEditor extends SignalWatcher(LitElement)
       dxf: { path: 'default/model/dxf?annotations=true', mimeType: 'application/dxf', emptyMsg: 'the model produced no 2D geometry.' },
       // FreeCAD's file dialogs filter on the exact-case extension
       fcstd: { path: 'default/model/fcstd', mimeType: 'application/x-extension-fcstd', emptyMsg: 'the model produced no geometry.', ext: 'FCStd' },
+      ifc: { path: 'default/model/ifc', mimeType: 'application/x-step', emptyMsg: 'the model produced no building elements.' },
+      scad: { path: 'default/model/scad', mimeType: 'application/x-openscad', emptyMsg: 'the model produced no geometry.' },
     };
 
     const { path: requestPath, mimeType, emptyMsg, ext } = EXPORT_FORMATS[format];
@@ -1184,6 +1216,8 @@ export class PageEditor extends SignalWatcher(LitElement)
     }
     .link-error wa-icon { color: var(--color-alert, #ef4444); flex-shrink: 0; margin-top: 2px; }
     .link-error-text { flex: 1; min-width: 0; }
+    .link-error.notice { border-color: color-mix(in srgb, var(--color-primary, #103eaa) 35%, transparent); }
+    .link-error.notice wa-icon { color: var(--color-primary, #103eaa); }
     .link-error-close {
       display: flex; align-items: center; justify-content: center;
       width: 22px; height: 22px;

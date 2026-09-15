@@ -174,6 +174,7 @@ export class ConfiguratorHeader extends SignalWatcher(LitElement)
 
     .version
     {
+      display: inline-block;
       flex-shrink: 0;
       align-self: center;
       font-family: var(--font-mono, monospace);
@@ -184,8 +185,11 @@ export class ConfiguratorHeader extends SignalWatcher(LitElement)
       background: var(--color-gray-light, #eee);
       border: 1px solid var(--color-border, #cfcfcf);
       border-radius: var(--radius-full, 9999px);
-      padding: 4px 8px;
+      padding: 6px 8px;
       white-space: nowrap;
+      /* Trim the line box to the digits (cap height to baseline): line-height alone
+         centers the font's ascent/descent, which leaves the text riding high. */
+      text-box: trim-both cap alphabetic;
     }
 
     /* ── About: description (always shown) + details behind Show more ── */

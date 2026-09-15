@@ -90,6 +90,14 @@ export class MainMenuFileMenu extends SignalWatcher(LitElement)
             <wa-icon slot="icon" library="lucide" name="cog"></wa-icon>
             FreeCAD
           </wa-dropdown-item>
+          <wa-dropdown-item slot="submenu" value="export-ifc">
+            <wa-icon slot="icon" library="lucide" name="building-2"></wa-icon>
+            IFC (BIM)
+          </wa-dropdown-item>
+          <wa-dropdown-item slot="submenu" value="export-scad">
+            <wa-icon slot="icon" library="lucide" name="code"></wa-icon>
+            OpenSCAD
+          </wa-dropdown-item>
           <wa-dropdown-item slot="submenu" value="export-script-data">
             <wa-icon slot="icon" library="lucide" name="file-code"></wa-icon>
             Script JS

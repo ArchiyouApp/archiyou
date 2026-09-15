@@ -14,14 +14,13 @@
  */
 
 import * as meshup from '@archiyou/meshup'
-import { Color } from '@archiyou/meshup'
-import { Style } from '@archiyou/meshup'
 
 import {
     createColladaWriter, type ColladaWriter, DEFAULT_WELD_TOLERANCE,
     GEOMETRY_DERIVED_ID_SUFFIXES, MATERIAL_DERIVED_ID_SUFFIXES,
 } from '@archiyou/collada-wasm'
 import { MM_PER_UNIT } from '../units/UnitConverter'
+import { cascadedStyle, isVisible, toRgb01 } from './exportStyle'
 import type { ModelUnits } from './types'
 
 //// TYPES ////
@@ -91,34 +90,6 @@ function ncname(raw: string, used: Set<string>, derivedSuffixes: readonly string
     return id
 }
 
-/** Parse any CSS colour to 0..1 floats, falling back to grey. Reuses meshup's parser. */
-function toRgb01(color: unknown): [number, number, number]
-{
-    let rgb = DEFAULT_RGB
-    try { if (color !== undefined && color !== null) rgb = new Color(color as any).toRgb() }
-    catch { /* unparseable — keep the fallback */ }
-    return [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255]
-}
-
-/** Cascade a node's effective style onto one of its shapes, as GLTFBuilder does. */
-function cascadedStyle(node: any, shape: any): any
-{
-    try
-    {
-        const merged = new Style(node.effectiveStyle().toData())
-        merged.merge(shape.style.explicitData())
-        return merged
-    }
-    catch { return shape.style }
-}
-
-/** A node/shape is exportable unless its style says hidden. */
-function isVisible(styleOwner: any): boolean
-{
-    // NOTE: SceneNode.visible(v) is a SETTER — calling it bare would throw. Read the Style.
-    return styleOwner?.style?.visible !== false
-}
-
 //// MATERIALS ////
 
 interface ResolvedMaterial { id: string; name: string; rgba: [number, number, number, number] }
@@ -145,7 +116,7 @@ function resolveMaterial(
 
     // Colours stay sRGB here — COLLADA's convention — unlike Style.toGltfMaterial(), which
     // converts to linear for glTF.
-    const [r, g, b] = toRgb01(pbr?.color ?? style?.color)
+    const [r, g, b] = toRgb01(pbr?.color ?? style?.color, DEFAULT_RGB)
     const a: number = pbr?.alpha ?? style?.opacity ?? 1
 
     const key = `${name}|${r.toFixed(4)},${g.toFixed(4)},${b.toFixed(4)},${a.toFixed(4)}`

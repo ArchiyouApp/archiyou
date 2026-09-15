@@ -183,12 +183,15 @@ describe('admin routes — validating a configurator', () => {
 });
 
 describe('admin routes — the review list', () => {
+  const versionIds = (configurators: Array<{ versions: ScriptData[] }>) =>
+    configurators.flatMap((c) => c.versions.map((v) => v.id));
+
   it('spans authors and pages independently of the total', async () => {
     const res = await app.inject({ method: 'GET', url: '/admin/configurators', headers: auth('root') });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.total).toBeGreaterThan(0);
-    expect(body.data.map((s: ScriptData) => s.id)).toContain(aliceScript);
+    expect(versionIds(body.data)).toContain(aliceScript);
 
     const paged = await app.inject({
       method: 'GET', url: '/admin/configurators?limit=1', headers: auth('root'),
@@ -202,12 +205,12 @@ describe('admin routes — the review list', () => {
     const yes = await app.inject({
       method: 'GET', url: '/admin/configurators?validated=true', headers: auth('root'),
     });
-    expect(yes.json().data.map((s: ScriptData) => s.id)).toContain(aliceScript);
+    expect(versionIds(yes.json().data)).toContain(aliceScript);
 
     const no = await app.inject({
       method: 'GET', url: '/admin/configurators?validated=false', headers: auth('root'),
     });
-    expect(no.json().data.map((s: ScriptData) => s.id)).not.toContain(aliceScript);
+    expect(versionIds(no.json().data)).not.toContain(aliceScript);
   });
 
   it('400s an unparseable validated filter rather than silently showing everything', async () => {

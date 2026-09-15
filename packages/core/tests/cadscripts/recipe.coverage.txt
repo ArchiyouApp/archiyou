@@ -1,0 +1,24 @@
+artcrate                   17 solids    17 procedural 100%    0 baked   0 unrecorded
+boxpubtest                  1 solids     1 procedural 100%    0 baked   0 unrecorded
+gardenchair                24 solids    22 procedural  92%    2 baked   0 unrecorded
+                          2 × made by flatten()
+kakpinchedstool             8 solids     7 procedural  88%    0 baked   1 unrecorded
+maritavolo                 45 solids    45 procedural 100%    0 baked   0 unrecorded
+programmaticparams          2 solids     2 procedural 100%    0 baked   0 unrecorded
+sedia                      20 solids    20 procedural 100%    0 baked   0 unrecorded
+simplestep                 40 solids    36 procedural  90%    4 baked   0 unrecorded
+                          4 × cutoffBy() kept one piece of a side that fell apart
+slidercabinet              18 solids    18 procedural 100%    0 baked   0 unrecorded
+strawwall                  48 solids    48 procedural 100%    0 baked   0 unrecorded
+timberfloor                10 solids    10 procedural 100%    0 baked   0 unrecorded
+timberwall                 13 solids    13 procedural 100%    0 baked   0 unrecorded
+timberwallopenings         40 solids    27 procedural  68%   13 baked   0 unrecorded
+                          9 × made by _separateSolids()
+                          4 × made by split()
+tomy                        4 solids     0 procedural   0%    3 baked   1 unrecorded
+                          3 × made by copy()
+urhousesketch               7 solids     5 procedural  71%    1 baked   1 unrecorded
+                          1 × extrude of a surface with # faces
+workbench                  23 solids    23 procedural 100%    0 baked   0 unrecorded
+
+corpus                    320 solids   294 procedural  92%

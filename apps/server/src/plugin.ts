@@ -28,10 +28,12 @@ import { registerExecuteRoutes } from './routes/execute';
 import { registerProxyRoutes } from './routes/proxy';
 import { registerModuleRoutes } from './routes/modules';
 import { registerAdminRoutes } from './routes/admin';
+import { registerFeedbackRoutes } from './routes/feedback';
 import { moduleHost } from './modules/ModuleHost';
 import { ValidationError } from './validate';
 import { UserError, userService } from './services/UserService';
 import { ScriptStoreError } from './services/ScriptStore';
+import { FeedbackStoreError } from './services/FeedbackStore';
 import { translationQueue } from './translation/TranslationQueue';
 
 const EXECUTION_INIT_TIMEOUT_MS = 5000;
@@ -192,6 +194,7 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   await fastify.register(registerExecuteRoutes);  // /scripts/published/execute/*
   await fastify.register(registerProxyRoutes);    // /proxy?url= (asset proxy for $import)
   await fastify.register(registerModuleRoutes);   // /modules/* (gated script modules; inert when none is installed)
+  await fastify.register(registerFeedbackRoutes); // POST /feedback (public, rate limited)
   await fastify.register(registerAdminRoutes);    // /admin/* (operator only — users.is_admin)
 }
 
@@ -209,6 +212,9 @@ export function setupErrorHandling(fastify: FastifyInstance): void {
         error.code === 'invalid_token' ? 400 :
         401;
       return reply.code(code).send({ success: false, error: error.message });
+    }
+    if (error instanceof FeedbackStoreError) {
+      return reply.code(404).send({ success: false, error: error.message });
     }
     if (error instanceof ScriptStoreError) {
       const code = error.code === 'not_found' ? 404 : 422;

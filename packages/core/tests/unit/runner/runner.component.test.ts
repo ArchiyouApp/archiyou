@@ -153,6 +153,137 @@ describe('Runner.linkComponentScripts (local component lookup)', () =>
         save('./tests/outputs/runner/runner.component.merged.docs.svg', svg!.output as string)
     })
 
+    /** Component docs sugar: docs() and docs(name) */
+    it('Gets all or specific docs of a component with docs()', async () =>
+    {
+        const runner = await new Runner().load()
+
+        const component = Script.fromData({
+            name: 'myDocsComponent',
+            code: `
+                docs.create('specDoc').page('specPage').text('Spec');
+                docs.create('otherDoc').page('otherPage').text('Other');
+            `,
+        })
+        runner.linkComponentScripts([component])
+
+        const parentCode = `
+                    allDocs = $component('./myDocsComponent').docs();
+                    specDoc = $component('./myDocsComponent').docs('specDoc');
+                    if(allDocs.length !== 2){ throw new Error('Expected 2 docs, got ' + allDocs.length); }
+                    if(specDoc._name !== 'specDoc'){ throw new Error('Expected specDoc, got ' + specDoc._name); }
+
+                    docs.create('parentDoc')
+                        .page('parentPage')
+                        .text('ParentPage')
+                        .merge(specDoc)
+                `
+        const result = await runner.execute({
+            kernel: 'mesh',
+            script: { code: parentCode },
+            outputs: ['default/docs/*/svg'],
+        })
+
+        if(result.status !== 'success'){ console.error('Execution failed:', result.errors) }
+        expect(result.status).toBe('success');
+
+        const missing = await runner.execute({
+            kernel: 'mesh',
+            script: { code: `$component('./myDocsComponent').docs('nope');` },
+        })
+        expect(missing.status).not.toBe('success');
+    })
+
+    /** Variables declared in component docs can be set by the parent */
+    it('Sets variables of component docs', async () =>
+    {
+        const runner = await new Runner().load()
+        runner.linkComponentScripts([
+            Script.fromData({ name: 'varDocs', code: `docs.create('myDoc').page('p').text('Untitled').var('title');` }),
+            Script.fromData({ name: 'noVarDocs', code: `docs.create('myDoc').page('p').text('a');` }),
+        ])
+
+        const ok = await runner.execute({
+            kernel: 'mesh',
+            script: { code: `
+                compDoc = $component('./varDocs').get('default/docs/myDoc');
+                docs.page('cover')
+                    .text('cover')
+                    .merge(compDoc.set('title', 'OTHERTITLE'));
+            ` },
+            outputs: ['default/docs/*/svg'],
+        })
+        if(ok.status !== 'success'){ console.error('Execution failed:', ok.errors) }
+        expect(ok.status).toBe('success');
+        const svg = ok.outputs?.find(o => o.path.format === 'svg')?.output as string;
+        expect(svg).toContain('OTHERTITLE');
+        expect(svg).not.toContain('Untitled');
+
+        // Variables are taken over by the document merged into
+        const afterMerge = await runner.execute({
+            kernel: 'mesh',
+            script: { code: `
+                docs.page('cover')
+                    .merge($component('./varDocs').get('default/docs/myDoc'))
+                    .set('title', 'MERGEDTITLE');
+            ` },
+            outputs: ['default/docs/*/svg'],
+        })
+        if(afterMerge.status !== 'success'){ console.error('Execution failed:', afterMerge.errors) }
+        expect(afterMerge.status).toBe('success');
+        expect(afterMerge.outputs?.find(o => o.path.format === 'svg')?.output as string).toContain('MERGEDTITLE');
+
+        const none = await runner.execute({
+            kernel: 'mesh',
+            script: { code: `$component('./noVarDocs').get('default/docs/myDoc').set('title', 'X');` },
+        })
+        expect(none.status).not.toBe('success');
+        expect(JSON.stringify(none.errors)).toContain('No vars available');
+    })
+
+    /** get() with docs paths: all, by name, without format */
+    it('Gets all or specific docs of a component with get()', async () =>
+    {
+        const runner = await new Runner().load()
+        runner.linkComponentScripts([
+            Script.fromData({ name: 'twoDocs', code: `box(10); docs.create('myDoc').page('p').text('a'); docs.create('other').page('q').text('b');` }),
+            Script.fromData({ name: 'noDocs', code: `box(10);` }),
+        ])
+
+        const run = async (code:string) => runner.execute({ kernel: 'mesh', script: { code } });
+        const check = (cond:string, msg:string) => `if(!(${cond})){ throw new Error(${JSON.stringify(msg)}); }`;
+
+        const ok = await run(`
+            all = $component('./twoDocs').get('default/docs/*');
+            ${check("Array.isArray(all) && all.length === 2", 'docs/* should give all docs')}
+            noFormat = $component('./twoDocs').get('default/docs');
+            ${check("Array.isArray(noFormat) && noFormat.length === 2", 'docs should give all docs')}
+            one = $component('./twoDocs').get('default/docs/myDoc');
+            ${check("one._name === 'myDoc'", 'docs/myDoc should give myDoc')}
+            withFormat = $component('./twoDocs').get('default/docs/other/internal');
+            ${check("withFormat._name === 'other'", 'docs/other/internal should give other')}
+            multi = $component('./twoDocs').get(['default/model', 'default/docs/other']);
+            ${check("multi.model && multi.docs._name === 'other'", 'model and named doc')}
+            multiArgs = $component('./twoDocs').get('default/model', 'default/docs/other');
+            ${check("multiArgs.model && multiArgs.docs._name === 'other'", 'paths as separate arguments')}
+            none = $component('./noDocs').docs();
+            ${check("Array.isArray(none) && none.length === 0", 'component without docs gives []')}
+            docs.create('parentDoc').page('parentPage').merge(one);
+        `);
+        if(ok.status !== 'success'){ console.error('Execution failed:', ok.errors) }
+        expect(ok.status).toBe('success');
+
+        for(const bad of [
+            `$component('./twoDocs').get('default/docs/nope')`,
+            `$component('./noDocs').docs('nope')`,
+            `$component('./twoDocs').get('default/foo')`,
+            `$component('./twoDocs').get('default/docs/myDoc/pdf')`,
+        ])
+        {
+            expect((await run(bad)).status, bad).not.toBe('success');
+        }
+    })
+
     /** Advanced wall component */
     it('Runs a script with a more complex component', async () =>
     {

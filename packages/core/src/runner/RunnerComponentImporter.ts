@@ -46,6 +46,8 @@
  *              - .pipeline(<<pipeline>>) - if only single pipeline, select it. default = "default"
  *              - .model() - get the model (ShapeCollection) for single pipeline (mostly default)
  *                  $component("test").params({ size: 100 }).model() ==> get model from (default or single) pipeline
+ *              - .docs(<<name>>) - get all Documents (Array<Document>) or a specific one by name
+ *                  $component("test").docs('spec') ==> Document "spec" from (default or single) pipeline
  *              - .get(<<output(s)>>)
  *                  get anything out (various pipelines, various entities) using output paths. 
  *                  Results by output path. So you can use destructing assignment:
@@ -65,7 +67,7 @@
  * 
  *          Merge a document of component:
  *          
- *           { "default/docs/spec" : myWallDoc } = $component("wall").params({ size: 100 }).get("default/docs/spec")
+ *           myWallDoc = $component("wall").params({ size: 100 }).docs("spec") // or .docs() for all documents
  *           // main document
  *           doc('mainDoc')
  *              .page('cover page')
@@ -114,12 +116,15 @@ import type { Runner } from './Runner'
 import { Script } from '../Script';
 import { ScriptOutputManager } from '../execution/ScriptOutputManager';
 import { ScriptOutputPath } from '../execution/ScriptOutputPath';
+import { isScriptOutputCategory } from '../execution/typeguards';
+import { SCRIPT_OUTPUT_CATEGORIES } from '../constants';
 
-import type { RunnerScriptExecutionRequest, RunnerScriptScope } from './types';
-import { ScriptData } from '../execution/types';
+import type { RunnerScriptExecutionRequest, RunnerScriptExecutionResult, RunnerScriptScope } from './types';
+import { ScriptData, ScriptParamData } from '../execution/types';
 import { ImportComponentResult, ImportComponentResultPipelines } from './types';
 import { SceneNode } from '@archiyou/meshup';
 import type { ComponentGraphNode } from '@archiyou/meshup';
+import type { Document } from '../docs/Document';
 
 
 export class RunnerComponentImporter
@@ -138,15 +143,17 @@ export class RunnerComponentImporter
     options:Record<string,any>; // TODO
     script?:ScriptData; // script to execute - will be fetched from library or from disk
     _requestedOutputs:Array<string> = [];  // requested outputs
+    _entityFilters:Record<string,string> = {}; // '{pipeline}/docs' => name of the specific doc requested in get()
     _useCache:boolean = true; // see noCache()
+    _listed:boolean = false; // component names already printed, see list()
     _fromCache:boolean = false; // whether the last execution was served from the cache (inspection/tests)
 
     
-    constructor(runner:Runner, scope:RunnerScriptScope,  ref:string)
+    constructor(runner:Runner, scope:RunnerScriptScope,  ref?:string)
     {
         this._runner = runner; // tied to runner
         this._scope = scope; // main scope to import into
-        this.ref = ref; // name of the component ('archiyou/testcomponent:0.5')
+        this.ref = ref ?? ''; // name of the component ('archiyou/testcomponent:0.5'). Empty for $component().list()
         this.label = this.generateName();
 
         console.info(`RunnerComponentImporter: Created importer for component from ref "${this.ref}"`);
@@ -199,34 +206,66 @@ export class RunnerComponentImporter
      *      - any pipeline
      *      - any category: model, docss, tables, metrics 
      *  
-     *  @param p - path or array of paths to requested outputs (like 'default/model', 'cnc/model')  
+     *  @param p - path or array of paths to requested outputs (like 'default/model', 'cnc/model'),
+     *      or several paths as separate arguments: get('default/model', 'default/docs/spec')
      * 
      *  Components only work with internal data, so we always get 'internal' format
      *  
-     *  Some simplications: 
+     *  Paths are {pipeline}/{category}[/{entity}][/internal]. The format can be left out:
+     *      'default/model', 'default/docs', 'default/docs/*', 'default/docs/spec', 'cnc/tables'
+     *
+     *  Some simplications:
      *      - no other formats than 'internal'
-     *      - we export internal categories like 'model', 'docs', 'tables', 'metrics' directly as module instances
-     *          : no specific entities like 'docs/report'
+     *      - we export internal categories like 'model', 'tables', 'metrics' directly as module instances
+     *      - docs are an Array<Document>, or a single Document when named: 'default/docs/spec'
      *      - if only one output path given (for example 'default/model') return that directly
-     * 
-     *  See RunnerComponentImporter.model() for easy way of getting model
-     *  
+     *
+     *  See RunnerComponentImporter.model() and docs() for easy ways of getting model and docs
+     *
      * */
-    get(p:string|Array<string>): ImportComponentResult
+    get(p:string|Array<string>, ...more:Array<string>): ImportComponentResult
     {
         if (typeof p === 'string') p = [p]; // convert to array if string
+        if (more.length > 0 && Array.isArray(p)) p = [...p, ...more]; // get('default/model', 'default/docs/spec')
+        if (!Array.isArray(p) || p.some(path => typeof path !== 'string'))
+        {
+            throw new Error(`$component("${this.label}")::get(): Invalid output path(s). Please supply a string, strings or an array of strings like "default/model" or "default/docs/spec"`);
+        }
+
+        this._entityFilters = {};
 
         const outputPaths = p.map((path) =>
         {
-            const outputPathObj = new ScriptOutputPath(path).internalize();
-            if(!outputPathObj.checkValid())
+            // Parse ourselves: ScriptOutputPath requires a format and would read 'default/docs/spec' as format "spec"
+            const segments = path.split('?')[0].split('/').map(s => s.trim());
+            // Drop the optional format: 'default/model/internal', 'default/docs/internal', 'default/docs/spec/internal'
+            if(segments.length === 4 || (segments.length === 3 && (segments[2] === 'internal' || segments[1] === 'model')))
             {
-                console.warn(`$component("${this.label}")::get(): Invalid output path requested: "${path}". Skipping this output.`);
-                return undefined;
+                const format = segments.pop();
+                if(format !== 'internal' && format !== '*')
+                {
+                    throw new Error(`$component("${this.label}")::get(): Invalid format "${format}" in output path "${path}". Components only give internal outputs, so leave the format out: like "default/docs/spec"`);
+                }
             }
-            return outputPathObj.resolvedPath;
+            const [pipeline, category, entity] = segments;
 
-        }).filter(path => path !== undefined); // remove undefined paths
+            if(!pipeline || !isScriptOutputCategory(category) || segments.length > 3)
+            {
+                throw new Error(`$component("${this.label}")::get(): Invalid output path "${path}". Use {pipeline}/{category}[/{entity}], like "default/model", "default/docs/*" or "default/docs/spec". Categories: ${SCRIPT_OUTPUT_CATEGORIES.join(', ')}`);
+            }
+
+            // The internal export always contains all entities of a category, a specific one is picked after execution
+            if(entity && entity !== '*')
+            {
+                if(category !== 'docs')
+                {
+                    throw new Error(`$component("${this.label}")::get(): Selecting a specific entity ("${path}") is only supported for docs. Use "${pipeline}/${category}/*" instead.`);
+                }
+                this._entityFilters[`${pipeline}/${category}`] = entity;
+            }
+
+            return new ScriptOutputPath(`${pipeline}/${category}/internal`).internalize().resolvedPath;
+        });
 
         this._requestedOutputs = outputPaths;
 
@@ -241,6 +280,23 @@ export class RunnerComponentImporter
         return this.get(`${this._pipeline}/model/internal`);
     }
 
+    /** Shortcut method for getting the documents of single pipeline
+     *  @param name - name of a specific document. Without it all documents are returned
+     *
+     *      compDocs = $component('wall').docs(); // Array<Document>
+     *      specDoc = $component('wall').docs('spec'); // Document
+     *      docs.create('main').page('cover').merge(compDocs);
+     */
+    docs(name?:string): Document|Array<Document>
+    {
+        if(name !== undefined && typeof name !== 'string')
+        {
+            throw new Error(`$component("${this.label}")::docs(): Invalid document name. Please supply a string or nothing to get all documents.`);
+        }
+
+        return this.get(`${this._pipeline}/docs/${name ?? '*'}`) as Document|Array<Document>;
+    }
+
     /** Shortcut method for getting everything of single/default pipeline */
     all(): ImportComponentResult
     {
@@ -251,6 +307,132 @@ export class RunnerComponentImporter
             `${this._pipeline}/metrics/*/internal`,
         ]);
         // TODO: flatten results to { model, tables, docs, metrics }
+    }
+
+    /** Print information on the component to the console: its script info, param
+     *  definitions (with the values this importer would run with) and outputs.
+     *  Chainable, so it can sit anywhere in a $component() statement:
+     *
+     *      $component('./timberwall').info();
+     *      wall = $component('./timberwall', { WIDTH: 3000 }).info().model();
+     *
+     *  Params defined in code ($PARAMS.define) only exist while the component runs, so this
+     *  executes the component for its model. That result is memoised like any other
+     *  activation: a following .model() with the same params does not execute again. */
+    info(): this
+    {
+        const script = this._getComponentScript();
+        if(!script)
+        {
+            throw new Error(`$component("${this.label}")::info(): Cannot find component script in Runner.componentScripts cache. Make sure the component is loaded and available.`);
+        }
+
+        const outputs = [new ScriptOutputPath(`${this._pipeline}/model/internal`).internalize().resolvedPath];
+        const r = this._executeRaw(script, outputs);
+
+        const params = (r.params ?? Object.values(script.params ?? {}).map(p => p.toData()))
+            .slice()
+            .sort((a, b) =>
+                Number((b.group ?? '').toLowerCase() === 'main') - Number((a.group ?? '').toLowerCase() === 'main') || // 'main' group first
+                (a.group ?? '').localeCompare(b.group ?? '') ||
+                (a.order ?? 0) - (b.order ?? 0));
+
+        const lines:Array<string> = [];
+        const title = [script.name, script.version && `v${script.version}`, script.author && `by ${script.author}`].filter(Boolean).join(' ');
+        lines.push(`$component("${this.label}")${title ? ` - ${title}` : ''}`);
+        if(script.description){ lines.push(`  ${script.description}`); }
+
+        lines.push(`  params (${params.length}):`);
+        if(params.length === 0){ lines.push('    (none)'); }
+
+        let group:string|undefined;
+        params.forEach(p =>
+        {
+            if((p.group ?? '') !== (group ?? ''))
+            {
+                group = p.group;
+                lines.push(`    [${group ?? ''}]`);
+            }
+            const given = Object.keys(this._params).find(k => k.toUpperCase() === p.name.toUpperCase());
+            const value = (given !== undefined)
+                ? `= ${this._fmt(this._params[given])} (default: ${this._fmt(p.default)})`
+                : `= ${this._fmt(p.default)} (default)`;
+            const extra = [
+                this._paramBounds(p),
+                p.units,
+                p.label && p.label.toUpperCase() !== p.name.toUpperCase() ? `"${p.label}"` : undefined,
+                p.description,
+            ].filter(Boolean).join(', ');
+            lines.push(`    ${p.name} (${p.type}) ${value}${extra ? `  ${extra}` : ''}`);
+        });
+
+        // Params given that the component does not define are silently ignored when running
+        const unknown = Object.keys(this._params).filter(k => !params.some(p => p.name.toUpperCase() === k.toUpperCase()));
+        if(unknown.length > 0)
+        {
+            lines.push(`  WARNING: given params not defined by component (ignored): ${unknown.join(', ')}`);
+        }
+
+        const meta = r.meta;
+        if(meta)
+        {
+            if(meta.pipelines?.length){ lines.push(`  pipelines: ${meta.pipelines.join(', ')}`); }
+            if(meta.tables?.length){ lines.push(`  tables: ${meta.tables.join(', ')}`); }
+            if(meta.docs?.length){ lines.push(`  docs: ${meta.docs.join(', ')}`); }
+            if(meta.metrics?.length){ lines.push(`  metrics: ${meta.metrics.join(', ')}`); }
+        }
+
+        const msg = lines.join('\n');
+        if(typeof this._scope?.console?.user === 'function'){ this._scope.console.user(msg); }
+        else { console.info(msg); }
+
+        return this;
+    }
+
+    /** Print and return the components available to $component('@author/name'): your own
+     *  scripts first, as `:dev` (their latest version), then everything shared (latest
+     *  shared version; add `:version` to pin one). $component() without a name prints
+     *  them too.
+     *
+     *      $component();
+     *      names = $component().list();
+     *
+     *  Printed once per importer, so $component().list() does not print twice. */
+    list(): Array<string>
+    {
+        const { own, shared } = this._runner.listComponentGroups();
+        const names = [...own, ...shared];
+        if(this._listed){ return names; }
+        this._listed = true;
+
+        const lines = [(names.length > 0)
+            ? `$component(): ${names.length} available component(s):`
+            : `$component(): no components available. Add scripts to your workspace to use them as components.`];
+        if(own.length > 0){ lines.push('  your scripts (latest version):', ...own.map(n => `    ${n}`)); }
+        if(shared.length > 0){ lines.push('  shared (latest shared version, or add :version):', ...shared.map(n => `    ${n}`)); }
+        const msg = lines.join('\n');
+        if(typeof this._scope?.console?.user === 'function'){ this._scope.console.user(msg); }
+        else { console.info(msg); }
+        return names;
+    }
+
+    /** Short description of the value boundaries of a param, like "2000..8000 step 1" */
+    _paramBounds(p:ScriptParamData):string|undefined
+    {
+        const s = (p.schema ?? {}) as Record<string, any>;
+        if(Array.isArray(s.enum)){ return `options: ${s.enum.map(v => this._fmt(v)).join(' | ')}`; }
+        const range = (s.minimum !== undefined || s.maximum !== undefined)
+            ? `${s.minimum ?? ''}..${s.maximum ?? ''}`
+            : undefined;
+        const step = (s.multipleOf !== undefined) ? `step ${s.multipleOf}` : undefined;
+        return [range, step].filter(Boolean).join(' ') || undefined;
+    }
+
+    _fmt(v:any):string
+    {
+        if(v === undefined){ return 'undefined'; }
+        if(typeof v === 'string'){ return `"${v}"`; }
+        try { return JSON.stringify(v); } catch { return String(v); }
     }
 
    
@@ -270,10 +452,103 @@ export class RunnerComponentImporter
 
     /** Execute component script with params and requested outputs
      *  @param script - Script to execute
-     *  @param params - parameters to pass to the script
-     *  @returns Promise<ImportComponentResult> - result of the execution
+     *  @returns ImportComponentResult - result of the execution
      */
     _executeComponentScript(script:Script):ImportComponentResult
+    {
+        const requestedOutputs = (this._requestedOutputs.length === 0) ? this.DEFAULT_OUTPUTS : this._requestedOutputs;
+        const r = this._executeRaw(script, requestedOutputs);
+
+        //// TODO: 
+        // Continue gathering results
+        /* Check how we can flatten the result:
+            - check how many pipelines
+            - if single output
+            - if multiple outputs
+        */
+        // A component without docs exports no docs output at all: requested docs still get an (empty) result
+        const docsOutputs = (r.outputs ?? []).filter(o => o.path?.category === 'docs').map(o => o.path.pipeline);
+        const missingDocs = requestedOutputs
+            .map(p => new ScriptOutputPath(p).internalize())
+            .filter(p => p.category === 'docs' && !docsOutputs.includes(p.pipeline))
+            .map(p => ({ path: p.toData(), output: [] }));
+
+        const outputManager = new ScriptOutputManager().fromResult({ ...r, outputs: [...(r.outputs ?? []), ...missingDocs] } as RunnerScriptExecutionResult); // tie outputs to path objects too
+
+        // First make total tree, then apply shortcuts (if any)
+        let result = {} as ImportComponentResult; 
+        
+        outputManager.getPipelines().forEach(pl => 
+        {
+            outputManager.getOutputsByPipeline(pl)
+            .forEach( outPathObj =>
+            {
+                if(!result[pl]){ result[pl] = {} as ImportComponentResultPipelines };
+                const pipelineResult = result[pl]; // reference
+                // All outputs are grouped together (no specific entities like 'docs/report')
+                // Make data directly available (flatten path and _output structure)
+                pipelineResult[outPathObj.category] = outPathObj._output;
+
+                // Docs are exported as Array<Document>. A doc without docs exports nothing
+                if(outPathObj.category === 'docs')
+                {
+                    pipelineResult['docs'] = this._selectDoc(pl, (outPathObj._output ?? []) as Array<Document>);
+                }
+
+                // Special import for model category - recreate SceneNode tree in main scope
+                if(outPathObj.category === 'model' && outPathObj._output)
+                {
+                    console.info(`$component("${this.label}")::_executeComponentScript(): Recreating component scene tree in main scope for pipeline "${pl}"...`);
+                    const recreatedNode = this._recreateComponentObjTree(outPathObj._output as ComponentGraphNode, undefined, true, this._useCache);
+                    // result is SmartShapeCollection of all (visible) shapes in the recreated subtree
+                    const col = recreatedNode.shapes();
+                    // Attach the root node so that .name() on the collection renames the scene node
+                    col._layer = recreatedNode;
+                    pipelineResult['model'] = col;
+
+                    console.info(`$component("${this.label}")::_executeComponentScript(): Recreated component scene tree in main scope for pipeline "${pl}".`);
+                }
+            });
+        });
+
+        // Flatten result if possible
+        if(outputManager.getPipelines().length === 1)
+        {
+            const singlePipeline = outputManager.getPipelines()[0];
+            result = result[singlePipeline];   
+            // only one result
+            if(outputManager.getOutputsByPipeline(singlePipeline).length === 1)
+            {
+                const singleOutput = outputManager.getOutputsByPipeline(singlePipeline)[0];
+                result = result[singleOutput.category];
+                const resultType = result?.constructor?.name || typeof result;
+                console.info(`$component("${this.label}")::_executeComponentScript(): Returning single output of category "${singleOutput.category}" with result of type "${resultType}".`);
+            }
+        }
+        
+        return result;
+
+    }
+
+    /** Pick the document requested by name for this pipeline in get(), or return all.
+     *  Never mutates the (possibly memoised) docs array */
+    _selectDoc(pipeline:string, docs:Array<Document>):Document|Array<Document>
+    {
+        const name = this._entityFilters[`${pipeline}/docs`];
+        if(name === undefined){ return docs; }
+
+        const doc = docs.find(d => d._name === name);
+        if(!doc)
+        {
+            throw new Error(`$component("${this.label}"): No document "${name}" in pipeline "${pipeline}". Available: ${docs.map(d => `"${d._name}"`).join(', ') || '(none)'}`);
+        }
+        return doc;
+    }
+
+    /** Execute (or get memoised) raw Runner result of the component for the given outputs.
+     *  No side effects in the calling scope: the component's scene tree is only recreated
+     *  by _executeComponentScript() */
+    _executeRaw(script:Script, outputs:Array<string>):RunnerScriptExecutionResult
     {
         // Inherit the run-wide settings from whoever is calling us — the main script, or the
         // enclosing component when this one is nested. Without kernel, _executionStartRunInScope
@@ -286,7 +561,7 @@ export class RunnerComponentImporter
             script: script,
             component: this.label, // scope identifier
             params: this._params,
-            outputs: (this._requestedOutputs.length === 0) ? this.DEFAULT_OUTPUTS : this._requestedOutputs,
+            outputs: outputs,
         };
 
         this._runner._checkRequestAndAddDefaults(request); // check request and add defaults if needed
@@ -323,62 +598,7 @@ export class RunnerComponentImporter
             if(this._useCache){ this._runner.addComponentResultToCache(cacheKey, r); }
         }
 
-        //// TODO: 
-        // Continue gathering results
-        /* Check how we can flatten the result:
-            - check how many pipelines
-            - if single output
-            - if multiple outputs
-        */
-        const outputManager = new ScriptOutputManager().fromResult(r); // tie outputs to path objects too 
-
-        // First make total tree, then apply shortcuts (if any)
-        let result = {} as ImportComponentResult; 
-        
-        outputManager.getPipelines().forEach(pl => 
-        {
-            outputManager.getOutputsByPipeline(pl)
-            .forEach( outPathObj =>
-            {
-                if(!result[pl]){ result[pl] = {} as ImportComponentResultPipelines };
-                const pipelineResult = result[pl]; // reference
-                // All outputs are grouped together (no specific entities like 'docs/report')
-                // Make data directly available (flatten path and _output structure)
-                pipelineResult[outPathObj.category] = outPathObj._output;
-
-                // Special import for model category - recreate SceneNode tree in main scope
-                if(outPathObj.category === 'model' && outPathObj._output)
-                {
-                    console.info(`$component("${this.label}")::_executeComponentScript(): Recreating component scene tree in main scope for pipeline "${pl}"...`);
-                    const recreatedNode = this._recreateComponentObjTree(outPathObj._output as ComponentGraphNode, undefined, true, this._useCache);
-                    // result is SmartShapeCollection of all (visible) shapes in the recreated subtree
-                    const col = recreatedNode.shapes();
-                    // Attach the root node so that .name() on the collection renames the scene node
-                    col._layer = recreatedNode;
-                    pipelineResult['model'] = col;
-
-                    console.info(`$component("${this.label}")::_executeComponentScript(): Recreated component scene tree in main scope for pipeline "${pl}".`);
-                }
-            });
-        });
-
-        // Flatten result if possible
-        if(outputManager.getPipelines().length === 1)
-        {
-            const singlePipeline = outputManager.getPipelines()[0];
-            result = result[singlePipeline];   
-            // only one result
-            if(outputManager.getOutputsByPipeline(singlePipeline).length === 1)
-            {
-                const singleOutput = outputManager.getOutputsByPipeline(singlePipeline)[0];
-                result = result[singleOutput.category];
-                const resultType = result?.constructor?.name || typeof result;
-                console.info(`$component("${this.label}")::_executeComponentScript(): Returning single output of category "${singleOutput.category}" with result of type "${resultType}".`);
-            }
-        }
-        
-        return result;
-
+        return r;
     }
 
      /** Get component script from Runners cache (in Runner.componentScripts) */
@@ -417,7 +637,8 @@ export class RunnerComponentImporter
         }
         else
         {
-            mainModeler.scene().addChild(newNode);
+            // Land in the caller's active layer (set with layer('..')), like any shape it makes
+            (mainModeler.activeLayer() ?? mainModeler.scene()).addChild(newNode);
         }
 
         if (tree.shape)
@@ -443,8 +664,6 @@ export class RunnerComponentImporter
         {
             this._recreateComponentObjTree(childData, newNode, onlyVisible, copyShapes);
         });
-
-        console.info(`$component("${this.label}")::_recreateComponentObjTree(): Recreated node "${newNode.name}" with ${newNode.shapes().length} shapes (including descendants)`);
 
         return newNode;
     }

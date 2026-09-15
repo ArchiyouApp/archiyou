@@ -5,12 +5,17 @@
  * Usage:
  *   <browser-menu-section
  *     section="General"
- *     .items=${[{ name, icon, route }, …]}
+ *     active="/browser/scripts"
+ *     .items=${[{ name, icon, route, disabled? }, …]}
  *   ></browser-menu-section>
+ *
+ * The active item is whatever the page says it is (`active`, a route), not what was
+ * last clicked here, so it follows browser back/forward and deep links too.
  */
 
 import { LitElement, html, css } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property } from 'lit/decorators.js';
+import { msg } from '@lit/localize';
 import { Router } from '@vaadin/router';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -21,6 +26,8 @@ export interface BrowserMenuItem
   /** Lucide icon name. */
   icon: string;
   route: string;
+  /** Shown greyed out and not clickable — for sections that do not exist yet. */
+  disabled?: boolean;
 }
 
 @customElement('browser-menu-section')
@@ -34,7 +41,10 @@ export class BrowserMenuSection extends LitElement
       <nav>
         ${this.items.map(item => html`
           <button
-            class=${this._active === item.route ? 'item active' : 'item'}
+            class=${this.active === item.route ? 'item active' : 'item'}
+            ?disabled=${item.disabled}
+            title=${item.disabled ? msg('Coming soon') : item.name}
+            aria-current=${this.active === item.route ? 'page' : 'false'}
             @click=${() => this._select(item)}
           >
             <wa-icon library="lucide" name=${item.icon}></wa-icon>
@@ -45,16 +55,16 @@ export class BrowserMenuSection extends LitElement
     `;
   }
 
-  // ── 2. Properties, State ──
+  // ── 2. Properties ──
   @property({ type: String }) section = '';
   @property({ type: Array }) items: BrowserMenuItem[] = [];
-
-  @state() private _active: string | null = null;
+  /** Route of the item to mark as current. */
+  @property({ type: String }) active = '';
 
   // ── 4. Behaviour & Methods ──
   private _select(item: BrowserMenuItem)
   {
-    this._active = item.route;
+    if (item.disabled) return;
     this.dispatchEvent(new CustomEvent('menu-select', {
       detail: item,
       bubbles: true,
@@ -102,8 +112,13 @@ export class BrowserMenuSection extends LitElement
       transition: background-color 0.15s, color 0.15s;
     }
 
-    .item:hover {
+    .item:hover:not(:disabled) {
       background: var(--color-gray);
+    }
+
+    .item:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
     }
 
     .item.active {

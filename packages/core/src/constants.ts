@@ -28,16 +28,18 @@ export const MODELER_METHODS_INTO_GLOBAL = [
     'sketch', 'all', 'isTemp', 'select', 'atVertices', 'moveTo', 'lineTo', 'splineTo', 'arcTo', 
     'rectTo', 'rect', 'circleTo', 'circle', 'mirror', 'offset', 'offsetted', 'fillet', 'chamfer', 'thicken', 'thickened','combine',
     'close', 'importSketch',
+    // export
+    'explainIFC',
 ];
 
 
 //// EXECUTION AND OUTPUT SETTINGS ////
 
 export const SCRIPT_OUTPUT_CATEGORIES = ['model','metrics','tables','docs'] // see types: ScriptOutputCategory
-export const SCRIPT_OUTPUT_MODEL_FORMATS = ['gltf','glb','step','stl','svg', 'dae', 'obj', 'dxf', 'amf', 'fcstd'] // see types: ScriptOutputModelFormat
+export const SCRIPT_OUTPUT_MODEL_FORMATS = ['gltf','glb','step','stl','svg', 'dae', 'obj', 'dxf', 'amf', 'fcstd', 'ifc', 'scad'] // see types: ScriptOutputModelFormat
 /** Model formats whose exporter reads shape recipes (see src/modeler/Recipe.ts). A run that
  *  requests one of these records how every shape was made; every other run records nothing. */
-export const SCRIPT_OUTPUT_RECIPE_FORMATS = ['fcstd']
+export const SCRIPT_OUTPUT_RECIPE_FORMATS = ['fcstd', 'ifc', 'scad']
 
 /** Does any requested output path ask for a format that reads recipes? A model wildcard counts,
  *  because it resolves to every model format. Lives here so the Runner can decide without

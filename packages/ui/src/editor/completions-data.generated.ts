@@ -113,6 +113,9 @@ export const modelerFunctions: MethodInfo[] = [
   { label: "atVertices", detail: "(): any",
     info: "Operate at vertices — delegates to active sketch.",
     type: 'function' },
+  { label: "explainIFC", detail: "(): string",
+    info: "Print how the model would export to IFC: every product with its IFC entity, PredefinedType and\n the evidence for it, as a tree of storeys, elements and their parts. Classification is\n automatic, from the scene hierarchy, names and shape proportions. Returns the same text.",
+    type: 'function' },
 ];
 
 export const shapeClasses: ShapeClassInfo[] = [

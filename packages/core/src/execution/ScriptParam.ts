@@ -104,10 +104,16 @@ export class ScriptParam
      *  definition change and never sets _definedProgrammatically. */
     _behaviours?: Partial<Record<ParamBehaviourTarget, string | ParamBehaviourFn>>
 
+    /** Set while fromData() constructs, so its own `new ScriptParam()` does not trip the warning below. */
+    private static _viaFactory = false
+
     /** Create fresh Param */
     constructor()
     {
-        console.warn('ScriptParam: Direct constructor usage is not recommended. Use ScriptParam.fromData() for proper validation and defaults.')
+        if (!ScriptParam._viaFactory)
+        {
+            console.warn('ScriptParam: Direct constructor usage is not recommended. Use ScriptParam.fromData() for proper validation and defaults.')
+        }
     }
 
     /** Generates fresh Param of the given type, filling default values */
@@ -162,7 +168,9 @@ export class ScriptParam
 
         ScriptParam._assertSchema(ScriptParamSchema, withSchema, 'ScriptParam.fromData()')
 
-        return new ScriptParam()._init(withSchema)
+        ScriptParam._viaFactory = true
+        try { return new ScriptParam()._init(withSchema) }
+        finally { ScriptParam._viaFactory = false }
     }
 
     /** Validate param definition and return its canonical form */

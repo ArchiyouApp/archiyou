@@ -45,6 +45,11 @@ export interface RunnerScriptExecutionResult
     
     // All outputs in flat array with request path and data
     outputs?: Array<ScriptOutputData>
+
+    /** Components only: the param definitions the component ended up with (stored + defined
+     *  in code with $PARAMS.define). Its scope is gone after execution, so this is the only
+     *  place they survive - see RunnerComponentImporter.info() */
+    params?: Array<ScriptParamData>
 }
 
 /** Basic structure and state of scope */
