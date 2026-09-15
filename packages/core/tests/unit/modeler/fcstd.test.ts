@@ -418,6 +418,40 @@ describe('FCStd export', () =>
             expect(fcBox.touched).toBe(false) // a box cache is exact
         })
 
+        it('writes each primitive cache in its own frame, placed by a location equal to its Placement', async () =>
+        {
+            // FreeCAD sets a feature's Placement from its cached shape's location when it loads a
+            // file (found in FreeCAD 1.1.1: a world-space cache reset every Placement to identity)
+            const b = box(10, 20, 30, [40, 5, 7])
+            b.rotate(33, [1, 2, 3])
+            const c = cylinder(5, 40, [3, 4, 5])
+            c.rotateX(50)
+            const hole = box(100, 50, 20)
+            hole.subtract(cylinder(5, 40, [10, 0, -20]))
+
+            const { objects, entries } = await exportScene()
+            const primitives = objects.filter(o => ['Part::Box', 'Part::Cylinder'].includes(o.type))
+            expect(primitives.length).toBe(5) // box, cylinder, the cut's box and cylinder, and the tool itself
+            for (const o of primitives)
+            {
+                const text = entries.find(e => e.name === o.props.Shape.children[0].attrs.file)!.text
+                const m = text.match(/^Locations 1\n1\n(.*)\n(.*)\n(.*)\n/m)
+                expect(m, `${o.name} cache has a location`).not.toBeNull()
+                const location = [m![1], m![2], m![3]].flatMap(row => row.trim().split(/\s+/).map(Number))
+                expect(text.trim().endsWith('1'), 'the root shape uses that location').toBe(true)
+
+                const expected = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]].map(p => placementApply(o, p as V3))
+                const applied = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]].map(([x, y, z]) => [0, 1, 2].map(r =>
+                    location[r * 4] * x + location[r * 4 + 1] * y + location[r * 4 + 2] * z + location[r * 4 + 3]))
+                applied.forEach((p, i) => p.forEach((v, j) => expect(v).toBeCloseTo(expected[i][j], 9)))
+
+                expect(readBrep(text).valid).toBe(true)
+            }
+            // A boolean's placement is identity, so its cache stays in world coordinates
+            const cut = objects.find(o => o.type === 'Part::Cut')!
+            expect(entries.find(e => e.name === cut.props.Shape.children[0].attrs.file)!.text).toMatch(/^Locations 0$/m)
+        })
+
         it('places a rotated cylinder on its base, and marks it for recompute', async () =>
         {
             const c = cylinder(5, 40, [3, 4, 5])

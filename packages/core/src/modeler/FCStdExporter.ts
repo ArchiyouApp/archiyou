@@ -21,6 +21,9 @@
  *
  *  - Every `Count`/`count` attribute is a loop bound in the reader and must be exact. Properties
  *    that are left out keep their defaults, so objects only carry what matters.
+ *  - A feature's Placement is taken from its cached shape's location when the file loads, so a
+ *    primitive's cache is written in its own frame with a BRep location equal to its Placement.
+ *    (Found by opening exports in FreeCAD 1.1.1: world-space caches reset every Placement.)
  *  - FreeCAD does NOT recompute on load, so every visible object ships a cached Shape (.brp).
  *    Objects whose cache is only approximate (faceted curved surfaces) are written Touched, so
  *    one Recompute in FreeCAD makes them exact.
@@ -41,9 +44,9 @@ import type { ModelUnits } from './types'
 import { MM_PER_UNIT } from '../units/UnitConverter'
 import { isBrepShape } from './brep/toMeshup'
 import {
-    recipeOf, resolveRecipe, mapRecipe, affineApply, affineFrame, axesToQuaternion, leafNodes,
+    recipeOf, resolveRecipe, mapRecipe, affineApply, affineFrame, affineInverse, axesToQuaternion, leafNodes,
     RecipeReport, fmt,
-    type Vec3, type RecipeNode, type LeafNode, type BooleanNode, type RecipeMapping, type MapContext,
+    type Vec3, type Affine, type RecipeNode, type LeafNode, type BooleanNode, type RecipeMapping, type MapContext,
 } from './Recipe'
 
 //// 1. OPTIONS ////
@@ -172,13 +175,17 @@ class BRepShapeSet
         return this.records.length - 1;
     }
 
-    toString(root: number): string
+    /** `location`: a rigid 3x4 placement of the root shape, geometry being in its local frame */
+    toString(root: number, location?: Affine): string
     {
         const n = this.records.length;
         const index = (pos: number) => n - pos;
         const section = (title: string, rows: string[]) => `${title} ${rows.length}\n${rows.map(r => `${r}\n`).join('')}`;
+        const locations = location
+            ? `Locations 1\n1\n${[0, 1, 2].map(r => location.slice(r * 4, r * 4 + 4).map(brepNum).join(' ') + ' \n').join('')}`
+            : 'Locations 0\n';
         return 'CASCADE Topology V1, (c) Matra-Datavision\n'
-            + 'Locations 0\n'
+            + locations
             + section('Curve2ds', this.curves2d)
             + section('Curves', this.curves)
             + 'Polygon3D 0\n'
@@ -187,13 +194,14 @@ class BRepShapeSet
             + 'Triangulations 0\n'
             + `\nTShapes ${n}\n`
             + this.records.map(write => write(index)).join('')
-            + `\n+${index(root)} 0\n`;
+            + `\n+${index(root)} ${location ? 1 : 0}\n`;
     }
 }
 
 /** Faceted solid (or shell, when the faces do not close) from planar polygons with holes. Returns
- *  null when nothing non-degenerate is left. Coordinates are written as given. */
-export function writePlanarBRep(input: BRepFace[], tolerance = 1e-6): BRepText | null
+ *  null when nothing non-degenerate is left. Coordinates are written as given; with a `location`
+ *  they are local coordinates and the shape is placed by it. */
+export function writePlanarBRep(input: BRepFace[], tolerance = 1e-6, location?: Affine): BRepText | null
 {
     const welder = new Welder(tolerance);
     const cleanRing = (ring: Vec3[]): number[] =>
@@ -340,7 +348,7 @@ export function writePlanarBRep(input: BRepFace[], tolerance = 1e-6): BRepText |
     const shell = set.add(idx => `Sh\n\n${closed ? '0101100' : '0101000'}\n${facePos.map(f => `+${idx(f)} 0`).join(' ')} *\n`);
     const root = closed ? set.add(idx => `So\n\n1100000\n+${idx(shell)} 0 *\n`) : shell;
 
-    return { text: set.toString(root), kind: closed ? 'solid' : 'shell', faces: planar.length };
+    return { text: set.toString(root, location), kind: closed ? 'solid' : 'shell', faces: planar.length };
 }
 
 function splitTJunctions(faces: Array<{ outer: number[]; holes: number[][] }>, P: Vec3[], tolerance: number)
@@ -637,6 +645,19 @@ interface MappingEnv
     bind: (value: number, axisScale: number, ctx: MapContext<Emitted>) => string | null
 }
 
+const PRIMITIVE_TYPES: ReadonlySet<string> = new Set(['Part::Box', 'Part::Cylinder', 'Part::Cone', 'Part::Sphere']);
+
+/** A FreeCAD Placement as a 3x4 matrix: x -> R(q) x + position */
+export function placementMatrix(p: FcPlacement): Affine
+{
+    const [w, x, y, z] = p.quaternion;
+    return [
+        1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w), p.position[0],
+        2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w), p.position[1],
+        2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y), p.position[2],
+    ];
+}
+
 function placementFromAxes(origin: Vec3, axes: [Vec3, Vec3, Vec3]): FcPlacement
 {
     return { position: origin, quaternion: axesToQuaternion(axes) };
@@ -650,11 +671,19 @@ function createFCStdMapping(env: MappingEnv): RecipeMapping<Emitted>
         const frame = leafFrame(node, env.mm, ctx);
         const built = props(frame);
         const name = env.allocate(`${env.subject}_${node.step.op}`, node.step.op);
+        // FreeCAD takes a feature's Placement from its cached shape's location when it loads the
+        // file, so the cache is written in the feature's own frame and placed by the Placement
+        const placement = placementMatrix(built.placement);
+        const toLocal = affineInverse(placement)!;
+        const localFaces = leafFaces(node, env.mm, env.segments).map(f => ({
+            outer: f.outer.map(p => affineApply(toLocal, p)),
+            holes: (f.holes ?? []).map(h => h.map(p => affineApply(toLocal, p))),
+        }));
         env.draft.push({
             name, type, label: `${env.subject} · ${node.step.op}`,
             props: [...built.props, prop.placement('Placement', built.placement)],
             bindings: built.bindings,
-            brep: writePlanarBRep(leafFaces(node, env.mm, env.segments), 1e-6 * Math.max(1, Math.max(...frame.scales) * env.mm * leafExtent(node)))?.text ?? null,
+            brep: writePlanarBRep(localFaces, 1e-6 * Math.max(1, Math.max(...frame.scales) * env.mm * leafExtent(node)), placement)?.text ?? null,
             visible: false, touched: node.step.op !== 'box',
         });
         return { name, exact: node.step.op === 'box' };
@@ -1002,7 +1031,9 @@ export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = 
             {
                 // The top feature is what the user sees: real geometry, name, style
                 const top = draft.find(o => o.name === emitted.name)!;
-                Object.assign(top, { label, brep, visible });
+                // A lone primitive keeps its own placed cache (see primitive()); a boolean has an
+                // identity placement, so it can carry the real geometry in world coordinates
+                Object.assign(top, { label, visible }, PRIMITIVE_TYPES.has(top.type) ? {} : { brep });
                 const exact = emitted.exact && leafNodes(tree).every(l => l.step.op === 'box') && !draft.some(o => o !== top && o.brep === null);
                 draft.forEach(o => { o.color = color; o.transparency = transparency; o.touched = !exact; });
                 top.touched = !exact;
