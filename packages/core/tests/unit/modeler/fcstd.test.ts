@@ -542,46 +542,46 @@ describe('FCStd export', () =>
     describe('parameters', () =>
     {
         const params: FCStdParam[] = [
-            { name: 'WIDTH', type: 'number', _value: 120, schema: { minimum: 10, maximum: 500 }, description: 'Plate width' },
-            { name: 'H', type: 'number', _value: 30 },            // 'H' is a FreeCAD unit (henry): needs a safe alias
-            { name: 'A1', type: 'number', _value: 7 },            // looks like a cell address
-            { name: 'SAME1', type: 'number', _value: 55 },
-            { name: 'SAME2', type: 'number', _value: 55 },
+            { name: 'WIDTH', type: 'number', _value: 120, units: 'mm', schema: { minimum: 10, maximum: 500 }, description: 'Plate width' },
+            { name: 'HEIGHT', type: 'number', _value: 30 },
             { name: 'SHELVES', type: 'boolean', _value: true },
             { name: 'FINISH', type: 'options', _value: 'oak & "walnut"' },
         ]
 
-        it('writes a spreadsheet with valid aliases and binds dimensions that equal one parameter', async () =>
+        it('lists them in a spreadsheet under a warning that they are documentation only', async () =>
         {
             box(120, 55, 30)
-            const { doc, objects, result } = await exportScene(params)
+            const { doc, objects } = await exportScene(params)
 
             const sheet = objects.find(o => o.type === 'Spreadsheet::Sheet')!
+            expect(label(sheet)).toBe('Parameters (documentation only)')
             const cells = all(sheet.props.cells, 'Cell')
-            const aliases = cells.filter(c => c.attrs.alias).map(c => c.attrs.alias)
-            expect(aliases).toEqual(['WIDTH', 'P_H', 'P_A1', 'SAME1', 'SAME2', 'SHELVES', 'FINISH'])
-            expect(cells.find(c => c.attrs.alias === 'WIDTH')!.attrs.content).toBe('120')
-            expect(cells.find(c => c.attrs.alias === 'FINISH')!.attrs.content).toBe(`'oak & "walnut"`)
-            expect(cells.find(c => c.attrs.alias === 'SHELVES')!.attrs.content).toBe('=1')
+            const byAddress = Object.fromEntries(cells.map(c => [c.attrs.address, c.attrs]))
 
-            const fcBox = objects.find(o => o.type === 'Part::Box')!
-            const expressions = Object.fromEntries(all(fcBox.props.ExpressionEngine, 'Expression').map(e => [e.attrs.path, e.attrs.expression]))
-            expect(expressions).toEqual({
-                Length: `${sheet.name}.WIDTH * 1 mm`,
-                Height: `${sheet.name}.P_H * 1 mm`,
-                // Width is 55: two parameters have that value, so it stays unbound
-            })
-            expect(result.report.toString()).toContain('55 equals SAME1, SAME2: not bound')
+            expect(byAddress.A1.content).toMatch(/^'WARNING: documentation only\..*do NOT drive the model/)
+            expect(byAddress.A1.colSpan).toBe('6')
+            expect(byAddress.A4.content).toBe("'WIDTH")
+            expect(byAddress.B4.content).toBe('=120 mm')
+            expect(byAddress.D4.content).toBe('10')
+            expect(byAddress.F4.content).toBe("'Plate width")
+            expect(byAddress.B5.content).toBe('30')
+            expect(byAddress.B7.content).toBe(`'oak & "walnut"`)
+
+            // Nothing points at the sheet: no aliases, no expressions anywhere
+            expect(cells.some(c => c.attrs.alias)).toBe(false)
+            expect(all(doc, 'ExpressionEngine')).toHaveLength(0)
+            expect(all(doc, 'Expression')).toHaveLength(0)
+
+            const comment = all(doc, 'Property').find(p => p.attrs.name === 'Comment')!.children[0].attrs.value
+            expect(comment).toContain('documentation only')
             expectCountsExact(doc)
         })
 
-        it('does not bind a scaled dimension', async () =>
+        it('leaves the sheet out when the script has no parameters', async () =>
         {
-            const b = box(120, 10, 10)
-            b.scale([2, 1, 1])
-            const { objects } = await exportScene(params)
-            const fcBox = objects.find(o => o.type === 'Part::Box')!
-            expect(fcBox.props.ExpressionEngine).toBeUndefined()
+            box(10)
+            const { objects } = await exportScene([])
+            expect(objects.some(o => o.type === 'Spreadsheet::Sheet')).toBe(false)
         })
     })
 

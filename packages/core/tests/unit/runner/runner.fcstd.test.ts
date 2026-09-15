@@ -7,9 +7,9 @@ import { isRecipeRecording } from '../../../src/modeler/Recipe'
 import { save } from '@archiyou/meshup/src/utils'
 
 /**
- * FreeCAD export end to end: a script run with `default/model/fcstd` records recipes, exports
- * parametric features, and fills the parameter spreadsheet from $PARAMS. A run without a recipe
- * format records nothing. Unit coverage lives in tests/unit/modeler/fcstd.test.ts.
+ * FreeCAD export end to end: a script run with `default/model/fcstd` records recipes, exports the
+ * model as FreeCAD features, and lists $PARAMS in a documentation-only sheet that drives nothing.
+ * A run without a recipe format records nothing. Unit coverage: tests/unit/modeler/fcstd.test.ts.
  */
 
 const CODE = `
@@ -34,7 +34,7 @@ function documentXml(data: Uint8Array): string
 
 describe('Runner — FreeCAD export', () =>
 {
-    it('exports parametric features and binds dimensions to the parameter spreadsheet', async () =>
+    it('exports the model as features and documents the parameters without linking them', async () =>
     {
         const runner = await new Runner().load()
         const result = await runner.execute({
@@ -48,7 +48,7 @@ describe('Runner — FreeCAD export', () =>
 
         const output = result.outputs?.find(o => o.path.requestedPath === 'default/model/fcstd')?.output as Uint8Array
         expect(output?.byteLength).toBeGreaterThan(0)
-        // Inspection artifact: open it in FreeCAD, press Recompute, edit Parameters ▸ WIDTH
+        // Inspection artifact: open it in FreeCAD and press Recompute
         await save('./tests/outputs/runner/runner.fcstd.plate.FCStd', output)
 
         const xml = documentXml(output)
@@ -56,9 +56,10 @@ describe('Runner — FreeCAD export', () =>
         expect(xml).toContain('type="Part::Box"')
         expect(xml).toContain('type="Part::Cylinder"')
         expect(xml).toContain('type="Spreadsheet::Sheet"')
-        expect(xml).toContain('alias="WIDTH"')
-        expect(xml).toMatch(/<Expression path="Length" expression="ArchiyouParams\.WIDTH \* 1 mm"\/>/)
-        expect(xml).toMatch(/<Expression path="Radius" expression="ArchiyouParams\.HOLE \* 1 mm"\/>/)
+        expect(xml).toContain('WARNING: documentation only')
+        expect(xml).toContain(`content="'WIDTH"`)
+        expect(xml).not.toContain('<Expression ')
+        expect(xml).not.toContain('alias=')
         expect(xml).toContain('key="archiyou.script" value="plate"')
     })
 
@@ -74,7 +75,7 @@ describe('Runner — FreeCAD export', () =>
         expect(result.status, JSON.stringify(result.errors)).toBe('success')
         const xml = documentXml(result.outputs!.find(o => o.path.requestedPath === 'default/model/fcstd')!.output as Uint8Array)
         expect(xml).toContain('type="Part::Cut"')
-        expect(xml).toMatch(/<Expression path="Length" expression="ArchiyouParams\.WIDTH \* 1 mm"\/>/)
+        expect(xml).not.toContain('<Expression ')
     }, 60000)
 
     it('switches recording off again for a run without a recipe format', async () =>

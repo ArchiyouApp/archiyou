@@ -122,12 +122,12 @@ The name segment accepts a wildcard, so `default/docs/*/svg` renders every docum
 script defines, and `default/tables/*/xlsx` returns every table. `getOutput(result, path)` pulls
 one out of a `run()` result; `execute()` does that for you.
 
-`fcstd` is a FreeCAD document that stays editable: boxes, cylinders, spheres and the booleans
-between them become FreeCAD's own `Part` features, the script parameters become a spreadsheet,
-and dimensions that equal a parameter are bound to it. A run that requests it records how each
-shape was made (see `src/modeler/Recipe.ts`); shapes whose history FreeCAD features cannot
-express are exported as geometry. Press Recompute once in FreeCAD to rebuild curved surfaces
-exactly.
+`fcstd` is a FreeCAD document of the model as editable features: boxes, cylinders, spheres and
+the booleans between them become FreeCAD's own `Part` features with fixed dimensions. A run that
+requests it records how each shape was made (see `src/modeler/Recipe.ts`); shapes whose history
+FreeCAD features cannot express are exported as geometry. The export carries the model, not the
+script's logic: the script parameters are listed in a spreadsheet for documentation only and
+drive nothing. Press Recompute once in FreeCAD to rebuild curved surfaces exactly.
 
 ## In Node
 

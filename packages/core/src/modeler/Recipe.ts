@@ -42,7 +42,8 @@ import { SCRIPT_OUTPUT_RECIPE_FORMATS, outputsNeedRecipes } from '../constants'
 
 export type Vec3 = readonly [number, number, number]
 
-/** A number today. The OpenSCAD tracer will widen this to carry a symbolic expression too. */
+/** Always a concrete number. Recipes describe the model as built, not the script logic that built it:
+ *  exporters carry the model and leave any logic to the user of the target format. */
 export type Value = number
 
 /** A primitive the kernel made. Each has a fixed local frame, documented per op. */

@@ -6,13 +6,18 @@
  * exported as those features, so it stays editable in FreeCAD. Everything else is exported as
  * baked geometry. Design: plans/RECIPE.md.
  *
+ * The export carries the MODEL, not the script's logic. Features have fixed dimensions and nothing
+ * links them to the script parameters: partial parameter links work for some scripts and silently
+ * drift for others, which is worse than none. The parameters are listed in a spreadsheet for
+ * documentation only, under a warning that says so.
+ *
  * Sections
  *   1. Options
  *   2. Planar BRep writer   faceted OpenCascade .brp text for meshes, polygons and polylines
  *   3. Primitive facets     shape caches for primitives that are not the visible result
  *   4. Document model       FreeCAD objects and properties, Document.xml, GuiDocument.xml
  *   5. Mapping              recipe tree -> FreeCAD features (FCSTD mapping table)
- *   6. Parameters           the ArchiyouParams spreadsheet and dimension bindings
+ *   6. Parameters           the documentation-only ArchiyouParams spreadsheet
  *   7. Scene walk           buildFCStd()
  *   8. Zip                  store/deflate writer, no dependencies
  *
@@ -73,10 +78,8 @@ export interface toFCStdOptions
     all?: boolean
     /** Emit FreeCAD parametric features from recipes. Off bakes every shape. */
     parametric?: boolean
-    /** Script parameters for the ArchiyouParams spreadsheet */
+    /** Script parameters, listed in a spreadsheet for documentation only: they drive nothing */
     params?: FCStdParam[]
-    /** Bind primitive dimensions that equal a parameter value to that spreadsheet cell */
-    bindParams?: boolean
     /** Document metadata */
     meta?: { title?: string; script?: string; version?: string; author?: string; url?: string; variant?: string }
     /** Deflate the zip entries (default true). Stored entries are larger but need no compression API. */
@@ -531,8 +534,6 @@ export const prop = {
         return `<Property name="${name}" type="App::PropertyPlacement">\n<PropertyPlacement Px="${fcNum(p.position[0])}" Py="${fcNum(p.position[1])}" Pz="${fcNum(p.position[2])}" `
             + `Q0="${fcNum(x)}" Q1="${fcNum(y)}" Q2="${fcNum(z)}" Q3="${fcNum(w)}" A="${fcNum(angle)}" Ox="${fcNum(axis[0])}" Oy="${fcNum(axis[1])}" Oz="${fcNum(axis[2])}"/>\n</Property>`;
     },
-    expressions: (bindings: Array<{ path: string; expression: string }>) =>
-        `<Property name="ExpressionEngine" type="App::PropertyExpressionEngine">\n<ExpressionEngine count="${bindings.length}">\n${bindings.map(b => `<Expression path="${xmlAttr(b.path)}" expression="${xmlAttr(b.expression)}"/>\n`).join('')}</ExpressionEngine>\n</Property>`,
 };
 
 export interface FcObject
@@ -541,7 +542,6 @@ export interface FcObject
     type: string
     label: string
     props: string[]
-    bindings: Array<{ path: string; expression: string }>
     /** The cached shape; null writes an empty cache (FreeCAD fills it on Recompute); left out,
      *  the object has no Shape property at all (groups, spreadsheets) */
     brep?: string | null
@@ -590,7 +590,6 @@ function documentXml(objects: FcObject[], docProps: string[]): string
             prop.string('Label', o.label),
             ...o.props,
             ...(o.brep !== undefined ? [prop.shape('Shape', o.brep === null ? '' : shapeFile(o))] : []),
-            ...(o.bindings.length ? [prop.expressions(o.bindings)] : []),
             prop.bool('Visibility', o.visible),
         ];
         lines.push(`<Object name="${o.name}">`, `<Properties Count="${props.length}" TransientCount="0">`, ...props, `</Properties>`, `</Object>`);
@@ -642,7 +641,6 @@ interface MappingEnv
     allocate: (label: string, fallback: string) => string
     /** Objects created for the shape being mapped; discarded if the shape bakes */
     draft: FcObject[]
-    bind: (value: number, axisScale: number, ctx: MapContext<Emitted>) => string | null
 }
 
 const PRIMITIVE_TYPES: ReadonlySet<string> = new Set(['Part::Box', 'Part::Cylinder', 'Part::Cone', 'Part::Sphere']);
@@ -666,7 +664,7 @@ function placementFromAxes(origin: Vec3, axes: [Vec3, Vec3, Vec3]): FcPlacement
 /** The FreeCAD mapping table. A row per node kind; everything without a row bakes. */
 function createFCStdMapping(env: MappingEnv): RecipeMapping<Emitted>
 {
-    const primitive = (node: LeafNode, type: string, ctx: MapContext<Emitted>, props: (frame: ReturnType<typeof leafFrame>) => { props: string[]; bindings: Array<{ path: string; expression: string }>; placement: FcPlacement }): Emitted =>
+    const primitive = (node: LeafNode, type: string, ctx: MapContext<Emitted>, props: (frame: ReturnType<typeof leafFrame>) => { props: string[]; placement: FcPlacement }): Emitted =>
     {
         const frame = leafFrame(node, env.mm, ctx);
         const built = props(frame);
@@ -682,17 +680,10 @@ function createFCStdMapping(env: MappingEnv): RecipeMapping<Emitted>
         env.draft.push({
             name, type, label: `${env.subject} · ${node.step.op}`,
             props: [...built.props, prop.placement('Placement', built.placement)],
-            bindings: built.bindings,
             brep: writePlanarBRep(localFaces, 1e-6 * Math.max(1, Math.max(...frame.scales) * env.mm * leafExtent(node)), placement)?.text ?? null,
             visible: false, touched: node.step.op !== 'box',
         });
         return { name, exact: node.step.op === 'box' };
-    };
-
-    const binding = (path: string, value: number, axisScale: number, ctx: MapContext<Emitted>) =>
-    {
-        const expression = env.bind(value, axisScale, ctx);
-        return expression ? [{ path, expression }] : [];
     };
 
     const boolean = (type: string, node: BooleanNode, ctx: MapContext<Emitted>, props: (base: Emitted, tools: Emitted[]) => string[]): Emitted =>
@@ -702,7 +693,7 @@ function createFCStdMapping(env: MappingEnv): RecipeMapping<Emitted>
         const name = env.allocate(`${env.subject}_${node.op}`, node.op);
         env.draft.push({
             name, type, label: `${env.subject} · ${node.op}`,
-            props: props(base, tools), bindings: [], brep: null, visible: false, touched: true,
+            props: props(base, tools), brep: null, visible: false, touched: true,
         });
         return { name, exact: false };
     };
@@ -716,11 +707,6 @@ function createFCStdMapping(env: MappingEnv): RecipeMapping<Emitted>
             const corner = f.axes.reduce((p, axis, i) => sub(p, scale(axis, size[i] / 2)), f.origin);
             return {
                 props: [prop.length('Length', size[0]), prop.length('Width', size[1]), prop.length('Height', size[2])],
-                bindings: [
-                    ...binding('Length', step.size[0], f.scales[0], ctx),
-                    ...binding('Width', step.size[1], f.scales[1], ctx),
-                    ...binding('Height', step.size[2], f.scales[2], ctx),
-                ],
                 placement: placementFromAxes(corner, f.axes),
             };
         }),
@@ -731,7 +717,6 @@ function createFCStdMapping(env: MappingEnv): RecipeMapping<Emitted>
             if (Math.abs(f.scales[0] - f.scales[1]) > 1e-9 * f.scales[0]) ctx.bake('cylinder scaled differently across its radius (elliptic)');
             return {
                 props: [prop.length('Radius', step.radius * f.scales[0] * env.mm), prop.length('Height', step.height * f.scales[2] * env.mm), prop.angle('Angle', 360)],
-                bindings: [...binding('Radius', step.radius, f.scales[0], ctx), ...binding('Height', step.height, f.scales[2], ctx)],
                 placement: placementFromAxes(f.origin, f.axes),
             };
         }),
@@ -742,7 +727,6 @@ function createFCStdMapping(env: MappingEnv): RecipeMapping<Emitted>
             if (Math.abs(f.scales[0] - f.scales[1]) > 1e-9 * f.scales[0]) ctx.bake('cone scaled differently across its radius (elliptic)');
             return {
                 props: [prop.length('Radius1', step.r1 * f.scales[0] * env.mm), prop.length('Radius2', step.r2 * f.scales[0] * env.mm), prop.length('Height', step.height * f.scales[2] * env.mm), prop.angle('Angle', 360)],
-                bindings: [],
                 placement: placementFromAxes(f.origin, f.axes),
             };
         }),
@@ -754,7 +738,6 @@ function createFCStdMapping(env: MappingEnv): RecipeMapping<Emitted>
             if (Math.abs(f.scales[1] - s) > 1e-9 * s || Math.abs(f.scales[2] - s) > 1e-9 * s) ctx.bake('sphere scaled non-uniformly (ellipsoid)');
             return {
                 props: [prop.length('Radius', step.radius * s * env.mm)],
-                bindings: binding('Radius', step.radius, s, ctx),
                 placement: placementFromAxes(f.origin, f.axes),
             };
         }),
@@ -768,7 +751,7 @@ function createFCStdMapping(env: MappingEnv): RecipeMapping<Emitted>
                 tool = env.allocate(`${env.subject}_tools`, 'tools');
                 env.draft.push({
                     name: tool, type: 'Part::MultiFuse', label: `${env.subject} · tools`,
-                    props: [prop.linkList('Shapes', tools.map(t => t.name))], bindings: [], brep: null, visible: false, touched: true,
+                    props: [prop.linkList('Shapes', tools.map(t => t.name))], brep: null, visible: false, touched: true,
                 });
             }
             return [prop.link('Base', base.name), prop.link('Tool', tool)];
@@ -811,71 +794,52 @@ function leafFrame(node: LeafNode, mm: number, ctx: MapContext<Emitted>)
 
 const SHEET_NAME = 'ArchiyouParams';
 
-/** FreeCAD expression unit per Archiyou model unit */
+/** FreeCAD unit per Archiyou model unit */
 const FC_UNITS: Record<string, string> = { mm: 'mm', cm: 'cm', dm: 'dm', m: 'm', km: 'km', inch: 'in', feet: 'ft', yd: 'yd', mi: 'mi' };
 
-/** Tokens the FreeCAD expression lexer reads as units or constants; an alias may not be one. */
-const RESERVED_ALIASES = new Set(('nm um mm cm dm m km l ml Hz kHz MHz GHz THz ug mg g kg t s min h A mA kA MA K mK uK mol mmol cd in ft thou mil yd mi mph sqft cft '
-    + 'lb lbm oz st cwt lbf N mN kN MN Pa kPa MPa GPa bar mbar Torr mTorr uTorr psi ksi Mpsi W mW kW VA V kV mV MS kS S mS uS Ohm kOhm MOhm C T G Wb F mF uF nF pF '
-    + 'H mH uH nH J mJ kJ Nm VAs CV Ws kWh eV keV MeV cal kcal deg rad gon M AS pi e None True true False false').split(' '));
-
-function aliasFor(name: string, used: Set<string>): string
-{
-    let alias = String(name).replace(/[^A-Za-z0-9_]/g, '_');
-    const invalid = (a: string) => !/^[A-Za-z][_A-Za-z0-9]*$/.test(a) || /^[A-Za-z]{1,3}[0-9]+$/.test(a) || RESERVED_ALIASES.has(a) || used.has(a);
-    if (invalid(alias)) alias = `P_${alias}`;
-    let candidate = alias, n = 1;
-    while (invalid(candidate)) candidate = `${alias}_${n++}`;
-    used.add(candidate);
-    return candidate;
-}
-
-interface SheetParam { param: FCStdParam; alias: string; value: unknown }
+export const SHEET_WARNING = 'WARNING: documentation only. These are the parameter values this model was exported with. '
+    + 'They do NOT drive the model: editing them changes nothing.';
 
 function paramValue(p: FCStdParam): unknown
 {
     return p._value ?? p.value ?? p.default;
 }
 
-function buildSheet(params: FCStdParam[], allocate: (label: string, fallback: string) => string): { object: FcObject; entries: SheetParam[] } | null
+/** The parameters as a read-me: a warning banner, then one row per parameter. No aliases, so
+ *  nothing invites an expression to point at these cells. */
+function buildSheet(params: FCStdParam[], allocate: (label: string, fallback: string) => string): FcObject | null
 {
-    const scalars = params.filter(p => p && p.name);
-    if (!scalars.length) return null;
-    const used = new Set<string>();
-    const entries = scalars.map(param => ({ param, alias: aliasFor(param.name, used), value: paramValue(param) }));
+    const listed = params.filter(p => p && p.name);
+    if (!listed.length) return null;
 
     const cell = (address: string, content: string, extra = '') => `<Cell address="${address}" content="${xmlAttr(content)}"${extra}/>`;
     const text = (s: unknown) => `'${String(s ?? '')}`; // a leading quote makes FreeCAD store text
+    const bold = ' style="bold"';
     const cells: string[] = [
-        cell('A1', text('Parameter'), ' style="bold"'), cell('B1', text('Value'), ' style="bold"'),
-        cell('C1', text('Units'), ' style="bold"'), cell('D1', text('Min'), ' style="bold"'),
-        cell('E1', text('Max'), ' style="bold"'), cell('F1', text('Description'), ' style="bold"'),
+        cell('A1', text(SHEET_WARNING), ' style="bold" foregroundColor="#b20000ff" backgroundColor="#ffd833ff" rowSpan="1" colSpan="6"'),
+        cell('A3', text('Parameter'), bold), cell('B3', text('Value'), bold), cell('C3', text('Units'), bold),
+        cell('D3', text('Min'), bold), cell('E3', text('Max'), bold), cell('F3', text('Description'), bold),
     ];
-    entries.forEach(({ param, alias, value }, i) =>
+    listed.forEach((param, i) =>
     {
-        const row = i + 2;
-        let content: string;
-        if (param.type === 'number' && typeof value === 'number' && Number.isFinite(value))
-        {
-            content = param.units && FC_UNITS[param.units] ? `=${fcNum(value)} ${FC_UNITS[param.units]}` : fcNum(value);
-        }
-        else if (param.type === 'boolean') content = value ? '=1' : '=0';
-        else content = text(typeof value === 'object' ? JSON.stringify(value) : value);
-
+        const row = i + 4;
+        const value = paramValue(param);
+        const content = (param.type === 'number' && typeof value === 'number' && Number.isFinite(value))
+            ? (param.units && FC_UNITS[param.units] ? `=${fcNum(value)} ${FC_UNITS[param.units]}` : fcNum(value))
+            : text(typeof value === 'object' ? JSON.stringify(value) : value);
         cells.push(cell(`A${row}`, text(param.label || param.name)));
-        cells.push(cell(`B${row}`, content, ` alias="${alias}"`));
+        cells.push(cell(`B${row}`, content));
         if (param.units) cells.push(cell(`C${row}`, text(param.units)));
         if (param.schema?.minimum !== undefined) cells.push(cell(`D${row}`, fcNum(param.schema.minimum)));
         if (param.schema?.maximum !== undefined) cells.push(cell(`E${row}`, fcNum(param.schema.maximum)));
         if (param.description) cells.push(cell(`F${row}`, text(param.description)));
     });
 
-    const object: FcObject = {
-        name: allocate(SHEET_NAME, 'Sheet'), type: 'Spreadsheet::Sheet', label: 'Parameters',
+    return {
+        name: allocate(SHEET_NAME, 'Sheet'), type: 'Spreadsheet::Sheet', label: 'Parameters (documentation only)',
         props: [`<Property name="cells" type="Spreadsheet::PropertySheet">\n<Cells Count="${cells.length}">\n${cells.join('\n')}\n</Cells>\n</Property>`],
-        bindings: [], visible: true, touched: false,
+        visible: true, touched: false,
     };
-    return { object, entries };
 }
 
 //// 7. SCENE WALK ////
@@ -937,7 +901,7 @@ async function brepShapeText(shape: any, mm: number): Promise<string | null>
 /** Build a FreeCAD document from a scene. Returns null when nothing exportable was found. */
 export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = {}): Promise<FCStdResult | null>
 {
-    const options = { units: 'mm' as ModelUnits, all: false, parametric: true, bindParams: true, compress: true, ...opts };
+    const options = { units: 'mm' as ModelUnits, all: false, parametric: true, compress: true, ...opts };
     const mm = MM_PER_UNIT[options.units] ?? 1;
     const quality: any = (meshup as any).getQuality?.() ?? {};
     const segments = quality.cylinderSegmentsRadial ?? 32;
@@ -947,25 +911,6 @@ export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = 
     const objects: FcObject[] = [];
 
     const sheet = buildSheet(options.params ?? [], allocate);
-    const numberParams = (sheet?.entries ?? []).filter(e => e.param.type === 'number' && typeof e.value === 'number');
-
-    /** Bind a dimension to a parameter when exactly one parameter has its value. A heuristic:
-     *  without value tracing we cannot know the dimension came from the parameter. */
-    const bind = (value: number, axisScale: number, ctx: MapContext<Emitted>): string | null =>
-    {
-        if (!options.bindParams || !sheet || Math.abs(axisScale - 1) > 1e-12 || !(value > 0)) return null;
-        const hits = numberParams.filter(e => Math.abs((e.value as number) - value) <= 1e-9 * Math.max(1, Math.abs(value)));
-        if (hits.length !== 1)
-        {
-            if (hits.length > 1) ctx.note(`${fmt(value)} equals ${hits.map(h => h.param.name).join(', ')}: not bound`);
-            return null;
-        }
-        const { param, alias } = hits[0];
-        const ref = `${sheet.object.name}.${alias}`;
-        if (!param.units) return `${ref} * 1 ${FC_UNITS[options.units] ?? 'mm'}`;
-        if (param.units === options.units) return ref;
-        return null; // the cell carries different units than the model: equality is a coincidence
-    };
 
     const exportShape = async (node: any, shape: any): Promise<string | null> =>
     {
@@ -1015,7 +960,7 @@ export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = 
         {
             wasBaked = true;
             draft.length = 0;
-            draft.push({ name: allocate(label, 'Shape'), type: 'Part::Feature', label, props: [], bindings: [], brep, visible, touched: false });
+            draft.push({ name: allocate(label, 'Shape'), type: 'Part::Feature', label, props: [], brep, visible, touched: false });
             return { name: draft[0].name, exact: true };
         };
 
@@ -1024,7 +969,7 @@ export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = 
         if (recipe)
         {
             const tree = resolveRecipe(recipe);
-            const env: MappingEnv = { subject: label, mm, segments, allocate, draft, bind };
+            const env: MappingEnv = { subject: label, mm, segments, allocate, draft };
             emitted = mapRecipe<Emitted>(tree, createFCStdMapping(env), { subject: label, fallback: baked, report });
 
             if (!wasBaked)
@@ -1068,7 +1013,7 @@ export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = 
         const group = allocate(node.name || 'Layer', 'Layer');
         objects.push({
             name: group, type: 'App::DocumentObjectGroup', label: node.name || 'Layer',
-            props: [prop.linkList('Group', [...own, ...children])], bindings: [],
+            props: [prop.linkList('Group', [...own, ...children])],
             visible: true, touched: false,
         });
         return [group];
@@ -1081,7 +1026,7 @@ export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = 
         console.warn('buildFCStd(): no exportable geometry in the scene.');
         return null;
     }
-    if (sheet) objects.push(sheet.object);
+    if (sheet) objects.push(sheet);
 
     const meta = options.meta ?? {};
     const timestamp = options.timestamp ?? new Date().toISOString();
@@ -1092,7 +1037,7 @@ export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = 
     }).filter(([, v]) => v !== undefined && v !== null && v !== '') as Array<[string, string]>);
 
     const docProps = [
-        prop.string('Comment', `Exported by Archiyou. ${report.toString()}\nShapes marked for recompute have faceted caches of curved surfaces: press Recompute to rebuild them exactly.`),
+        prop.string('Comment', `Exported by Archiyou. This is the model, not the script: features have fixed dimensions, and the Parameters sheet is documentation only, it drives nothing.\n${report.toString()}\nShapes marked for recompute have faceted caches of curved surfaces: press Recompute to rebuild them exactly.`),
         prop.string('CreatedBy', meta.author ?? 'Archiyou'),
         prop.string('CreationDate', timestamp),
         prop.string('Label', meta.title ?? meta.script ?? 'Archiyou model'),
