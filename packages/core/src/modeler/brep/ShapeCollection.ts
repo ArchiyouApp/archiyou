@@ -1266,11 +1266,35 @@ import { getOc } from './index' // OC global getter
        *       of the collection, not of individual shapes. Improving this can greatly improve
        *       chaining like box().select('E||Z').select('E<<X') - where the last select is in context of collection
       */
-      select(selectString:string=null):ShapeCollection
+      /** Select sub-shapes across this collection AS A WHOLE, like the mesh kernel: `E||left` on
+       *  four edges is the left-most edge of the four, not each edge's own left side. The
+       *  collection is selected through a temporary compound, and every hit is mapped back to
+       *  the member (or member sub-shape) it is, so styles and identity survive. One hit comes
+       *  back as that Shape, more as a ShapeCollection — the same unwrapping Shape.select() does. */
+      select(selectString:string=null):AnyShape|ShapeCollection
       {
-         let selectedShapes = new ShapeCollection();
-         this.all().forEach( shape => selectedShapes.concat(new ShapeCollection(shape.select(selectString))))
-         return selectedShapes.distinct();
+         if (this.length === 0){ return this; }
+         if (this.length === 1){ return this.first().select(selectString); }
+
+         // A bare Shape over the compound — NOT _fromOcShape(), which would explode the compound
+         // back into this collection. The Selector only needs edges()/vertices()/faces() and bbox().
+         const compound = new Shape();
+         (compound as any)._ocShape = this.toOcCompound();
+         const raw = new ShapeCollection(compound.select(selectString));
+
+         const mapped = raw.toArray().map(hit =>
+         {
+            // the collection's own member, when the hit IS one (a whole Edge of a Wire collection)
+            const member = this.toArray().find(s => s._ocShape?.IsSame(hit._ocShape));
+            if (member){ return member; }
+            // otherwise the member's sub-shape the hit was taken from
+            const owner = this.toArray().find(s => s.getSubShapes(hit.type).toArray().some(sub => sub._ocShape.IsSame(hit._ocShape)));
+            const sub = owner?.getSubShapes(hit.type).toArray().find(sub => sub._ocShape.IsSame(hit._ocShape));
+            if (sub){ sub._parent = owner; return sub; }
+            return hit;
+         });
+
+         return new ShapeCollection(mapped).distinct().checkSingle();
       }
 
 
@@ -2197,6 +2221,13 @@ import { getOc } from './index' // OC global getter
          return this.union();
       }
 
+      /** Mesh-kernel name: every Shape as its mesh — which for brep is the Shape itself.
+       *  See Shape.toMesh(). */
+      toMesh():this
+      {
+         return this;
+      }
+
       /** Repeat the whole collection on a 3D grid. Mesh-kernel parity with row().
        *  Counts are floored and clamped to at least 1, so grid(4,3,0) is a flat 4x3 grid
        *  in XY rather than an empty collection. */
@@ -2229,11 +2260,14 @@ import { getOc } from './index' // OC global getter
          return this.shapes.flatMap(s => (s as any).points?.() ?? []);
       }
 
-      /** Mirror every Shape in this collection in place. Mesh-kernel name (meshup mutates
-       *  too); use `.copy().mirror(...)` for a mirrored duplicate. */
-      mirror(origin:PointLike, planeNormal:PointLike):this
+      /** Mirror every Shape in this collection in place, with the mesh kernel's arguments
+       *  (direction, then position — see Shape.mirror()); use `.copy().mirror(...)` for a
+       *  mirrored duplicate. Without a position each Shape mirrors about the COLLECTION's
+       *  centre, not its own, so the group keeps its arrangement — as meshup does. */
+      mirror(dir?:PointLike|MainAxis, pos?:PointLike|number):this
       {
-         this.forEach(shape => shape.mirror(origin, planeNormal));
+         const about = (pos === undefined || pos === null) ? this.center() : pos;
+         this.forEach(shape => shape.mirror(dir, about as any));
          return this;
       }
 

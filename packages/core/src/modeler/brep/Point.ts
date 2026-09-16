@@ -449,7 +449,7 @@ export class Point
                             console.warn(`Point::_arrayResolveRelativeCoordinates: Got relative angle polar coordinate but no cursor direction!`)
                         }
                     }
-                    let offsetVec = new Vector(polarCoord.length).rotate(angle);
+                    let offsetVec = new Vector(polarCoord.length).rotate([0,0,1], angle);
                     let offsettedPoint = cursor.point.toVector().add(offsetVec)
                     pointAbsCoords = offsettedPoint.toArray();
 

@@ -11,8 +11,44 @@
  *
  *  Roughly in order of how much damage each one does to a script that switches kernel. Numbers
  *  stay put when an entry is fixed and deleted, so a gap in the list is a divergence that is
- *  gone (3: rotate*() defaulting to a different pivot for linear shapes — meshup Curve now
- *  turns about its own centre, like Mesh and brep).
+ *  gone:
+ *    3  rotate*() defaulting to a different pivot for linear shapes — meshup Curve now turns
+ *       about its own centre, like Mesh and brep
+ *    9  mirror() taking (origin, normal) on brep — brep now reads (direction, position) like
+ *       meshup; mirrorX/Y/Z were always portable
+ *   16  meshup ShapeCollection dropping brep shapes passed one at a time (collection(a, b),
+ *       copy()) — the direct path now accepts any kernel's shape like the array path did
+ *   17  brep Vector.rotate(angle, position, direction) — now (axis, angle) like meshup
+ *   18  toMesh() missing on brep shapes — a brep shape is its own mesh
+ *   19  brep row()/grid()/array() leaving copies unnamed — named `${name}1…` like meshup
+ *   20  sketch() handing meshup Curves to a brep script — converted to brep Edges/Wires
+ *   21  brep bbox() padded by the meshing deflection once a shape had been tessellated
+ *   23  brep ShapeCollection.select() selecting within each member instead of across the
+ *       collection (E||left on four edges gave all four), and never unwrapping a single hit;
+ *       meshup collections holding brep shapes found nothing at all
+ *   24  extruding a straight edge: brep chose a different default plane (x for a vertical
+ *       line, meshup y) and oriented the swept face the other way round, so the next default
+ *       extrude went the opposite way — now (edge × extrusion), like meshup's polygon
+ *   25  meshup Vector.rotate(axis, angle) read radians where everything else reads degrees
+ *   26  brep operations that rebuild the shape (mirror, extrude, …) dropped its name, style
+ *       and material on the way — replaceShape() carries them now
+ *   27  meshup Vertex/Curve copies dropped the name where Mesh/Polygon copies kept it
+ *  16–27 were found by tests/cadscripts/kernel.parity.test.ts and are asserted the other way
+ *  round in modeler.brep.test.ts ("mesh-kernel contracts on brep shapes").
+ *
+ *  Found by the same run and still OPEN (no fix yet, listed in kernel.parity.txt):
+ *   28  brep Vector has no rotationBetween() (tomy)
+ *   29  the techdraw doc pipeline (docPipeline() under $pipeline) recurses until the stack
+ *       overflows on brep (urhousesketch, once 33 is out of the way) — a documentation-side
+ *       issue, not modelling
+ *   30  gardenchair: beams built from extend()/extendTo() lines drift a few mm on brep,
+ *       most likely item 5 (extend() along the original direction)
+ *   31  brep union() hands back a ShapeCollection where meshup returns one Mesh, so the
+ *       chained .cutoff() has nothing to run on (kakpinchedstool) — see item 2
+ *   32  side selectors ('E||left') return more hits on brep than on mesh over a collection of
+ *       faces' edges, so a chained .dim() lands on a collection (timberfloor)
+ *   33  brep Bbox has no containsBbox() (meshup Bbox does; brep keeps it private as
+ *       _containsBbox) — urhousesketch stops there
  *
  *    1  arc(start, mid, end) draws a different curve on each kernel
  *    2  union()/intersection() mutate on mesh but not on brep
@@ -21,13 +57,13 @@
  *    6  brep subtract() throws when the cut severs the solid
  *    7  brep Solid.center() is the surface centroid, not the centre of mass
  *    8  extruding a closed outline gives a capped solid on mesh, an open shell on brep
- *    9  mirror() takes its two arguments in the opposite order
  *   10  area()/size()/length() answer for different shape families
  *   11  closed outlines are seamed differently, so start()/end()/middle() differ
  *   12  brep pointAt() is parameter-based where mesh pointAtPerc() is arc-length-based
  *   13  is2D() uses an exact zero test on mesh and a tolerant one on brep
  *   14  Polygon.center() double-counts the closing vertex on mesh
  *   15  odds and ends: a line ∩ a closed outline, distanceTo(), fillet()/chamfer(), circle spans
+ *   22  the make module (walls, boarding, part lists) is mesh-only — brep now says so up front
  */
 import { describe, it, expect, beforeAll } from 'vitest'
 import { Modeler } from '../../../../src/modeler/Modeler'
@@ -247,31 +283,6 @@ describe('mesh ↔ brep divergences (pinned, not accepted)', () =>
         expect(c.type).toEqual('Shell')
     })
 
-    //// ==== 9. ARGUMENT ORDER ==== ////
-
-    it('9. mirror() takes (direction, position) on mesh and (origin, normal) on brep', () =>
-    {
-        /*  The same two arguments, swapped. A script that mirrors about a plane silently does
-            nothing on one kernel and works on the other. mirrorX/mirrorY/mirrorZ take a single
-            coordinate and agree on both, so they are the portable spelling today.
-
-            SHOULD BE: one argument order (and a runtime check, since both forms are PointLike). */
-        const box = (m: Modeler) => (m.box(100, 50, 20) as any).move(100, 0, 0)
-
-        // brep reads (origin, normal): mirrored across the yz plane through the origin
-        expect(r4(box(brep).mirror([0, 0, 0], [1, 0, 0]).bbox().center().x)).toEqual(-100)
-        // mesh reads (direction, position) — so the same call mirrors about x = 0 in the x
-        // direction only by accident of the arguments, and here leaves the box where it was
-        expect(r4(box(mesh).mirror([0, 0, 0], [1, 0, 0]).bbox().center().x)).toEqual(100)
-
-        // mesh's own spelling of the same intent
-        expect(r4(box(mesh).mirror([1, 0, 0], [0, 0, 0]).bbox().center().x)).toEqual(-100)
-
-        // mirrorX/Y/Z are portable
-        expect(r4(box(mesh).mirrorX(0).bbox().center().x)).toEqual(-100)
-        expect(r4(box(brep).mirrorX(0).bbox().center().x)).toEqual(-100)
-    })
-
     //// ==== 10. WHICH MEASUREMENTS EXIST ==== ////
 
     it('10. area(), size() and length() answer for different shape families', () =>
@@ -430,4 +441,22 @@ describe('mesh ↔ brep divergences (pinned, not accepted)', () =>
         expect((brep.circle(40) as any).segments().length).toEqual(1)
         expect(r4((mesh.circle(40) as any).length())).toBeCloseTo(r4((brep.circle(40) as any).length()), 2)
     })
+
+    //// ==== 22. MESH-ONLY MODULES ==== ////
+
+    it('22. the make module is mesh-only, and says so before building anything on brep', async () =>
+    {
+        /*  Make (walls, studs, boarding, part lists, sheet packing) is written against the
+            concrete meshup classes. It used to run half-way on brep and fail somewhere inside
+            (an empty studs collection, "Please supply a valid ShapeCollection…"). It now refuses
+            at the first make.*() call with a message that names the fix.
+
+            SHOULD BE (eventually): Make builds through the Modeler API so it runs on both. */
+        const { Runner } = await import('../../../../src/runner/Runner')
+        const runner = await new Runner().load()
+        const code = `w = make.wall({ length: 1000, height: 1000 })`
+        const onBrep = await runner.execute({ kernel: 'brep', script: { code }, outputs: ['default/model/glb'], messages: ['error'] } as any)
+        expect(onBrep.status).toEqual('error')
+        expect(JSON.stringify(onBrep.errors)).toMatch(/only available in mesh mode/)
+    }, 120_000)
 })
