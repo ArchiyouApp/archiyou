@@ -250,7 +250,10 @@ Please reach out for more information, ideas or collaboration!
 
 ## AI disclosure
 
-Archiyou started as a good old fashioned non-AI project. Its core was always open source (see deprecated https://github.com/ArchiyouApp/archiyou-core/). While porting and open sourcing the rest of our stack AI was used. First as code assistant (until march 2026), then as agent. We mainly used Claude Sonnet, and then Opus. Most of the work we plan extensively within our team, supported by agents. The agent codes and writes tests, while we review the code, guide coding standards, clarity and test the applications. All our parametric CAD scripts are hand-crafted. 
+Archiyou started as a good old fashioned non-AI project. Its core was always open source (see deprecated https://github.com/ArchiyouApp/archiyou-core/). While porting and open sourcing the rest of our stack AI was used. First as code assistant (until march 2026), then as agent. We mainly used Claude Sonnet, and then Opus. Most of the work we plan extensively within our team, supported by agents. The agent codes and writes tests, while we review the code, guide coding standards, clarity and test the applications. All our parametric CAD scripts are hand-crafted.
+
+Since September 2026 every unit of AI-assisted work has a record (prompts, reviewed plan, review notes, commits) in [documentation/nlnet/ai](./documentation/nlnet/ai/README.md), and commits with generated code carry a disclosure block, made with `pnpm commit:ai`.
+
 
 ## License
 

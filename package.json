@@ -18,6 +18,7 @@
     "dev:server": "turbo dev --filter=@archiyou/server",
     "dev:worker": "pnpm --filter @archiyou/server worker:dev",
     "test": "turbo test",
+    "commit:ai": "node scripts/ai-commit.mjs",
     "docker:prod": "docker compose up -d",
     "docker:prod:down": "docker compose down",
     "docker:dev": "docker compose -f docker-compose.dev.yml up -d --wait",

@@ -149,3 +149,7 @@ declare global
 - Avoid stray .js files output: If you need to do TS checking please always use --noEmit with tsc
 
 
+
+## Commits with generated code
+
+Archiyou is NLnet-funded and discloses AI involvement per commit. Code an agent wrote is committed with `pnpm commit:ai` (author "with <model>", disclosure block, human-written summary, approval before commit) and belongs to a record in `documentation/nlnet/ai/records/`. The process: `documentation/nlnet/ai/README.md`; for Claude Code: `.claude/skills/ai-disclosure/SKILL.md`. No co-author trailers, no links to chat platforms.

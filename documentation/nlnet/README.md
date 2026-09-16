@@ -14,4 +14,6 @@ This is a basic roadmap:
 
 All documentation for NLnet can be found in this folder.
 
+AI disclosure, as asked by NLnet's [GenAI policy](https://nlnet.nl/foundation/policies/generativeAI/): [ai/](./ai/README.md) holds the process and one record per unit of AI-assisted work.
+
 Please reach out for more information, ideas or collaboration!
