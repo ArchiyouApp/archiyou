@@ -599,51 +599,48 @@ export class Vector extends Point
         return this.copy().mirror(position, direction);
     }
 
-    /** 
-     *   Rotates current Vector along a axis defined by position and direction
-     *   @param angle in degrees
-     */   
-    @checkInput( [Number, ['PointLike',[0,0,0]] , ['PointLike',[0,0,1]] ], [Number, 'Point', 'Vector'])
-    rotate(angle:number, position?:PointLike, direction?:PointLike):this
+    /**
+     *   Rotate this Vector about `axis` (a direction through the origin — a vector is a
+     *   direction, it has no position). Same signature as meshup's Vector.rotate(axis, angle).
+     *   @param axis  direction of the rotation axis (default z)
+     *   @param angle in degrees, right-handed about `axis`
+     */
+    @checkInput( [['PointLike',[0,0,1]], Number], ['Vector', Number])
+    rotate(axis:PointLike, angle:number):this
     {
-        // IMPORTANT: probably right-hand rotation - for Y - axis this could cause problems
-
-        const posPoint = Point.fromPointLike(position ?? [0,0,0]);
-        const dirVec   = Point.fromPointLike(direction  ?? [0,0,1]).toVector();
-        const ocAxis = new this._oc.gp_Ax1_2( posPoint._toOcPoint(), dirVec._toOcDir() );
+        const dirVec = Point.fromPointLike(axis ?? [0,0,1]).toVector();
+        const ocAxis = new this._oc.gp_Ax1_2( new Point(0,0,0)._toOcPoint(), dirVec._toOcDir() );
         this._ocVector.Rotate(ocAxis,toRad(angle));
         this._fromOcVec(); // sync internals from oc instance
         ocAxis?.delete(); // clean
         return this;
     }
 
-    /** 
+    /**
      *   Same as rotate() but returns a copy
-     *   @param angle in degrees
-     */ 
-    @checkInput( [Number, ['PointLike',[0,0,0]] , ['PointLike',[0,0,1]] ], [Number, 'Point', 'Vector'])    
-    rotated(angle:number, position?:PointLike, direction?:PointLike):Vector
+     */
+    @checkInput( [['PointLike',[0,0,1]], Number], ['Vector', Number])
+    rotated(axis:PointLike, angle:number):Vector
     {
-        return this.copy().rotate(angle, position, direction);
+        return this.copy().rotate(axis, angle);
     }
 
-    // TODO: add rotation pivot
     @checkInput(Number,'auto')
     rotateX(angle:number):this
     {
-        return this.rotate(angle, [0,0,0], [1,0,0])
+        return this.rotate([1,0,0], angle)
     }
 
     @checkInput(Number,'auto')
     rotateY(angle:number):this
     {
-        return this.rotate(angle, [0,0,0], [0,1,0])
+        return this.rotate([0,1,0], angle)
     }
 
     @checkInput(Number,'auto')
     rotateZ(angle:number):this
     {
-        return this.rotate(angle, [0,0,0], [0,0,1])
+        return this.rotate([0,0,1], angle)
     }
 
     /** Swap x,y coordinates for some 2D applications */

@@ -49,6 +49,11 @@ The suite is split into two vitest projects (`vitest.config.ts`):
   cadscripts exercise large parts of `src/` that no unit test reaches.
 * The narrower `test:*` scripts (`test:brep`, `test:runner`, `test:params`, …) are path
   filters over the `unit` project and are unaffected by the split.
+* `pnpm test:parity` is the mesh ↔ brep parity table over the cadscripts
+  (`tests/cadscripts/kernel.parity.test.ts` → `kernel.parity.txt`): every script runs on both
+  kernels and every shape's bbox is compared by scene path. A kernel fix that changes the
+  table is expected to refresh the snapshot (`vitest -u`) and ship the diff. The unit-level
+  counterpart is `test:kernels` (`shape-parity`, `kernel-divergences`).
 
 A red `cadscripts` test usually means a script in `tests/cadscripts/scripts/` needs
 updating, not that the kernel regressed — so don't chase it from a kernel change without

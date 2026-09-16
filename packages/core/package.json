@@ -26,6 +26,7 @@
     "test:all": "vitest run",
     "test:brep": "vitest run tests/unit/brep/",
     "test:kernels": "vitest run tests/unit/modeler/kernels/",
+    "test:parity": "vitest run --project cadscripts tests/cadscripts/kernel.parity.test.ts",
     "test:modeler": "vitest run tests/unit/modeler/*test.ts",
     "test:scad": "vitest run tests/unit/modeler/scad.test.ts tests/unit/modeler/scad.roundtrip.test.ts tests/unit/runner/runner.scad.test.ts tests/unit/modeler/exportGeometry.test.ts tests/unit/modeler/recipe.test.ts",
     "test:ifc": "vitest run tests/unit/modeler/ifc.features.test.ts tests/unit/modeler/ifc.export.test.ts tests/unit/modeler/ifc.house.test.ts",

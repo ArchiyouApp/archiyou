@@ -521,6 +521,20 @@ export class Shape
     @checkInput('AnyShapeOrCollection', 'auto')
     replaceShape(newShapes:AnyShapeOrCollection):AnyShapeOrCollection
     {
+        // The result is a NEW Shape (OpenCascade rebuilds), where the mesh kernel mutates in
+        // place and so keeps its identity for free. Carry what a script sees: the name (so the
+        // scene path survives a mirror() or extrude()), style and material.
+        const carry = (s:any) =>
+        {
+            if (!s || s === this) return;
+            if (s._name === undefined && this._name !== undefined) { s._name = this._name; s._nameInherited = this._nameInherited; }
+            if (this._material && !s._material) { s._material = this._material; }
+            const style = this.style?.explicitData?.();
+            if (style && Object.keys(style).length) { s.style?.merge?.(style); }
+        };
+        if (isAnyShapeCollection(newShapes)) { (newShapes as AnyShapeCollection).forEach(carry); }
+        else { carry(newShapes); }
+
         replaceInScene(this, newShapes);
         return newShapes;
     }
@@ -913,7 +927,12 @@ export class Shape
         if(this._ocShape)
         {
             let newBbox = new Bbox()._fromShape(this);
-            this._oc.BRepBndLib.AddOptimal(this._ocShape, newBbox._ocBbox, true, false); // useTriangulation, useShapeTolerance
+            // useTriangulation = false: measure the exact geometry. With `true` OC reads a
+            // triangulation when one exists and pads the box by its deflection, so the same
+            // line answered [0,100] before an export and [-0.1,100.1] after it (the GLB export
+            // meshes every shape at MESHING_MAX_DEVIATION). The Recipe adapter and OBbox already
+            // measure exactly; this keeps bbox() consistent with them and with the mesh kernel.
+            this._oc.BRepBndLib.AddOptimal(this._ocShape, newBbox._ocBbox, false, false); // useTriangulation, useShapeTolerance
             newBbox.updateFromOcBbox();
             
             // NOTE: only Annotations linked to this Shape are included in calculation!
@@ -1836,7 +1855,21 @@ export class Shape
         let directionVec = direction as Vector; // auto-converted
         if (!directionVec)
         {
-            if(['Edge','Wire', 'Face', 'Shell'].includes(this.type))
+            if (this.type === 'Edge' && (this as any).edgeType?.() === 'Line')
+            {
+                // A straight Edge lies in infinitely many planes. Pick the one the mesh kernel
+                // picks (meshup Curve.getOnPlane): a constant coordinate names the coordinate
+                // plane, z first (XY), then y (XZ), then x (YZ) — so a vertical line extrudes
+                // into the XZ plane and a horizontal one goes up. A fully diagonal line keeps
+                // Edge.normal(), which offset() and the like still rely on.
+                const s = (this as any).start(), e = (this as any).end();
+                const tol = 1e-6;
+                directionVec = (Math.abs(s.z - e.z) <= tol) ? new Vector(0,0,1)
+                             : (Math.abs(s.y - e.y) <= tol) ? new Vector(0,1,0)
+                             : (Math.abs(s.x - e.x) <= tol) ? new Vector(1,0,0)
+                             : (this as any).normal();
+            }
+            else if(['Edge','Wire', 'Face', 'Shell'].includes(this.type))
             {
                 directionVec = (this as any).normal();
             }
@@ -1855,6 +1888,20 @@ export class Shape
             return null;
         }
         let newShape = (new Shape()._fromOcShape(ocShape) as AnyShape).specific(); // Can return only one Shape
+
+        // A Face swept from a straight Edge: orient it like the mesh kernel does, whose
+        // polygon [start, end, end+d, start+d] has the normal (edge direction × extrusion).
+        // OpenCascade's prism comes out the other way round, so the NEXT default extrude
+        // (along the face normal) would go the opposite way on the two kernels.
+        if (this.type === 'Edge' && newShape?.type === 'Face')
+        {
+            const expected = (this as any).direction().crossed(extrudeVec);
+            const actual = (newShape as any).normal?.();
+            if (actual && expected.length() > 0 && actual.dot(expected) < 0)
+            {
+                newShape = (new Shape()._fromOcShape(ocShape.Reversed()) as AnyShape).specific();
+            }
+        }
 
         return newShape as Edge|Face|Shell|Solid;
     }
@@ -3293,36 +3340,33 @@ export class Shape
         return null;
     }
 
-    /** Copy current Shape a number of times along X,Y,Z axis with a given spacing */
-    @checkInput([ ['PointLike', [2,1,1] ], ['PointLike', [0,0,0]] ], ['Point', 'Point'])
+    /** Copy this Shape on a 3D array, the mesh kernel's way (meshup Mesh.array):
+     *   @param sizes   number of copies along [x, y, z] (default [2, 2, 1]); floored, at least 1
+     *   @param offsets distance between copy origins along [x, y, z]. Default: this Shape's
+     *                  bbox extent on each axis, so the copies sit side by side.
+     *  The original is the copy at [0,0,0]; copies are named `${name}${x+1}${y+1}` like meshup. */
+    @sceneAdd
+    @checkInput([ ['PointLike', [2,2,1] ], ['PointLike', null] ], ['Point', 'Point'])
     array(sizes?:PointLike, offsets?:PointLike):AnyShapeCollection
     {
-        /* 
-            usage:
-            shape.array(5,500); // 5 in x-axis offset 500
-            shape.array([5,3,10],[500,300,400])
-        */
+        const s = sizes as Point;
+        const [nx,ny,nz] = gridCounts([s.x, s.y, s.z], 'Shape::array()');
+        const bb = this.bbox();
+        const off = (offsets as Point) ?? new Point(bb.width(), bb.depth(), bb.height());
 
-        let sizesPoint =  sizes as Point;
-        let offsetsPoint = offsets as Point;
-        
-        // default size 
-        sizesPoint.x = sizesPoint.x || 1; // always at least 1
-        sizesPoint.y = sizesPoint.y || 1; 
-        sizesPoint.z = sizesPoint.z || 1;
-
-        offsetsPoint.x = offsetsPoint.x || SHAPE_ARRAY_DEFAULT_OFFSET;
-        offsetsPoint.y = offsetsPoint.y || 1;
-        offsetsPoint.z = offsetsPoint.z || 1;
-
-        const xArrColl = this._array1D(sizesPoint.x, new Vector(1,0,0).scaled(offsetsPoint.x) );
-        const yArrColl = xArrColl._array1D(sizesPoint.y, new Vector(0,1,0).scaled(offsetsPoint.y) );
-        const zArrColl = new ShapeCollection([xArrColl, yArrColl])._array1D(sizesPoint.z, new Vector(0,0,1).scaled(offsetsPoint.z) );
-
-        // TODO: make sure we have the right order!
-
-        return new ShapeCollection(zArrColl); // combine all directions
-
+        const name = this.name(); // before the first copy (this) is renamed
+        const shapes = new ShapeCollection();
+        for (let x = 0; x < nx; x++){
+        for (let y = 0; y < ny; y++){
+        for (let z = 0; z < nz; z++)
+        {
+            const first = (x === 0 && y === 0 && z === 0);
+            const shape = first ? this : this.copy(false); // the decorator places the copies in the scene
+            shape.move(x * off.x, y * off.y, z * off.z);
+            shape._nameInGrid(name, x, y, z, nz);
+            shapes.add(shape);
+        }}}
+        return shapes;
     }
 
     /** Copy Shape a number of times by spacing by a certain offset Vector  */
@@ -4376,6 +4420,14 @@ export class Shape
         return this.vertices().toArray().map((v:any) => v.toPoint());
     }
 
+    /** Mesh-kernel name: a meshup Polygon/Curve answers toMesh() with a Mesh so `.edges()`,
+     *  `.select()` and friends work on it, and a Mesh returns itself. A brep Shape already
+     *  answers all of those, so it is its own mesh. */
+    toMesh():this
+    {
+        return this;
+    }
+
     /** Repeat this Shape on a 3D grid, spaced by `spacing` between bounding boxes.
      *  Counts are floored and clamped to at least 1, so grid(4,3,0) is a flat 4x3 grid in XY
      *  rather than an empty collection.
@@ -4387,6 +4439,7 @@ export class Shape
         const bbox = this.bbox();
         const step = [ bbox.width() + spacing, bbox.depth() + spacing, bbox.height() + spacing ];
 
+        const name = this.name(); // before the first copy (this) is renamed
         const shapes = new ShapeCollection();
         for (let z = 0; z < nz; z++){
         for (let y = 0; y < ny; y++){
@@ -4395,9 +4448,26 @@ export class Shape
             const first = (x === 0 && y === 0 && z === 0);
             const shape = first ? this : this.copy(false);
             shape.move(x * step[0], y * step[1], z * step[2]);
+            shape._nameInGrid(name, x, y, z, nz);
             shapes.add(shape);
         }}}
         return shapes;
+    }
+
+    /** Name a row copy `${name}${i+1}` — the mesh kernel's scheme (meshup ShapeCollection._nameRow),
+     *  so the scene reads `stud1, stud2, …` on both kernels. No-op for an unnamed source. */
+    _nameInRow(sourceName:string|undefined, i:number):this
+    {
+        if (sourceName) { this.name(`${sourceName}${i + 1}`); }
+        return this;
+    }
+
+    /** Name a grid/array copy `${name}${x+1}${y+1}` (plus `${z+1}` when the grid has depth) —
+     *  meshup ShapeCollection._nameGrid. No-op for an unnamed source. */
+    _nameInGrid(sourceName:string|undefined, x:number, y:number, z:number, nz:number):this
+    {
+        if (sourceName) { this.name(`${sourceName}${x + 1}${y + 1}${nz > 1 ? z + 1 : ''}`); }
+        return this;
     }
 
     //// IN-PLACE TRANSFORMS ////
@@ -4415,13 +4485,49 @@ export class Shape
         return newShape;
     }
 
-    /** Mirror this Shape in place across the plane at `origin` with `normal`. */
-    @checkInput([['PointLike',[0,0,0]], ['PointLike','x']], ['Vector','Vector'])
-    mirror(origin?:PointLike, normal?:PointLike):AnyShape
+    /** Mirror this Shape in place. Same arguments as the mesh kernel (meshup Mesh.mirror):
+     *   @param dir  the mirror plane's normal — an axis ('x' | 'y' | 'z') or a vector. A vector
+     *               that is not unit length and comes WITHOUT `pos` encodes both: the plane
+     *               passes through its end point (`mirror([250])` mirrors across x = 250).
+     *   @param pos  a point the plane passes through, or a coordinate along `dir` when `dir`
+     *               is an axis. Default: this Shape's centre.
+     *  The OpenCascade-flavoured (origin, normal) order this used to take is gone — see
+     *  kernel-divergences.test.ts, former item 9. */
+    mirror(dir?:PointLike|MainAxis, pos?:PointLike|number):AnyShape
     {
+        const { origin, normal } = this._mirrorPlane(dir, pos);
         const newShape = this._mirrored(origin, normal);
         this.replaceShape(newShape);
         return newShape;
+    }
+
+    /** Resolve mesh-kernel mirror arguments into the plane _mirrored() wants. */
+    _mirrorPlane(dir?:PointLike|MainAxis, pos?:PointLike|number):{ origin:Point, normal:Vector }
+    {
+        const axisNormal = (a:MainAxis) => new Vector(a === 'x' ? 1 : 0, a === 'y' ? 1 : 0, a === 'z' ? 1 : 0);
+        const toPoint = (p:any) => Array.isArray(p)
+                            ? new Point(p[0] ?? 0, p[1] ?? 0, p[2] ?? 0)   // pads a short array: [250] is x = 250
+                            : Point.fromPointLike(p);
+
+        if (isMainAxis(dir))
+        {
+            const normal = axisNormal(dir);
+            const origin = (typeof pos === 'number')
+                                ? new Point(0,0,0).setComponent(dir, pos)
+                                : (pos !== undefined && pos !== null) ? toPoint(pos) : this.center();
+            return { origin, normal };
+        }
+
+        const normal = (dir === undefined || dir === null) ? new Vector(1,0,0) : toPoint(dir).toVector();
+        if (normal.length() === 0){ throw new Error(`${this.type}::mirror(): the mirror direction cannot be a zero vector`); }
+
+        // A non-unit vector without a position: its end point is where the plane sits
+        if ((pos === undefined || pos === null) && Math.abs(normal.length() - 1) > this._oc.SHAPE_TOLERANCE)
+        {
+            return { origin: normal.toPoint(), normal: normal.normalized() };
+        }
+        const origin = (pos !== undefined && pos !== null) ? toPoint(pos) : this.center();
+        return { origin, normal: normal.normalized() };
     }
 
     /** Flatten this Shape in place onto the coordinate plane perpendicular to `axis`
@@ -4464,10 +4570,12 @@ export class Shape
 
         const shapes = new ShapeCollection();
 
+        const name = this.name();
         for (let i = 0; i < count; i++)
         {
             const shape = (i === 0) ? this : this.copy(false); // copy() without auto-adding: the decorator places the result
             shape.move(dirVec.scaled(i * (offsetSize + spacing)));
+            shape._nameInRow(name, i);
             shapes.add(shape);
         }
 

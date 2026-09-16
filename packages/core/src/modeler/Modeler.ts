@@ -84,7 +84,7 @@ import { SceneNodeGraphNode, isPointLike } from "@archiyou/meshup";
 import { Layouter } from "./Layouter";
 import { GLTFBuilder } from "../GLTFBuilder";
 import { Make } from './Make';
-import { brepShapeToMeshup, isBrepShape, DEFAULT_MESHING_QUALITY } from './brep/toMeshup';
+import { brepShapeToMeshup, meshupShapeToBrep, isBrepShape, DEFAULT_MESHING_QUALITY } from './brep/toMeshup';
 
 import { GLTF_ANIMATION_DURATION } from '../constants';
 
@@ -800,9 +800,10 @@ export class Modeler
      *
      *  ALWAYS a meshup.Sketch, in both kernels. brep had its own Sketch implementation but it
      *  was built around the deleted Brep god-class (layers, activeSketch) and duplicated what
-     *  meshup.Sketch already does; sketching in brep mode therefore produces meshup Curves in
-     *  the shared scene. That is fine — the scene and the exporters are kernel-agnostic — and a
-     *  brep-native sketch can be reintroduced later without changing this entry point. */
+     *  meshup.Sketch already does. In brep mode the sketch's curves are converted to brep
+     *  Edges/Wires when the sketch ends (brep/toMeshup.ts, meshupShapeToBrep), so what a script
+     *  gets back belongs to the active kernel and can be cut, extended and extruded against the
+     *  rest of the model. Only the drawing happens in meshup. */
     sketch(plane: any = 'xy', _yAxis?: any): meshup.Sketch
     {
         this._activeSketch = new meshup.Sketch(plane);
@@ -810,8 +811,11 @@ export class Modeler
         this._activeSketch.onEnd((curves) =>
         {
             const sketchCurves = (curves as meshup.ShapeCollection<meshup.Curve>).toArray();
-            this.addToScene(sketchCurves);
-            return sketchCurves.length === 1 ? sketchCurves[0] : new meshup.ShapeCollection(...sketchCurves);
+            const shapes: Array<any> = (this._mode === 'brep')
+                ? sketchCurves.map(c => meshupShapeToBrep(c, this._brep() as any) ?? c)
+                : sketchCurves;
+            this.addToScene(shapes);
+            return shapes.length === 1 ? shapes[0] : new meshup.ShapeCollection(...shapes);
         });
         return this._activeSketch
     }

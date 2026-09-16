@@ -10,16 +10,10 @@
  *
  *  How a step is judged
  *  --------------------
- *  Every measurement carries its dimensionality (length / area / volume), so tolerances scale
- *  with the shape instead of being hand-tuned per assertion:
- *
- *    allowed  = max(tol × |larger value|,  FLOOR × scale^dim)
- *    aborting = ABORT × max(|larger value|, 1% of scale^dim)
- *
- *  `scale` is the bbox diagonal, so a coordinate that ought to be 0 is compared against an
- *  absolute floor rather than a meaningless relative one. Two tolerance bands are used: EXACT
- *  for analytic primitives (a box is a box on both kernels) and TESSELATED for anything that
- *  goes through meshup's triangulation of a curved surface, where a percent or two is inherent.
+ *  See parity-measure.ts for the measurements and the tolerance formula (EXACT for analytic
+ *  primitives, TESSELATED for anything through meshup's triangulation, FLOOR for "should be 0").
+ *  The same helper drives tests/cadscripts/kernel.parity.test.ts, which does this for every
+ *  shape a whole cadscript leaves behind.
  *
  *  A step that blows past ABORT stops the whole chain right there: once the two kernels are
  *  modelling different objects, every later step reports noise, so there is nothing to learn
@@ -32,181 +26,19 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest'
 import { Modeler } from '../../../../src/modeler/Modeler'
-
-//// ==== TOLERANCES ==== ////
-
-/** Analytic primitives and their transforms: both kernels compute these in closed form, so
- *  they should agree to little more than brep's 3-decimal output rounding. */
-const EXACT = 0.0005        // 0.05%
-/** Anything that passes through meshup's triangulation of a curved surface. */
-const TESSELATED = 0.03     // 3%
-/** Past this the two kernels are no longer modelling the same object — stop the chain. */
-const ABORT = 0.25          // 25%
-/** Absolute floor, as a fraction of the shape's own scale, so "should be 0" survives rounding. */
-const FLOOR = 1e-5
-
-//// ==== MEASURING ==== ////
-
-/** Dimensionality of a measurement: 0 unitless (counts, booleans), 1 length, 2 area, 3 volume.
- *  Used to raise the shape's scale to the right power when deriving an absolute floor. */
-type Dim = 0 | 1 | 2 | 3
-
-type Measurement = { value: number, dim: Dim }
-type Measurements = Record<string, Measurement>
-
-type Family = 'solid' | 'linear'
-
-/** Call `fn`, and simply drop the measurement if this kernel cannot answer (or throws).
- *  A metric only takes part in the comparison when BOTH kernels produced a finite number. */
-function put(into: Measurements, key: string, dim: Dim, fn: () => unknown): void
-{
-    let raw: unknown
-    try { raw = fn() } catch { return }
-    if (typeof raw === 'boolean') { into[key] = { value: raw ? 1 : 0, dim: 0 }; return }
-    if (typeof raw !== 'number' || !isFinite(raw)) { return }
-    into[key] = { value: raw, dim }
-}
-
-/** Everything worth comparing about a shape, keyed by a readable name. */
-function measure(shape: any, family: Family, opts: { topology?: boolean, ends?: boolean } = {}): Measurements
-{
-    const m: Measurements = {}
-
-    // --- the bounding box: the one thing every shape type on every kernel can answer ---
-    put(m, 'bbox.width', 1, () => shape.bbox().width())
-    put(m, 'bbox.depth', 1, () => shape.bbox().depth())
-    put(m, 'bbox.height', 1, () => shape.bbox().height())
-    for (const axis of ['x', 'y', 'z'] as const)
-    {
-        put(m, `bbox.min.${axis}`, 1, () => shape.bbox().min()[axis])
-        put(m, `bbox.max.${axis}`, 1, () => shape.bbox().max()[axis])
-        put(m, `bbox.center.${axis}`, 1, () => shape.bbox().center()[axis])
-    }
-    put(m, 'bbox.diagonal', 1, () => diagonalOf(shape))
-
-    put(m, 'is2D', 0, () => shape.is2D())
-
-    if (family === 'solid')
-    {
-        put(m, 'volume', 3, () => shape.volume())
-        put(m, 'area', 2, () => shape.area())
-        put(m, 'size', 3, () => shape.size())
-        for (const axis of ['x', 'y', 'z'] as const)
-        {
-            put(m, `center.${axis}`, 1, () => shape.center()[axis])
-        }
-
-        // The oriented bbox: the same three extents, but the kernels order the axes differently,
-        // so sort. Solids only — the two OBB fitters disagree by a fraction of a percent on a
-        // curve, which says nothing about the curve.
-        for (let i = 0; i < 3; i++)
-        {
-            put(m, `obbox.extent[${i}]`, 1, () =>
-            {
-                const o = shape.obbox()
-                return [o.width(), o.depth(), o.height()].sort((a: number, b: number) => a - b)[i]
-            })
-        }
-    }
-    else
-    {
-        put(m, 'length', 1, () => shape.length())
-        put(m, 'closed', 0, () => shape.isClosed?.() ?? shape.closed?.())
-
-        // Only meaningful on an OPEN curve: a closed one starts wherever its kernel seams it.
-        if (opts.ends)
-        {
-            for (const axis of ['x', 'y', 'z'] as const)
-            {
-                put(m, `start.${axis}`, 1, () => shape.start()[axis])
-                put(m, `end.${axis}`, 1, () => shape.end()[axis])
-            }
-        }
-    }
-
-    // Entity counts only line up while every face is planar and every span is a real model edge:
-    // a tessellated curved surface is hundreds of triangles on mesh and one face on brep, and a
-    // circle is two arc spans on mesh against one edge on brep. Chains opt in.
-    if (opts.topology)
-    {
-        put(m, 'topology.edges', 0, () => shape.edges().length)
-        put(m, 'topology.faces', 0, () => shape.faces().length)
-        put(m, 'topology.segments', 0, () => shape.segments().length)
-    }
-
-    return m
-}
-
-/** Bbox diagonal — the natural "how big is this thing" scale for deriving absolute floors. */
-function diagonalOf(shape: any): number
-{
-    const b = shape.bbox()
-    return Math.hypot(b.width(), b.depth(), b.height())
-}
+import { EXACT, TESSELATED, KernelDivergence, compareOrDiverge, type Family, type CompareOptions } from './parity-measure'
 
 //// ==== COMPARING ==== ////
-
-/** Thrown when the two kernels have drifted so far that continuing the chain is pointless. */
-class KernelDivergence extends Error
-{
-    constructor(message: string) { super(message); this.name = 'KernelDivergence' }
-}
-
-function scaleOf(a: any, b: any): number
-{
-    let s = 1
-    try { s = Math.max(s, diagonalOf(a)) } catch { /* unmeasurable */ }
-    try { s = Math.max(s, diagonalOf(b)) } catch { /* unmeasurable */ }
-    return s
-}
 
 /**
  *  Compare every metric both kernels could answer. Returns nothing; throws on mismatch —
  *  a KernelDivergence when the gap is gross (ending the chain), a plain assertion otherwise.
  */
 function compare(where: string, meshShape: any, brepShape: any, tol: number,
-                 family: Family, opts: { topology?: boolean, ends?: boolean, ignore?: Array<string> } = {}): void
+                 family: Family, opts: CompareOptions = {}): void
 {
-    const meshM = measure(meshShape, family, opts)
-    const brepM = measure(brepShape, family, opts)
-    const scale = scaleOf(meshShape, brepShape)
-    const ignore = new Set(opts.ignore ?? [])
-
-    const mismatches: Array<string> = []
-    let gross = false
-
-    for (const key of Object.keys(meshM))
-    {
-        if (ignore.has(key) || !(key in brepM)) { continue }
-
-        const a = meshM[key].value
-        const b = brepM[key].value
-        const dim = meshM[key].dim
-        const delta = Math.abs(a - b)
-        const magnitude = Math.max(Math.abs(a), Math.abs(b))
-        const unit = Math.pow(scale, dim)            // dim 0 → 1, so counts compare exactly
-
-        const allowed = Math.max(tol * magnitude, FLOOR * unit)
-        if (delta <= allowed) { continue }
-
-        // Gross = a big fraction of the value itself, but never less than 1% of the shape's
-        // own scale — otherwise a coordinate that happens to sit near zero aborts everything.
-        if (delta > ABORT * Math.max(magnitude, 0.01 * unit)) { gross = true }
-
-        mismatches.push(
-            `${key}: mesh=${round(a)} brep=${round(b)} Δ=${round(delta)} (allowed ${round(allowed)})`)
-    }
-
-    if (gross)
-    {
-        throw new KernelDivergence(
-            `${where}: the kernels are too far apart to keep going — chain stopped here.\n  ` +
-            mismatches.join('\n  '))
-    }
-    expect(mismatches, where).toEqual([])
+    expect(compareOrDiverge(where, meshShape, brepShape, tol, family, opts), where).toEqual([])
 }
-
-const round = (v: number) => (Math.abs(v) >= 1e-4 || v === 0) ? +v.toFixed(4) : v.toExponential(2)
 
 //// ==== THE CHAIN RUNNER ==== ////
 

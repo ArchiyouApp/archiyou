@@ -1,17 +1,25 @@
 /**
- *  toMeshup.ts — the one seam between the two kernels.
+ *  toMeshup.ts — the one seam between the two kernels, in both directions.
  *
- *  brep geometry is exact (NURBS surfaces, analytic curves); meshup geometry is discrete.
- *  Every Archiyou output — GLB, SVG, DXF, STL, DAE — is produced by the meshup-side exporters
- *  walking a SceneNode graph. Rather than duplicate all of that for OpenCascade, a brep Shape
- *  is tessellated once (it already knows how: Shape.toMeshShape) and rebuilt as the equivalent
- *  meshup Shape. From there the existing pipeline runs unchanged, so brep runs get the same
- *  GLB extras, materials, edge-visibility extensions, scene paths and animations for free.
+ *  brep → meshup (brepShapeToMeshup): brep geometry is exact (NURBS surfaces, analytic
+ *  curves); meshup geometry is discrete. Every Archiyou output — GLB, SVG, DXF, STL, DAE — is
+ *  produced by the meshup-side exporters walking a SceneNode graph. Rather than duplicate all
+ *  of that for OpenCascade, a brep Shape is tessellated once (it already knows how:
+ *  Shape.toMeshShape) and rebuilt as the equivalent meshup Shape. From there the existing
+ *  pipeline runs unchanged, so brep runs get the same GLB extras, materials, edge-visibility
+ *  extensions, scene paths and animations for free.
  *
  *  What is lost: exact surfaces. A brep cylinder exports as its triangulation, at whatever
  *  MESHING_* quality was requested — the same fidelity the old viewer path had, since it also
  *  fed on toMeshShape(). What is kept: the shape's own edges, exported as Curves rather than
  *  being re-derived from mesh topology, so a brep model still draws its true silhouette.
+ *
+ *  meshup → brep (meshupShapeToBrep): the sketch is always a meshup.Sketch (Modeler.sketch()),
+ *  so in brep mode its curves have to become brep Edges/Wires before a script can cut, extend
+ *  or extrude them against brep solids — otherwise the two kernels' internals meet
+ *  ("expected instance of MeshJs"). A meshup Curve is rebuilt span by span from its analytic
+ *  description (lines, three-point arcs, interpolated splines), so nothing is tessellated on
+ *  the way over.
  */
 
 import * as meshup from '@archiyou/meshup'
@@ -37,6 +45,98 @@ export function isBrepShape(s: any): boolean
     return !!s && typeof s === 'object'
         && ['Vertex', 'Edge', 'Wire', 'Face', 'Shell', 'Solid'].includes(s.type)
         && typeof s.toMeshShape === 'function'
+}
+
+//// ==== MESHUP → BREP ==== ////
+
+/** The brep classes the conversion builds with — handed in by the caller (the Modeler holds the
+ *  loaded kernel), so this module still never imports the brep barrel. */
+export interface BrepFactories
+{
+    Edge: any
+    Wire: any
+    Face: any
+    Vertex: any
+}
+
+/** Sample count for a spline span that cannot be described analytically. The points are ON the
+ *  curve (pointAtPerc), and brep interpolates through them, so the fit is exact at the samples
+ *  and smooth between them. */
+const SPLINE_SAMPLES = 24
+
+const xyz = (p: any): [number, number, number] => [p.x, p.y, p.z]
+
+/** One atomic meshup span → one brep Edge. */
+function spanToEdge(span: any, brep: BrepFactories): any
+{
+    const start = xyz(span.start())
+    const end = xyz(span.end())
+    const kind = span.subtype?.()
+
+    if (kind === 'Line' || span.isStraight?.())
+    {
+        return new brep.Edge().makeLine(start, end)
+    }
+    if (kind === 'Arc' || kind === 'Circle')
+    {
+        // Three points on the curve pin a circular arc exactly on both kernels
+        const mid = span.pointAtPerc(0.5)
+        return new brep.Edge().makeArc(start, xyz(mid), end, 'threepoint')
+    }
+    const points = Array.from({ length: SPLINE_SAMPLES + 1 }, (_, i) => xyz(span.pointAtPerc(i / SPLINE_SAMPLES)))
+    return new brep.Edge().makeSpline(points)
+}
+
+/** Carry name and explicit style over, so the scene reads the same whichever kernel built it. */
+function carryToBrep(source: any, target: any): void
+{
+    if (!target) return
+    const name = source.name?.()
+    if (name) { target.name(name) }
+    const style = source.style?.explicitData?.()
+    if (style && Object.keys(style).length) { target.setStyle?.(style) }
+}
+
+/**
+ *  Rebuild a meshup Shape as the equivalent brep Shape. Returns null when there is nothing to
+ *  convert (an empty curve, an unknown type).
+ *
+ *  - Curve   → Edge (one span) or Wire (several spans; closed when the curve is)
+ *  - Polygon → Face through its vertices
+ *  - Vertex  → Vertex
+ *  - Mesh    → null: a tessellated solid has no exact brep description; callers keep the Mesh.
+ */
+export function meshupShapeToBrep(shape: any, brep: BrepFactories): any | null
+{
+    if (!shape || typeof shape !== 'object') return null
+
+    let out: any = null
+    switch (shape.type)
+    {
+        case 'Curve':
+        {
+            const spans = (shape.segments?.() ?? shape.spans?.())?.toArray?.() ?? []
+            if (spans.length === 0) return null
+            const edges = spans.map((s: any) => spanToEdge(s, brep)).filter(Boolean)
+            out = (edges.length === 1) ? edges[0] : new brep.Wire().fromEdges(edges)
+            break
+        }
+        case 'Polygon':
+        {
+            const points = (shape.vertices?.()?.toArray?.() ?? []).map(xyz)
+            if (points.length < 3) return null
+            out = new brep.Face().fromVertices(points)
+            break
+        }
+        case 'Vertex':
+            out = new brep.Vertex(shape.x, shape.y, shape.z)
+            break
+        default:
+            return null
+    }
+
+    carryToBrep(shape, out)
+    return out
 }
 
 /** Flat [x,y,z,x,y,z,…] → meshup Points. */

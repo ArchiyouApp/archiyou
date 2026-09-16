@@ -46,7 +46,7 @@ test("Vector", () =>
     expect(new brep.Vector(-1,1,0).mirror().toArray()).toEqual([1,1,0]);
     expect(new brep.Vector(-1,1,0).mirror([0,0,0],[0,-1,0]).toArray()).toEqual([1,1,-0]); // ts jest cares about diff between -0 and +0
     expect(new brep.Vector(-1,1,0).mirror([0,0,0],[0,1,0]).toArray()).toEqual([1,1,0]);
-    expect(new brep.Vector(-1,0,0).rotate(-180).round().toArray()).toEqual([1,0,0]);
+    expect(new brep.Vector(-1,0,0).rotate([0,0,1], -180).round().toArray()).toEqual([1,0,0]); // (axis, degrees) — the mesh kernel's signature
     expect(new brep.Vector(1,0,0).isOpposite(-1,0,0)).toEqual(true);
     expect(new brep.Vector(1,1,1).isParallel(2,2,2)).toEqual(true);
     expect(new brep.Vector(1,0,0).angle(0,1,0)).toEqual(90);

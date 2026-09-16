@@ -166,6 +166,13 @@ export class Make
             throw new Error(
                 'Make: Modeler module not set. Use constructor(modeler) or setArchiyou() to set it.'
             );
+        // Fail at the first make.*() call rather than half-way through a wall: on brep the
+        // meshup-typed code below builds partial structures and dies somewhere downstream.
+        if ((m as any).mode?.() === 'brep')
+            throw new Error(
+                'Make: the make module (walls, boarding, part lists, sheet packing) is only available ' +
+                'in mesh mode — it builds mesh geometry. Run this script with kernel: \'mesh\' (the default).'
+            );
         return m as unknown as MeshModeler;
     }
 
