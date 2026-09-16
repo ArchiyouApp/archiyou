@@ -152,4 +152,4 @@ No new dependencies. Roughly +230 net source lines (core +120, editor +130, serv
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
-| <<code>> | (the human's summary) | the first prompt (plan) and the style prompts of 2026-09-15 23:24 to 2026-09-16 00:00 |
+| f09343c | Switched from SVG to PNG thumbnails across workspace and editor | the first prompt (plan) and the style prompts of 2026-09-15 23:24 to 2026-09-16 00:00 |
