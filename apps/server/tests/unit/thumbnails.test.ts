@@ -1,20 +1,21 @@
 /**
- * tests/unit/thumbnails.test.ts — thumbnail validation, storage and serving.
+ * tests/unit/thumbnails.test.ts — thumbnail checking, storage and serving.
  *
- * Two properties matter most and are asserted directly:
+ * Three properties matter most and are asserted directly:
  *
- *   1. A thumbnail can NEVER fail a publish. It is a nicety attached after the row is
- *      already committed, so a malformed, oversized, hostile or simply absent SVG must
- *      still leave the caller with a published script (just without a preview).
+ *   1. A thumbnail can NEVER fail a share or publish. It is a nicety the editor attaches
+ *      afterwards, in the background, so the share/publish routes do not even take one.
  *   2. The bytes reach us through a client-controlled request body and are afterwards
- *      served from our own origin as a file, so they are allowlist-validated, not
- *      blocklist-scanned. Anything our exporter would not emit is rejected outright.
+ *      served from our own origin as a file, so they must at least BE a PNG of sane size
+ *      before they are written — anything else is refused (and the reason logged).
+ *   3. The working copy is a new row per save, so its preview is keyed by FILE, replaced
+ *      in place, and carried forward by saveVersion() — never lost to a keystroke.
  *
  * Runs against a throwaway SQLite file and a throwaway thumbnail directory, both set
  * before the modules that read them are imported.
  */
 
-import { mkdtempSync, existsSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, existsSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -25,7 +26,7 @@ import type { ScriptData } from '@archiyou/core/src/execution/types';
 
 let store: typeof import('../../src/services/ScriptStore').scriptStore;
 let thumbnails: typeof import('../../src/services/ThumbnailStore').thumbnailStore;
-let checkThumbnailSvg: typeof import('../../src/services/svgSanitize').checkThumbnailSvg;
+let checkThumbnailPng: typeof import('../../src/services/ThumbnailStore').checkThumbnailPng;
 let flushThumbnailLog: typeof import('../../src/services/thumbnailLog').flushThumbnailLog;
 
 const AUTHOR = 'tester';
@@ -39,11 +40,27 @@ async function logLines(): Promise<Array<Record<string, unknown>>> {
   return readFileSync(LOG_PATH, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
 }
 
-/** A minimal document in exactly the shape SVGExporter emits. */
-const GOOD_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" role="img" data-units="mm">'
-  + '<style>svg{color:#1f2937}.line{fill:none;stroke:currentColor;vector-effect:non-scaling-stroke}</style>'
-  + '<path d="M0 0 L100 100" class="line"/></svg>';
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** A structurally valid PNG (signature, IHDR, IEND). `salt` lands in a tEXt chunk so two
+ *  pictures of the same size can still differ in content — and so in their hash. */
+function png(width = 512, height = 512, salt = ''): Buffer {
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length, 0);
+    return Buffer.concat([len, Buffer.from(type, 'latin1'), data, Buffer.alloc(4)]); // crc unchecked
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // RGBA
+  return Buffer.concat([
+    PNG_SIGNATURE, chunk('IHDR', ihdr), chunk('tEXt', Buffer.from(`salt\0${salt}`, 'latin1')), chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+const GOOD_PNG = png();
 
 beforeAll(async () => {
   process.env.SERVER_DATABASE_FILE = join(mkdtempSync(join(tmpdir(), 'ay-thumbs-db-')), 'test.db');
@@ -56,8 +73,9 @@ beforeAll(async () => {
   const { runMigrations } = await import('../../src/db/migrate');
   runMigrations();
   store = (await import('../../src/services/ScriptStore')).scriptStore;
-  thumbnails = (await import('../../src/services/ThumbnailStore')).thumbnailStore;
-  checkThumbnailSvg = (await import('../../src/services/svgSanitize')).checkThumbnailSvg;
+  const storeModule = await import('../../src/services/ThumbnailStore');
+  thumbnails = storeModule.thumbnailStore;
+  checkThumbnailPng = storeModule.checkThumbnailPng;
   flushThumbnailLog = (await import('../../src/services/thumbnailLog')).flushThumbnailLog;
 });
 
@@ -65,69 +83,82 @@ function payload(over: Partial<ScriptData> = {}): Record<string, unknown> {
   return { name: 'thing', code: 'const a = 1;', ...over } as Record<string, unknown>;
 }
 
-describe('svgSanitize — allowlist', () => {
-  it('accepts what the exporter actually emits', () => {
-    expect(checkThumbnailSvg(GOOD_SVG, 65536).ok).toBe(true);
+describe('checkThumbnailPng — is this a picture we will store?', () => {
+  it('accepts what the browser renders', () => {
+    expect(checkThumbnailPng(GOOD_PNG, 512 * 1024)).toMatchObject({ ok: true, width: 512, height: 512 });
   });
 
   it.each([
-    ['script element',       GOOD_SVG.replace('</svg>', '<script>alert(1)</script></svg>')],
-    ['event handler',        GOOD_SVG.replace('<path ', '<path onload="alert(1)" ')],
-    ['xlink:href',           GOOD_SVG.replace('</svg>', '<use xlink:href="#x"/></svg>')],
-    ['foreignObject',        GOOD_SVG.replace('</svg>', '<foreignObject><b>x</b></foreignObject></svg>')],
-    ['external image',       GOOD_SVG.replace('</svg>', '<image href="http://evil/x.png"/></svg>')],
-    ['anchor',               GOOD_SVG.replace('</svg>', '<a href="javascript:alert(1)">x</a></svg>')],
-    ['entity declaration',   `<!DOCTYPE svg [<!ENTITY x "y">]>${GOOD_SVG}`],
-    ['CSS url()',            GOOD_SVG.replace('svg{color:#1f2937}', 'svg{background:url(http://evil/x)}')],
-    ['animation element',    GOOD_SVG.replace('</svg>', '<animate attributeName="x"/></svg>')],
-    ['two roots',            `${GOOD_SVG}${GOOD_SVG}`],
-    ['not an svg',           '<html><body>hi</body></html>'],
-    ['empty',                ''],
-  ])('rejects %s', (_label, hostile) => {
-    expect(checkThumbnailSvg(hostile, 65536).ok).toBe(false);
+    ['not a buffer',        'a string'],
+    ['empty',               Buffer.alloc(0)],
+    ['a wrong signature',   Buffer.concat([Buffer.from('GIF89a'), GOOD_PNG.subarray(6)])],
+    // Buffer.from() copies: a subarray shares memory, and .fill() on it would corrupt GOOD_PNG.
+    ['no IHDR first',       Buffer.concat([PNG_SIGNATURE, Buffer.from(GOOD_PNG.subarray(8)).fill(0x20, 4, 8)])],
+    ['a zero dimension',    png(0, 100)],
+    ['a poster',            png(4096, 4096)],
+    ['a truncated header',  GOOD_PNG.subarray(0, 20)],
+  ])('rejects %s', (_label, bad) => {
+    expect(checkThumbnailPng(bad, 512 * 1024).ok).toBe(false);
   });
 
-  it('rejects anything over the byte cap', () => {
-    const huge = GOOD_SVG.replace('M0 0 L100 100', 'M0 0' + ' L1 1'.repeat(20000));
-    expect(checkThumbnailSvg(huge, 1024).ok).toBe(false);
+  it('rejects anything over the byte cap, before looking at it', () => {
+    expect(checkThumbnailPng(GOOD_PNG, GOOD_PNG.length - 1)).toMatchObject({ ok: false, reason: expect.stringContaining('too large') });
   });
 });
 
 describe('ThumbnailStore', () => {
-  it('writes a content-addressed file and returns its URL', async () => {
-    const url = await thumbnails.write(AUTHOR, 'file-1', 'version-1', GOOD_SVG);
-    expect(url).toMatch(/^\/thumbnails\/tester\/file-1\/version-1-[0-9a-f]{8}\.svg$/);
+  it('writes a content-addressed .png and returns its URL', async () => {
+    const url = await thumbnails.write(AUTHOR, 'file-1', 'version-1', GOOD_PNG);
+    expect(url).toMatch(/^\/thumbnails\/tester\/file-1\/version-1-[0-9a-f]{8}\.png$/);
     expect(existsSync(join(THUMB_ROOT, 'tester', 'file-1', url!.split('/').pop()!))).toBe(true);
   });
 
-  it('gives a regenerated thumbnail a NEW url and removes the old file', async () => {
-    const first = await thumbnails.write(AUTHOR, 'file-2', 'version-2', GOOD_SVG);
-    const changed = GOOD_SVG.replace('M0 0 L100 100', 'M0 0 L200 200');
-    const second = await thumbnails.write(AUTHOR, 'file-2', 'version-2', changed);
+  it('gives a regenerated thumbnail a NEW url and removes the old file — and an old .svg too', async () => {
+    const dir = join(THUMB_ROOT, 'tester', 'file-2');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'version-2-deadbeef.svg'), '<svg/>'); // what an older client stored
 
-    // Content-addressed: a different drawing must never reuse the old URL, which is
-    // what makes Cache-Control: immutable safe on the static mount.
+    const first = await thumbnails.write(AUTHOR, 'file-2', 'version-2', GOOD_PNG);
+    const second = await thumbnails.write(AUTHOR, 'file-2', 'version-2', png(512, 512, 'changed'));
+
+    // Content-addressed: a different picture must never reuse the old URL, which is what
+    // makes Cache-Control: immutable safe on the static mount.
     expect(second).not.toBe(first);
-    expect(readdirSync(join(THUMB_ROOT, 'tester', 'file-2'))).toEqual([second!.split('/').pop()]);
+    expect(readdirSync(dir)).toEqual([second!.split('/').pop()]);
+  });
+
+  it('keeps one working-copy picture per file, next to the versions', async () => {
+    const dir = join(THUMB_ROOT, 'tester', 'file-w');
+    const version = await thumbnails.write(AUTHOR, 'file-w', 'version-1', GOOD_PNG);
+    const first = await thumbnails.writeWorking(AUTHOR, 'file-w', png(512, 512, 'run 1'));
+    expect(first).toMatch(/^\/thumbnails\/tester\/file-w\/working-[0-9a-f]{8}\.png$/);
+
+    const second = await thumbnails.writeWorking(AUTHOR, 'file-w', png(512, 512, 'run 2'));
+    expect(second).not.toBe(first);
+    // The previous working picture is gone; the version's is untouched.
+    expect(readdirSync(dir).sort()).toEqual([second!.split('/').pop(), version!.split('/').pop()].sort());
   });
 
   it('returns null (never throws) for absent or hostile input', async () => {
-    for (const bad of [undefined, null, '', '<script>alert(1)</script>', 42, {}]) {
+    for (const bad of [undefined, null, Buffer.alloc(0), '<script>alert(1)</script>', 42, {}, Buffer.from('not a png')]) {
       await expect(thumbnails.write(AUTHOR, 'file-3', 'version-3', bad)).resolves.toBeNull();
+      await expect(thumbnails.writeWorking(AUTHOR, 'file-3', bad)).resolves.toBeNull();
     }
     expect(existsSync(join(THUMB_ROOT, 'tester', 'file-3'))).toBe(false);
   });
 
   it('refuses path traversal in the id segments', async () => {
     for (const evil of ['..', '../..', 'a/../../b', '/etc/passwd']) {
-      await expect(thumbnails.write(evil, 'f', 'v', GOOD_SVG)).resolves.toBeNull();
-      await expect(thumbnails.write(AUTHOR, evil, 'v', GOOD_SVG)).resolves.toBeNull();
-      await expect(thumbnails.write(AUTHOR, 'f', evil, GOOD_SVG)).resolves.toBeNull();
+      await expect(thumbnails.write(evil, 'f', 'v', GOOD_PNG)).resolves.toBeNull();
+      await expect(thumbnails.write(AUTHOR, evil, 'v', GOOD_PNG)).resolves.toBeNull();
+      await expect(thumbnails.write(AUTHOR, 'f', evil, GOOD_PNG)).resolves.toBeNull();
+      await expect(thumbnails.writeWorking(evil, 'f', GOOD_PNG)).resolves.toBeNull();
+      await expect(thumbnails.writeWorking(AUTHOR, evil, GOOD_PNG)).resolves.toBeNull();
     }
   });
 
   it('removes a whole file directory on delete', async () => {
-    await thumbnails.write(AUTHOR, 'file-4', 'version-4', GOOD_SVG);
+    await thumbnails.write(AUTHOR, 'file-4', 'version-4', GOOD_PNG);
     expect(existsSync(join(THUMB_ROOT, 'tester', 'file-4'))).toBe(true);
     await thumbnails.remove(AUTHOR, 'file-4');
     expect(existsSync(join(THUMB_ROOT, 'tester', 'file-4'))).toBe(false);
@@ -137,30 +168,30 @@ describe('ThumbnailStore', () => {
 /**
  * The diagnostic log (services/thumbnailLog.ts). Its whole reason to exist is that
  * dropping a thumbnail is silent everywhere else, so what is asserted here is that the
- * silent paths — no SVG at all, and a rejected one — each still leave a line behind, with
- * the reason attached.
+ * silent paths — no picture at all, and a rejected one — each still leave a line behind,
+ * with the reason attached.
  */
 describe('thumbnail log', () => {
-  it('records a stored thumbnail with its size and url', async () => {
-    const url = await thumbnails.write(AUTHOR, 'log-1', 'v1', GOOD_SVG, 'share');
+  it('records a stored thumbnail with its size, dimensions and url', async () => {
+    const url = await thumbnails.write(AUTHOR, 'log-1', 'v1', GOOD_PNG, 'version');
     const stored = (await logLines()).filter((l) => l.event === 'stored' && l.fileId === 'log-1');
     expect(stored).toHaveLength(1);
-    expect(stored[0]).toMatchObject({ kind: 'share', versionId: 'v1', url });
-    expect(stored[0].bytes).toBe(Buffer.byteLength(GOOD_SVG, 'utf8'));
+    expect(stored[0]).toMatchObject({ kind: 'version', versionId: 'v1', url, bytes: GOOD_PNG.length });
+    expect(stored[0].detail).toMatchObject({ width: 512, height: 512 });
   });
 
-  it('records the silent no-thumbnail case — the usual reason a preview is missing', async () => {
-    await thumbnails.write(AUTHOR, 'log-2', 'v1', undefined, 'share');
+  it('records the silent no-thumbnail case', async () => {
+    await thumbnails.writeWorking(AUTHOR, 'log-2', undefined, 'working');
     const line = (await logLines()).find((l) => l.fileId === 'log-2');
-    expect(line).toMatchObject({ event: 'received', bytes: 0, reason: 'no thumbnailSvg in request' });
+    expect(line).toMatchObject({ event: 'received', kind: 'working', versionId: 'working', bytes: 0, reason: 'no thumbnail in request' });
   });
 
   it('records why a thumbnail was rejected', async () => {
-    await thumbnails.write(AUTHOR, 'log-3', 'v1', '<svg><script>alert(1)</script></svg>', 'publish');
+    await thumbnails.write(AUTHOR, 'log-3', 'v1', Buffer.from('<svg><script>alert(1)</script></svg>'), 'backfill');
     const line = (await logLines()).find((l) => l.event === 'rejected' && l.fileId === 'log-3');
     expect(line).toBeTruthy();
-    expect(String(line!.reason)).toContain('script');
-    expect(line!.kind).toBe('publish');
+    expect(String(line!.reason)).toContain('signature');
+    expect(line!.kind).toBe('backfill');
   });
 
   it('survives a record it cannot serialize, and truncates long fields', async () => {
@@ -168,8 +199,8 @@ describe('thumbnail log', () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;
 
-    // A log that can throw is a log that can break a publish — the one thing this must
-    // never do, since it exists to diagnose publishes that already go wrong quietly.
+    // A log that can throw is a log that can break an upload — the one thing this must
+    // never do, since it exists to diagnose uploads that already go wrong quietly.
     await expect(logThumbnail({
       event: 'write-failed', author: AUTHOR, fileId: 'log-4',
       reason: 'x'.repeat(5000), detail: circular,
@@ -184,19 +215,19 @@ describe('thumbnail log', () => {
 
 describe('ScriptStore — thumbnail column', () => {
   it('round-trips a stamped url and never persists one the client supplied', () => {
-    const fileId = store.create(AUTHOR, payload()).fileId as string;
+    const fileId = store.create(AUTHOR, payload({ thumbnail: '/thumbnails/evil.png' } as Partial<ScriptData>)).fileId as string;
+    expect(store.getFile(AUTHOR, fileId).thumbnail).toBeNull();
 
-    // A client-set `thumbnail` is meaningless: the routes overwrite it from the file they
-    // actually wrote. What matters here is that the column round-trips a server value.
     const version = store.publish(AUTHOR, fileId, payload({
       version: '1.0.0',
       published: { public: true },
-    }));
+      thumbnail: '/thumbnails/evil.png',
+    } as Partial<ScriptData>));
     expect(version.thumbnail).toBeNull();
 
-    store.setThumbnail(AUTHOR, version.id as string, '/thumbnails/tester/x/y.svg');
+    store.setThumbnail(AUTHOR, version.id as string, '/thumbnails/tester/x/y.png');
     const reloaded = store.listPublishedVersionsForAuthor(AUTHOR).find((s) => s.id === version.id);
-    expect(reloaded?.thumbnail).toBe('/thumbnails/tester/x/y.svg');
+    expect(reloaded?.thumbnail).toBe('/thumbnails/tester/x/y.png');
   });
 
   it('does not let another author stamp your thumbnail', () => {
@@ -205,19 +236,39 @@ describe('ScriptStore — thumbnail column', () => {
       name: 'mine', version: '1.0.0', published: { public: true },
     }));
 
-    store.setThumbnail('someone-else', version.id as string, '/thumbnails/evil.svg');
+    store.setThumbnail('someone-else', version.id as string, '/thumbnails/evil.png');
+    expect(() => store.setFileThumbnail('someone-else', fileId, '/thumbnails/evil.png')).toThrow();
 
     const reloaded = store.listPublishedVersionsForAuthor(AUTHOR).find((s) => s.id === version.id);
     expect(reloaded?.thumbnail).toBeNull();
+    expect(store.getFile(AUTHOR, fileId).thumbnail).toBeNull();
+  });
+
+  it('stamps the working copy on the latest row and carries it across saves, ignoring the client', () => {
+    const fileId = store.create(AUTHOR, payload({ name: 'wip' })).fileId as string;
+
+    const stamped = store.setFileThumbnail(AUTHOR, fileId, '/thumbnails/tester/wip/working-1.png');
+    expect(stamped.thumbnail).toBe('/thumbnails/tester/wip/working-1.png');
+    expect(store.getFile(AUTHOR, fileId).thumbnail).toBe('/thumbnails/tester/wip/working-1.png');
+
+    // A save appends a new row; the URL follows — and a client's own value is ignored.
+    const saved = store.saveVersion(AUTHOR, fileId, payload({ name: 'wip', code: 'box(1);', thumbnail: '/thumbnails/evil.png' } as Partial<ScriptData>));
+    expect(saved.id).not.toBe(stamped.id);
+    expect(saved.thumbnail).toBe('/thumbnails/tester/wip/working-1.png');
+    expect(store.listForUser(AUTHOR).find((s) => s.fileId === fileId)?.thumbnail).toBe('/thumbnails/tester/wip/working-1.png');
+
+    // A stored version starts without one: its own picture is attached afterwards.
+    const shared = store.share(AUTHOR, fileId, payload({ name: 'wip', version: '0.1.0', shared: { created: new Date().toISOString() } } as Partial<ScriptData>));
+    expect(shared.thumbnail).toBeNull();
   });
 });
 
 /**
- * End to end over HTTP: publish carries the SVG, the response comes back with a URL, and
- * that URL actually resolves through the static mount with the caching + hardening headers.
- * A URL nothing serves would be worse than no thumbnail at all.
+ * End to end over HTTP: the upload routes take the PNG as the body, the response comes back
+ * with a URL, and that URL actually resolves through the static mount with the caching +
+ * hardening headers. A URL nothing serves would be worse than no thumbnail at all.
  */
-describe('publish → serve (HTTP)', () => {
+describe('upload → serve (HTTP)', () => {
   const SECRET = 'test-secret-for-thumbnails';
   let app: FastifyInstance;
   let fileId: string;
@@ -240,12 +291,15 @@ describe('publish → serve (HTTP)', () => {
       try { await request.jwtVerify(); }
       catch { reply.code(401).send({ success: false, error: 'Unauthorized' }); }
     });
+    // Mirror plugin.ts: the PNG body parser and the static mount with its per-type headers.
+    app.addContentTypeParser('image/png', { parseAs: 'buffer', bodyLimit: config.thumbnails.maxBytes + 1024 },
+      (_request, body, done) => done(null, body));
     await app.register(import('@fastify/static'), {
       root: resolve(config.thumbnails.path),
       prefix: `${config.thumbnails.urlPrefix}/`,
       index: false, dotfiles: 'deny', immutable: true, maxAge: '1y',
-      setHeaders: (res) => {
-        res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+      setHeaders: (res, path) => {
+        res.setHeader('Content-Type', path.endsWith('.svg') ? 'image/svg+xml; charset=utf-8' : 'image/png');
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
       },
@@ -269,116 +323,144 @@ describe('publish → serve (HTTP)', () => {
 
   const auth = () => ({ authorization: `Bearer ${app.jwt.sign({ sub: AUTHOR, email: 'tester@example.com', name: 'T' })}` });
 
-  const publish = (version: string, thumbnailSvg?: unknown) => app.inject({
+  const publish = (version: string) => app.inject({
     method: 'POST',
     url: `/scripts/${AUTHOR}/${fileId}/publish`,
     headers: auth(),
-    payload: { name: 'http-thing', code: 'const a = 1;', version, published: { public: true }, thumbnailSvg },
+    payload: { name: 'http-thing', code: 'const a = 1;', version, published: { public: true } },
   });
 
-  it('stamps a working URL and serves the file with cache + hardening headers', async () => {
-    const published = await publish('1.0.0', GOOD_SVG);
+  const attach = (fid: string, versionId: string, body: Buffer | string, query = '') => app.inject({
+    method: 'PUT',
+    url: `/scripts/${AUTHOR}/${fid}/versions/${versionId}/thumbnail${query}`,
+    headers: { ...auth(), 'content-type': 'image/png' },
+    payload: body,
+  });
+
+  const attachWorking = (fid: string, body: Buffer | string, query = '') => app.inject({
+    method: 'PUT',
+    url: `/scripts/${AUTHOR}/${fid}/thumbnail${query}`,
+    headers: { ...auth(), 'content-type': 'image/png' },
+    payload: body,
+  });
+
+  it('publishes without a thumbnail (201, null) — the picture follows on its own', async () => {
+    const published = await publish('1.0.0');
     expect(published.statusCode).toBe(201);
-
-    const url = published.json().thumbnail as string;
-    expect(url).toMatch(/^\/thumbnails\//);
-    // The raw SVG must never come back in the API response — only the URL.
-    expect(published.body).not.toContain('<svg');
-
-    const served = await app.inject({ method: 'GET', url });
-    expect(served.statusCode).toBe(200);
-    expect(served.body).toBe(GOOD_SVG);
-    expect(served.headers['content-type']).toContain('image/svg+xml');
-    expect(served.headers['x-content-type-options']).toBe('nosniff');
-    expect(served.headers['content-security-policy']).toContain('sandbox');
-    expect(served.headers['cache-control']).toContain('immutable');
-
-    // Conditional request → 304, so list views don't re-download every icon.
-    const revalidated = await app.inject({
-      method: 'GET', url, headers: { 'if-none-match': served.headers.etag as string },
-    });
-    expect(revalidated.statusCode).toBe(304);
+    expect(published.json().thumbnail).toBeNull();
   });
 
-  it.each([
-    ['a hostile svg',  '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'],
-    ['a non-svg',      'not an svg at all'],
-    ['nothing',        undefined],
-  ])('still publishes (201, thumbnail null) when given %s', async (_label, svg) => {
-    const version = `1.${_label.length}.0`;
-    const res = await publish(version, svg);
-    expect(res.statusCode).toBe(201);
-    expect(res.json().thumbnail).toBeNull();
-  });
-
-  /**
-   * The deferred attach. This exists because the drawing is generated in the background
-   * and the share does not wait for it: for a slow script the share request carries no
-   * SVG at all, and without this endpoint that version could never get a preview.
-   */
   describe('PUT …/versions/:versionId/thumbnail', () => {
-    const attach = (fid: string, versionId: string, thumbnailSvg?: unknown) => app.inject({
-      method: 'PUT',
-      url: `/scripts/${AUTHOR}/${fid}/versions/${versionId}/thumbnail`,
-      headers: auth(),
-      payload: { thumbnailSvg },
-    });
+    it('attaches a preview and serves it with cache + hardening headers', async () => {
+      const versionId = (await publish('3.0.0')).json().id as string;
 
-    it('attaches a preview to a version that was shared without one', async () => {
-      const published = await publish('3.0.0');
-      expect(published.json().thumbnail).toBeNull();
-      const versionId = published.json().id as string;
-
-      const res = await attach(fileId, versionId, GOOD_SVG);
+      const res = await attach(fileId, versionId, GOOD_PNG);
       expect(res.statusCode).toBe(200);
       const url = res.json().thumbnail as string;
+      expect(url).toMatch(/\.png$/);
 
       // The URL must actually resolve, and the row must now carry it.
       const served = await app.inject({ method: 'GET', url });
       expect(served.statusCode).toBe(200);
-      expect(served.body).toBe(GOOD_SVG);
-      const row = store.findVersionById(AUTHOR, versionId);
-      expect(row?.thumbnail).toBe(url);
+      expect(served.rawPayload.equals(GOOD_PNG)).toBe(true);
+      expect(served.headers['content-type']).toBe('image/png');
+      expect(served.headers['x-content-type-options']).toBe('nosniff');
+      expect(served.headers['content-security-policy']).toContain('sandbox');
+      expect(served.headers['cache-control']).toContain('immutable');
+      expect(store.findVersionById(AUTHOR, versionId)?.thumbnail).toBe(url);
+
+      // Conditional request → 304, so list views don't re-download every icon.
+      const revalidated = await app.inject({
+        method: 'GET', url, headers: { 'if-none-match': served.headers.etag as string },
+      });
+      expect(revalidated.statusCode).toBe(304);
     });
 
     it('replaces an existing preview with a new url (content-addressed)', async () => {
-      const published = await publish('3.1.0', GOOD_SVG);
-      const versionId = published.json().id as string;
-      const first = published.json().thumbnail as string;
-
-      const changed = GOOD_SVG.replace('M0 0 L100 100', 'M0 0 L300 300');
-      const second = (await attach(fileId, versionId, changed)).json().thumbnail as string;
+      const versionId = (await publish('3.1.0')).json().id as string;
+      const first = (await attach(fileId, versionId, GOOD_PNG)).json().thumbnail as string;
+      const second = (await attach(fileId, versionId, png(512, 512, 'changed'))).json().thumbnail as string;
 
       expect(second).not.toBe(first);
       expect(store.findVersionById(AUTHOR, versionId)?.thumbnail).toBe(second);
-      // The superseded drawing is gone, so nothing can serve the old picture.
+      // The superseded picture is gone, so nothing can serve the old one.
       const stale = await app.inject({ method: 'GET', url: first });
       expect(stale.statusCode).toBe(404);
     });
 
-    it('422s a refused svg without saying why (the reason is logged, not returned)', async () => {
+    it('422s a refused body without saying why (the reason is logged, with the flow that sent it)', async () => {
       const versionId = (await publish('3.2.0')).json().id as string;
-      const res = await attach(fileId, versionId, '<svg><script>alert(1)</script></svg>');
+      const res = await attach(fileId, versionId, '<svg><script>alert(1)</script></svg>', '?kind=backfill');
       expect(res.statusCode).toBe(422);
-      expect(res.json().error).not.toContain('script element');
+      expect(res.json().error).not.toContain('signature');
       expect(store.findVersionById(AUTHOR, versionId)?.thumbnail).toBeNull();
 
       const line = (await logLines()).find((l) => l.event === 'rejected' && l.versionId === versionId);
-      expect(line).toMatchObject({ kind: 'deferred' });
+      expect(line).toMatchObject({ kind: 'backfill' });
     });
 
     it('404s a version that is not the caller\'s (or does not exist)', async () => {
       const versionId = (await publish('3.3.0')).json().id as string;
       // Right version, wrong file — the ownership gate is (author, fileId, versionId).
       const otherFile = store.create(AUTHOR, payload({ name: 'other-thing' })).fileId as string;
-      expect((await attach(otherFile, versionId, GOOD_SVG)).statusCode).toBe(404);
-      expect((await attach(fileId, 'no-such-version', GOOD_SVG)).statusCode).toBe(404);
+      expect((await attach(otherFile, versionId, GOOD_PNG)).statusCode).toBe(404);
+      expect((await attach(fileId, 'no-such-version', GOOD_PNG)).statusCode).toBe(404);
     });
   });
 
+  describe('PUT …/:fileId/thumbnail (the working copy)', () => {
+    it('stamps the latest row, survives a save, and keeps one file per file', async () => {
+      const wip = store.create(AUTHOR, payload({ name: 'wip-http' })).fileId as string;
+
+      const first = await attachWorking(wip, png(512, 512, 'run 1'), '?kind=working');
+      expect(first.statusCode).toBe(200);
+      const firstUrl = first.json().thumbnail as string;
+      expect(firstUrl).toMatch(new RegExp(`^/thumbnails/${AUTHOR}/${wip}/working-[0-9a-f]{8}\\.png$`));
+      expect(store.getFile(AUTHOR, wip).thumbnail).toBe(firstUrl);
+      expect((await app.inject({ method: 'GET', url: firstUrl })).statusCode).toBe(200);
+
+      // An ordinary save (a new row) keeps pointing at the picture.
+      const saved = await app.inject({
+        method: 'PUT', url: `/scripts/${AUTHOR}/${wip}`, headers: auth(),
+        payload: { name: 'wip-http', code: 'box(2);' },
+      });
+      expect(saved.statusCode).toBe(200);
+      expect(saved.json().thumbnail).toBe(firstUrl);
+
+      // The next run replaces it: new URL on the (new) latest row, old file gone.
+      const secondUrl = (await attachWorking(wip, png(512, 512, 'run 2'))).json().thumbnail as string;
+      expect(secondUrl).not.toBe(firstUrl);
+      expect(store.getFile(AUTHOR, wip).thumbnail).toBe(secondUrl);
+      expect(readdirSync(join(THUMB_ROOT, AUTHOR, wip))).toEqual([secondUrl.split('/').pop()]);
+      expect((await app.inject({ method: 'GET', url: firstUrl })).statusCode).toBe(404);
+    });
+
+    it('404s a file that is not the caller\'s, before writing anything', async () => {
+      const foreign = store.create('someone-else', payload({ name: 'theirs' })).fileId as string;
+      expect((await attachWorking(foreign, GOOD_PNG)).statusCode).toBe(404);
+      expect(existsSync(join(THUMB_ROOT, AUTHOR, foreign))).toBe(false);
+      expect((await attachWorking('no-such-file', GOOD_PNG)).statusCode).toBe(404);
+    });
+
+    it('422s a body that is not a PNG', async () => {
+      const res = await attachWorking(fileId, Buffer.from('definitely not a png'));
+      expect(res.statusCode).toBe(422);
+      expect(store.getFile(AUTHOR, fileId).thumbnail).toBeNull();
+    });
+  });
+
+  it('still serves a thumbnail an older client stored as SVG, as SVG', async () => {
+    const dir = join(THUMB_ROOT, AUTHOR, 'legacy');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'v1-0ldsvg00.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+    const res = await app.inject({ method: 'GET', url: `/thumbnails/${AUTHOR}/legacy/v1-0ldsvg00.svg` });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('image/svg+xml');
+    expect(res.headers['content-security-policy']).toContain('sandbox');
+  });
 
   it('404s a thumbnail that was never written', async () => {
-    const res = await app.inject({ method: 'GET', url: '/thumbnails/tester/nope/nope-00000000.svg' });
+    const res = await app.inject({ method: 'GET', url: '/thumbnails/tester/nope/nope-00000000.png' });
     expect(res.statusCode).toBe(404);
   });
 });

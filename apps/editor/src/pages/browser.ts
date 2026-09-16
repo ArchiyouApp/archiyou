@@ -38,6 +38,7 @@ import { assetUrl } from '../services/api.js';
 import { authService } from '../services/auth-service.js';
 import { fetchPublicShared, fetchSharedWithMe } from '../services/sharing.js';
 import { fetchPublishedConfigurators } from '../services/publishing.js';
+import { enqueueBackfill, THUMBNAIL_STORED_EVENT, type BackfillTarget, type ThumbnailStoredDetail } from '../services/thumbnails.js';
 import { editorPathFor } from '../services/script-links.js';
 import { scripts, openScript, userState, browserSearch, browserSort, setBrowserSearch, setBrowserSort } from '../state/workspace';
 
@@ -59,6 +60,10 @@ interface SectionDef
 }
 
 const KIND_ORDER: BrowserAssetKind[] = ['script', 'shared', 'configurator'];
+
+/** Scripts shorter than this are stubs (the editor's auto-run draws the same line): not
+ *  worth a run to find out they draw nothing. */
+const MIN_BACKFILL_CODE_LENGTH = 20;
 
 @customElement('page-browser')
 export class PageBrowser extends SignalWatcher(LitElement)
@@ -130,8 +135,15 @@ export class PageBrowser extends SignalWatcher(LitElement)
   override connectedCallback()
   {
     super.connectedCallback();
+    window.addEventListener(THUMBNAIL_STORED_EVENT, this._onThumbnailStored);
     // Every visit: someone may have shared or published something since.
     void this._loadLibraries();
+  }
+
+  override disconnectedCallback()
+  {
+    window.removeEventListener(THUMBNAIL_STORED_EVENT, this._onThumbnailStored);
+    super.disconnectedCallback();
   }
 
   // ── 4. Behaviour & Methods ──
@@ -185,7 +197,51 @@ export class PageBrowser extends SignalWatcher(LitElement)
     {
       this._loading = false;
     }
+    this._backfillThumbnails();
   }
+
+  /**
+   * Have pictures taken, in the background, for the signed-in user's own scripts that have
+   * none: working copies (what Home shows) and their own shared/published versions. Only
+   * ours — a thumbnail is stamped through the owner's account. Nothing here waits.
+   */
+  private _backfillThumbnails()
+  {
+    const me = authService.getUser()?.id;
+    if (!me) return;
+
+    const targets: BackfillTarget[] = [];
+    for (const s of scripts.get())
+    {
+      if (s.thumbnail || !s.fileId || (s.author && s.author !== me)) continue;
+      if ((s.code ?? '').length < MIN_BACKFILL_CODE_LENGTH) continue;
+      targets.push({ fileId: s.fileId, script: s.toData() });
+    }
+    for (const data of [...this._shared.values(), ...this._configurators.values()])
+    {
+      if (data.thumbnail || data.author !== me || !data.fileId || !data.id) continue;
+      if ((data.code ?? '').length < MIN_BACKFILL_CODE_LENGTH) continue;
+      targets.push({ fileId: data.fileId, versionId: data.id, script: data });
+    }
+    enqueueBackfill(targets);
+  }
+
+  /** A picture landed (backfill, or the editor's own run): show it without a re-fetch.
+   *  Working copies live on the `scripts` signal, which the service updates itself; the
+   *  library rows are plain state maps here, so a new Map is what makes Lit re-render. */
+  private _onThumbnailStored = (e: Event) =>
+  {
+    const { fileId, versionId, url } = (e as CustomEvent<ThumbnailStoredDetail>).detail;
+    if (!versionId) return;
+    for (const map of [this._shared, this._configurators] as const)
+    {
+      const row = map.get(fileId);
+      if (row?.id !== versionId) continue;
+      const next = new Map(map);
+      next.set(fileId, { ...row, thumbnail: url });
+      if (map === this._shared) this._shared = next; else this._configurators = next;
+    }
+  };
 
   /** The section's assets, searched and sorted. */
   private _assetsFor(section: SectionDef, query: string): BrowserAsset[]

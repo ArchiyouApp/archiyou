@@ -198,64 +198,104 @@ async function runOnServer(
   };
 }
 
+//// FOREGROUND ACTIVITY ////
+
+// What the background thumbnail work (services/thumbnails.ts) yields to: a run someone is
+// waiting on. Counted here, on the one funnel every run goes through, so the thumbnail
+// service never has to know who runs scripts. Its own runs pass `background: true` and
+// are not counted.
+let foregroundRuns = 0;
+let lastForegroundRunAt = 0;
+
+/** Is a foreground run (editor, configurator, download) in flight right now? */
+export function isExecutionBusy(): boolean
+{
+  return foregroundRuns > 0;
+}
+
+/** When the last foreground run started (epoch ms; 0 when none has). */
+export function lastExecutionAt(): number
+{
+  return lastForegroundRunAt;
+}
+
 //// PUBLIC API ////
+
+export interface RunScriptOptions
+{
+  /** Nobody is waiting on this run (a thumbnail backfill): it is not counted as
+   *  foreground activity, so it never holds up the background work's own idle gate. */
+  background?: boolean;
+}
 
 /**
  * Execute a script request — on the server when a target is set, otherwise in the
  * shared local worker (initialising it on first use).
  */
-export async function runScript(request: RunnerScriptExecutionRequest): Promise<RunnerScriptExecutionResult | undefined>
+export async function runScript(request: RunnerScriptExecutionRequest, options: RunScriptOptions = {}): Promise<RunnerScriptExecutionResult | undefined>
 {
-  const target = serverTarget;
-  if (target)
+  if (!options.background)
   {
+    foregroundRuns++;
+    lastForegroundRunAt = Date.now();
+  }
+  try
+  {
+    const target = serverTarget;
+    if (target)
+    {
+      try
+      {
+        return await runOnServer(target, request);
+      }
+      catch (error)
+      {
+        // Transport failure: the pipeline is down (503), validation was withdrawn
+        // (401/403), we are being throttled (429), or the network is gone. Drop to the
+        // local worker and stop trying — retrying per keystroke would just be slow.
+        // NOTE a 422 lands here too, which self-heals but would also mask a genuine
+        // client/server disagreement about params; check the console if geometry is
+        // fine locally but never runs server-side.
+        const status = error instanceof ApiError ? ` (HTTP ${error.status})` : '';
+        console.warn(
+          `runScript(): server-side execution failed${status}; falling back to the local kernel.`,
+          error,
+        );
+        setServerExecutionTarget(null);
+      }
+    }
+
     try
     {
-      return await runOnServer(target, request);
+      // Point $import() at the backend asset proxy unless the caller set one.
+      request.assetProxyUrl ??= API_BASE_URL;
+      // Let $component('./name') fall back to the author's shared library when the caller
+      // linked no local scripts — the published-configurator case. Harmless in the editor:
+      // linked workspace scripts always take precedence, so this is never reached there.
+      request.componentLibraryUrl ??= API_BASE_URL;
+
+      // Gated script modules. The catalog is cached per user, so this is a no-op
+      // after the first call (and warmupWorker() primes it). Locked modules are
+      // included on purpose — the runner needs them to explain itself when a
+      // script uses one. The token is what lets the runner fetch a gated bundle;
+      // the server re-checks entitlement on every such request regardless.
+      request.modules ??= await ensureModuleCatalog();
+      request.moduleApiUrl ??= API_BASE_URL;
+      request.authToken ??= (await authService.getToken()) ?? undefined;
+
+      // The viewer needs the full result (scenegraph/annotations/handles), so use run().
+      const worker = await getWorker();
+      return await worker.run(request);
     }
     catch (error)
     {
-      // Transport failure: the pipeline is down (503), validation was withdrawn
-      // (401/403), we are being throttled (429), or the network is gone. Drop to the
-      // local worker and stop trying — retrying per keystroke would just be slow.
-      // NOTE a 422 lands here too, which self-heals but would also mask a genuine
-      // client/server disagreement about params; check the console if geometry is
-      // fine locally but never runs server-side.
-      const status = error instanceof ApiError ? ` (HTTP ${error.status})` : '';
-      console.warn(
-        `runScript(): server-side execution failed${status}; falling back to the local kernel.`,
-        error,
-      );
-      setServerExecutionTarget(null);
+      console.error('runScript(): failed:', error);
+      return createExecutionFailureResult(request, error);
     }
   }
-
-  try
+  finally
   {
-    // Point $import() at the backend asset proxy unless the caller set one.
-    request.assetProxyUrl ??= API_BASE_URL;
-    // Let $component('./name') fall back to the author's shared library when the caller
-    // linked no local scripts — the published-configurator case. Harmless in the editor:
-    // linked workspace scripts always take precedence, so this is never reached there.
-    request.componentLibraryUrl ??= API_BASE_URL;
-
-    // Gated script modules. The catalog is cached per user, so this is a no-op
-    // after the first call (and warmupWorker() primes it). Locked modules are
-    // included on purpose — the runner needs them to explain itself when a
-    // script uses one. The token is what lets the runner fetch a gated bundle;
-    // the server re-checks entitlement on every such request regardless.
-    request.modules ??= await ensureModuleCatalog();
-    request.moduleApiUrl ??= API_BASE_URL;
-    request.authToken ??= (await authService.getToken()) ?? undefined;
-
-    // The viewer needs the full result (scenegraph/annotations/handles), so use run().
-    const worker = await getWorker();
-    return await worker.run(request);
-  }
-  catch (error)
-  {
-    console.error('runScript(): failed:', error);
-    return createExecutionFailureResult(request, error);
+    if (!options.background) foregroundRuns--;
   }
 }
 

@@ -11,6 +11,8 @@ import { dataToModuleString } from '@archiyou/core/src/utils';
 import '../plugins/plugin-part-frame';
 
 import { createExecutionFailureResult, runScript, warmupWorker } from '../services/execution-service';
+import { scheduleWorkingThumbnail } from '../services/thumbnails';
+import { getOutput } from '@archiyou/core/src/runner/worker/output';
 import { authService } from '../services/auth-service';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -39,7 +41,7 @@ import '@archiyou/ui/editor/manage-configurators-menu.js';
 import '@archiyou/ui/editor/modules-menu.js';
 import type { ToolDef } from '@archiyou/ui/editor/toolbar.js';
 
-import { editorScript, executing, executionResult, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystem, ensureScriptUnitSystem, perStatement, kernel, autoRun, wasActiveScriptRestored } from '../state/workspace';
+import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystem, ensureScriptUnitSystem, perStatement, kernel, autoRun, wasActiveScriptRestored } from '../state/workspace';
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
 import { registerScheduleExecution, triggerResetCamera } from '../state/viewer';
 import { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
@@ -512,6 +514,13 @@ export class PageEditor extends SignalWatcher(LitElement)
     {
       setExecutionResult(result);
       await this._executeToolOutputs();
+      // Have the model's picture taken for the browser page, later and in the background:
+      // the service debounces, renders from this run's GLB off screen, and skips scripts
+      // that are not ours. Visibility comes from the reconciled scenegraph, so the picture
+      // shows what the viewer shows — including what was hidden from the scene tree.
+      const active = editorScript.get();
+      const glb = getOutput(result, 'default/model/glb');
+      if (result.status !== 'error' && active && glb instanceof ArrayBuffer) scheduleWorkingThumbnail(active, glb, scenegraph.get());
       return result;
     }
     else

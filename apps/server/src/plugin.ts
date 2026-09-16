@@ -80,14 +80,21 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
 
   await fastify.register(import('@fastify/jwt'), { secret: config.jwtSecret });
 
+  // Thumbnail uploads are the one binary body this API takes: the PNG itself, so the bytes
+  // never go through base64 + JSON. Capped a little above the store's own byte cap, so an
+  // oversized picture is refused by the check (and logged) rather than by a bare 413.
+  fastify.addContentTypeParser('image/png', { parseAs: 'buffer', bodyLimit: config.thumbnails.maxBytes + 1024 },
+    (_request, body, done) => done(null, body));
+
   // Script thumbnails as static files (services/ThumbnailStore.ts writes them). Filenames
   // are content-addressed, which is what makes `immutable` safe: a regenerated thumbnail
   // gets a new name, so a cached one can never go stale.
   //
-  // The bytes originate from our own exporter but arrive over a client-controlled request
-  // body, so they are allowlist-validated on the way in (services/svgSanitize.ts) AND
+  // The bytes are PNGs the browser rendered (older ones SVGs), arriving over a client-
+  // controlled request body, so they are shape-checked on the way in (ThumbnailStore) AND
   // served defensively here: `sandbox` + `default-src 'none'` neuter anything that somehow
-  // got through, and `nosniff` stops a rejected document being re-interpreted as HTML.
+  // got through, and `nosniff` stops a file being re-interpreted as HTML. The content type
+  // follows the extension — the two are never mixed under one name.
   // @fastify/static throws at registration when root is missing, and the directory is
   // otherwise only created on the first write — so ensure it here rather than making
   // boot depend on someone having published something.
@@ -101,8 +108,8 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
     dotfiles: 'deny',
     immutable: true,
     maxAge: '1y',
-    setHeaders: (res) => {
-      res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+    setHeaders: (res, path) => {
+      res.setHeader('Content-Type', path.endsWith('.svg') ? 'image/svg+xml; charset=utf-8' : 'image/png');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
       // helmet defaults every response to CORP same-origin, which blocks the

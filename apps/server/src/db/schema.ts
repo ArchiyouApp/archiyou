@@ -79,9 +79,10 @@ export const scriptVersions = sqliteTable('script_versions', {
   published: text('published', { mode: 'json' }).$type<ScriptData['published']>(),
   // JSON blob; null ⇒ this version is not shared. Otherwise the ScriptShared metadata.
   shared: text('shared', { mode: 'json' }).$type<ScriptShared>(),
-  // Public URL of the generated thumbnail, or null. Just a URL: the SVG bytes are files on
-  // disk (see services/ThumbnailStore.ts), so this column stays ~60 bytes and can ride along
-  // in the library list responses that already carry every script's `code`.
+  // Public URL of the generated thumbnail (a PNG the viewer rendered), or null. Just a URL:
+  // the bytes are files on disk (see services/ThumbnailStore.ts), so this column stays ~60
+  // bytes and can ride along in the library list responses that already carry every
+  // script's `code`. Saves inherit it from the file's previous row (ScriptStore).
   thumbnail: text('thumbnail'),
   created: integer('created', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`),
   updated: integer('updated', { mode: 'timestamp_ms' }).notNull().default(sql`(unixepoch() * 1000)`),

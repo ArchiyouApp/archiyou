@@ -125,9 +125,9 @@ export class BrowserAssetCard extends LitElement
       color: var(--color-text-muted);
     }
 
-    /* contain, not cover: previews are generated iso line drawings, already framed
-       square with padding. Cropping one to fill 16:10 cuts off the geometry that makes
-       it recognisable — the whole point of having a thumbnail. */
+    /* contain, not cover: previews are square renders of the model, already framed with
+       padding. Cropping one to fill 16:10 cuts off the geometry that makes it
+       recognisable — the whole point of having a thumbnail. */
     .preview img {
       width: 100%;
       height: 100%;

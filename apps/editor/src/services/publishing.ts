@@ -83,17 +83,16 @@ export async function unpublishConfigurator(versionId: string): Promise<void> {
 /** Edit an existing configurator: update just this version's `published` metadata
  *  in place (version + code snapshot unchanged). `script.id` identifies the version.
  *  Returns the stored ScriptData. */
-export async function updateConfigurator(script: ScriptData, thumbnailSvg?: string | null): Promise<ScriptData> {
+export async function updateConfigurator(script: ScriptData): Promise<ScriptData> {
   if (!handle()) throw new Error('Sign in to edit configurators');
   if (!script.id) throw new Error('Configurator has no version id');
-  return api.put<ScriptData>(`/scripts/configurators/${encodeURIComponent(script.id)}`,
-    withThumbnail(script, thumbnailSvg));
+  return api.put<ScriptData>(`/scripts/configurators/${encodeURIComponent(script.id)}`, script);
 }
 
 /** Publish the active file: append a version carrying `version` + the ScriptPublished
  *  metadata. Ensures the file exists server-side first (publish is a no-op on an
  *  unknown file). Returns the stored ScriptData. */
-export async function publishScript(script: Script, thumbnailSvg?: string | null): Promise<ScriptData> {
+export async function publishScript(script: Script): Promise<ScriptData> {
   const user = handle();
   if (!user) throw new Error('Sign in to publish a script');
   const fileId = script.fileId;
@@ -102,16 +101,7 @@ export async function publishScript(script: Script, thumbnailSvg?: string | null
   // Guarantee the file exists on the server before appending a published version.
   await syncSaveNow(script);
 
-  return api.post<ScriptData>(`/scripts/${user}/${fileId}/publish`,
-    withThumbnail(script.toData(), thumbnailSvg));
-}
-
-/** Attach the thumbnail SVG source to a publish/share body.
- *
- *  `thumbnailSvg` is deliberately NOT a ScriptData field: the server writes the SVG to
- *  disk and stamps only the resulting URL onto `ScriptData.thumbnail`, so the bytes never
- *  round-trip through the script model or bloat a library list response. Omitted when
- *  there is nothing to send, so the field never appears as `undefined` on the wire. */
-function withThumbnail(data: ScriptData, thumbnailSvg?: string | null): ScriptData {
-  return thumbnailSvg ? ({ ...data, thumbnailSvg } as ScriptData) : data;
+  // The preview is not part of this: it is attached afterwards, in the background, by
+  // services/thumbnails.ts — so publishing never waits on (or fails because of) a picture.
+  return api.post<ScriptData>(`/scripts/${user}/${fileId}/publish`, script.toData());
 }

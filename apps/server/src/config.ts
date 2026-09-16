@@ -241,16 +241,17 @@ export const config = {
 
   /**
    * Maximum request body size. Fastify's default is 1 MiB, which script bodies were
-   * already approaching (code + params + presets) before thumbnails added an SVG on
-   * top — a 413 on publish is not a failure mode worth having.
+   * already approaching (code + params + presets) — a 413 on publish is not a failure
+   * mode worth having. (Thumbnails travel as their own `image/png` body, see plugin.ts.)
    */
   bodyLimitBytes: Number(process.env.SERVER_BODY_LIMIT_BYTES ?? 4 * 1024 * 1024),
 
   /**
-   * Script thumbnails: iso line drawings generated in the BROWSER at publish/share time
-   * (server-side execution is disabled — see `execution` above), written here as files and
-   * served statically at `/thumbnails/`. Filenames are content-addressed, so the URL changes
-   * whenever the drawing does and `Cache-Control: immutable` is always correct.
+   * Script thumbnails: PNG renders of the model made in the BROWSER — after a run in the
+   * editor, after a share/publish, or backfilled from the browser page (server-side
+   * execution is disabled — see `execution` above) — written here as files and served
+   * statically at `/thumbnails/`. Filenames are content-addressed, so the URL changes
+   * whenever the picture does and `Cache-Control: immutable` is always correct.
    *
    * ⚠️  `path` must be a persistent volume in production, or thumbnails vanish on redeploy
    * while the DB still points at them (clients fall back to a placeholder icon).
@@ -259,8 +260,9 @@ export const config = {
     path: process.env.SERVER_THUMBNAIL_PATH ?? './data/thumbnails',
     /** Public prefix the files are served under. Relative → same origin as the API. */
     urlPrefix: process.env.SERVER_THUMBNAIL_URL_PREFIX ?? '/thumbnails',
-    /** Hard cap on a stored thumbnail. Matches the client-side budget in THUMBNAIL_OUTPUT_PATH. */
-    maxBytes: Number(process.env.SERVER_THUMBNAIL_MAX_BYTES ?? 65_536),
+    /** Hard cap on a stored thumbnail. A 512px shaded render is 50–200 KB as PNG; this
+     *  leaves room for a busy one, not for a photo. Also bounds the `image/png` body. */
+    maxBytes: Number(process.env.SERVER_THUMBNAIL_MAX_BYTES ?? 512 * 1024),
     /**
      * JSON Lines diagnostic log for the thumbnail lifecycle — browser generation, what
      * arrived, and why anything was dropped (services/thumbnailLog.ts). Thumbnail

@@ -193,13 +193,14 @@ export const ScriptSchema = Type.Object(
     // Presentation preference — does not rescale geometry. Default 'metric'.
     units:       Type.Optional(Type.Union([Type.Literal('metric'), Type.Literal('imperial')])),
 
-    /** Public URL of this version's generated thumbnail (an iso line drawing — see
-     *  modeler/SVGExporter.ts), or null when there is none.
+    /** Public URL of this version's generated thumbnail (a PNG the viewer renders from the
+     *  model — see packages/ui model-viewer's renderModelThumbnail), or null when none.
      *
-     *  Only a URL lives here: the SVG bytes are written to disk by the server and served
-     *  as a static file, so library list responses (which already carry every script's
-     *  `code`) stay small. Clients never set this — the server stamps it on publish/share
-     *  from the SVG sent alongside the script, the same way it stamps `published.url`. */
+     *  Only a URL lives here: the bytes are written to disk by the server and served as a
+     *  static file, so library list responses (which already carry every script's `code`)
+     *  stay small. Clients never set this — the server stamps it when the editor uploads
+     *  a picture in the background (after a run, a share or a publish), and carries a
+     *  file's working-copy picture forward across saves. */
     thumbnail:   Type.Optional(Type.Union([Type.Null(), Type.String()])),
 })
 

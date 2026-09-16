@@ -101,7 +101,7 @@ export class ScriptStore {
   private toRow(
     data: ScriptData,
     author: string,
-    opts: { id: string; fileId: string; version: string | null; shared: ScriptShared | null; now: Date },
+    opts: { id: string; fileId: string; version: string | null; shared: ScriptShared | null; thumbnail: string | null; now: Date },
   ): NewScriptVersionRow {
     return {
       id: opts.id,
@@ -123,9 +123,10 @@ export class ScriptStore {
       // forward, because editing metadata leaves `code` untouched.
       published: unvalidated(data.published),
       shared: opts.shared,
-      // Server-stamped URL only (routes/scripts.ts writes the file first). Clients cannot
-      // set this to an arbitrary value: the routes overwrite it before we ever get here.
-      thumbnail: data.thumbnail ?? null,
+      // Server-authoritative, like `shared`: a client's `thumbnail` is ignored on every
+      // insert. Only setThumbnail()/setFileThumbnail() write a URL (after the file exists),
+      // and saveVersion() carries the file's current one forward.
+      thumbnail: opts.thumbnail,
       created: opts.now,
       updated: opts.now,
     };
@@ -620,20 +621,24 @@ export class ScriptStore {
     const id = data.id ?? uuid4();
     const now = new Date();
     // reset-on-save: a fresh file/version starts unversioned (null).
-    const row = this.toRow(data, author, { id, fileId, version: null, shared: null, now });
+    const row = this.toRow(data, author, { id, fileId, version: null, shared: null, thumbnail: null, now });
     this.insertRow(row);
     return this.rowToData({ ...row, created: now, updated: now } as ScriptVersionRow);
   }
 
   /** Append a new version to an existing file (ownership-checked). */
   saveVersion(author: string, fileId: string, payload: unknown): ScriptData {
-    this.latestRow(author, fileId); // ownership gate (throws not_found)
+    const latest = this.latestRow(author, fileId); // ownership gate (throws not_found)
     const data = this.normalize(payload);
     const id = uuid4();
     const now = new Date();
-    const shared = this.currentShared(author, fileId); // versions inherit the file's shared state
+    const shared = latest.shared ?? null; // versions inherit the file's shared state
+    // …and its preview: the working copy's thumbnail is stamped on whatever row is latest
+    // (setFileThumbnail), and a save must not lose it — the picture is of the same file,
+    // at worst one edit stale until the editor's next run replaces it.
+    const thumbnail = latest.thumbnail ?? null;
     // reset-on-save: each new version resets the version to null.
-    const row = this.toRow(data, author, { id, fileId, version: null, shared, now });
+    const row = this.toRow(data, author, { id, fileId, version: null, shared, thumbnail, now });
     this.insertRow(row);
     return this.rowToData({ ...row, created: now, updated: now } as ScriptVersionRow);
   }
@@ -648,7 +653,7 @@ export class ScriptStore {
     if (!data.shared) throw new ScriptStoreError('invalid', 'Share requires shared metadata');
     const id = uuid4();
     const now = new Date();
-    const row = this.toRow(data, author, { id, fileId, version: data.version, shared: data.shared, now });
+    const row = this.toRow(data, author, { id, fileId, version: data.version, shared: data.shared, thumbnail: null, now });
     this.insertRow(row);
     return this.rowToData({ ...row, created: now, updated: now } as ScriptVersionRow);
   }
@@ -665,7 +670,7 @@ export class ScriptStore {
     const id = uuid4();
     const now = new Date();
     const shared = this.currentShared(author, fileId); // preserve the file's shared state
-    const row = this.toRow(data, author, { id, fileId, version: data.version, shared, now });
+    const row = this.toRow(data, author, { id, fileId, version: data.version, shared, thumbnail: null, now });
     this.insertRow(row);
     return this.rowToData({ ...row, created: now, updated: now } as ScriptVersionRow);
   }
@@ -685,6 +690,16 @@ export class ScriptStore {
       .set({ thumbnail })
       .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
       .run();
+  }
+
+  /** Stamp the WORKING copy's thumbnail: the file's latest row, whichever that is by now
+   *  (ownership-checked through latestRow). The editor regenerates this in the background
+   *  after a run and cannot know the latest row id — saves append rows it never hears
+   *  back from — so it addresses the file. saveVersion() carries the URL forward. */
+  setFileThumbnail(author: string, fileId: string, thumbnail: string | null): ScriptData {
+    const latest = this.latestRow(author, fileId);
+    this.setThumbnail(author, latest.id, thumbnail);
+    return this.rowToData({ ...latest, thumbnail });
   }
 
   /** Set/clear sharing metadata on all versions of a file (ownership-checked). */

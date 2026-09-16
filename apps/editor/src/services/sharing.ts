@@ -74,7 +74,7 @@ export async function searchUsers(query: string): Promise<PublicUser[]> {
 /** Share the active file: append a version carrying `version` + the ScriptShared
  *  metadata. Ensures the file exists server-side first (share is a no-op on an
  *  unknown file). Returns the stored ScriptData. */
-export async function shareScript(script: Script, thumbnailSvg?: string | null): Promise<ScriptData> {
+export async function shareScript(script: Script): Promise<ScriptData> {
   const user = handle();
   if (!user) throw new Error('Sign in to share a script');
   const fileId = script.fileId;
@@ -83,9 +83,7 @@ export async function shareScript(script: Script, thumbnailSvg?: string | null):
   // Guarantee the file exists on the server before appending a shared version.
   await syncSaveNow(script);
 
-  // `thumbnailSvg` is not a ScriptData field: the server writes the SVG to disk and
-  // stamps only the resulting URL onto `ScriptData.thumbnail`. Omitted when absent, so
-  // sharing never waits on (or fails because of) a preview.
-  const body = thumbnailSvg ? ({ ...script.toData(), thumbnailSvg } as ScriptData) : script.toData();
-  return api.post<ScriptData>(`/scripts/${user}/${fileId}/share`, body);
+  // The preview is not part of this: it is attached afterwards, in the background, by
+  // services/thumbnails.ts — so sharing never waits on (or fails because of) a picture.
+  return api.post<ScriptData>(`/scripts/${user}/${fileId}/share`, script.toData());
 }

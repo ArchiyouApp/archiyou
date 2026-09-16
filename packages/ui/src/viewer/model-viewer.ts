@@ -39,6 +39,12 @@ import { THEME_CHANGE_EVENT } from '@archiyou/editor/src/styles/dark-theme.js';
 import { VIEW_STYLES } from './view-styles.js';
 import type { ViewStyle, ViewStyleMaterialConfig } from './view-styles.js';
 import { FadingGrid } from './fading-grid.js';
+
+/** Raw geometry node types that are implementation details of a GLB scene — never a
+ *  scenegraph node of their own. They may be children of a named container. Shared by the
+ *  viewer's path map and the thumbnail renderer, which align GLB children with the
+ *  runner's scenegraph by walking the two side by side. */
+const GEO_TYPES = new Set(['Mesh', 'LineSegments', 'LineSegments2', 'Line', 'Line2', 'Points']);
 import './viewer-menu.js';
 
 // ── Handle drag helpers ───────────────────────────────────────────────────────
@@ -1796,9 +1802,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
 
   // Raw geometry node types that are implementation details — never shown as tree nodes.
   // They may be children of a named container; their material is surfaced on the container.
-  private static readonly _GEO_TYPES = new Set([
-    'Mesh', 'LineSegments', 'LineSegments2', 'Line', 'Line2', 'Points',
-  ]);
+  private static readonly _GEO_TYPES = GEO_TYPES;
 
   // ── 10. Model loading ──
 
@@ -2785,5 +2789,374 @@ declare global
   interface HTMLElementTagNameMap
   {
     'model-viewer': ModelViewer;
+  }
+}
+
+//// THUMBNAIL RENDER ////
+
+/** Pixel size of a rendered script thumbnail — square, so it serves a 32px list icon and a
+ *  ~300px card alike; larger only costs bytes nobody sees. */
+export const THUMBNAIL_PNG_SIZE = 512;
+
+/** The fixed viewpoint every thumbnail is taken from: a true isometric — equal angles to
+ *  all three axes, from above-left-front in Z-up CAD space (the SVG exporter's default
+ *  iso camera too) — so previews all read the same way and parallel edges stay parallel. */
+const THUMBNAIL_VIEW_DIRECTION = new THREE.Vector3(-1, -1, 1).normalize();
+
+export interface ModelThumbnailOptions
+{
+  /** Square size in pixels. Default THUMBNAIL_PNG_SIZE. */
+  size?: number;
+  /** A VIEW_STYLES id. Default 'techdraw' — and a style's mesh override is drawn UNLIT
+   *  here (a plain fill of its colour), so tech draw gives clean white faces with black
+   *  edges rather than the viewer's lightly shaded ones. */
+  styleId?: string;
+  /** Background colour, or null (default) for transparent — a shaded model on nothing sits
+   *  on any card, in either theme. */
+  background?: number | null;
+  /** What colours the edges and silhouettes of a flat-fill style: each shape's own colour
+   *  from the model (default — a little colour on white faces), or the style's ink. */
+  edges?: 'shape' | 'ink';
+  /** Edge and silhouette width in pixels of the rendered image. Default 2: the picture is
+   *  shown well below its 512px, and a hairline would vanish when it is scaled down. */
+  lineWidth?: number;
+  /** The scenegraph to take visibility from: a run's `result.state.scenegraph`, or in the
+   *  editor the reconciled `scenegraph` signal, which also carries the eye toggles in the
+   *  scene tree. Visibility is not in the GLB: a hidden shape is only known from here, and
+   *  is left out of the picture and its framing, as the viewer leaves it out of the scene. */
+  scenegraph?: SceneNodeData | null;
+}
+
+/** Hide every object whose scenegraph node says `visible: false`, walking the GLB's
+ *  semantic children and the graph's children side by side — the same alignment the
+ *  viewer's path map uses (_buildPathMap). */
+function hideByScenegraph(root: THREE.Object3D, graph: SceneNodeData): void
+{
+  const semanticChildrenOf = (obj: THREE.Object3D) =>
+    obj.children.filter((c) => !c.userData.isViewerHelper && !GEO_TYPES.has(c.type));
+  const recur = (obj: THREE.Object3D, node: SceneNodeData) =>
+  {
+    if (node.style?.visible === false) obj.visible = false;
+    const objectChildren = semanticChildrenOf(obj);
+    const count = Math.min(objectChildren.length, node.children?.length ?? 0);
+    for (let i = 0; i < count; i++) recur(objectChildren[i], node.children[i]);
+  };
+  recur(root, graph);
+}
+
+/** The bounding box of what is actually VISIBLE under `root` — Box3.setFromObject() takes
+ *  hidden subtrees along, and a hidden shape must not leave air in the frame either. */
+function visibleBox(root: THREE.Object3D): THREE.Box3
+{
+  const box = new THREE.Box3();
+  root.updateMatrixWorld(true);
+  const walk = (o: THREE.Object3D) =>
+  {
+    if (!o.visible) return;
+    const geometry = (o as THREE.Mesh).geometry;
+    if (geometry)
+    {
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      if (geometry.boundingBox) box.union(geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
+    }
+    o.children.forEach(walk);
+  };
+  walk(root);
+  return box;
+}
+
+/**
+ * Render a model GLB to a square PNG, off screen, with one fixed recipe: the given view
+ * style (tech draw by default: white faces, black edges), an isometric (orthographic)
+ * camera, the model fitted to the frame, and no grid, gizmo, handles or annotations.
+ *
+ * This is what a script's thumbnail is (services/thumbnails.ts in the editor). It renders
+ * rather than drawing a hidden-line projection because a GPU frame costs the same few
+ * milliseconds whatever the assembly density, where hidden-line removal on a detailed
+ * house takes tens of seconds and blocks every run queued behind it.
+ *
+ * Self-contained on purpose: its own renderer, scene and lights, created for the call and
+ * disposed after it (a WebGL context is not something to keep around per page), and no
+ * connection to the live <model-viewer>, so what the user has selected, hidden or
+ * toggled never leaks into the picture. The GLB is parsed a second time for that; a few
+ * hundred milliseconds on the main thread for a big model, spent off the run path.
+ *
+ * Resolves to the PNG bytes, or null when there is nothing to show (an empty model) or
+ * WebGL is unavailable.
+ */
+export async function renderModelThumbnail(glb: ArrayBuffer, options: ModelThumbnailOptions = {}): Promise<ArrayBuffer | null>
+{
+  const size = options.size ?? THUMBNAIL_PNG_SIZE;
+  const style = VIEW_STYLES.find(s => s.id === (options.styleId ?? 'techdraw')) ?? VIEW_STYLES[0];
+  const background = options.background ?? null;
+  const edgesFromShape = (options.edges ?? 'shape') === 'shape';
+  const lineWidth = options.lineWidth ?? 2;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+
+  let renderer: THREE.WebGLRenderer;
+  try
+  {
+    renderer = new THREE.WebGLRenderer({
+      canvas, antialias: true, alpha: background === null, preserveDrawingBuffer: true, powerPreference: 'low-power',
+    });
+  }
+  catch (err)
+  {
+    console.warn('renderModelThumbnail(): no WebGL renderer:', err);
+    return null;
+  }
+
+  const scene = new THREE.Scene();
+  const disposables: Array<{ dispose(): void }> = [];
+  try
+  {
+    renderer.setPixelRatio(1);
+    renderer.setSize(size, size, false);
+    renderer.toneMapping = (style.toneMapping ?? THREE.NeutralToneMapping) as THREE.ToneMapping;
+    renderer.toneMappingExposure = style.toneMappingExposure ?? 1;
+    const shadows = style.shadows ?? true;
+    renderer.shadowMap.enabled = shadows;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    if (background === null) renderer.setClearColor(0x000000, 0);
+    else
+    {
+      renderer.setClearColor(background);
+      scene.background = new THREE.Color(background);
+    }
+
+    // Lighting, as the viewer sets it up for this style.
+    if (style.environment === 'room')
+    {
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      const envScene = new RoomEnvironment();
+      const envTexture = pmrem.fromScene(envScene, 0.04).texture;
+      envScene.dispose();
+      pmrem.dispose();
+      disposables.push(envTexture);
+      scene.environment = envTexture;
+      scene.environmentIntensity = style.environmentIntensity ?? 1;
+    }
+    if (style.ambientLight?.enabled !== false)
+    {
+      scene.add(new THREE.AmbientLight(style.ambientLight?.color ?? 0xffffff, style.ambientLight?.intensity ?? 0.3));
+    }
+    if (style.hemiLight?.enabled)
+    {
+      scene.add(new THREE.HemisphereLight(style.hemiLight.color ?? 0xffffff, 0x888888, style.hemiLight.intensity ?? 1));
+    }
+    const keyLight = new THREE.DirectionalLight(style.spotlight?.color ?? 0xffffff, style.spotlight?.intensity ?? 3);
+    keyLight.visible = style.spotlight?.enabled !== false;
+    keyLight.castShadow = shadows && (style.spotlight?.castShadow ?? true);
+    scene.add(keyLight);
+    scene.add(keyLight.target);
+
+    // The model itself: hard edges from the GLB's own extensions, no annotations.
+    const loader = new GLTFLoader();
+    const draco = new DRACOLoader();
+    draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+    loader.setDRACOLoader(draco);
+    disposables.push(draco);
+    const gltf = await new Promise<import('three/examples/jsm/loaders/GLTFLoader.js').GLTF>(
+      (resolve, reject) => loader.parse(glb, '', resolve, reject),
+    );
+    const model = gltf.scene;
+    await applyEdgeExtensions(gltf, model);
+    applyPointStyles(model);
+    if (options.scenegraph)
+    {
+      // As the viewer does: skip the gltf.scene wrapper, start from the content root.
+      const contentRoot = model.children.find(c => !c.userData.isViewerHelper) ?? model;
+      hideByScenegraph(contentRoot, options.scenegraph);
+    }
+
+    // Framing first: the silhouette width below is a fraction of the frame.
+    const box = visibleBox(model);
+    if (box.isEmpty()) return null;
+    const center = box.getCenter(new THREE.Vector3());
+    const extent = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(extent.x, extent.y, extent.z, 1e-6);
+    const radius = box.getBoundingSphere(new THREE.Sphere()).radius;
+
+    // Camera: isometric, so orthographic, placed well outside the model along the view
+    // direction. The frame is fitted to the model's bounding box as it PROJECTS — its eight
+    // corners in view space — rather than to the bounding sphere, which for anything box-
+    // like is far bigger than its outline and left the picture small in the middle.
+    const dist = radius * 4;
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, dist * 0.01, dist * 3);
+    camera.up.set(0, 0, VIEWER_MODEL_COORDSYSTEM.up === 'z' ? 1 : 0);
+    camera.position.copy(center).addScaledVector(THUMBNAIL_VIEW_DIRECTION, dist);
+    camera.lookAt(center);
+    camera.updateMatrixWorld(true);
+    const toView = camera.matrixWorld.clone().invert();
+    let minX = Infinity; let maxX = -Infinity; let minY = Infinity; let maxY = -Infinity;
+    for (const sx of [box.min.x, box.max.x]) for (const sy of [box.min.y, box.max.y]) for (const sz of [box.min.z, box.max.z])
+    {
+      const p = new THREE.Vector3(sx, sy, sz).applyMatrix4(toView);
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }
+    // Square frame around the projected extent, with a little air (4%) and room for the
+    // silhouette at the very edge.
+    const half = (Math.max(maxX - minX, maxY - minY) / 2) * 1.04 + (radius * 0.004);
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    camera.left = cx - half;
+    camera.right = cx + half;
+    camera.top = cy + half;
+    camera.bottom = cy - half;
+    camera.updateProjectionMatrix();
+
+    // A flat-fill style (tech draw) draws with lines, and the GLB's edge lines only cover
+    // HARD edges: a white cylinder on a white ground would have no outline at all. So every
+    // mesh also gets a silhouette — the classic inverted hull: its back faces, pushed out
+    // along the normals by about a pixel and painted in the line colour, peek out around
+    // the front faces exactly where the surface turns away from the camera.
+    const inkColor = style.lines?.color;
+    const drawSilhouettes = !!style.mesh && inkColor !== undefined;
+    const silhouettes = new Map<number, THREE.MeshBasicMaterial>(); // one material per colour
+    const silhouetteFor = (color: number) =>
+    {
+      let mat = silhouettes.get(color);
+      if (mat) return mat;
+      mat = new THREE.MeshBasicMaterial({ color, side: THREE.BackSide });
+      const width = (2 * half / size) * lineWidth; // pixels → world units
+      mat.onBeforeCompile = (shader) =>
+      {
+        shader.uniforms.uSilhouette = { value: width };
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nuniform float uSilhouette;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += normalize(normal) * uSilhouette;');
+      };
+      silhouettes.set(color, mat);
+      return mat;
+    };
+    /** The line colour for a node: its nearest ancestor shape's own colour, else the ink. */
+    const lineColorFor = (n: THREE.Object3D): number | undefined =>
+    {
+      if (!edgesFromShape) return inkColor;
+      for (let p: THREE.Object3D | null = n; p; p = p.parent)
+      {
+        if (typeof p.userData.thumbnailShapeColor === 'number') return p.userData.thumbnailShapeColor;
+      }
+      return inkColor;
+    };
+
+    const hulls: Array<[THREE.Mesh, THREE.Mesh]> = [];
+    model.traverse((n) =>
+    {
+      const mesh = n as THREE.Mesh;
+      const isLine = n.type === 'LineSegments2' || n instanceof THREE.LineSegments || n instanceof THREE.Line;
+      if (mesh.isMesh && !isLine)
+      {
+        mesh.castShadow = true;
+        mesh.receiveShadow = false;
+        if (style.mesh === null)
+        {
+          mesh.material = new THREE.MeshBasicMaterial({ visible: false });
+        }
+        else if (style.mesh)
+        {
+          // The style's fill, unlit: every face the same clean colour, edges do the drawing.
+          const existing = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+          // Remember the shape's own colour before it goes: its edges are drawn in it.
+          const own = (existing as THREE.MeshStandardMaterial | undefined)?.color;
+          if (own) mesh.userData.thumbnailShapeColor = own.getHex();
+          const opacity = style.mesh.opacity ?? 1;
+          mesh.material = new THREE.MeshBasicMaterial({
+            color: style.mesh.color ?? 0xffffff,
+            opacity,
+            transparent: style.mesh.transparent ?? opacity < 1,
+            side: existing?.side ?? THREE.FrontSide,
+            wireframe: style.mesh.wireframe ?? false,
+          });
+        }
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        mats.forEach((m) => { m.polygonOffset = true; m.polygonOffsetFactor = 1; m.polygonOffsetUnits = 1; });
+        if (drawSilhouettes && mesh.geometry?.attributes?.normal && style.mesh !== null)
+        {
+          const hull = new THREE.Mesh(mesh.geometry, silhouetteFor(lineColorFor(mesh) ?? inkColor!));
+          hull.userData.isSilhouette = true;
+          hulls.push([mesh, hull]);
+        }
+      }
+      const mat = (n as any).material; // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (isLine && mat?.color)
+      {
+        if (style.lines === null) n.visible = false;
+        // A line with its own vertex gradient keeps it, as the viewer does (see
+        // _applyLineStyleOverride); a plain one takes its shape's colour, or the ink.
+        else if (n.userData.hasVertexGradient !== true)
+        {
+          const color = lineColorFor(n);
+          if (color !== undefined) mat.color.setHex(color);
+        }
+      }
+      if (mat?.isLineMaterial)
+      {
+        mat.resolution.set(size, size);
+        mat.linewidth = lineWidth;
+      }
+    });
+    // Added after the walk, not during it: a hull is a child of its mesh, and the traverse
+    // would otherwise visit it too. The geometry is shared and disposed once, below.
+    for (const [mesh, hull] of hulls) mesh.add(hull);
+    scene.add(model);
+
+
+    // Key light framed on the model, as _updateSpotlightForModel() does.
+    const lightVec = new THREE.Vector3(...VIEWER_LIGHT_POSITION);
+    const lightDistance = lightVec.length();
+    const sceneRadius = Math.max(maxDim * 0.5, 1);
+    keyLight.position.copy(center).addScaledVector(lightVec.normalize(), lightDistance);
+    keyLight.target.position.copy(center);
+    keyLight.shadow.mapSize.set(2048, 2048);
+    keyLight.shadow.camera.near = Math.max(lightDistance - sceneRadius * 6, 1);
+    keyLight.shadow.camera.far = lightDistance + sceneRadius * 6;
+    const halfExtent = sceneRadius * 1.5;
+    keyLight.shadow.camera.left = -halfExtent;
+    keyLight.shadow.camera.right = halfExtent;
+    keyLight.shadow.camera.top = halfExtent;
+    keyLight.shadow.camera.bottom = -halfExtent;
+    keyLight.shadow.normalBias = 0.02;
+    keyLight.shadow.radius = 6;
+    keyLight.shadow.camera.updateProjectionMatrix();
+    keyLight.target.updateMatrixWorld();
+
+    // A shadow catcher under the model — the only ground there is; no grid.
+    if (shadows && (style.groundPlane ?? false))
+    {
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(maxDim * 6, maxDim * 6),
+        new THREE.ShadowMaterial({ opacity: 0.16 }),
+      );
+      ground.receiveShadow = true;
+      ground.position.set(center.x, center.y, box.min.z - maxDim * 0.001);
+      scene.add(ground);
+    }
+
+    renderer.render(scene, camera);
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+    return blob ? await blob.arrayBuffer() : null;
+  }
+  catch (err)
+  {
+    console.warn('renderModelThumbnail(): failed:', err);
+    return null;
+  }
+  finally
+  {
+    scene.traverse((n) =>
+    {
+      const obj = n as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      obj.geometry?.dispose?.();
+      const mats: THREE.Material[] = obj.material ? (Array.isArray(obj.material) ? obj.material : [obj.material]) : [];
+      mats.forEach((m) => m.dispose());
+    });
+    disposables.forEach(d => d.dispose());
+    renderer.dispose();
+    renderer.forceContextLoss();
   }
 }

@@ -26,9 +26,9 @@ import { config } from '../config';
 
 /** What happened, emitted by ThumbnailStore and the publish/share routes. */
 export type ThumbnailLogEvent =
-  | 'received'        // a publish/share request reached the server (with or without SVG)
-  | 'stored'          // SVG validated and written; `url` is now on the row
-  | 'rejected'        // the allowlist refused it — `reason` says which rule
+  | 'received'        // an upload reached the server (with or without bytes)
+  | 'stored'          // PNG checked and written; `url` is now on the row
+  | 'rejected'        // the shape check refused it — `reason` says why
   | 'unsafe-path'     // author/fileId/versionId would not make a safe filename
   | 'write-failed'    // disk error (permissions, full volume, missing mount)
   | 'removed';        // thumbnails deleted (file deleted, version superseded)
@@ -38,9 +38,10 @@ export interface ThumbnailLogRecord {
   author?: string | null;
   fileId?: string | null;
   versionId?: string | null;
-  /** 'share' | 'publish' | 'configurator-edit' — which flow produced the request. */
+  /** Which flow produced the upload: 'working' (after an editor run), 'version' (a share,
+   *  publish or configurator edit attaching its preview) or 'backfill' (the browser page). */
   kind?: string | null;
-  /** Byte size of the SVG as received/stored. */
+  /** Byte size of the PNG as received/stored. */
   bytes?: number | null;
   /** Why it was rejected, or the error message when a write failed. */
   reason?: string | null;

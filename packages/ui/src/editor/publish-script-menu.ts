@@ -32,8 +32,6 @@ import '@awesome.me/webawesome/dist/components/option/option.js';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 
 import { CC_LICENCES, FULFILLMENT_DELIVERIES } from '@archiyou/core/src/ScriptSchema';
-import { THUMBNAIL_OUTPUT_PATH } from '@archiyou/core/src/constants';
-import { getOutput } from '@archiyou/core/src/runner/worker/output';
 import type { CCLicence, FulfillmentDelivery, ScriptPublishedFulfillmentData } from '@archiyou/core/src/ScriptSchema';
 import type { ScriptData, ScriptMeta } from '@archiyou/core/src/execution/types';
 import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
@@ -41,6 +39,7 @@ import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/typ
 import { editorScript, userState, bumpScript } from '@archiyou/editor/src/state/workspace';
 import { runScript, warmupWorker } from '@archiyou/editor/src/services/execution-service';
 import { publishScript, fetchPublishedScript, updateConfigurator } from '@archiyou/editor/src/services/publishing';
+import { uploadVersionThumbnail, renderThumbnailPng, glbOf, scenegraphOf } from '@archiyou/editor/src/services/thumbnails';
 import { fetchFileVersions } from '@archiyou/editor/src/services/scripts-sync';
 import { shareReferencedComponents, type ComponentShareResult } from '@archiyou/editor/src/services/component-sharing';
 import { OVERLAY_MENU_WIDTH } from '@archiyou/editor/src/settings';
@@ -124,11 +123,11 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
   @state() private _duration: number | null = null;
   @state() private _tooHeavy        = false;
   @state() private _meta: ScriptMeta | null = null;
-  /** Line drawing captured from the precheck run, sent alongside the script on publish.
-   *  Entirely automatic and not surfaced in the form: the author cannot influence it, so
-   *  showing it would only add noise. Null when the script draws nothing at all or the
-   *  drawing exceeded its size cap — publishing is never blocked by it. */
-  @state() private _thumbnailSvg: string | null = null;
+  /** The preview (a PNG render of the precheck run's model), attached to the stored
+   *  version once publishing is done. Entirely automatic and not
+   *  surfaced in the form: the author cannot influence it, so showing it would only add
+   *  noise. Null when the script draws nothing at all — publishing is never blocked by it. */
+  private _thumbnailPng: ArrayBuffer | null = null;
 
   // ── Form state ──
   @state() private _view: 'form' | 'fulfillment' = 'form';
@@ -605,7 +604,7 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
     this._tooHeavy = false;
     this._duration = null;
     this._meta = null;
-    this._thumbnailSvg = null;
+    this._thumbnailPng = null;
     this._success = null;
     this._view = 'form';
     this._public = true;
@@ -635,24 +634,21 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
       if (!scriptData) { this._precheckError = 'No active script to publish.'; return; }
 
       await warmupWorker();
-      // The thumbnail rides along on the precheck run rather than costing a second
-      // execution: the hidden-line projection is cheap next to the script itself, and
-      // this run already has to happen to measure duration and collect ScriptMeta.
       const result = await runScript({
         kernel:     'mesh',
         script:     scriptData,
-        outputs:    ['default/model/glb', THUMBNAIL_OUTPUT_PATH],
+        outputs:    ['default/model/glb'],
         messages:   ['error'],
         unitSystem: scriptData.units ?? 'metric',
       } as RunnerScriptExecutionRequest);
 
       this._duration = result?.duration ?? 0;
       this._meta = result?.meta ?? null;
-      // Best-effort: a script that draws nothing at all, or one whose drawing blew the
-      // size cap, simply gets no preview. Never blocks publishing.
-      this._thumbnailSvg = result
-        ? ((getOutput(result, THUMBNAIL_OUTPUT_PATH) as string | undefined) ?? null)
-        : null;
+      // The thumbnail is rendered from this precheck run's GLB rather than costing a second
+      // execution: the run already has to happen to measure duration and collect
+      // ScriptMeta. Best-effort: a script that draws nothing gets no preview, and nothing
+      // here ever blocks publishing.
+      this._thumbnailPng = result?.status === 'error' ? null : await renderThumbnailPng(glbOf(result), scenegraphOf(result));
 
       // Heaviness only blocks a fresh publish — an already-published configurator
       // must stay editable.
@@ -903,7 +899,9 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
         return;
       }
 
-      const stored = await publishScript(script, this._thumbnailSvg);
+      const stored = await publishScript(script);
+      // The preview follows on its own — not awaited, never able to fail the publish.
+      void uploadVersionThumbnail(stored.fileId ?? '', stored.id ?? '', this._thumbnailPng);
       // Reflect the stored metadata + version on the active script.
       script.published = stored.published ?? script.published;
       script.version = stored.version ?? script.version;
@@ -958,10 +956,11 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
     this._error = '';
     try
     {
-      // Edit mode re-runs the script in _prepare(), so this also regenerates the
-      // preview — an existing configurator can get a fresh thumbnail without a
-      // version bump (the filename is content-addressed, so the URL changes with it).
-      const stored = await updateConfigurator(payload, this._thumbnailSvg);
+      const stored = await updateConfigurator(payload);
+      // Edit mode re-ran the script in _prepare(), so this also regenerates the
+      // preview — an existing configurator gets a fresh thumbnail without a version
+      // bump (the filename is content-addressed, so the URL changes with it).
+      void uploadVersionThumbnail(stored.fileId ?? '', stored.id ?? '', this._thumbnailPng);
       const author = stored.author ?? editData.author ?? userState.get().id ?? 'me';
       const name   = stored.name ?? editData.name ?? 'script';
       this._success = {

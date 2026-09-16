@@ -21,11 +21,18 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+/** Bodies that go on the wire as they are, not as JSON. */
+type BinaryBody = ArrayBuffer | ArrayBufferView | Blob;
+
+function isBinary(body: unknown): body is BinaryBody {
+  return body instanceof ArrayBuffer || ArrayBuffer.isView(body) || (typeof Blob !== 'undefined' && body instanceof Blob);
+}
+
+async function request<T>(method: string, path: string, body?: unknown, bodyType = 'application/json'): Promise<T> {
   const token = await authService.getToken();
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    'Content-Type': bodyType,
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -37,7 +44,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const response = await netFetch(`${BASE_URL}${path}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : isBinary(body) ? (body as BodyInit) : JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -89,6 +96,10 @@ export const api = {
   },
   put<T>(path: string, body: unknown): Promise<T> {
     return request<T>('PUT', path, body);
+  },
+  /** PUT raw bytes (a thumbnail PNG) under their own content type — no base64, no JSON. */
+  putBinary<T>(path: string, body: BinaryBody, bodyType: string): Promise<T> {
+    return request<T>('PUT', path, body, bodyType);
   },
   delete<T>(path: string): Promise<T> {
     return request<T>('DELETE', path);

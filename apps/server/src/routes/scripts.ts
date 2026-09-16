@@ -12,33 +12,21 @@ import type { ScriptData, ScriptShared } from '@archiyou/core/src/execution/type
 
 import { scriptStore } from '../services/ScriptStore';
 import { thumbnailStore } from '../services/ThumbnailStore';
-import { logThumbnail } from '../services/thumbnailLog';
 import { translationQueue } from '../translation/TranslationQueue';
 import { userService } from '../services/UserService';
 import { configuratorUrl } from './scriptUrl';
 
-/** Publish/share bodies carry the thumbnail SVG source alongside the ScriptData, in a field
- *  that is deliberately NOT part of ScriptSchema — so the bytes can never round-trip through
- *  Script.fromData()/toData() or turn up in a library list response. Only the resulting URL
- *  is persisted (on ScriptData.thumbnail). */
-interface WithThumbnailSvg { thumbnailSvg?: unknown }
+/** A thumbnail upload: the PNG itself as the request body (`Content-Type: image/png`, parsed
+ *  to a Buffer in plugin.ts). Never part of a ScriptData body, so the bytes can never
+ *  round-trip through Script.fromData()/toData() or turn up in a library list response —
+ *  only the resulting URL is persisted (ScriptData.thumbnail). The label says which flow
+ *  sent it, for the thumbnail log. */
+type ThumbnailBody = Buffer;
+type ThumbnailKind = 'working' | 'version' | 'backfill';
 
-/**
- * Store the thumbnail that came with a publish/share and stamp its URL onto the stored
- * version. Runs AFTER the row is committed, so a bad or unwritable thumbnail can never
- * fail the publish — it just leaves the script without a preview.
- */
-async function attachThumbnail(
-  author: string,
-  fileId: string,
-  stored: ScriptData,
-  svg: unknown,
-  kind: 'share' | 'publish' | 'configurator-edit',
-): Promise<ScriptData> {
-  const url = await thumbnailStore.write(author, fileId, stored.id as string, svg, kind);
-  if (!url) return stored;
-  scriptStore.setThumbnail(author, stored.id as string, url);
-  return { ...stored, thumbnail: url };
+function thumbnailKind(query: unknown): ThumbnailKind {
+  const kind = (query as { kind?: unknown } | undefined)?.kind;
+  return kind === 'backfill' || kind === 'version' || kind === 'working' ? kind : 'version';
 }
 
 export async function registerScriptRoutes(fastify: FastifyInstance): Promise<void> {
@@ -118,13 +106,10 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
       void translationQueue.enqueue({
         author: request.user.sub, versionId: request.params.versionId, fileId: stored.fileId as string,
       }).catch(() => undefined);
-      // Doubles as the thumbnail-regeneration path: an existing configurator can get a new
-      // preview without a version bump. Content-addressed filenames mean the URL changes,
-      // so a cached old image can never be shown.
-      return attachThumbnail(
-        request.user.sub, stored.fileId as string, stored,
-        (request.body as WithThumbnailSvg)?.thumbnailSvg, 'configurator-edit',
-      );
+      // The editor re-renders the preview for an edit and attaches it afterwards through
+      // PUT …/versions/:versionId/thumbnail, so an existing configurator gets a fresh
+      // picture without a version bump.
+      return stored;
     },
   );
 
@@ -180,25 +165,21 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
   );
 
   /**
-   * Attach (or replace) one version's thumbnail on its own, after the fact.
+   * Attach (or replace) one stored version's thumbnail.
    *
-   * Thumbnails normally ride along in the share/publish body, which requires the drawing
-   * to exist at the moment the user presses the button. It is generated in the browser in
-   * the background and deliberately not waited for, so for a slow script it frequently
-   * does not — the share goes out without a preview even though nothing failed anywhere.
-   * That race is the single most common cause of a missing thumbnail (it is what the
-   * `submit` + `state:"pending"` pair in the thumbnail log means).
+   * The picture is rendered in the browser, in the background, and deliberately never
+   * waited for: a share or publish goes out first and the editor sends the PNG here when
+   * it is ready — a few seconds later for a slow script, and again whenever a configurator
+   * is edited (a fresh preview without a version bump). The browser page uses the same
+   * route to backfill the owner's own versions that have none (`?kind=backfill`, a log
+   * label only). Content-addressed filenames make a late write safe — the URL changes with
+   * the picture, so nothing can be served stale.
    *
-   * This endpoint decouples the two: the client sends the drawing whenever it is ready,
-   * before or after the share, and a slow script simply gets its preview a few seconds
-   * late. Content-addressed filenames make a late write safe — the URL changes with the
-   * drawing, so nothing can be served stale.
-   *
-   * Unlike the publish path this is not best-effort: nothing else is riding on the
-   * request, so a refused SVG is reported as a 422 rather than silently swallowed. The
-   * reason stays in the log (it is not something a client should be told).
+   * Nothing else is riding on the request, so a refused picture is reported as a 422
+   * rather than silently swallowed. The reason stays in the log (it is not something a
+   * client should be told).
    */
-  fastify.put<{ Params: { user: string; fileId: string; versionId: string }; Body: WithThumbnailSvg }>(
+  fastify.put<{ Params: { user: string; fileId: string; versionId: string }; Body: ThumbnailBody }>(
     '/scripts/:user/:fileId/versions/:versionId/thumbnail',
     authVerified,
     async (request, reply) => {
@@ -208,7 +189,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
       scriptStore.getVersion(request.user.sub, fileId, versionId);
 
       const url = await thumbnailStore.write(
-        request.user.sub, fileId, versionId, request.body?.thumbnailSvg, 'deferred',
+        request.user.sub, fileId, versionId, request.body, thumbnailKind(request.query),
       );
       if (!url) {
         reply.code(422);
@@ -219,18 +200,47 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
     },
   );
 
+  /**
+   * The WORKING copy's preview — what the browser page shows for a script that was never
+   * shared or published, and what the share/publish dialogs start from. The editor renders
+   * it in the background after a run and uploads it here, addressed by file: every save
+   * appends a row the editor never hears back from, so it cannot name the latest version
+   * id, and the store keeps one `working-*` file per file anyway. Stamped on whatever row
+   * is latest; saveVersion() carries it to the rows that follow.
+   *
+   * `auth`, not `authVerified`: nothing here is shown to anyone but the owner.
+   */
+  fastify.put<{ Params: { user: string; fileId: string }; Body: ThumbnailBody }>(
+    '/scripts/:user/:fileId/thumbnail',
+    auth,
+    async (request, reply) => {
+      const { fileId } = request.params;
+      // Ownership + existence gate first (404s a file that is not this author's), so
+      // nothing is ever written to disk for a file the caller does not own.
+      scriptStore.getFile(request.user.sub, fileId);
+
+      const url = await thumbnailStore.writeWorking(
+        request.user.sub, fileId, request.body, thumbnailKind(request.query),
+      );
+      if (!url) {
+        reply.code(422);
+        return { success: false, error: 'Thumbnail was not accepted' };
+      }
+      scriptStore.setFileThumbnail(request.user.sub, fileId, url);
+      return { success: true, thumbnail: url };
+    },
+  );
+
   // Share a file: append a new version carrying a concrete semver + shared
   // metadata. Body is the full ScriptData (with `version` + `shared` set).
   fastify.post<{ Params: { user: string; fileId: string } }>(
     '/scripts/:user/:fileId/share',
     authVerified,
     async (request, reply) => {
-      const stored = scriptStore.share(request.user.sub, request.params.fileId, request.body);
       reply.code(201);
-      return attachThumbnail(
-        request.user.sub, request.params.fileId, stored,
-        (request.body as WithThumbnailSvg)?.thumbnailSvg, 'share',
-      );
+      // The preview follows separately (PUT …/versions/:versionId/thumbnail) once the
+      // editor has rendered it, so a share never waits on — or fails over — a picture.
+      return scriptStore.share(request.user.sub, request.params.fileId, request.body);
     },
   );
 
@@ -255,10 +265,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
       void translationQueue.enqueue({
         author: request.user.sub, versionId: stored.id as string, fileId: request.params.fileId,
       }).catch(() => undefined);
-      return attachThumbnail(
-        request.user.sub, request.params.fileId, stored,
-        (request.body as WithThumbnailSvg)?.thumbnailSvg, 'publish',
-      );
+      return stored;
     },
   );
 

@@ -24,8 +24,6 @@ import '@awesome.me/webawesome/dist/components/option/option.js';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 
 import { CC_LICENCES } from '@archiyou/core/src/ScriptSchema';
-import { THUMBNAIL_OUTPUT_PATH } from '@archiyou/core/src/constants';
-import { getOutput } from '@archiyou/core/src/runner/worker/output';
 import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
 import type { CCLicence } from '@archiyou/core/src/ScriptSchema';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
@@ -40,7 +38,7 @@ import {
   searchUsers,
 } from '@archiyou/editor/src/services/sharing';
 import { fetchFileVersions } from '@archiyou/editor/src/services/scripts-sync';
-import { uploadThumbnail } from '@archiyou/editor/src/services/thumbnails';
+import { uploadVersionThumbnail, renderThumbnailPng, glbOf, scenegraphOf } from '@archiyou/editor/src/services/thumbnails';
 import { OVERLAY_MENU_WIDTH } from '@archiyou/editor/src/settings';
 
 /** Friendly labels for the SPDX licence ids. */
@@ -116,9 +114,9 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
   @state() private _loading     = false;
   @state() private _submitting  = false;
   @state() private _error       = '';
-  /** Iso line drawing for this share, generated in the background (see
+  /** The preview (a PNG render of the model) for this share, made in the background (see
    *  _prepareThumbnail). Null until it lands — sharing never waits for it. */
-  @state() private _thumbnailSvg: string | null = null;
+  @state() private _thumbnailPng: ArrayBuffer | null = null;
   /** The in-flight generation, kept so a share that goes out first can still wait for it
    *  AFTERWARDS and attach the drawing out of band (see _attachThumbnailLate). */
   private _thumbnailRun: Promise<void> | null = null;
@@ -297,9 +295,9 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
       void this._prefill();
       // Fire-and-forget, deliberately NOT awaited and never gating the Share button:
       // unlike publishing, sharing has no precheck run to piggyback on, and making the
-      // user wait on a preview would be a worse trade than occasionally shipping
-      // without one. If it lands before submit it rides along; if it does not, the
-      // share goes out first and _attachThumbnailLate() delivers it afterwards.
+      // user wait on a preview would be a worse trade than shipping without one. The
+      // share goes out on its own and _attachThumbnailLate() delivers the picture
+      // afterwards, whenever this run is done.
       this._thumbnailRun = this._prepareThumbnail();
     }
 
@@ -315,26 +313,25 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
    *  thumbnail is a perfectly good share, and this must never surface an error. */
   private async _prepareThumbnail()
   {
-    this._thumbnailSvg = null;
+    this._thumbnailPng = null;
     const scriptData = editorScript.get()?.toData();
     if (!scriptData) return;
     try
     {
       await warmupWorker();
+      // One run for the model, then its picture off screen.
       const result = await runScript({
         kernel:     'mesh',
         script:     scriptData,
-        outputs:    [THUMBNAIL_OUTPUT_PATH],
+        outputs:    ['default/model/glb'],
         messages:   ['error'],
         unitSystem: scriptData.units ?? 'metric',
-      } as RunnerScriptExecutionRequest);
-      this._thumbnailSvg = result
-        ? ((getOutput(result, THUMBNAIL_OUTPUT_PATH) as string | undefined) ?? null)
-        : null;
+      } as RunnerScriptExecutionRequest, { background: true });
+      this._thumbnailPng = result?.status === 'error' ? null : await renderThumbnailPng(glbOf(result), scenegraphOf(result));
     }
     catch
     {
-      this._thumbnailSvg = null;
+      this._thumbnailPng = null;
     }
   }
 
@@ -471,11 +468,10 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
     this._submitting = true;
     this._error = '';
     try {
-      const stored = await shareScript(script, this._thumbnailSvg);
-      // The share went out before the drawing was ready — deliver it separately rather
-      // than leaving this version without a preview forever. Not awaited: the dialog
-      // closes now, the picture arrives when it arrives.
-      if (!stored.thumbnail) void this._attachThumbnailLate(stored);
+      const stored = await shareScript(script);
+      // The picture is delivered separately, whenever it is ready. Not awaited: the
+      // dialog closes now, the preview arrives when it arrives.
+      void this._attachThumbnailLate(stored);
       // Reflect the stored shared metadata + version on the active script.
       script.shared = stored.shared ?? script.shared;
       script.version = stored.version ?? script.version;
@@ -493,17 +489,16 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
   }
 
   /**
-   * Attach the preview after the share has already been stored.
+   * Attach the preview once the share has been stored.
    *
-   * The generating run is never awaited before submitting, so for a slow script the share
-   * request simply carries no drawing. Waiting for that run HERE — after the dialog has
-   * closed and the user has moved on — costs nobody anything, and turns "sometimes there
-   * is no thumbnail" into "the thumbnail appears a few seconds later".
+   * The rendering run is never awaited before submitting, so a slow script's share simply
+   * goes out first. Waiting for that run HERE — after the dialog has closed and the user
+   * has moved on — costs nobody anything, and turns "sometimes there is no thumbnail" into
+   * "the thumbnail appears a few seconds later".
    *
    * Deliberately detached from the component's lifetime: the element is gone by the time
-   * this resolves, and that is fine — the closure holds everything it needs. The list
-   * showing the new share was rendered before the URL existed, so the picture appears on
-   * its next fetch rather than immediately.
+   * this resolves, and that is fine — the closure holds everything it needs. Pages showing
+   * the new share learn of the picture through the thumbnail service's stored event.
    */
   private async _attachThumbnailLate(stored: ScriptData)
   {
@@ -514,12 +509,9 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
     // Wait for the run that was still going at submit time (already resolved otherwise).
     try { await this._thumbnailRun; } catch { /* _prepareThumbnail swallows its own */ }
 
-    const svg = this._thumbnailSvg;
-    // Nothing was ever produced ('empty'/'failed') — that is a script or exporter problem
-    // and is already logged; there is nothing to attach and nothing to retry.
-    if (!svg) return;
-
-    await uploadThumbnail(fileId, versionId, svg);
+    // Null when nothing was drawn — a script or exporter problem, already logged; there is
+    // nothing to attach and nothing to retry. uploadVersionThumbnail() swallows the rest.
+    await uploadVersionThumbnail(fileId, versionId, this._thumbnailPng);
   }
 
   private _cancel()

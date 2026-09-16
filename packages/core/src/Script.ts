@@ -88,7 +88,7 @@ export class Script
     get shared(): null|ScriptSharedData { return this._shared ?? null; }
     set shared(v: null|ScriptSharedData|undefined) { this._shared = v ?? null; }
 
-    /** URL of this version's thumbnail image (null when none). Server-stamped; the SVG
+    /** URL of this version's thumbnail image (null when none). Server-stamped; the PNG
      *  bytes live on disk, not here — see ScriptSchema.thumbnail. */
     get thumbnail(): string|null { return this._thumbnail ?? null; }
     set thumbnail(v: string|null|undefined) { this._thumbnail = v ?? null; }
