@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-16 → (open) |
+| Dates | 2026-09-16 → 2026-09-16 |
 | Model | Claude Fable 5.1 (claude-fable-5-1), 1M context, Claude Code agent |
 | Tool | Claude Code in plan mode (agent researches and writes the plan), then as agent (writes code and tests, runs them) |
 | Human | Mark van der Net: wrote the prompts, set the scope (meshup leads, brep adapts), chose harness + quick fixes, sketch conversion to brep, library sweep later; reviewed the table and the code |
@@ -11,7 +11,18 @@
 
 ## Prompts (verbatim, local time)
 
-(filled when the unit closes)
+Session `14509063-14a6-47de-8d51-d0ae047baa87`. Messages relayed from another Claude Code session (the fab work running in parallel on the same tree) are left out; they are not the human's prompts.
+
+```
+2026-09-16 12:08 +0200  Can you revit the kernel parity question? I think its pretty OK, but still see issues. Focus on the modeling first. I think there where some test setups
+                          already. I think it is probably good to run the cadscripts, but check for every shape the bbox and compare it with those of the other kernel. Can you do a broad research on the kernel differences and how to test them. Meshup is leading because its the default kernel, but brep has its merits.
+2026-09-16 (plan mode)  Answers to the agent's three questions before approval:
+                          Scope: "Harness + quick fixes"
+                          Sketch seam: "Convert to brep in brep mode"
+                          DB corpus (138-script library sweep): "Later"
+2026-09-16 21:52 +0200  I want to commit this kernel parity work according to NLNET AI disclosure
+2026-09-16 (commit)     Summary lines chosen: "Kernel parity: meshup side", "Mesh/brep parity harness and brep fixes"; "Yes, commit both"
+```
 
 ## Plan (agent output, reviewed by the human before implementation)
 
@@ -108,9 +119,19 @@ Add the per-shape comparison to `apps/server/tests/parity/mesh-vs-brep-parity.te
 
 ## Review and decisions by the human
 
-(filled as the unit closes)
+- Set the direction: meshup is the leading kernel, brep adapts where the API contracts differ; brep-only primitives stay.
+- Asked for research first and for the comparison to be per shape (bbox) over the cadscripts, not per primitive.
+- Chose, before approval: build the harness and land the quick fixes in one pass; convert sketches to brep geometry in brep mode rather than raising an error; leave the 138-script library sweep for later.
+- Reviewed the parity table as it evolved (baseline 6/16 scripts on brep, 34 shapes off; end 8/16 running, 7 fully clean, the 4 make-module scripts stopping at the new Make error by design) and the list of open divergences (items 28–33 in `kernel-divergences.test.ts`).
+- Kept the failures unrelated to this work as they are: three pinned mesh-side divergences (arc length, union mutation, is2D) and other unit tests that drift because of the human's own uncommitted meshup and script-schema work in the same tree.
+- Chose the commit summary lines and approved both commit messages after reading them.
+
+Notes on what the agent found and the human accepted as fixes in this unit: meshup `Vector.rotate(axis, angle)` read radians while every other rotation reads degrees (now degrees); meshup collections silently dropped brep shapes passed one at a time; brep `mirror()` took `(origin, normal)`; brep `bbox()` was padded by the meshing deflection after an export; a straight edge extruded into a different default plane with the swept face oriented the other way round.
 
 ## Commits
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| 91e38be (packages/meshup, develop) | Kernel parity: meshup side | 12:08 prompt, plan approved |
+| 0971ebc | Mesh/brep parity harness and brep fixes | 12:08 prompt, plan approved |
+| (this commit) | Kernel parity: close the AI disclosure record | 21:52 prompt |
