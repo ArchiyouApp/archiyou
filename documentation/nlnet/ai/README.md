@@ -77,3 +77,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 |---|---|---|---|---|
 | 2026-09-14 | [FreeCAD export: Recipe layer and .FCStd exporter](./records/2026-09-14-freecad-export.md) | Claude Opus 5 | recipe | 5 |
 | 2026-09-15 | [PNG thumbnails: background generation, viewer-rendered](./records/2026-09-15-png-thumbnails.md) | Claude Fable 5.1 | recipe | 1 |
+| 2026-09-15 | [IFC4 export: automatic classification and .ifc exporter](./records/2026-09-15-ifc4-export.md) | Claude Opus 5 | recipe | part of 22a4393 |
