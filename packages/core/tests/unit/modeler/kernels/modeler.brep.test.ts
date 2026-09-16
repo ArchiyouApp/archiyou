@@ -277,6 +277,63 @@ describe('Modeler — brep mode', () =>
             expect(paths).toContain('Scene/crate')
         })
 
+        it('union() makes the receiver the union and returns it, like subtract() and the mesh kernel', () =>
+        {
+            const a = m.box(100) as any
+            const returned = a.union((m.box(60) as any).move(30, 0, 0))
+            expect(returned).toBe(a)
+            expect(a.volume()).toBeCloseTo(1036000, 0)
+            // a collection fuses into one Shape and hands it back
+            const fused = (m.collection(m.box(100), (m.box(60) as any).move(30, 0, 0)) as any).union()
+            expect(fused.type).toBe('Solid')
+            expect(fused.volume()).toBeCloseTo(1036000, 0)
+        })
+
+        it('scale() keeps the shape its specific type', () =>
+        {
+            const line = m.line([0, 0, 0], [100, 0, 0]) as any
+            line.scale(3)
+            expect(line.length()).toBeCloseTo(300, 3)
+            expect(line.edgeType()).toBe('Line')
+        })
+
+        it('extend() follows the edge as it lies now, not as it was built', () =>
+        {
+            const line = (m.line([0, 0, 0], [100, 0, 0]) as any).rotateZ(37, [0, 0, 0])
+            line.extend(50)
+            expect(line.length()).toBeCloseTo(150, 2)      // brep rounds coordinates to 3 decimals
+            expect(line.bbox().width()).toBeCloseTo(119.795, 2)
+            expect(line.bbox().depth()).toBeCloseTo(90.272, 2)
+        })
+
+        it('Solid.center() is the centre of mass', () =>
+        {
+            const s = m.box(100) as any
+            s.subtract((m.box(60) as any).move(30, 0, 0))
+            expect(s.center().x).toBeCloseTo(-5.4878, 3)   // −(25·180000)/820000
+        })
+
+        it('a closed outline extrudes into a capped solid, +z like the mesh kernel', () =>
+        {
+            const solid = (m.rect(100, 50) as any).extrude(50)
+            expect(solid.type).toBe('Solid')
+            expect(solid.volume()).toBeCloseTo(250000, 0)
+            expect(solid.bbox().min().z).toBeCloseTo(0, 3)
+            expect(solid.bbox().max().z).toBeCloseTo(50, 3)
+        })
+
+        it('Vector.rotationBetween() and Bbox.containsBbox() answer like the mesh kernel', () =>
+        {
+            const q = (m.vector(1, 0, 0) as any).rotationBetween([0, 1, 0])
+            expect(Math.hypot(q.x, q.y, q.z, q.w)).toBeCloseTo(1, 6)
+            const turned = (m.box(100, 10, 10) as any).rotateQuaternion(q)
+            expect(turned.bbox().depth()).toBeCloseTo(100, 3)
+            const big = (m.box(100) as any).bbox(), small = (m.box(10) as any).bbox()
+            expect(big.containsBbox(small)).toBe(true)
+            expect(small.containsBbox(big)).toBe(false)
+            expect(big.contains(small)).toBe(true)
+        })
+
         it('bbox() is exact, before and after the shape has been meshed for export', () =>
         {
             const line = m.line([0, 0, 0], [100, 0, 0]) as any

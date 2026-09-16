@@ -1,23 +1,21 @@
 script               brep     mesh brep match   ok  off only m only b  first divergence
 artcrate             success    19   19    19   19    0      0      0  
 boxpubtest           success     1    1     1    1    0      0      0  
-gardenchair          success    34   34    32   27    5      2      2  Scene/side/sideSeatingBeam[0]: bbox.depth mesh=834.4682 brep=836.824
+gardenchair          success    34   34    32   27    5      2      2  Scene/side/sideSeatingBeam[0]: bbox.depth mesh=834.4682 brep=836.823
                              off: Scene/side/sideBackSupportBeam mesh=[-13,430.1531,0,-7.36e-14,789.8176,657.3321] brep=[-13,430.153,0,0,789.818,657.332]
-                             off: Scene/longitudinal/longBeamBack mesh=[-499,637.9758,235.4171,-7.77e-14,688.6202,322.1873] brep=[-499,626.255,229.794,0,676.899,316.564]
-                             off: Scene/assembly/sideSeatingBeam mesh=[-512,-152.1495,224.1177,-499,682.3186,357.8504] brep=[-512,-154.505,224.117,-499,682.319,357.851]
+                             off: Scene/longitudinal/longBeamBack mesh=[-499,637.9758,235.4171,-7.77e-14,688.6202,322.1873] brep=[-499,626.255,229.795,0,676.899,316.565]
+                             off: Scene/assembly/sideSeatingBeam mesh=[-512,-152.1495,224.1177,-499,682.3186,357.8504] brep=[-512,-154.504,224.117,-499,682.319,357.85]
                              … 1 more off
                              only mesh: Scene/longitudinal/Mesh[0] [Mesh]
                              only mesh: Scene/longitudinal/Mesh[1] [Mesh]
                              only brep: Scene/longitudinal/diagramBaseFrontLine [Face]
                              only brep: Scene/longitudinal/sideBackSupportBeam [Face]
-kakpinchedstool      error      35   15    13   12    1     22      2  Scene/leg/Mesh[1]: bbox.width mesh=105 brep=72.559
-                             brep: legLine.extrude(...).polygons(...).extrude(...).hide(...).union(...).color(...).cutoff is not a function
-                             only mesh: Scene/horizontals/legLineCutTop [Vertex]
-                             only mesh: Scene/horizontals/horizontalMiddle [Mesh]
-                             only mesh: Scene/horizontals/horizontalMiddleCrossed [Mesh]
-                             … 19 more only on mesh
-                             only brep: Scene/leg/legLineDirect [Edge]
-                             only brep: Scene/leg/Solid[1] [Solid]
+kakpinchedstool      success    35   29    28   27    1      7      1  Scene/seat/Polygon: bbox.width mesh=105 brep=50.238
+                             only mesh: Scene/assembly/leg[0] [Mesh]
+                             only mesh: Scene/assembly/leg[1] [Mesh]
+                             only mesh: Scene/assembly/leg[2] [Mesh]
+                             … 4 more only on mesh
+                             only brep: Scene/horizontals/Wire:Planar [Wire]
 maritavolo           error      63   33    33   30    3     30      0  Scene/spine/strut V mid[0]: bbox.width mesh=50 brep=25
                              brep: Make: the make module (walls, boarding, part lists, sheet packing) is only available in mesh mode — it builds 
                              off: Scene/spine/strut V mid[1] mesh=[375,675,350,425,700,625] brep=[650,0,0,675,275,50]
@@ -46,12 +44,7 @@ slidercabinet        success    32   18    18   18    0     14      0
                              … 11 more only on mesh
 strawwall            success    56   55    55   55    0      1      0  
                              only mesh: Scene/studgrid/gridline [Curve]
-timberfloor          error      11    1     1    0    1     10      0  Scene/model/boards: bbox.min.z mesh=370 brep=352
-                             brep: floorDiagram.select(...).dim is not a function
-                             only mesh: Scene/model/beam11 [Mesh]
-                             only mesh: Scene/model/joistHeaderLeft [Mesh]
-                             only mesh: Scene/model/joistHeaderRight [Mesh]
-                             … 7 more only on mesh
+timberfloor          success    11   11    11   11    0      0      0  
 timberwall           error      21    2     2    2    0     19      0  
                              brep: Make: the make module (walls, boarding, part lists, sheet packing) is only available in mesh mode — it builds 
                              only mesh: Scene/wall/diagram/wallDiagram [Polygon]
@@ -64,22 +57,21 @@ timberwallopenings   error      56    0     0    0    0     56      0
                              only mesh: Scene/wall/gridlines/gridline0 [Curve]
                              only mesh: Scene/wall/gridlines/gridline1 [Curve]
                              … 53 more only on mesh
-tomy                 error      13    7     7    6    1      6      0  Scene/cuts/flatLeg: bbox.width mesh=102.1603 brep=160
-                             brep: flatFace.normal(...).rotationBetween is not a function
-                             only mesh: Scene/cuts/layFlatFaceTop [Polygon]
-                             only mesh: Scene/cuts/cutBackPlane [Polygon]
-                             only mesh: Scene/cuts/frontCutFace [Polygon]
-                             … 3 more only on mesh
-urhousesketch        error      42   28    23   22    1     19      5  Scene/walls/wallsCombined: bbox.depth mesh=5000 brep=250
-                             brep: mainFacadeWallBbox.containsBbox is not a function
+tomy                 success    13   13    13    6    7      0      0  Scene/cuts/flatLeg: bbox.width mesh=102.1603 brep=100.498
+                             off: Scene/cuts/layFlatFaceTop mesh=[868.9199,-313.1557,-1.6838,970.0539,302.9829,2.13e-14] brep=[869.751,-302.985,-99.504,969.264,312.886,-99.504]
+                             off: Scene/cuts/cutBackPlane mesh=[870.5727,292.81,-99.49,971.0801,313.1557,2.13e-14] brep=[869.755,293.084,-99.504,970.249,312.886,0]
+                             off: Scene/cuts/cutBackPrimaryLine mesh=[870.5727,292.81,-0.0141,970.0539,302.9829,2.13e-14] brep=[869.755,302.985,-99.504,969.264,312.886,-99.504]
+                             … 3 more off
+urhousesketch        error      42   42    40   33    7      2      2  Scene/openings/Mesh:Box[12]: bbox.min.y mesh=2786.0683 brep=4087.298
+                             brep: unreachable
+                             off: Scene/openings/Mesh:Box[14] mesh=[-875,2786.0683,0,1125,3586.0683,2000] brep=[-875,4087.298,0,1125,4887.298,2000]
+                             off: Scene/openings/Polygon[4] mesh=[45,2866.0683,0,45,3666.0683,2000] brep=[125,4087.298,0,125,4887.298,2000]
+                             off: Scene/openings/Mesh:Box[15] mesh=[3825,2931.8144,0,3925,3731.8144,2000] brep=[3825,3321.487,0,3925,4121.487,2000]
+                             … 3 more off
                              only mesh: Scene/roof/Mesh [Mesh]
                              only mesh: Scene/walls/Vertex [Vertex]
-                             only mesh: Scene/openings/Polygon[2] [Polygon]
-                             … 16 more only on mesh
                              only brep: Scene/roof/group1/UnnamedShapeCollection [ShapeCollection]
                              only brep: Scene/walls/Wire:Planar [Wire]
-                             only brep: Scene/walls/wallBack [Solid]
-                             … 2 more only on brep
 workbench            success    24   24    24   24    0      0      0  
 
-corpus: 8/16 scripts run on brep, 274 shapes matched, 26 off, 211 on one kernel only
+corpus: 11/16 scripts run on brep, 322 shapes matched, 37 off, 159 on one kernel only

@@ -483,7 +483,9 @@ export class Modeler
     arc(start: PointLike, mid: PointLike, end: PointLike): AnyKernelShape
     {
         if (this._mode === 'brep') return this._adopt(new (this._brep().Edge)().makeArc(start as any, mid as any, end as any))
-        return this._adopt(meshup.Curve.Arc(start, mid, end) as meshup.Curve)
+        // 'threepoint', as documented and as brep does: meshup's own default reads `mid` as a
+        // tangent direction (kernel-divergences item 1)
+        return this._adopt(meshup.Curve.Arc(start, mid, end, 'threepoint') as meshup.Curve)
     }
 
     /** Makes a Spline going through given Points */

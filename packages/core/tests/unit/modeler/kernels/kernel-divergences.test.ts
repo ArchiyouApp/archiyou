@@ -36,31 +36,35 @@
  *  16–27 were found by tests/cadscripts/kernel.parity.test.ts and are asserted the other way
  *  round in modeler.brep.test.ts ("mesh-kernel contracts on brep shapes").
  *
- *  Found by the same run and still OPEN (no fix yet, listed in kernel.parity.txt):
- *   28  brep Vector has no rotationBetween() (tomy)
- *   29  the techdraw doc pipeline (docPipeline() under $pipeline) recurses until the stack
- *       overflows on brep (urhousesketch, once 33 is out of the way) — a documentation-side
- *       issue, not modelling
- *   30  gardenchair: beams built from extend()/extendTo() lines drift a few mm on brep,
- *       most likely item 5 (extend() along the original direction)
- *   31  brep union() hands back a ShapeCollection where meshup returns one Mesh, so the
- *       chained .cutoff() has nothing to run on (kakpinchedstool) — see item 2
- *   32  side selectors ('E||left') return more hits on brep than on mesh over a collection of
- *       faces' edges, so a chained .dim() lands on a collection (timberfloor)
- *   33  brep Bbox has no containsBbox() (meshup Bbox does; brep keeps it private as
- *       _containsBbox) — urhousesketch stops there
+ *  The second pass (closing the gaps) retired these too:
+ *    1  arc(start, mid, end) — Modeler.arc() now passes 'threepoint' to meshup
+ *    2  union() — brep union() now updates the receiver like subtract(), and returns it
+ *    4  brep scale() — the transformed shape is cast back to its TopoDS type
+ *    5  brep extend() — a straight edge is rebuilt from its world-space ends
+ *    7  brep Solid.center() — volume properties, the centre of mass
+ *    8  extruding a closed planar outline — a capped Solid on brep too, along the outline's
+ *       normal turned toward the positive axis (a rect goes +z), as meshup
+ *   13  is2D() — meshup Curve/Mesh now use the tolerant Bbox test
+ *   28  brep Vector.rotationBetween() — added, answers the quaternion rotateQuaternion() takes
+ *   31  brep ShapeCollection.union() — returns the fused Shape, as meshup
+ *   32  side selectors over a collection of edges — went away with 8: the edges came from an
+ *       open shell instead of a solid's bottom face
+ *   33  brep Bbox.containsBbox() — added (contains() takes a Bbox too)
  *
- *    1  arc(start, mid, end) draws a different curve on each kernel
- *    2  union()/intersection() mutate on mesh but not on brep
- *    4  brep scale() leaves a linear shape untyped, breaking the next call on it
- *    5  brep extend() ignores the transform the edge has picked up
+ *  Still OPEN:
+ *   29  urhousesketch on brep: the default run completes, but when the Runner re-executes the
+ *       script for its `$pipeline('techdraw')` the OpenCascade WASM traps ("unreachable") at
+ *       `wallFrontFace.copy().tmp().extrude(...).volume()` — a re-execution/lifetime issue
+ *       in the brep kernel, not a modelling contract
+ *   30  gardenchair: beams built from extend()/extendTo() lines still drift a few mm on brep
+ *       after 5 (sideSeatingBeam depth 834.5 vs 836.8; longBeamBack ~11 mm in y)
+ *   34  kakpinchedstool `seat` plane: 105 wide on mesh, 50.2 on brep; tomy: `flatLeg` after
+ *       layflat()/obbox() differs (102.2 vs 100.5 wide) — layflat/obbox axis choice
+ *
  *    6  brep subtract() throws when the cut severs the solid
- *    7  brep Solid.center() is the surface centroid, not the centre of mass
- *    8  extruding a closed outline gives a capped solid on mesh, an open shell on brep
  *   10  area()/size()/length() answer for different shape families
  *   11  closed outlines are seamed differently, so start()/end()/middle() differ
  *   12  brep pointAt() is parameter-based where mesh pointAtPerc() is arc-length-based
- *   13  is2D() uses an exact zero test on mesh and a tolerant one on brep
  *   14  Polygon.center() double-counts the closing vertex on mesh
  *   15  odds and ends: a line ∩ a closed outline, distanceTo(), fillet()/chamfer(), circle spans
  *   22  the make module (walls, boarding, part lists) is mesh-only — brep now says so up front
@@ -83,120 +87,9 @@ describe('mesh ↔ brep divergences (pinned, not accepted)', () =>
         await brep.load()
     }, 120_000)
 
-    //// ==== 1. PRIMITIVES THAT MEAN DIFFERENT THINGS ==== ////
 
-    it('1. arc(start, mid, end) is a THREE-POINT arc on brep and a TANGENT arc on mesh', () =>
-    {
-        /*  Modeler.arc()'s own docstring says "Makes an Arc through start, mid and end Point",
-            and that is what brep does. meshup's Curve.Arc() defaults to method 'tangent', where
-            the middle argument is the tangent DIRECTION at the start, not a point on the curve —
-            and Modeler.arc() never passes the method, so the mesh branch takes the default.
 
-            SHOULD BE: Modeler.arc() passes 'threepoint' to meshup.Curve.Arc(). */
-        const args = [[0, 0, 0], [50, 20, 0], [100, 0, 0]] as const
-
-        const a = mesh.arc(...args as any) as any
-        const b = brep.arc(...args as any) as any
-
-        // brep passes through the mid point: the arc reaches y = 20
-        expect(r4(b.bbox().depth())).toEqual(20)
-        expect(r4(b.length())).toEqual(110.347)
-
-        // mesh treats [50,20,0] as a tangent, so it never gets near y = 20
-        expect(r4(a.bbox().depth())).toEqual(9.629)
-        expect(r4(a.length())).toEqual(102.4545)
-    })
-
-    //// ==== 2. MUTATION CONTRACTS ==== ////
-
-    it('2. union() mutates the receiver on mesh but not on brep', () =>
-    {
-        /*  brep's union() builds the result and swaps it into the SCENE, but never updates the
-            receiver's own geometry — the handle a script is holding still refers to the old shape.
-            subtract() does update it, on both kernels. The portable spelling is therefore to
-            rebind: `s = s.union(other)` works everywhere, `s.union(other)` does not.
-
-            intersection() is NOT in this divergence any more: it is non-replacing on both kernels
-            (the receiver is untouched, the shared geometry comes back as a new shape on the active
-            layer), so `s = s.intersection(other)` is the only spelling on either.
-
-            SHOULD BE: brep union() updates the receiver like subtract() does.
-                       (See the "brep methods MUTATE" convention the kernel documents for itself.) */
-        for (const [kernel, m, mutatesOnUnion] of [['mesh', mesh, true], ['brep', brep, false]] as const)
-        {
-            const a = m.box(100) as any
-            const returned = a.union(m.box(60).move(30, 0, 0))
-
-            expect(r4(returned.volume()), `${kernel}: the RETURN value is always the union`).toEqual(1036000)
-            expect(a.volume() === 1036000, `${kernel}: receiver mutated?`).toEqual(mutatesOnUnion)
-        }
-
-        // subtract() is the one boolean that behaves the same on both
-        for (const m of [mesh, brep])
-        {
-            const a = m.box(100) as any
-            a.subtract(m.box(60).move(30, 0, 0))
-            expect(r4(a.volume())).toEqual(820000)
-        }
-    })
-
-    //// ==== 4-6. BREP TRANSFORMS AND BOOLEANS ==== ////
-
-    it('4. brep scale() leaves a linear shape untyped, so the next call on it throws', () =>
-    {
-        /*  brep's Shape.scale() assigns the transform result straight to this._ocShape:
-
-                this._ocShape = ocBuilder.Shape();      // a bare TopoDS_Shape
-
-            move() and rotate() follow the same assignment with _updateFromOcShape(), which casts
-            it back down to TopoDS_Edge / TopoDS_Wire / …. scale() does not, so measurements that
-            only need a generic shape (bbox, length) keep working while anything that reaches for
-            the curve — edgeType(), extend(), start() — throws a WASM BindingError.
-
-            SHOULD BE: scale() calls this._updateFromOcShape() like every other transform. */
-        const line = brep.line([0, 0, 0], [100, 0, 0]) as any
-        expect(line.edgeType()).toEqual('Line')
-
-        line.scale(3)
-        expect(r4(line.length()), 'the measurement still works').toEqual(300)
-        expect(() => line.edgeType()).toThrow(/TopoDS_Edge/)
-
-        // mesh has no such trap
-        const meshLine = mesh.line([0, 0, 0], [100, 0, 0]) as any
-        meshLine.scale(3)
-        expect(r4(meshLine.length())).toEqual(300)
-        expect(r4((meshLine.extend(50) ?? meshLine).length())).toEqual(350)
-    })
-
-    it('5. brep extend() runs along the edge\'s ORIGINAL direction, ignoring its transform', () =>
-    {
-        /*  Edge.extend() works in the underlying Geom curve's parameter space and then nudges the
-            untouched end back into place. The underlying curve does not carry the edge's location,
-            so an edge that has been rotated is extended along the direction it had when it was
-            built.
-
-            Below: a line along +x, rotated 37°, then extended. mesh grows it along the rotated
-            direction (correct); brep grows it along +x and flattens the result.
-
-            SHOULD BE: extend() takes the edge's location into account (or rebuilds from
-                       start()/end(), which are already correct). */
-        const build = (m: Modeler) => (m.line([0, 0, 0], [100, 0, 0]) as any).rotateZ(37, [0, 0, 0])
-
-        const a = build(mesh).extend(50) ?? build(mesh)
-        const b = build(brep)
-        b.extend(50)
-
-        expect(r4(a.length())).toEqual(150)
-        expect(r4(b.length())).toEqual(150)
-
-        // mesh keeps the 37° direction: the extension adds to BOTH extents
-        expect(r4(a.bbox().width())).toEqual(119.7953)
-        expect(r4(a.bbox().depth())).toEqual(90.2723)
-
-        // brep comes back axis-aligned — the extension went along +x
-        expect(r4(b.bbox().width())).toEqual(150)
-        expect(r4(b.bbox().depth())).toEqual(0)
-    })
+    //// ==== 6. BREP BOOLEANS ==== ////
 
     it('6. brep subtract() does not survive a cut that severs the solid in two', () =>
     {
@@ -232,56 +125,7 @@ describe('mesh ↔ brep divergences (pinned, not accepted)', () =>
         expect(brepVolume, 'brep does not produce the severed solid').not.toBeCloseTo(EXPECTED, 0)
     })
 
-    //// ==== 7. MEASUREMENTS THAT MEAN DIFFERENT THINGS ==== ////
 
-    it('7. brep Solid.center() is the SURFACE centroid, not the centre of mass', () =>
-    {
-        /*  brep's Solid.center() calls BRepGProp.SurfaceProperties_1, which weights by area rather
-            than by volume. On a symmetric solid the two coincide, so it looks right until a
-            boolean makes the solid lopsided.
-
-            The case below is checkable by hand: a 100³ cube minus the 50×60×60 slab the cutter
-            removes leaves 820 000 mm³ whose centroid sits at x = −(25·180000)/820000 = −5.4878.
-            mesh gets that; brep does not.
-
-            SHOULD BE: Solid.center() uses VolumeProperties_1, like Shape.volume() already does. */
-        const cut = (m: Modeler) => { const s = m.box(100) as any; s.subtract(m.box(60).move(30, 0, 0)); return s }
-
-        expect(r4(cut(mesh).center().x), 'mesh = the true centre of mass').toBeCloseTo(-5.4878, 3)
-        expect(r4(cut(brep).center().x), 'brep = the area-weighted centroid').toBeCloseTo(1.667, 2)
-
-        // the volumes themselves agree exactly, so this is purely the centroid formula
-        expect(r4(cut(mesh).volume())).toEqual(820000)
-        expect(r4(cut(brep).volume())).toEqual(820000)
-    })
-
-    //// ==== 8. EXTRUDING AN OUTLINE ==== ////
-
-    it('8. extruding a closed outline gives a capped SOLID on mesh and an open SHELL on brep', () =>
-    {
-        /*  Two divergences in one call. mesh caps the extrusion and pulls it along +z; brep sweeps
-            only the wire, so the result is the four side walls with no top or bottom, and with no
-            direction argument it follows the wire's normal — which points −z for a default rect,
-            so the extrusion goes the other way.
-
-            SHOULD BE: extruding a CLOSED linear shape yields a capped Solid, extruded +z (or at
-                       least in the same direction on both kernels). */
-        const a = (mesh.rect(100, 50) as any).extrude(50)
-        const b = (brep.rect(100, 50) as any).extrude(50)
-
-        expect(a.type ?? a.constructor.name).toEqual('Mesh')
-        expect(r4(a.volume()), 'mesh: a real 100×50×50 solid').toEqual(250000)
-        expect(r4(a.bbox().min().z), 'mesh extrudes +z').toEqual(0)
-
-        expect(b.type).toEqual('Shell')
-        expect(b.faces().length, 'brep: the four side walls, no caps').toEqual(4)
-        expect(r4(b.bbox().min().z), 'brep extrudes along the wire normal, i.e. −z').toEqual(-50)
-
-        // passing the direction explicitly fixes the direction but not the missing caps
-        const c = (brep.rect(100, 50) as any).extrude(50, [0, 0, 1])
-        expect(r4(c.bbox().min().z)).toEqual(0)
-        expect(c.type).toEqual('Shell')
-    })
 
     //// ==== 10. WHICH MEASUREMENTS EXIST ==== ////
 
@@ -361,28 +205,7 @@ describe('mesh ↔ brep divergences (pinned, not accepted)', () =>
         expect(r4(lineA.middle().x)).toEqual(r4(lineB.middle().x))
     })
 
-    //// ==== 13-14. SMALL BUT SHARP ==== ////
-
-    it('13. is2D() tests the bbox for an exact zero on mesh and a tolerant one on brep', () =>
-    {
-        /*  meshup's Bbox.is2D() is properly tolerant (BBOX_FLAT_EPS), but Curve.is2D() and
-            Mesh.is2D() do not use it — they re-implement the check as `width === 0 || …`. Rotate a
-            tessellated shape onto a plane and the float residue makes it report 3D. brep's
-            Shape.is2D() delegates to its Bbox and gets it right.
-
-            SHOULD BE: Curve.is2D() and Mesh.is2D() return this.bbox().is2D(). */
-        const a = (mesh.circle(40) as any).rotateX(90, [0, 0, 0])
-        const b = (brep.circle(40) as any).rotateX(90, [0, 0, 0])
-
-        expect(r4(a.bbox().depth()), 'flat to four decimals on both').toEqual(0)
-        expect(r4(b.bbox().depth())).toEqual(0)
-
-        expect(a.is2D(), 'mesh: float residue reads as 3D').toEqual(false)
-        expect(b.is2D()).toEqual(true)
-
-        // the tolerant answer is right there on the same object
-        expect(a.bbox().is2D()).toEqual(true)
-    })
+    //// ==== 14. SMALL BUT SHARP ==== ////
 
     it('14. Polygon.center() double-counts the closing vertex on mesh', () =>
     {

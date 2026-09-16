@@ -867,6 +867,18 @@ export class Edge extends Shape
     {
         if(!['Line','Arc'].includes(this.edgeType())){ throw new Error(`Edge::extend(): Extend with edge type "${this.edgeType()}" not yet implemented!`)}
 
+        // A straight Edge is rebuilt from its WORLD-SPACE ends. The parameter route below works
+        // on the underlying Geom curve, which does not carry the Edge's Location: a rotated line
+        // would grow along the direction it was built with (kernel-divergences item 5).
+        if(this.edgeType() === 'Line')
+        {
+            const s = this.start().toPoint(), e = this.end().toPoint();
+            const d = e.toVector().subtracted(s).normalized().scaled(amount);
+            const [ns, ne] = (direction === 'start') ? [s.toVector().subtracted(d).toPoint(), e] : [s, e.toVector().added(d).toPoint()];
+            this._fromOcEdge(new Edge().makeLine(ns, ne)._ocShape);
+            return this;
+        }
+
         // NOTE: we need to normalize U with the length because Arcs have U based on angle, not distance
         let uMin:number, uMax:number;
         [uMin,uMax] = this.getParamMinMax();

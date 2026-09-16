@@ -527,6 +527,9 @@ export class Shape
         const carry = (s:any) =>
         {
             if (!s || s === this) return;
+            // the host first: without it the new Shape's faces/edges cannot reach the annotator
+            if (s._modeler == null && this._modeler) { s._modeler = this._modeler; }
+            if (s._scene == null && this._scene) { s._scene = this._scene; }
             if (s._name === undefined && this._name !== undefined) { s._name = this._name; s._nameInherited = this._nameInherited; }
             if (this._material && !s._material) { s._material = this._material; }
             const style = this.style?.explicitData?.();
@@ -1191,7 +1194,12 @@ export class Shape
         pivot = pivot as Point || this.center();
         ocTransform.SetScale(pivot._toOcPoint(), factor);
         let ocBuilder = new this._oc.BRepBuilderAPI_Transform_2(this._ocShape, ocTransform, true);
-        this._ocShape = ocBuilder.Shape(); // 
+        // The transform hands back a bare TopoDS_Shape; cast it down to TopoDS_Edge/Wire/… the
+        // way _fromOcShape() does, or the next curve-specific call (edgeType(), extend()) throws.
+        // move() and rotate() never hit this: they apply a Location and keep the type.
+        const typed = new Shape()._fromOcShape(ocBuilder.Shape()) as AnyShape;
+        this._ocShape = typed._ocShape;
+        this._updateFromOcShape(); // Vertex syncs its coordinates from the shape
         return this;
     }
 
@@ -1878,6 +1886,26 @@ export class Shape
                 directionVec = new Vector(0,0,1);
             }
         }       
+
+        // A closed planar Wire extrudes into a capped SOLID, as a closed outline does on the mesh
+        // kernel (kernel-divergences item 8) — sweeping the bare wire would give four open walls.
+        // Its default direction is the outline's normal turned toward the positive cardinal axis,
+        // which is how meshup canonicalises the normal of a closed curve (a rect goes +z).
+        if (this.type === 'Wire' && (this as any).closed?.() && (this as any).planar?.())
+        {
+            const face = new Face().fromWire(this as any);
+            if (face?.type === 'Face')
+            {
+                let dir = direction ? (direction as Vector) : (face as any).normal() as Vector;
+                if (!direction)
+                {
+                    const c = [Math.abs(dir.x), Math.abs(dir.y), Math.abs(dir.z)];
+                    const dom = c.indexOf(Math.max(...c));
+                    if ([dir.x, dir.y, dir.z][dom] < 0){ dir = dir.reversed(); }
+                }
+                return (face as any)._extruded(amount, dir);
+            }
+        }
 
         let extrudeVec = directionVec.normalized().scale(amount);
         let ocPrismBuilder = new this._oc.BRepPrimAPI_MakePrism_1(this._ocShape, extrudeVec._toOcVector(), false, true);
@@ -2745,13 +2773,24 @@ export class Shape
 
 
 
-    /** Same as unioned but replacing the current Shape in the scene */
+    /** Union in place: this Shape BECOMES the union and is returned, as subtract() does and as
+     *  the mesh kernel does (`a.union(b)` mutates a). Only when the pieces stay disjoint — one
+     *  Shape cannot hold them — is the result a ShapeCollection that replaces this Shape in the
+     *  scene. Kernel-divergences item 2. */
     @checkInput('AnyShapeOrCollection', 'auto')
     union(other:AnyShapeOrCollection):AnyShapeOrCollection
     {
         let unionedShape = this._unioned(other);
-        this.replaceShape(unionedShape);
-        return unionedShape;
+        if (unionedShape == null){ return this; }
+        if (isAnyShapeCollection(unionedShape) || (unionedShape as AnyShape).type !== this.type)
+        {
+            this.replaceShape(unionedShape);
+            return unionedShape;
+        }
+        this._ocShape = (unionedShape as Shape)._ocShape; // already cast to the specific type by _fromOcShape()
+        this._updateFromOcShape();
+        this.clearMeshCache?.();
+        return this;
     }
 
     /** Alias for union */
@@ -2891,7 +2930,7 @@ export class Shape
 
         const splittedShapes = this._splitted(cutPlane.scale(1.1)); // Scaling makes results more robust
 
-        if(Shape.isShape(splittedShapes) || splittedShapes.length === 0){ console.warn(`Shape::cutoff: No splitted Shapes. Check level!`); return null; }
+        if(Shape.isShape(splittedShapes) || splittedShapes.length === 0){ console.warn(`Shape::cutoff: No splitted Shapes. Check level! Returned original`); return this; } // never null: scripts chain on it
         if(splittedShapes.length === 1){ console.warn(`Shape::cutoff: Only one splitted Shapes. Returned original`); return this; }
 
 
@@ -3465,6 +3504,10 @@ export class Shape
             let specifiedShape = this._fromOcShape(ocShape) as any;  // NOTE: avoid TS errors
             // NOTE: we keep track of main Shape in _parent
             specifiedShape._parent = this;
+            // and of the host, so `box().faces().first().edges().select('E||left').dim()` still
+            // reaches the annotator — meshup's sceneCarry propagates the same way
+            if (specifiedShape._modeler == null && this._modeler){ specifiedShape._modeler = this._modeler; }
+            if (specifiedShape._scene == null && this._scene){ specifiedShape._scene = this._scene; }
             shapes.push(specifiedShape as Shape);
         });
 

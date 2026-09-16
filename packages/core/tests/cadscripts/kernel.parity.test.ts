@@ -295,8 +295,8 @@ describe('mesh ↔ brep parity of the cadscripts', () =>
 
     /*  The floor: what parity already holds today, so a kernel change cannot take it away
         unnoticed. Widen these lists as the divergences in kernel-divergences.test.ts get fixed. */
-    const RUNS_ON_BREP = ['artcrate', 'boxpubtest', 'gardenchair', 'programmaticparams', 'sedia', 'slidercabinet', 'strawwall', 'workbench']
-    const CLEAN_ON_BREP = ['artcrate', 'boxpubtest', 'programmaticparams', 'sedia', 'workbench', 'slidercabinet', 'strawwall']
+    const RUNS_ON_BREP = ['artcrate', 'boxpubtest', 'gardenchair', 'kakpinchedstool', 'programmaticparams', 'sedia', 'slidercabinet', 'strawwall', 'timberfloor', 'tomy', 'workbench']
+    const CLEAN_ON_BREP = ['artcrate', 'boxpubtest', 'programmaticparams', 'sedia', 'workbench', 'slidercabinet', 'strawwall', 'timberfloor']
     /*  Scripts that use the make module stop at its mesh-only error on brep — by design until
         Make builds through the Modeler API. */
     const MESH_ONLY_BY_DESIGN = ['timberwall', 'timberwallopenings', 'maritavolo', 'simplestep']

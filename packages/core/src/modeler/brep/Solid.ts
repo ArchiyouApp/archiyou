@@ -282,8 +282,10 @@ export class Solid extends Shape
 
         let ocProps = new this._oc.GProp_GProps_1();
         let BRepGProp = this._oc.BRepGProp.prototype.constructor;
-        
-        BRepGProp.SurfaceProperties_1(this._ocShape, ocProps, false, false);
+
+        // Volume properties: the centre of MASS, as the mesh kernel answers. SurfaceProperties
+        // gave the area-weighted centroid, which drifts from it once a solid loses symmetry.
+        BRepGProp.VolumeProperties_1(this._ocShape, ocProps, false, false, false);
 
         return new Point()._fromOcPoint(ocProps.CentreOfMass());
         

@@ -723,12 +723,19 @@ export class Bbox
 
     //// OPERATIONS / CHECKS ////
 
-    contains(other:AnyShape):boolean
+    /** Does this Bbox contain the whole of `other`? Mesh-kernel name (meshup Bbox.containsBbox). */
+    containsBbox(other:Bbox):boolean
     {
+        return this._containsBbox(other);
+    }
+
+    contains(other:AnyShape|Bbox):boolean
+    {
+        if(other instanceof Bbox){ return this._containsBbox(other); }
         if(!Shape.isShape(other))
         {
             console.error(`Bbox:contains: Please supply a Shape!`)
-            return false;    
+            return false;
         }
 
         if (other.type == 'Vertex')
