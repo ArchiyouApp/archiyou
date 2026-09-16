@@ -128,6 +128,45 @@ export class OBbox
         return roundToTolerance(this._ocOBbox.ZHSize()*2)
     }
 
+    //// MESH-KERNEL VOCABULARY (meshup OBbox) ////
+    /*  meshup sorts its principal axes by extent: axes()[0] is the longest side, length() its
+        size, thickness() the smallest. OpenCascade's box keeps its own x/y/z order, so these
+        sort on the way out. */
+
+    /** The three box axes, longest extent first. */
+    axes():[Vector, Vector, Vector]
+    {
+        return this._sortedAxes().map(a => a.dir) as [Vector, Vector, Vector];
+    }
+
+    /** The three full extents, longest first (meshup OBbox.size(), as [x, y, z] of that order). */
+    size():Point
+    {
+        const s = this._sortedAxes().map(a => a.size);
+        return new Point(s[0], s[1], s[2]);
+    }
+
+    /** The longest side. */
+    length():number
+    {
+        return this.maxSize();
+    }
+
+    /** The smallest side. */
+    thickness():number
+    {
+        return this.minSize();
+    }
+
+    private _sortedAxes():Array<{ dir:Vector, size:number }>
+    {
+        return [
+            { dir: this.xDir(), size: this.width() },
+            { dir: this.yDir(), size: this.depth() },
+            { dir: this.zDir(), size: this.height() },
+        ].sort((a, b) => b.size - a.size);
+    }
+
     copy()
     {
         // TODO: For BBox compat

@@ -891,11 +891,13 @@ import { getOc } from './index' // OC global getter
       @checkInput([ [Number, SHAPE_EXTRUDE_DEFAULT_AMOUNT], ['PointLike', null ]], [Number, 'auto'])
       extrude(amount?:number, direction?:PointLike):AnyShapeCollection
       {
-         this.shapes.forEach( shape => {
-            shape.extrude(amount, direction);
-         });
-
-         return this;
+         // Each Shape's extrude() replaces it in the scene and hands back the NEW Shape (a Face
+         // becomes a Solid). Return those, as meshup does — a collection still holding the old
+         // Faces would fuse into a hollow Shell at the next union().
+         const results = this.shapes
+            .map(shape => shape.extrude(amount, direction) ?? shape)
+            .flatMap(r => ShapeCollection.isShapeCollection(r) ? (r as ShapeCollection).toArray() : [r as AnyShape]);
+         return new ShapeCollection(results);
       }
 
 
@@ -1290,8 +1292,14 @@ import { getOc } from './index' // OC global getter
             // otherwise the member's sub-shape the hit was taken from
             const owner = this.toArray().find(s => s.getSubShapes(hit.type).toArray().some(sub => sub._ocShape.IsSame(hit._ocShape)));
             const sub = owner?.getSubShapes(hit.type).toArray().find(sub => sub._ocShape.IsSame(hit._ocShape));
-            if (sub){ sub._parent = owner; return sub; }
-            return hit;
+            const found = sub ?? hit;
+            // a sub-shape is a fresh wrapper: give it the host its owner has, so dim()/label()
+            // and the scene still reach it
+            const host = owner ?? this.toArray()[0];
+            if (found._modeler == null && host?._modeler){ found._modeler = host._modeler; }
+            if (found._scene == null && host?._scene){ found._scene = host._scene; }
+            if (sub){ sub._parent = owner; }
+            return found;
          });
 
          return new ShapeCollection(mapped).distinct().checkSingle();
@@ -2138,7 +2146,7 @@ import { getOc } from './index' // OC global getter
        *  NOTE: this used to call `this.added()`, which never existed on ShapeCollection — the
        *  method threw for as long as it has been here. It now folds the Shapes together with
        *  the boolean union the Shape class provides. */
-      union():this
+      union():AnyShape|this
       {
          if(this.shapes.length === 0){ return this }
 
@@ -2153,7 +2161,9 @@ import { getOc } from './index' // OC global getter
          this.empty();
          this.add(fused); // Add the fused Shape to current collection
 
-         return this;
+         // The fused Shape itself, as meshup's ShapeCollection.union() answers — a script chains
+         // `.union().cutoff(...)` on it. The collection now holds that one Shape.
+         return fused;
       }
       
 
@@ -2216,7 +2226,7 @@ import { getOc } from './index' // OC global getter
       //// MESH-KERNEL API PARITY ////
 
       /** Fuse the Shapes in this collection into one. Mesh-kernel name for union(). */
-      merge():this
+      merge():AnyShape|this
       {
          return this.union();
       }

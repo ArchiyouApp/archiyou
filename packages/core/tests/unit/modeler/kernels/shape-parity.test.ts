@@ -271,6 +271,20 @@ describe('mesh ↔ brep parity', () =>
             ],
         }, modelers)
 
+        /*  arc(start, mid, end) is a three-point arc on both kernels now (kernel-divergences
+            item 1 retired): the curve passes through mid, so ends, length and bbox line up. */
+        runChain('arc: three points → transforms → extend', {
+            family: 'linear',
+            tol: TESSELATED,
+            ends: true,
+            make: m => m.arc([0, 0, 0], [50, 20, 0], [100, 0, 0]),
+            steps: [
+                { name: 'move(10,0,0)', op: s => s.move(10, 0, 0) },
+                { name: 'rotateZ(30) about origin', op: s => s.rotateZ(30, [0, 0, 0]) },
+                { name: 'mirrorY(0)', op: s => s.mirrorY(0) },
+            ],
+        }, modelers)
+
         /*  A circle is one analytic curve on brep and two arc spans on meshup, so `segments`
             drops out — but length and the bounding box are exact on both, and they are what a
             script actually reads. */

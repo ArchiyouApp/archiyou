@@ -709,6 +709,12 @@ export const BREP_OPS: Readonly<Record<string, OpRow<any>>> = {
             return tools.length ? { op: 'cut', tools: tools.map(toolRecipe) } : PASS_THROUGH;
         },
     },
+    'Shape.union': {   // in place, like subtract(): the receiver becomes the union (kernel-divergences item 2)
+        on: b => [b.Shape.prototype, 'union'],
+        step: (self, [other]) => (adapterFor(other)?.name === 'brep' && other !== self)
+            ? { op: 'fuse', tools: [toolRecipe(other)] }
+            : PASS_THROUGH,
+    },
     'Shape._unioned': {   // a collection unions pairwise through a copy: left to the watchers
         on: b => [b.Shape.prototype, '_unioned'],
         derive: true,

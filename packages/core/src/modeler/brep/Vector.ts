@@ -599,6 +599,18 @@ export class Vector extends Point
         return this.copy().mirror(position, direction);
     }
 
+    /** The shortest-arc rotation that turns this Vector onto `other`, as a quaternion
+     *  {x, y, z, w} — what Shape.rotateQuaternion() takes. Mesh-kernel name and shape of answer
+     *  (meshup Vector.rotationBetween). */
+    @checkInput('PointLike', 'Vector')
+    rotationBetween(other:PointLike):{ x:number, y:number, z:number, w:number }
+    {
+        const q = new this._oc.gp_Quaternion_3(this._ocVector, (other as Vector)._ocVector).Normalized();
+        const out = { x: q.X(), y: q.Y(), z: q.Z(), w: q.W() };
+        q.delete?.();
+        return out;
+    }
+
     /**
      *   Rotate this Vector about `axis` (a direction through the origin — a vector is a
      *   direction, it has no position). Same signature as meshup's Vector.rotate(axis, angle).
