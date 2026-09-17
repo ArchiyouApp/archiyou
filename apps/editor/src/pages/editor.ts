@@ -3,13 +3,6 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
 import { type RouterLocation } from '@vaadin/router';
 
-import { pluginMode, enterPluginMode, exitPluginMode, type PluginModeState } from '../state/plugin-mode';
-import { PluginManager, type PluginResultSummary, type GeneratedOutput } from '../plugins/PluginManager';
-import { loadPluginFromDirectory, loadPluginFromFiles, loadShapePicker, scriptStem, requestWritePermission, writeFileText, pickPluginFolderFiles } from '../plugins/plugin-loader';
-import type { LoadedPlugin } from '../plugins/types';
-import { dataToModuleString } from '@archiyou/core/src/utils';
-import '../plugins/plugin-part-frame';
-
 import { createExecutionFailureResult, runScript, warmupWorker } from '../services/execution-service';
 import { scheduleWorkingThumbnail } from '../services/thumbnails';
 import { getOutput } from '@archiyou/core/src/runner/worker/output';
@@ -45,7 +38,7 @@ import { editorScript, executing, executionResult, scenegraph, scriptParams, scr
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
 import { registerScheduleExecution, triggerResetCamera } from '../state/viewer';
 import { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
-import type { ScriptData, ScriptParamData } from '@archiyou/core/src/execution/types';
+import type { ScriptData } from '@archiyou/core/src/execution/types';
 
 /** Model formats offered in the main menu ▸ Export to… (see _exportModel()) */
 type ExportModelFormat = 'glb'|'stl'|'amf'|'dae'|'svg'|'dxf'|'fcstd'|'ifc'|'scad';
@@ -57,7 +50,7 @@ export class PageEditor extends SignalWatcher(LitElement)
   CONST_AUTORUN_DELAY = 1000;    // ms to wait after code changes before auto-running
   CONST_AUTORUN_MIN_SIZE = 20;   // minimum code length to trigger auto-run
 
-  /** Toolbar order, top to bottom. Profiling sits last — see TOOLBAR_BOTTOM_IDS. */
+  /** Toolbar order, top to bottom. */
   readonly TOOLS: ToolDef[] = [
     { id: 'console', icon: 'terminal',   name: 'Console',   exclusive: false, component: 'editor-console-tool',  width: 30, height: 50 },
     { id: 'scene',   icon: 'network',    name: 'Scene',     exclusive: false, component: 'editor-scene-tool',    width: 30, height: 50 },
@@ -67,14 +60,10 @@ export class PageEditor extends SignalWatcher(LitElement)
     { id: 'profiling', icon: 'timer',    name: 'Profiling', exclusive: false, component: 'editor-profiling-tool', width: 30, height: 50 },
   ];
 
-  /** Tools pinned to the very bottom of the toolbar, below plugin-contributed ones. */
-  readonly TOOLBAR_BOTTOM_IDS = ['profiling'];
-
   //// 
 
   override render()
   {
-    const pm = pluginMode.get();
     // Track the script's unit system so a flip re-runs to regenerate doc/SVG text.
     this._pendingUnitSystem = scriptUnitSystem.get();
     // Same for the geometry kernel — read here so SignalWatcher tracks it.
@@ -107,7 +96,6 @@ export class PageEditor extends SignalWatcher(LitElement)
         >
         <wa-icon class="split-grip"
             slot="divider" library="lucide" name="grip-vertical"></wa-icon>
-        ${pm ? this._renderPluginLeftPanel(pm) : html`
         <div class="left-panel" slot="start">
           <editor-file-info @script-forked=${this._handleScriptForked}></editor-file-info>
           <presets-menu></presets-menu>
@@ -118,7 +106,7 @@ export class PageEditor extends SignalWatcher(LitElement)
             @change=${this._handleCodeChange}
             @execute=${this._handleExecute}
           ></editor-code-box>
-        </div>`}
+        </div>
         <wa-split-panel
           slot="end"
           class="viewer-tools-split"
@@ -134,7 +122,7 @@ export class PageEditor extends SignalWatcher(LitElement)
         </wa-split-panel>
       </wa-split-panel>
       <editor-toolbar
-        .tools=${this._toolbarTools(pm)}
+        .tools=${this.TOOLS}
         .activeIds=${this._activeTools.map(t => t.id)}
         @tool-toggle=${this._handleToolToggle}
       ></editor-toolbar>
@@ -209,15 +197,6 @@ export class PageEditor extends SignalWatcher(LitElement)
   // Informational popup, same look as the link error (empty = hidden). See _showNotice().
   @state() private _notice = '';
   private _noticeTimer?: ReturnType<typeof setTimeout>;
-
-  // Plugin mode (isolated session; personal scripts untouched)
-  @state() private _pluginSchema: ScriptParamData[] | null = null;
-  @state() private _pluginActiveScriptName: string | null = null;
-  @state() private _pluginResult: PluginResultSummary | null = null;
-  @state() private _pluginSaved = false;
-  private _pluginValues: Record<string, any> = {};
-  private _pluginRunTimeout: number | null = null;
-
 
 
   // Lifecycle
@@ -667,19 +646,6 @@ export class PageEditor extends SignalWatcher(LitElement)
       return;
     }
 
-    if (value === 'plugin-start')
-    {
-      // Enter plugin mode with the bundled example plugin.
-      void this._enterPluginMode(() => loadShapePicker());
-      return;
-    }
-
-    if (value === 'plugin-add')
-    {
-      void this._addPluginFromFolder();
-      return;
-    }
-
     this.dispatchEvent(new CustomEvent('editor-action', {
       detail: value,
       bubbles: true,
@@ -687,177 +653,6 @@ export class PageEditor extends SignalWatcher(LitElement)
     }));
   }
 
-  /** Plugins ▸ Add plugin — pick a plugin folder from disk and enter plugin mode in the editor. */
-  private async _addPluginFromFolder()
-  {
-    const picker = (window as any).showDirectoryPicker as undefined | (() => Promise<FileSystemDirectoryHandle>);
-    try
-    {
-      if (typeof picker === 'function')
-      {
-        const dir = await picker();
-        await this._enterPluginMode(() => loadPluginFromDirectory(dir), dir);
-      }
-      else
-      {
-        // Firefox/Safari: read-only snapshot — no dirHandle, so save-back stays hidden.
-        const files = await pickPluginFolderFiles();
-        if (!files) return;
-        await this._enterPluginMode(() => loadPluginFromFiles(files), null);
-      }
-    }
-    catch (err)
-    {
-      if ((err as Error)?.name !== 'AbortError')
-      {
-        console.error('Add plugin failed:', err);
-        window.alert(`Could not load plugin: ${(err as Error)?.message ?? err}`);
-      }
-    }
-  }
-
-  // ── Plugin mode (isolated session) ──
-
-  /** Load a plugin and enter plugin mode (isolated; personal scripts untouched). */
-  private async _enterPluginMode(
-    loader: () => Promise<LoadedPlugin>,
-    dirHandle: FileSystemDirectoryHandle | null = null,
-  ): Promise<void>
-  {
-    const plugin = await loader();
-    const manager = new PluginManager();
-    this._pluginSchema = await manager.activate(plugin);
-    this._pluginValues = {};
-    this._pluginResult = manager.summary;
-    this._pluginActiveScriptName = manager.mainScriptName() ?? null;
-    enterPluginMode({ plugin, dirHandle, manager });
-  }
-
-  private _renderPluginLeftPanel(pm: PluginModeState)
-  {
-    const manager = pm.manager;
-    const list = manager.scripts();
-    const active = this._pluginActiveScriptName ?? manager.mainScriptName() ?? '';
-    const paramMenuHtml = manager.mainUiHtml();
-    return html`
-      <div class="left-panel plugin" slot="start">
-        <div class="plugin-banner">
-          <span class="plugin-badge">PLUGIN</span>
-          <span class="plugin-name">${pm.plugin.manifest.name}</span>
-          ${pm.dirHandle ? html`
-            <button class="plugin-save" @click=${this._savePluginToDisk} title="Save edited scripts back to the plugin folder">
-              ${this._pluginSaved ? 'Saved ✓' : 'Save'}
-            </button>` : ''}
-          <button class="plugin-exit" @click=${this._exitPluginMode}>Exit</button>
-        </div>
-        ${list.length > 1 ? html`
-          <select class="plugin-script-select" @change=${this._onPluginScriptSelect}>
-            ${list.map(s => html`<option value=${s.name} ?selected=${s.name === active}>${s.name}${s.isMain ? ' (main)' : ''}</option>`)}
-          </select>` : ''}
-        ${paramMenuHtml ? html`
-          <plugin-part-frame
-            class="plugin-param-frame"
-            .src=${paramMenuHtml}
-            .schema=${this._pluginSchema}
-            .result=${this._pluginResult}
-            .onGenerate=${this._pluginGenerate}
-            @plugin-submit=${this._handlePluginSubmit}
-            @plugin-ui-command=${this._handlePluginUiCommand}
-          ></plugin-part-frame>` : ''}
-        <editor-code-box
-          .code=${manager.scriptCode(active) ?? ''}
-          @change=${this._handlePluginCodeChange}
-          @execute=${this._handlePluginExecute}
-        ></editor-code-box>
-      </div>`;
-  }
-
-  private _onPluginScriptSelect = (e: Event): void =>
-  {
-    this._pluginActiveScriptName = (e.target as HTMLSelectElement).value;
-  };
-
-  private _handlePluginCodeChange = (e: CustomEvent<string>): void =>
-  {
-    const pm = pluginMode.get();
-    if (!pm) return;
-    const name = this._pluginActiveScriptName ?? pm.manager.mainScriptName();
-    if (name) pm.manager.setScriptCode(name, e.detail);
-    if (this._pluginRunTimeout !== null) clearTimeout(this._pluginRunTimeout);
-    this._pluginRunTimeout = window.setTimeout(() => void this._runPlugin(), this.CONST_AUTORUN_DELAY);
-  };
-
-  private _handlePluginExecute = (): void =>
-  {
-    if (this._pluginRunTimeout !== null) clearTimeout(this._pluginRunTimeout);
-    void this._runPlugin();
-  };
-
-  private _handlePluginSubmit = (e: Event): void =>
-  {
-    this._pluginValues = (e as CustomEvent).detail as Record<string, any>;
-    void this._runPlugin();
-  };
-
-  private _pluginGenerate = (selectors: string[]): Promise<GeneratedOutput[]> =>
-    pluginMode.get()?.manager.generate(selectors) ?? Promise.resolve([]);
-
-  private async _runPlugin(): Promise<void>
-  {
-    const pm = pluginMode.get();
-    if (!pm) return;
-    await pm.manager.run(this._pluginValues ?? {});
-    this._pluginResult = pm.manager.summary;
-  }
-
-  /** Save the (scripts-only) working set back to the on-disk plugin folder. */
-  private _savePluginToDisk = async (): Promise<void> =>
-  {
-    const pm = pluginMode.get();
-    if (!pm?.dirHandle) return;
-
-    const manifest = pm.plugin.manifest;
-    const pathByStem = new Map<string, string>();
-    if (manifest.mainScript) pathByStem.set(scriptStem(manifest.mainScript), manifest.mainScript);
-    for (const p of manifest.scripts ?? []) pathByStem.set(scriptStem(p), p);
-
-    try
-    {
-      if (!(await requestWritePermission(pm.dirHandle)))
-      {
-        window.alert('Write permission was denied.');
-        return;
-      }
-      for (const entry of pm.manager.scripts())
-      {
-        const path = pathByStem.get(entry.name);
-        if (!path) continue;
-        // Preserve the module's other fields (name/author/…); only the code changed.
-        const moduleObj = pm.plugin.scriptModules[entry.name] ?? { name: entry.name };
-        await writeFileText(pm.dirHandle, path, dataToModuleString({ ...moduleObj, code: entry.code }));
-      }
-      this._pluginSaved = true;
-      window.setTimeout(() => { this._pluginSaved = false; }, 1500);
-    }
-    catch (err)
-    {
-      console.error('Save plugin failed:', err);
-      window.alert(`Save failed: ${(err as Error)?.message ?? err}`);
-    }
-  };
-
-  private _exitPluginMode = (): void =>
-  {
-    if (this._pluginRunTimeout !== null) { clearTimeout(this._pluginRunTimeout); this._pluginRunTimeout = null; }
-    exitPluginMode();
-    this._pluginSchema = null;
-    this._pluginActiveScriptName = null;
-    this._pluginResult = null;
-    this._pluginValues = {};
-    this._activeTools = this._activeTools.filter(t => !t.plugin);
-    // Restore the viewer to the user's own (untouched) script.
-    void this._handleExecute();
-  };
 
   private _handleScriptManagerOpen(e: CustomEvent<string>)
   {
@@ -1053,62 +848,11 @@ export class PageEditor extends SignalWatcher(LitElement)
     }));
   }
 
-  /** Plugin tools as toolbar entries (tinted, rendered as flattened parts). */
-  private _pluginToolDefs(pm: PluginModeState | null): ToolDef[]
-  {
-    return (pm?.plugin.manifest.tools ?? []).map(t => ({
-      id: `plugin:${t.id}`,
-      icon: t.icon ?? 'puzzle',
-      name: t.name,
-      exclusive: t.exclusive ?? false,
-      component: '',
-      width: 30,
-      height: 100,
-      plugin: true,
-      ui: t.ui,
-    }));
-  }
-
-  /** Built-in tools plus (in plugin mode) the plugin's tools, which are inserted
-   *  above the pinned bottom tools so those keep the last slot in the toolbar. */
-  private _toolbarTools(pm: PluginModeState | null): ToolDef[]
-  {
-    const isBottom = (t: ToolDef) => this.TOOLBAR_BOTTOM_IDS.includes(t.id);
-    return [
-      ...this.TOOLS.filter(t => !isBottom(t)),
-      ...(pm ? this._pluginToolDefs(pm) : []),
-      ...this.TOOLS.filter(isBottom),
-    ];
-  }
-
-  /** archiyou.ui.open/close/toggle('Export') from a plugin part → toggle its tool panel. */
-  private _handlePluginUiCommand = (e: Event): void =>
-  {
-    const { action, tool } = (e as CustomEvent).detail as { action: 'open' | 'close' | 'toggle'; tool: string };
-    const pm = pluginMode.get();
-    if (!pm) return;
-    const key = String(tool).toLowerCase();
-    const def = this._pluginToolDefs(pm).find(d =>
-      d.id.replace(/^plugin:/, '').toLowerCase() === key || d.name.toLowerCase() === key);
-    if (!def) return;
-
-    const isActive = this._activeTools.some(t => t.id === def.id);
-    const open = action === 'toggle' ? !isActive : action === 'open';
-    if (open && !isActive)
-    {
-      const base = def.exclusive ? [] : this._activeTools.filter(t => !t.exclusive);
-      this._activeTools = [...base, def];
-    }
-    else if (!open && isActive)
-    {
-      this._activeTools = this._activeTools.filter(t => t.id !== def.id);
-    }
-  };
 
   private _handleToolToggle(e: CustomEvent<string>)
   {
     const id = e.detail;
-    const tool = this._toolbarTools(pluginMode.get()).find(t => t.id === id);
+    const tool = this.TOOLS.find(t => t.id === id);
     if (!tool) return;
 
     const isActive = this._activeTools.some(t => t.id === id);
@@ -1264,62 +1008,6 @@ export class PageEditor extends SignalWatcher(LitElement)
       min-height: 0;
     }
 
-    /* Plugin mode */
-    .plugin-banner {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 10px;
-      background: var(--color-primary-subtle, color-mix(in srgb, var(--color-primary, #4f46e5) 12%, transparent));
-      border-bottom: 1px solid var(--color-border, #e5e7eb);
-      font-family: system-ui, sans-serif;
-    }
-    .plugin-badge {
-      background: var(--color-primary, #4f46e5);
-      color: #fff;
-      border-radius: 4px;
-      padding: 2px 6px;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-    }
-    .plugin-name { font-weight: 600; font-size: 13px; }
-    .plugin-save {
-      margin-left: auto;
-      font: inherit;
-      font-size: 12px;
-      padding: 3px 10px;
-      border: 1px solid var(--color-primary, #4f46e5);
-      border-radius: 6px;
-      background: var(--color-primary, #4f46e5);
-      color: #fff;
-      cursor: pointer;
-    }
-    .plugin-exit {
-      font: inherit;
-      font-size: 12px;
-      padding: 3px 10px;
-      border: 1px solid var(--color-border, #d1d5db);
-      border-radius: 6px;
-      background: #fff;
-      cursor: pointer;
-    }
-    .plugin-banner .plugin-save + .plugin-exit { margin-left: 0; }
-    .plugin-banner:not(:has(.plugin-save)) .plugin-exit { margin-left: auto; }
-    .plugin-script-select {
-      margin: 8px 10px 0;
-      padding: 4px 6px;
-      font: inherit;
-      border: 1px solid var(--color-border, #d1d5db);
-      border-radius: 6px;
-    }
-    .plugin-param-frame {
-      display: block;
-      flex: 0 0 auto;
-      height: 240px;
-      border-bottom: 1px solid var(--color-border, #e5e7eb);
-    }
-    .left-panel.plugin editor-code-box { flex: 1; min-height: 0; }
 
     wa-split-panel::part(divider) {
       background-color: var(--color-divider);

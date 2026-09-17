@@ -5,8 +5,8 @@
 #   worker  — BullMQ execution worker (inert until .env opens an execution gate)
 #
 # Lives at the monorepo root because it deploys the whole monorepo, not just
-# apps/server: it builds from the root context and serves apps/editor/dist and
-# plugins/. For local development see docker-compose.dev.yml (Redis only, everything
+# apps/server: it builds from the root context and serves apps/editor/dist.
+# For local development see docker-compose.dev.yml (Redis only, everything
 # else from source) or apps/server/docker-compose.yml (the whole stack in containers).
 #
 # Run (from the repo root):  pnpm docker:prod   —  or plain `docker compose up -d`
@@ -31,12 +31,6 @@ services:
       # stops docker from creating it here as root and leaving uid 1000 unable
       # to write into it.
       - ./apps/editor/dist:/srv/app:ro
-      # Runtime-loaded editor plugins. Left OFF: plugins are a development
-      # feature, and the Caddyfile has no /plugins route to match this, so the
-      # built-in shape-picker is absent in production by design. Enabling it
-      # means uncommenting BOTH this mount and a /plugins handler in the
-      # Caddyfile — see the note there before you do.
-      #- ./plugins:/srv/plugins:ro
     depends_on:
       - api
     networks:

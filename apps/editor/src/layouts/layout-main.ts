@@ -8,7 +8,7 @@
  * before the router resolves and so paid ~26MB of kernel download on every page — a
  * published configurator included, even one that executes server-side and never needs
  * a kernel at all. This layout wraps exactly the pages that do need one (/editor,
- * /browser, /plugin); the configurator route is top-level and outside it.
+ * /browser); the configurator route is top-level and outside it.
  */
 
 import { LitElement, html, css } from 'lit';

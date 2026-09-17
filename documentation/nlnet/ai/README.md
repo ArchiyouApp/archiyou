@@ -82,3 +82,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-09-15 | [OpenSCAD export: non-parametric .scad from recipes](./records/2026-09-15-openscad-export.md) | Claude Opus 5 | recipe | part of 22a4393 |
 | 2026-09-16 | [Kernel parity: cadscript bbox table, divergence inventory and brep API fixes](./records/2026-09-16-kernel-parity.md) | Claude Fable 5.1 | recipe (+ meshup develop) | 3 |
 | 2026-09-16 | [Kernel parity, second unit: closing the remaining mesh ↔ brep gaps](./records/2026-09-16-kernel-gaps.md) | Claude Fable 5.1 | recipe (+ meshup develop) | 8 |
+| 2026-09-17 | [Plugins cleanup: remove the editor plugin system, to be revisited with modules](./records/2026-09-17-plugins-cleanup.md) | Claude Fable 5.1 | recipe | 1 |

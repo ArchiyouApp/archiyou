@@ -30,14 +30,6 @@ next.archiyou.com {
 		reverse_proxy api:4100
 	}
 
-	# NOTE: runtime-loaded editor plugins are DEV-ONLY. plugin-loader.ts fetches
-	# /plugins/<name>, which a Vite plugin serves from the repo-root plugins/ dir
-	# during development; nothing serves it here, so the built-in shape-picker is
-	# simply absent in production. To change that, serve plugins/ under /plugins
-	# and uncomment the matching bind mount in docker-compose.yml — but note that
-	# it puts arbitrary JS from the checkout on the app's own origin, where the CSP
-	# already allows 'unsafe-eval' and 'unsafe-inline'.
-
 	# --- Editor SPA ---
 	handle {
 		root * /srv/app
@@ -58,8 +50,8 @@ next.archiyou.com {
 		# against the code before tightening:
 		#   'unsafe-eval'  the script Runner compiles user scripts with
 		#                  new AsyncFunction (packages/core/src/runner/Runner.ts)
-		#   blob:          plugin-loader.ts imports plugins from blob: URLs, and
-		#                  Vite's module workers are URL/blob based
+		#   blob:          Vite's module workers are URL/blob based, and client
+		#                  modules are imported from blob: URLs (loadClientModule.ts)
 		#   data:          WASM ships inlined as base64 and is decoded at runtime
 		#   fonts.googleapis/gstatic  webfonts in index.html
 		#   cdn.jsdelivr.net          lucide icon sprites (src/icons.ts)

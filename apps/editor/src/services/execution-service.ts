@@ -2,7 +2,7 @@
  * execution-service.ts
  *
  * Thin singleton service that owns script execution and exposes a single
- * `runScript()`. Any component (editor, configurator, plugins, fulfillment
+ * `runScript()`. Any component (editor, configurator, fulfillment
  * downloads) can import this without knowing where the work happens.
  *
  * TWO BACKENDS:

@@ -119,8 +119,6 @@ export class MainMenuFileMenu extends SignalWatcher(LitElement)
 
         <wa-divider></wa-divider>
 
-        <!-- Plugins sat here; hidden for now, and the handlers in editor.ts are
-             still wired, so restoring it is putting the entry back. -->
         <wa-dropdown-item value="modules">
           <wa-icon slot="icon" library="lucide" name="puzzle"></wa-icon>
           ${msg('Modules')}

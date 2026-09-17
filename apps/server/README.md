@@ -26,7 +26,7 @@ too, though it does nothing until an execution gate is opened in `.env` — see
 "Server-side execution" in the root README. The compose file lives at the root rather
 than in `apps/server/`
 because it deploys the whole monorepo — it builds from the root context and
-mounts `apps/editor/dist` and `plugins/`. For local development there are two options. `docker-compose.dev.yml` at the repo root
+mounts `apps/editor/dist`. For local development there are two options. `docker-compose.dev.yml` at the repo root
 is Redis alone, no image build: `pnpm docker:dev` starts it, then `pnpm dev` and
 `pnpm dev:worker` run the API and the execution worker straight from source — use this
 to work on the code. This directory's own `docker-compose.yml` instead runs api + redis
@@ -104,7 +104,6 @@ leave the container's uid 1000 unable to build into it.
 | Runs from | Mounted into | Rebuild needed? |
 | --- | --- | --- |
 | `apps/editor/dist` | caddy `/srv/app` | built by the api container on boot |
-| `plugins/` | caddy `/srv/plugins` | no |
 | `Caddyfile` | caddy `/etc/caddy` | no — `docker compose restart caddy` |
 | the whole checkout | api `/archiyou` | no |
 

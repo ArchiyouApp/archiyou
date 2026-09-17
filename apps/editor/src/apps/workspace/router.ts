@@ -81,11 +81,6 @@ export const routes: Route[] = [
         action: async () => { await import('../../pages/editor.js'); },
       },
       {
-        path: 'plugin',
-        component: 'page-plugin',
-        action: async () => { await import('../../pages/plugin.js'); },
-      },
-      {
         // /admin/{section}; /admin shows the first section (pages/admin.ts)
         path: 'admin/:section?',
         component: 'page-admin',

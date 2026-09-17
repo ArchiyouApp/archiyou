@@ -10,9 +10,7 @@ import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
 import './main-menu-file-menu.js';
 import '../configurator/configurator.js';
 
-import { pluginMode } from '@archiyou/editor/src/state/plugin-mode';
 import { userState } from '@archiyou/editor/src/state/workspace';
-import '@archiyou/editor/src/pages/plugin-app.js';
 
 type MenuItem = 'info' | 'code' | 'history' | 'files' | 'templates' | 'help' | 'settings';
 
@@ -22,7 +20,6 @@ export class MainMenu extends SignalWatcher(LitElement)
   // ── 1. Render ──
   override render()
   {
-    const inPluginMode = pluginMode.get() !== null;
     return html`
       <!-- top: hamburger dropdown -->
       <editor-main-menu-file-menu></editor-main-menu-file-menu>
@@ -41,27 +38,25 @@ export class MainMenu extends SignalWatcher(LitElement)
           id="btn-configurator"
           appearance="plain"
           @click=${this._openConfigurator}
-        ><wa-icon library="lucide" name=${inPluginMode ? 'app-window' : 'tv-minimal-play'} label=${inPluginMode ? 'App' : 'Preview Configurator'}></wa-icon></wa-button>
-        <wa-tooltip for="btn-configurator" placement="right">${inPluginMode ? msg('App') : msg('Preview Configurator')}</wa-tooltip>
+        ><wa-icon library="lucide" name="tv-minimal-play" label="Preview Configurator"></wa-icon></wa-button>
+        <wa-tooltip for="btn-configurator" placement="right">${msg('Preview Configurator')}</wa-tooltip>
 
       </div>
 
-      <!-- configurator / app preview dialog -->
+      <!-- configurator preview dialog -->
       <wa-dialog
         class="configurator-dialog"
-        label=${inPluginMode ? msg('App') : msg('Configurator Preview')}
+        label=${msg('Configurator Preview')}
         style="--width: 80vw"
         ?open=${this._configuratorOpen}
         @wa-after-hide=${this._onDialogAfterHide}
       >
         ${this._configuratorOpen
-          ? (inPluginMode
-              ? html`<plugin-app></plugin-app>`
-              : html`
-                  <page-configurator
-                    preview
-                    @configurator-publish=${this._publishFromPreview}
-                  ></page-configurator>`)
+          ? html`
+              <page-configurator
+                preview
+                @configurator-publish=${this._publishFromPreview}
+              ></page-configurator>`
           : ''}
       </wa-dialog>
 
@@ -232,8 +227,7 @@ export class MainMenu extends SignalWatcher(LitElement)
       overflow: hidden;
     }
 
-    page-configurator,
-    plugin-app
+    page-configurator
     {
       flex: 1;
       min-height: 0;

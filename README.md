@@ -70,7 +70,7 @@ Here are the most important components:
 * **Server** - [`apps/server`](./apps/server/) - The entire backend for the Archiyou platform which serves the Editor to persist and manage scripts and execute scripts on the backend. `Fastify, BullMQ, SQLite, Drizzle ORM, Redis`
 * **Core** - [`packages/core`](./packages/core) - The core modeling for executing CAD script to create models with styling, hierarchy, calculations and documentation. We use two kernels: [`Meshup`](https://github.com/ArchiyouApp/meshup) (mesh based: speed) and a BREP one based on `OpenCascade` (slow but advanced). 
 * **UI** - [`packages/ui`](./packages/ui) - All UI components that make up the editor and configurator. `Lit, WebAwesome`
-* **Extendability**: Look at [`modules`](./modules) and [`plugins`](./plugins) - *work in progress*
+* **Extendability**: Look at [`modules`](./modules) - *work in progress*
 * **Rust-based powertools** - [`packages/gdrr2bp-wasm`](./packages/gdrr2bp-wasm/) and [`collada-wasm`](./packages/collada-wasm/)   
 
 Please look at the seperate README's for the seperate documention of these parts. 

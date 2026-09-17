@@ -4,9 +4,7 @@
  * WHY FETCH-THEN-BLOB RATHER THAN A PLAIN import(url):
  * the bundle route is entitlement-gated and this app authenticates with a Bearer
  * token, but dynamic import() offers no way to set request headers. So the bundle
- * is fetched with the token, turned into a blob URL, and imported from there. The
- * editor's plugin loader does the same thing for local plugin sources
- * (apps/editor/src/plugins/plugin-loader.ts).
+ * is fetched with the token, turned into a blob URL, and imported from there.
  *
  * A consequence worth knowing when authoring modules: a blob URL has no useful
  * base, so a bundle CANNOT contain relative imports back to the server. Module
