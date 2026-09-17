@@ -334,6 +334,26 @@ describe('Modeler — brep mode', () =>
             expect(big.contains(small)).toBe(true)
         })
 
+        it('cutoffBy() reads a straight line through a face as a full cut, like the mesh kernel', () =>
+        {
+            // the line's ends sit ON the boundary (mid-left to mid-bottom): a chord, not a spike
+            const face = m.planeBetween([0, 0, 0], [100, 50, 0]) as any
+            face.cutoffBy(m.line([0, 25, 0], [50, 0, 0]))
+            expect(face.area()).toBeCloseTo(5000 - 625, 1)   // the corner triangle is gone
+            expect(face.bbox().width()).toBeCloseTo(100, 3)
+        })
+
+        it('layflat() turns the face normal onto +z along the shortest arc and keeps the in-plane orientation', () =>
+        {
+            const face = (m.planeBetween([0, 0, 0], [100, 0, 50]) as any).rotateY(20, [0, 0, 0])
+            face.layflat()
+            expect(face.bbox().minZ()).toBeCloseTo(0, 6)
+            expect(face.bbox().height()).toBeCloseTo(0, 6)
+            // tilted in its own plane by 20°, so NOT squared to 100 × 50
+            expect(face.bbox().width()).toBeCloseTo(111.07, 1)
+            expect(face.bbox().depth()).toBeCloseTo(81.19, 1)
+        })
+
         it('bbox() is exact, before and after the shape has been meshed for export', () =>
         {
             const line = m.line([0, 0, 0], [100, 0, 0]) as any

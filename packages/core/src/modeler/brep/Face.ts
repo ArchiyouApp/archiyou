@@ -252,35 +252,40 @@ export class Face extends Shape
         // TODO: test for zero width/depth
     }
 
-    /** Make Plane parallel to one of the baseplanes */
+    /** Make a planar Face between two corner points, the mesh kernel's way (meshup
+     *  Polygon.planeBetween / Curve.RectBetween): the base plane is the one the two points span
+     *  least across, and the four corners are laid out from `from` along the plane's x axis
+     *  first, so the face's NORMAL follows the corner order — planeBetween(a, b) and
+     *  planeBetween(b, a) face the same way, but swapping only one coordinate flips it, exactly
+     *  as on meshup. A fixed per-plane normal (what this did before) made the default extrude()
+     *  go the other way for half the corner orders. */
     @checkInput([ 'PointLike', 'PointLike' ], ['Vector','Vector'])
     makePlaneBetween(from:PointLike, to:PointLike)
     {
-        const PLANE_TO_NORMAL = {
-            'xy' : { normal: [0,0,1], switch: false },
-            'xz' : { normal: [0,-1,0], switch: true },
-            'yz' : { normal: [1,0,0], switch: true }
+        const BASE_PLANES:Record<string, { normal:[number,number,number], xDir:[number,number,number], yDir:[number,number,number] }> = {
+            'xy': { normal: [0,0,1],  xDir: [1,0,0], yDir: [0,1,0] },
+            'yz': { normal: [1,0,0],  xDir: [0,1,0], yDir: [0,0,1] },
+            'xz': { normal: [0,-1,0], xDir: [1,0,0], yDir: [0,0,1] },
         }
+        const a = from as Vector, b = to as Vector;
+        const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y), dz = Math.abs(b.z - a.z);
+        const plane = (dz <= dy && dz <= dx) ? 'xy' : (dy <= dx) ? 'xz' : 'yz';
+        const def = BASE_PLANES[plane];
+        const dot = (p:Vector, d:[number,number,number]) => p.x*d[0] + p.y*d[1] + p.z*d[2];
 
-        const fromVec = from as Vector;
-        const toVec = to as Vector;
-
-        const sharedPlane = fromVec.sharedPlane(toVec); // xy, yz, xz
-
-        if (!sharedPlane)
+        const ax = dot(a, def.xDir), ay = dot(a, def.yDir), bx = dot(b, def.xDir), by = dot(b, def.yDir);
+        const n = (dot(a, def.normal) + dot(b, def.normal)) / 2; // the plane sits between the points
+        const toWorld = (u:number, v:number):[number,number,number] => [
+            u*def.xDir[0] + v*def.yDir[0] + n*def.normal[0],
+            u*def.xDir[1] + v*def.yDir[1] + n*def.normal[1],
+            u*def.xDir[2] + v*def.yDir[2] + n*def.normal[2],
+        ];
+        if (Math.abs(ax - bx) < 1e-9 || Math.abs(ay - by) < 1e-9)
         {
-            console.warn(`Face::makePlaneBetween: Can not make plane: Points don't share a baseplane!`);
+            console.warn(`Face::makePlaneBetween: Can not make plane: the points do not span an area in the ${plane} plane!`);
             return null;
         }
-        
-        let offsetVec = toVec.subtracted(fromVec);
-
-        // NOTE: when we use normals to rotate the plane the width and depth can be turned around
-        let width = PLANE_TO_NORMAL[sharedPlane].switch ? offsetVec[sharedPlane[1]] : offsetVec[sharedPlane[0]]; 
-        let depth = PLANE_TO_NORMAL[sharedPlane].switch ? offsetVec[sharedPlane[0]] : offsetVec[sharedPlane[1]]; 
-        
-        // NOTE: position before rotation
-        return this.makePlane(width, depth, fromVec.added( offsetVec.scaled(0.5)), PLANE_TO_NORMAL[sharedPlane].normal);
+        return this.fromVertices([toWorld(ax, ay), toWorld(bx, ay), toWorld(bx, by), toWorld(ax, by)]);
     }
 
     /** Make the base planes of the coordinate system
@@ -504,6 +509,16 @@ export class Face extends Shape
     {
         let uvCenter = this.uvCenter();
         return this.pointAtUv(uvCenter[0], uvCenter[1]);
+    }
+
+    /** The area centroid of this Face — what the mesh kernel calls the centre of a flat shape,
+     *  and the pivot layflat() turns about. Differs from surfaceCenter() (the middle of the
+     *  surface's uv range) on any face that is not a parallelogram. */
+    _areaCentroid():Point
+    {
+        const ocProps = new this._oc.GProp_GProps_1();
+        this._oc.BRepGProp.prototype.constructor.SurfaceProperties_1(this._ocShape, ocProps, false, false);
+        return new Point()._fromOcPoint(ocProps.CentreOfMass());
     }
 
     /** Get normal of Plane Face - use normalAt for curved surfaces */

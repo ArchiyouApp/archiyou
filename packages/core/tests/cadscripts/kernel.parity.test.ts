@@ -243,7 +243,7 @@ function table(rows: Array<Row>): string
         lines.push(`${pad(r.script, 20)} ${pad(r.brep.status, 8)} ${num(r.mesh.shapes.length)} ${num(r.brep.shapes.length)} ${num(r.pairs.length, 5)} ${num(r.pairs.length - off.length, 4)} ${num(off.length, 4)} ${num(r.onlyMesh.length, 6)} ${num(r.onlyBrep.length, 6)}  ${firstText}`)
         if (r.brep.status !== 'success') lines.push(`${' '.repeat(29)}brep: ${r.brep.error}`)
         if (r.mesh.status !== 'success') lines.push(`${' '.repeat(29)}MESH FAILED: ${r.mesh.error}`)
-        off.slice(1, 4).forEach(p => lines.push(`${' '.repeat(29)}off: ${p.mesh.path} mesh=${bboxOf(p.mesh)} brep=${bboxOf(p.brep)}`))
+        off.slice(1, 4).forEach(p => lines.push(`${' '.repeat(29)}off: ${p.mesh.path} mesh=${bboxOf(p.mesh)} brep=${bboxOf(p.brep)} (${p.familyMismatch ? 'family' : p.off.map(o => o.key).join(',')})`))
         if (off.length > 4) lines.push(`${' '.repeat(29)}… ${off.length - 4} more off`)
         r.onlyMesh.slice(0, 3).forEach(m => lines.push(`${' '.repeat(29)}only mesh: ${m.path} [${m.type}]`))
         if (r.onlyMesh.length > 3) lines.push(`${' '.repeat(29)}… ${r.onlyMesh.length - 3} more only on mesh`)
@@ -296,7 +296,7 @@ describe('mesh ↔ brep parity of the cadscripts', () =>
     /*  The floor: what parity already holds today, so a kernel change cannot take it away
         unnoticed. Widen these lists as the divergences in kernel-divergences.test.ts get fixed. */
     const RUNS_ON_BREP = ['artcrate', 'boxpubtest', 'gardenchair', 'kakpinchedstool', 'programmaticparams', 'sedia', 'slidercabinet', 'strawwall', 'timberfloor', 'tomy', 'workbench']
-    const CLEAN_ON_BREP = ['artcrate', 'boxpubtest', 'programmaticparams', 'sedia', 'workbench', 'slidercabinet', 'strawwall', 'timberfloor']
+    const CLEAN_ON_BREP = ['artcrate', 'boxpubtest', 'gardenchair', 'kakpinchedstool', 'programmaticparams', 'sedia', 'workbench', 'slidercabinet', 'strawwall', 'timberfloor']
     /*  Scripts that use the make module stop at its mesh-only error on brep — by design until
         Make builds through the Modeler API. */
     const MESH_ONLY_BY_DESIGN = ['timberwall', 'timberwallopenings', 'maritavolo', 'simplestep']
