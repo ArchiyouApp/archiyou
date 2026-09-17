@@ -59,20 +59,26 @@
  *   30  gardenchair drift — it was 34's planeBetween() normal (longBeamBack extruded the other
  *       way) and the coplanar line cut that brep did not perform; gardenchair is clean now
  *
+ *    6  a severing subtract() — brep keeps the pieces as one compound Shape, so volume() sums
+ *       them like a Mesh does
+ *   12  brep pointAt()/middle() — by arc length now (sampled: no GCPnts in the bindings)
+ *   10  (part) Wire/Edge.area() of a closed planar outline is the enclosed area
+ *   11  (part) a closed brep Wire's end() is its start(); the seam corner still differs
+ *
  *  Still OPEN:
- *   29  urhousesketch on brep: the default run completes, but when the Runner re-executes the
- *       script for its `$pipeline('techdraw')` the OpenCascade WASM traps ("unreachable") at
- *       `wallFrontFace.copy().tmp().extrude(...).volume()` — a re-execution/lifetime issue
- *       in the brep kernel, not a modelling contract
+ *   36  fusing a RING of touching solids (four walls meeting at the corners): brep's pairwise
+ *       union() fails to sew the last pair ("Union resulted in multiple Shapes") and keeps the
+ *       pieces, so urhousesketch's wallsCombined is 3.8 % larger on brep than the mesh fuse.
+ *       (The "unreachable" trap that used to end that script was meshup's massProperties() on
+ *       the EMPTY mesh its merge() made of brep walls — merge() now fuses through the other
+ *       kernel, and an empty Mesh answers volume 0.)
  *   35  meshup Mesh.obbox() is a PCA fit: on tomy's 626×100×100 leg it reports 626×141×142
  *       and its axes carry an arbitrary sign, where brep's OBB is tight — so a rotation
  *       derived from obbox().axes() lands the leg 1.7 mm wider and turned 180° on mesh.
  *       A tighter OBB fitter on the mesh side (minimum-volume, not PCA) would close it
  *
- *    6  brep subtract() throws when the cut severs the solid
  *   10  area()/size()/length() answer for different shape families
  *   11  closed outlines are seamed differently, so start()/end()/middle() differ
- *   12  brep pointAt() is parameter-based where mesh pointAtPerc() is arc-length-based
  *   15  odds and ends: a line ∩ a closed outline, distanceTo(), fillet()/chamfer(), circle spans
  *   22  the make module (walls, boarding, part lists) is mesh-only — brep now says so up front
  */
@@ -96,59 +102,20 @@ describe('mesh ↔ brep divergences (pinned, not accepted)', () =>
 
 
 
-    //// ==== 6. BREP BOOLEANS ==== ////
-
-    it('6. brep subtract() does not survive a cut that severs the solid in two', () =>
-    {
-        /*  A cutter that passes all the way through leaves two disconnected solids. mesh answers
-            with one Mesh holding both parts, at the volume you can work out by hand. brep does
-            not get there: it typically dies inside BRepExtrema_DistShapeShape ("Cannot read
-            properties of undefined") while sorting the pieces, and where it does not throw it
-            hands back geometry that is not the two halves.
-
-            Which of the two failure modes fires depends on what else is in the brep scene, so
-            this asserts the thing that is stable: mesh gets the right answer, brep does not.
-
-            SHOULD BE: brep returns the pieces — a ShapeCollection, which is what its own
-                       disjoint union() already does — instead of throwing. */
-        const cutter = (m: Modeler) => m.box(60, 60, 40)      // wider and taller than the target
-        const EXPECTED = 40000                                // 100·50·20 − 60·50·20
-
-        // mesh keeps both halves in one Mesh
-        const a = mesh.box(100, 50, 20) as any
-        a.subtract(cutter(mesh))
-        expect(r4(a.volume()), 'mesh keeps both halves').toBeCloseTo(EXPECTED, 0)
-
-        // brep either throws or comes back with something that is not those two halves
-        let brepVolume: number | 'threw'
-        try
-        {
-            const b = brep.box(100, 50, 20) as any
-            b.subtract(cutter(brep))
-            brepVolume = r4(b.volume())
-        }
-        catch { brepVolume = 'threw' }
-
-        expect(brepVolume, 'brep does not produce the severed solid').not.toBeCloseTo(EXPECTED, 0)
-    })
-
-
 
     //// ==== 10. WHICH MEASUREMENTS EXIST ==== ////
 
     it('10. area(), size() and length() answer for different shape families', () =>
     {
-        /*  SHOULD BE: brep Wire/Edge.area() returns the enclosed area of a closed planar outline
-                       (or undefined), meshup Curve gains size(), and Mesh.length() and
-                       Solid.length() agree on one answer — the current pair is a coin flip. */
+        /*  SHOULD BE: meshup Curve gains size(), and Mesh.length() and Solid.length() agree on
+                       one answer — the current pair is a coin flip. (Wire/Edge.area() of a closed
+                       outline is the enclosed area on both kernels now.) */
 
-        // area() on a closed outline: the area it encloses on mesh, the surface area (0) on brep
-        expect(r4((mesh.rect(100, 50) as any).area())).toEqual(5000)
-        expect(r4((brep.rect(100, 50) as any).area())).toEqual(0)
+        // area() on a closed outline is the enclosed area on both now (5000) — see modeler.brep.test.ts
 
         // size() — "how big is this" — is not on a meshup Curve at all
         expect(typeof (mesh.rect(100, 50) as any).size).toEqual('undefined')
-        expect(r4((brep.rect(100, 50) as any).size()), 'brep answers, with the useless 0').toEqual(0)
+        expect(r4((brep.rect(100, 50) as any).size()), 'brep answers with the enclosed area').toEqual(5000)
 
         // size() on a solid agrees, and is the volume on both
         expect(r4((mesh.box(100, 50, 20) as any).size())).toEqual(100000)
@@ -167,20 +134,19 @@ describe('mesh ↔ brep divergences (pinned, not accepted)', () =>
 
     it('11. a closed outline is seamed differently, so start()/end() differ', () =>
     {
-        /*  brep's rect starts at a different corner and runs the other way round. Worse, its
-            Wire.start() and Wire.end() come back as DIFFERENT points on a closed wire, where by
-            definition they should be the same point.
+        /*  brep's rect starts at a different corner and runs the other way round. (Its Wire.end()
+            used to be a different point from start() on a closed wire; it is the same now.)
 
-            SHOULD BE: start() === end() on any closed shape. (The seam corner itself is a free
-                       choice, but scripts that read start()/end() need it to be a stable one.) */
+            SHOULD BE: the same seam corner and direction on both kernels — scripts that read
+                       start()/end() of an outline need it to be a stable one. */
         const a = mesh.rect(100, 50) as any
         const b = brep.rect(100, 50) as any
 
         expect([r4(a.start().x), r4(a.start().y)]).toEqual([-50, -25])
         expect([r4(a.end().x), r4(a.end().y)], 'mesh: closed, so start === end').toEqual([-50, -25])
 
-        expect([r4(b.start().x), r4(b.start().y)]).toEqual([-50, 25])
-        expect([r4(b.end().x), r4(b.end().y)], 'brep: a different point entirely').toEqual([50, 25])
+        expect([r4(b.start().x), r4(b.start().y)], 'brep: seamed at another corner').toEqual([-50, 25])
+        expect([r4(b.end().x), r4(b.end().y)], 'brep: closed, so start === end now too').toEqual([-50, 25])
 
         // an OPEN curve is fine on both — which is why shape-parity.test.ts compares ends there
         const openA = mesh.polyline([[0, 0, 0], [100, 0, 0], [100, 50, 0]]) as any
@@ -188,30 +154,6 @@ describe('mesh ↔ brep divergences (pinned, not accepted)', () =>
         expect([r4(openA.start().x), r4(openA.start().y)]).toEqual([r4(openB.start().x), r4(openB.start().y)])
         expect([r4(openA.end().x), r4(openA.end().y)]).toEqual([r4(openB.end().x), r4(openB.end().y)])
     })
-
-    it('12. brep pointAt(perc) is parameter-based where mesh pointAtPerc() is arc-length-based', () =>
-    {
-        /*  On a polyline whose segments differ in length the two walk at different speeds, and
-            middle() inherits it: mesh finds the point half the LENGTH along, brep the point half
-            the PARAMETER along.
-
-            The polyline below is 100 + 50 + 60 = 210 long, so its halfway point sits 105 along,
-            i.e. 5 up the second segment — which is what mesh answers.
-
-            SHOULD BE: one definition, and arc-length is the one a script means. */
-        const pts = [[0, 0, 0], [100, 0, 0], [100, 50, 0], [160, 50, 0]]
-        const a = mesh.polyline(pts as any) as any
-        const b = brep.polyline(pts as any) as any
-
-        expect([r4(a.middle().x), r4(a.middle().y)], 'mesh: 105 of 210 along').toEqual([100, 5])
-        expect([r4(b.middle().x), r4(b.middle().y)], 'brep: halfway in parameter space').toEqual([100, 25])
-
-        // on a single straight segment, where parameter and arc length are proportional, they agree
-        const lineA = mesh.line([0, 0, 0], [100, 0, 0]) as any
-        const lineB = brep.line([0, 0, 0], [100, 0, 0]) as any
-        expect(r4(lineA.middle().x)).toEqual(r4(lineB.middle().x))
-    })
-
 
     //// ==== 15. ODDS AND ENDS ==== ////
 

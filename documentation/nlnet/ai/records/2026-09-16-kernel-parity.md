@@ -132,6 +132,8 @@ Notes on what the agent found and the human accepted as fixes in this unit: mesh
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
-| 91e38be (packages/meshup, develop) | Kernel parity: meshup side | 12:08 prompt, plan approved |
-| 0971ebc | Mesh/brep parity harness and brep fixes | 12:08 prompt, plan approved |
-| (this commit) | Kernel parity: close the AI disclosure record | 21:52 prompt |
+| 8078bd2 (packages/meshup, develop; was 91e38be) | Kernel parity: meshup side | 12:08 prompt, plan approved |
+| 5310301 (was 0971ebc) | Mesh/brep parity harness and brep fixes | 12:08 prompt, plan approved |
+| c0c86f6 (was a572438) | Kernel parity: close the AI disclosure record | 21:52 prompt |
+
+The three commits were rewritten on 2026-09-17 (same content for the superproject, repaired content for meshup): see the note in [2026-09-16-kernel-gaps.md](./2026-09-16-kernel-gaps.md).

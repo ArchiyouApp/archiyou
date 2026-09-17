@@ -45,3 +45,10 @@ After each batch: `test:kernels`, `test:parity` (refresh the snapshot, ship the 
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| 3afda10 (packages/meshup, develop) | Kernel parity: collection union() across kernels | "Can you start closing the remaining gaps between the kernels?" |
+| dc691d6 (was ea7533c) | Kernel parity: close the remaining brep contract gaps | same |
+| 80f20d4 (packages/meshup, develop) | Kernel parity: centroids of flat shapes | same |
+| 8456e05 (was d6be395) | Kernel parity: layflat, planeBetween and face cuts on brep | same |
+| b6e378c (packages/meshup, develop) | Kernel parity: merge() across kernels, empty-mesh guards | same |
+
+The meshup commits of this unit and of the first one (91e38be, e9e4b32, 1b3459b) were rewritten as 8078bd2, 3afda10, 80f20d4: the agent had staged its hunks with zero context out of a working tree that also held the human's uncommitted meshup refactor, and the committed files were syntactically broken while the working tree (where every test ran) was fine. The human chose to rewrite the unpushed history rather than add a corrective commit; the superproject commits carrying the pointers were rewritten with unchanged trees.

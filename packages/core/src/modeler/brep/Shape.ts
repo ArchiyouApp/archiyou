@@ -2658,11 +2658,24 @@ export class Shape
     subtract(others:AnyShapeOrCollection, removeOthers=false):AnyShapeOrCollection
     {
         const newShape = this._subtracted(others);
-        
+
         // Subtracted never changes the Shape type, we can just replace the OC geometry
         if (newShape == null)
         {
             console.warn(`Shape::cut: Cut operation gave back a empty Shape!`);
+            return this;
+        }
+
+        // A cut that severs the Shape leaves several pieces. The mesh kernel keeps them all in
+        // the one Mesh (its volume is the sum), so this Shape keeps them all too, as a compound
+        // — the script's handle stays valid and measures the whole (kernel-divergences item 6).
+        if (isAnyShapeCollection(newShape))
+        {
+            const pieces = newShape as ShapeCollection;
+            if (pieces.length === 0){ console.warn(`Shape::cut: Cut operation gave back nothing!`); return this; }
+            this._ocShape = pieces.toOcCompound();
+            this.clearMeshCache?.();
+            if (removeOthers){ (others as ShapeCollection).removeFromScene(); }
             return this;
         }
 

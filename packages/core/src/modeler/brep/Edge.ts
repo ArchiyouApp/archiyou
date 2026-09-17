@@ -11,6 +11,7 @@
  */
 
 import { Color } from '@archiyou/meshup'
+import { paramAtLengthPerc } from './utils'
 import { SHAPE_DEFAULT_STYLE } from '@archiyou/meshup'
 // import { DxfBlock, point3d } from '@tarikjabiri/dxf'
 
@@ -763,8 +764,19 @@ export class Edge extends Shape
         
         const uMin = this.paramStart();
         const uMax = this.paramEnd();
-        const atU =  uMin + perc * (uMax - uMin);
+        // Lines and circular arcs are parameterised proportionally to length already; any other
+        // curve (a spline) is walked by arc length, as the mesh kernel does (item 12)
+        const linear = ['Line', 'Circle', 'Arc'].includes(this.edgeType());
+        const atU = linear ? uMin + perc * (uMax - uMin)
+                           : paramAtLengthPerc((u:number) => this._toOcCurve().Value(u), uMin, uMax, perc, this.length());
         return this.pointAtParam(atU);
+    }
+
+    /** The area a closed Edge (a circle, an ellipse) encloses, as the mesh kernel answers for a
+     *  closed Curve; undefined for an open Edge. Kernel-divergences item 10. */
+    area():number
+    {
+        return this._toWire().area();
     }
     
     /** Get Point at specific param value */

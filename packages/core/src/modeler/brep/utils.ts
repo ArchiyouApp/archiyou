@@ -125,3 +125,58 @@ export function targetOcForGarbageCollection(_obj: any): void {
 export function removeOcTargetForGarbageCollection(_obj: any): void {
     // OpenCascade GC management - implementation depends on OC wasm bindings
 }
+
+/** The curve parameter at a fraction of the curve's ARC LENGTH — what `pointAt(perc)` means on
+ *  the mesh kernel. The bindings have no GCPnts_AbscissaPoint, so the curve is sampled: chord
+ *  lengths are accumulated over `samples` parameters, the interval where the running length
+ *  passes the target is found, and that interval is sampled again (twice), so a polyline corner
+ *  inside an interval costs nothing measurable. `totalLength` is the exact length when the
+ *  caller knows it (Edge/Wire.length()), else the chord sum is used. */
+export function paramAtLengthPerc(valueAt: (u: number) => { X(): number, Y(): number, Z(): number },
+                                  uMin: number, uMax: number, perc: number, totalLength?: number): number
+{
+    const p = Math.min(1, Math.max(0, perc));
+    if (p === 0) return uMin;
+    if (p === 1) return uMax;
+    const total = (totalLength && totalLength > 0) ? totalLength : chordLength(valueAt, uMin, uMax, 256);
+    return paramAtLength(valueAt, uMin, uMax, total * p, 256, 2);
+}
+
+function chordLength(valueAt: (u: number) => { X(): number, Y(): number, Z(): number }, uMin: number, uMax: number, samples: number): number
+{
+    let sum = 0, prev = valueAt(uMin);
+    for (let i = 1; i <= samples; i++)
+    {
+        const pt = valueAt(uMin + (uMax - uMin) * i / samples);
+        sum += Math.hypot(pt.X() - prev.X(), pt.Y() - prev.Y(), pt.Z() - prev.Z());
+        prev = pt;
+    }
+    return sum;
+}
+
+/** The parameter where the running (chord) length from uMin reaches `target`. */
+function paramAtLength(valueAt: (u: number) => { X(): number, Y(): number, Z(): number },
+                       uMin: number, uMax: number, target: number, samples: number, depth: number): number
+{
+    const lengths: Array<number> = [0];
+    let prev = valueAt(uMin);
+    for (let i = 1; i <= samples; i++)
+    {
+        const pt = valueAt(uMin + (uMax - uMin) * i / samples);
+        lengths.push(lengths[i - 1] + Math.hypot(pt.X() - prev.X(), pt.Y() - prev.Y(), pt.Z() - prev.Z()));
+        prev = pt;
+    }
+    if (!(lengths[samples] > 0)) return uMin;
+    if (target >= lengths[samples]) return uMax;
+    let i = 1;
+    while (i < samples && lengths[i] < target) i++;
+    const u0 = uMin + (uMax - uMin) * (i - 1) / samples;
+    const u1 = uMin + (uMax - uMin) * i / samples;
+    const need = target - lengths[i - 1];
+    if (depth <= 0)
+    {
+        const seg = lengths[i] - lengths[i - 1];
+        return u0 + (u1 - u0) * (seg > 0 ? need / seg : 0);
+    }
+    return paramAtLength(valueAt, u0, u1, need, 64, depth - 1);
+}

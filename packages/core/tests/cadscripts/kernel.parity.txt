@@ -58,16 +58,11 @@ tomy                 success    13   13    13    6    7      0      0  Scene/cut
                              off: Scene/cuts/cutBackPlane mesh=[870.5727,292.81,-99.49,971.0801,313.1557,2.13e-14] brep=[869.755,293.084,-99.504,970.249,312.886,0] (bbox.depth,bbox.min.x,bbox.max.x,bbox.center.x,bbox.min.y,bbox.max.y,bbox.diagonal)
                              off: Scene/cuts/cutBackPrimaryLine mesh=[870.5727,292.81,-0.0141,970.0539,302.9829,2.13e-14] brep=[869.755,302.985,-99.504,969.264,312.886,-99.504] (bbox.depth,bbox.height,bbox.min.x,bbox.max.x,bbox.center.x,bbox.min.y,bbox.max.y,bbox.center.y,bbox.min.z,bbox.max.z,bbox.center.z)
                              … 3 more off
-urhousesketch        error      42   42    40   33    7      2      2  Scene/openings/Mesh:Box[12]: bbox.min.y mesh=3087.5974 brep=3685.198
-                             brep: unreachable
-                             off: Scene/openings/Mesh:Box[14] mesh=[-875,3087.5974,0,1125,3887.5974,2000] brep=[-875,3685.198,0,1125,4485.198,2000] (bbox.min.y,bbox.max.y,bbox.center.y)
-                             off: Scene/openings/Polygon[4] mesh=[125,3087.5974,0,125,3887.5974,2000] brep=[125,3685.198,0,125,4485.198,2000] (bbox.min.y,bbox.max.y,bbox.center.y)
-                             off: Scene/openings/Mesh:Box[15] mesh=[3825,2885.8482,0,3925,3685.8482,2000] brep=[3825,2677.31,0,3925,3477.31,2000] (bbox.min.y,bbox.max.y,bbox.center.y)
-                             … 3 more off
+urhousesketch        success    42   42    40   39    1      2      2  Scene/walls/wallsCombined: volume mesh=12723511371.1993 brep=13213263250
                              only mesh: Scene/roof/Mesh [Mesh]
                              only mesh: Scene/walls/Vertex [Vertex]
                              only brep: Scene/roof/group2/UnnamedShapeCollection [ShapeCollection]
                              only brep: Scene/walls/Wire:Planar [Wire]
 workbench            success    24   24    24   24    0      0      0  
 
-corpus: 11/16 scripts run on brep, 322 shapes matched, 31 off, 159 on one kernel only
+corpus: 12/16 scripts run on brep, 322 shapes matched, 25 off, 159 on one kernel only

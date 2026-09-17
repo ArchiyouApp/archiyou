@@ -608,10 +608,21 @@ export class Wire extends Shape
         return this.vertices().at(0) as Vertex; // although [0] could work with experimental fake keys we use official ShapeCollection.at method
     }
 
-    /** Get the end Vertex of the Wire */
+    /** Get the end Vertex of the Wire. A closed Wire ends where it starts, so start() and end()
+     *  are the same point — as on the mesh kernel (kernel-divergences item 11). */
     end():Vertex
     {
+        if (this.closed()) { return this.start(); }
         return this.vertices().at(this.vertices().length-1) as Vertex;
+    }
+
+    /** The area a closed planar Wire encloses, as the mesh kernel answers for a closed Curve;
+     *  undefined for an open or non-planar Wire (a wire has no surface of its own). Kernel-
+     *  divergences item 10. */
+    area():number
+    {
+        if (!this.closed() || !this.planar()) { return undefined; }
+        return new Face().fromWire(this._copy() as Wire)?.area?.();
     }
 
     is2DXY(): boolean 
@@ -786,14 +797,16 @@ export class Wire extends Shape
             perc = 1.0;
         }
 
-        let uMin = this._toOcCurve().FirstParameter();
-        let uMax = this._toOcCurve().LastParameter();
-
-        let atU =  uMin + perc * (uMax - uMin);
-
-        let v:Vector = this.pointAtParam(atU);
-        
-        return v;
+        // by ARC LENGTH, not by parameter: on a polyline whose segments differ in length the
+        // two walk at different speeds, and middle() means "half the length along" — as on
+        // the mesh kernel (kernel-divergences item 12). A CompCurve knotted by curvilinear
+        // abscissa has length itself as its parameter, so this is exact.
+        const byLength = new this._oc.BRepAdaptor_CompCurve_2(this._ocShape, true); // KnotByCurvilinearAbcissa
+        const uMin = byLength.FirstParameter();
+        const uMax = byLength.LastParameter();
+        const v = new Vector()._fromOcPoint(byLength.Value(uMin + perc * (uMax - uMin)));
+        byLength.delete?.();
+        return v.rounded();
     }
 
     @checkInput(Number, Number)

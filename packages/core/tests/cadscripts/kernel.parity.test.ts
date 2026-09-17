@@ -110,9 +110,27 @@ function errorLine(raw: unknown): string
     return line.replace(/\s+/g, ' ').trim().slice(0, 110)
 }
 
+/** A small seeded PRNG (mulberry32), so a script that places things with Math.random()
+ *  (urhousesketch's windows) draws the same numbers on both kernels — and on every run, so
+ *  the table stays a snapshot. Installed for the duration of one script run. */
+function seededRandom(seed: number): () => number
+{
+    let a = seed >>> 0
+    return () =>
+    {
+        a = (a + 0x6D2B79F5) >>> 0
+        let t = a
+        t = Math.imul(t ^ (t >>> 15), t | 1)
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+}
+
 async function run(runner: Runner, name: string, code: string, kernel: 'mesh' | 'brep'): Promise<Run>
 {
     const started = performance.now()
+    const realRandom = Math.random
+    Math.random = seededRandom(1234)
     try
     {
         const result: any = await Promise.race([
@@ -131,6 +149,7 @@ async function run(runner: Runner, name: string, code: string, kernel: 'mesh' | 
     {
         return { status: 'threw', error: errorLine(e), ms: Math.round(performance.now() - started), shapes: [] }
     }
+    finally { Math.random = realRandom }
 }
 
 //// COMPARING ////
@@ -295,7 +314,7 @@ describe('mesh ↔ brep parity of the cadscripts', () =>
 
     /*  The floor: what parity already holds today, so a kernel change cannot take it away
         unnoticed. Widen these lists as the divergences in kernel-divergences.test.ts get fixed. */
-    const RUNS_ON_BREP = ['artcrate', 'boxpubtest', 'gardenchair', 'kakpinchedstool', 'programmaticparams', 'sedia', 'slidercabinet', 'strawwall', 'timberfloor', 'tomy', 'workbench']
+    const RUNS_ON_BREP = ['artcrate', 'boxpubtest', 'gardenchair', 'kakpinchedstool', 'programmaticparams', 'sedia', 'slidercabinet', 'strawwall', 'timberfloor', 'tomy', 'urhousesketch', 'workbench']
     const CLEAN_ON_BREP = ['artcrate', 'boxpubtest', 'gardenchair', 'kakpinchedstool', 'programmaticparams', 'sedia', 'workbench', 'slidercabinet', 'strawwall', 'timberfloor']
     /*  Scripts that use the make module stop at its mesh-only error on brep — by design until
         Make builds through the Modeler API. */

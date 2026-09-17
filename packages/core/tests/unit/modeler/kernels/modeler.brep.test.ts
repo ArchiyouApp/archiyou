@@ -354,6 +354,33 @@ describe('Modeler — brep mode', () =>
             expect(face.bbox().depth()).toBeCloseTo(81.19, 1)
         })
 
+        it('pointAt()/middle() walk by arc length, like the mesh kernel', () =>
+        {
+            // 100 + 50 + 60 = 210 long: halfway is 105 along, i.e. 5 up the second segment
+            const pl = m.polyline([[0, 0, 0], [100, 0, 0], [100, 50, 0], [160, 50, 0]]) as any
+            expect(pl.middle().x).toBeCloseTo(100, 2)
+            expect(pl.middle().y).toBeCloseTo(5, 2)
+            expect(pl.pointAt(0.25).x).toBeCloseTo(52.5, 2)
+        })
+
+        it('a closed outline ends where it starts, and encloses an area', () =>
+        {
+            const rect = m.rect(100, 50) as any
+            expect(rect.start().toArray()).toEqual(rect.end().toArray())
+            expect(rect.area()).toBeCloseTo(5000, 3)
+            expect((m.circle(40) as any).area()).toBeCloseTo(Math.PI * 1600, 0)
+            expect((m.line([0, 0, 0], [10, 0, 0]) as any).area()).toBeUndefined()
+        })
+
+        it('subtract() that severs the solid keeps both pieces, like a mesh does', () =>
+        {
+            const s = m.box(100, 50, 20) as any
+            s.subtract(m.box(60, 60, 40))            // wider and taller: cuts it clean in two
+            expect(s.volume()).toBeCloseTo(40000, 0) // 100·50·20 − 60·50·20
+            expect(s.bbox().width()).toBeCloseTo(100, 3)
+            expect(s.solids().length).toBe(2)
+        })
+
         it('bbox() is exact, before and after the shape has been meshed for export', () =>
         {
             const line = m.line([0, 0, 0], [100, 0, 0]) as any
