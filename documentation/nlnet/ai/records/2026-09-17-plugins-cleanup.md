@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-17 → (open) |
+| Dates | 2026-09-17 → 2026-09-17 |
 | Model | Claude Fable 5.1 (claude-fable-5-1), 1M context, Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: a removal, inventoried from the code before deleting) |
 | Human | Mark van der Net: wrote the prompts below, decided to remove the plugin system and revisit it later together with modules, reviewed the resulting diff |
@@ -47,4 +47,4 @@ production Vite build of the editor.
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
-| (this commit) | Cleanup plugins: revisit at later stage | the prompt of 2026-09-17 20:43 |
+| 62f3a4c | Cleanup plugins: revisit at later stage | the prompt of 2026-09-17 20:43 |
