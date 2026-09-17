@@ -1,16 +1,12 @@
 script               brep     mesh brep match   ok  off only m only b  first divergence
 artcrate             success    19   19    19   19    0      0      0  
 boxpubtest           success     1    1     1    1    0      0      0  
-gardenchair          success    34   34    32   27    5      2      2  Scene/side/sideSeatingBeam[0]: bbox.depth mesh=834.4682 brep=836.823
-                             off: Scene/side/sideBackSupportBeam mesh=[-13,430.1531,0,-7.36e-14,789.8176,657.3321] brep=[-13,430.153,0,0,789.818,657.332]
-                             off: Scene/longitudinal/longBeamBack mesh=[-499,637.9758,235.4171,-7.77e-14,688.6202,322.1873] brep=[-499,626.255,229.795,0,676.899,316.565]
-                             off: Scene/assembly/sideSeatingBeam mesh=[-512,-152.1495,224.1177,-499,682.3186,357.8504] brep=[-512,-154.504,224.117,-499,682.319,357.85]
-                             … 1 more off
+gardenchair          success    34   34    32   32    0      2      2  
                              only mesh: Scene/longitudinal/Mesh[0] [Mesh]
                              only mesh: Scene/longitudinal/Mesh[1] [Mesh]
                              only brep: Scene/longitudinal/diagramBaseFrontLine [Face]
-                             only brep: Scene/longitudinal/sideBackSupportBeam [Face]
-kakpinchedstool      success    35   29    28   27    1      7      1  Scene/seat/Polygon: bbox.width mesh=105 brep=50.238
+                             only brep: Scene/longitudinal/group1/UnnamedShapeCollection [ShapeCollection]
+kakpinchedstool      success    35   29    28   28    0      7      1  
                              only mesh: Scene/assembly/leg[0] [Mesh]
                              only mesh: Scene/assembly/leg[1] [Mesh]
                              only mesh: Scene/assembly/leg[2] [Mesh]
@@ -18,8 +14,8 @@ kakpinchedstool      success    35   29    28   27    1      7      1  Scene/sea
                              only brep: Scene/horizontals/Wire:Planar [Wire]
 maritavolo           error      63   33    33   30    3     30      0  Scene/spine/strut V mid[0]: bbox.width mesh=50 brep=25
                              brep: Make: the make module (walls, boarding, part lists, sheet packing) is only available in mesh mode — it builds 
-                             off: Scene/spine/strut V mid[1] mesh=[375,675,350,425,700,625] brep=[650,0,0,675,275,50]
-                             off: Scene/spine/strut V mid[2] mesh=[375,1000,350,425,1025,625] brep=[975,0,0,1000,275,50]
+                             off: Scene/spine/strut V mid[1] mesh=[375,675,350,425,700,625] brep=[650,0,0,675,275,50] (bbox.width,bbox.depth,bbox.height,bbox.min.x,bbox.max.x,bbox.center.x,bbox.min.y,bbox.max.y,bbox.center.y,bbox.min.z,bbox.max.z,bbox.center.z)
+                             off: Scene/spine/strut V mid[2] mesh=[375,1000,350,425,1025,625] brep=[975,0,0,1000,275,50] (bbox.width,bbox.depth,bbox.height,bbox.min.x,bbox.max.x,bbox.center.x,bbox.min.y,bbox.max.y,bbox.center.y,bbox.min.z,bbox.max.z,bbox.center.z)
                              only mesh: Scene/diagonalLeft/diagLineEnd[0] [Vertex]
                              only mesh: Scene/diagonalLeft/diagLineEnd[1] [Vertex]
                              only mesh: Scene/spine/d[0] [Polygon]
@@ -29,9 +25,9 @@ sedia                success    23   22    22   22    0      1      0
                              only mesh: Scene/back/Vertex[1] [Vertex]
 simplestep           error      44   22    22    8   14     22      0  Scene/side/Mesh[0]: bbox.width mesh=50 brep=25
                              brep: Make: the make module (walls, boarding, part lists, sheet packing) is only available in mesh mode — it builds 
-                             off: Scene/side/Mesh[1] mesh=[-1.85e-15,-25,200,600,4.44e-14,250] brep=[0,-25,250,50,525,275]
-                             off: Scene/side/Mesh[3] mesh=[200,-25,450,250,525,475] brep=[0,-25,200,600,0,250]
-                             off: Scene/side/Mesh[4] mesh=[200,-25,400,600,8.88e-14,450] brep=[175,0,250,200,50,450]
+                             off: Scene/side/Mesh[1] mesh=[-1.85e-15,-25,200,600,4.44e-14,250] brep=[0,-25,250,50,525,275] (bbox.width,bbox.depth,bbox.height,bbox.max.x,bbox.center.x,bbox.max.y,bbox.center.y,bbox.min.z,bbox.max.z,bbox.center.z,bbox.diagonal,volume)
+                             off: Scene/side/Mesh[3] mesh=[200,-25,450,250,525,475] brep=[0,-25,200,600,0,250] (bbox.width,bbox.depth,bbox.height,bbox.min.x,bbox.max.x,bbox.center.x,bbox.max.y,bbox.center.y,bbox.min.z,bbox.max.z,bbox.center.z,bbox.diagonal,volume)
+                             off: Scene/side/Mesh[4] mesh=[200,-25,400,600,8.88e-14,450] brep=[175,0,250,200,50,450] (bbox.width,bbox.depth,bbox.height,bbox.min.x,bbox.max.x,bbox.center.x,bbox.min.y,bbox.max.y,bbox.center.y,bbox.min.z,bbox.center.z,bbox.diagonal,volume)
                              … 10 more off
                              only mesh: Scene/side/Mesh[11] [Mesh]
                              only mesh: Scene/side/Mesh[12] [Mesh]
@@ -58,20 +54,20 @@ timberwallopenings   error      56    0     0    0    0     56      0
                              only mesh: Scene/wall/gridlines/gridline1 [Curve]
                              … 53 more only on mesh
 tomy                 success    13   13    13    6    7      0      0  Scene/cuts/flatLeg: bbox.width mesh=102.1603 brep=100.498
-                             off: Scene/cuts/layFlatFaceTop mesh=[868.9199,-313.1557,-1.6838,970.0539,302.9829,2.13e-14] brep=[869.751,-302.985,-99.504,969.264,312.886,-99.504]
-                             off: Scene/cuts/cutBackPlane mesh=[870.5727,292.81,-99.49,971.0801,313.1557,2.13e-14] brep=[869.755,293.084,-99.504,970.249,312.886,0]
-                             off: Scene/cuts/cutBackPrimaryLine mesh=[870.5727,292.81,-0.0141,970.0539,302.9829,2.13e-14] brep=[869.755,302.985,-99.504,969.264,312.886,-99.504]
+                             off: Scene/cuts/layFlatFaceTop mesh=[868.9199,-313.1557,-1.6838,970.0539,302.9829,2.13e-14] brep=[869.751,-302.985,-99.504,969.264,312.886,-99.504] (bbox.width,bbox.height,bbox.min.x,bbox.max.x,bbox.min.y,bbox.max.y,bbox.center.y,bbox.min.z,bbox.max.z,bbox.center.z,bbox.diagonal)
+                             off: Scene/cuts/cutBackPlane mesh=[870.5727,292.81,-99.49,971.0801,313.1557,2.13e-14] brep=[869.755,293.084,-99.504,970.249,312.886,0] (bbox.depth,bbox.min.x,bbox.max.x,bbox.center.x,bbox.min.y,bbox.max.y,bbox.diagonal)
+                             off: Scene/cuts/cutBackPrimaryLine mesh=[870.5727,292.81,-0.0141,970.0539,302.9829,2.13e-14] brep=[869.755,302.985,-99.504,969.264,312.886,-99.504] (bbox.depth,bbox.height,bbox.min.x,bbox.max.x,bbox.center.x,bbox.min.y,bbox.max.y,bbox.center.y,bbox.min.z,bbox.max.z,bbox.center.z)
                              … 3 more off
-urhousesketch        error      42   42    40   33    7      2      2  Scene/openings/Mesh:Box[12]: bbox.min.y mesh=2786.0683 brep=4087.298
+urhousesketch        error      42   42    40   33    7      2      2  Scene/openings/Mesh:Box[12]: bbox.min.y mesh=3087.5974 brep=3685.198
                              brep: unreachable
-                             off: Scene/openings/Mesh:Box[14] mesh=[-875,2786.0683,0,1125,3586.0683,2000] brep=[-875,4087.298,0,1125,4887.298,2000]
-                             off: Scene/openings/Polygon[4] mesh=[45,2866.0683,0,45,3666.0683,2000] brep=[125,4087.298,0,125,4887.298,2000]
-                             off: Scene/openings/Mesh:Box[15] mesh=[3825,2931.8144,0,3925,3731.8144,2000] brep=[3825,3321.487,0,3925,4121.487,2000]
+                             off: Scene/openings/Mesh:Box[14] mesh=[-875,3087.5974,0,1125,3887.5974,2000] brep=[-875,3685.198,0,1125,4485.198,2000] (bbox.min.y,bbox.max.y,bbox.center.y)
+                             off: Scene/openings/Polygon[4] mesh=[125,3087.5974,0,125,3887.5974,2000] brep=[125,3685.198,0,125,4485.198,2000] (bbox.min.y,bbox.max.y,bbox.center.y)
+                             off: Scene/openings/Mesh:Box[15] mesh=[3825,2885.8482,0,3925,3685.8482,2000] brep=[3825,2677.31,0,3925,3477.31,2000] (bbox.min.y,bbox.max.y,bbox.center.y)
                              … 3 more off
                              only mesh: Scene/roof/Mesh [Mesh]
                              only mesh: Scene/walls/Vertex [Vertex]
-                             only brep: Scene/roof/group1/UnnamedShapeCollection [ShapeCollection]
+                             only brep: Scene/roof/group2/UnnamedShapeCollection [ShapeCollection]
                              only brep: Scene/walls/Wire:Planar [Wire]
 workbench            success    24   24    24   24    0      0      0  
 
-corpus: 11/16 scripts run on brep, 322 shapes matched, 37 off, 159 on one kernel only
+corpus: 11/16 scripts run on brep, 322 shapes matched, 31 off, 159 on one kernel only

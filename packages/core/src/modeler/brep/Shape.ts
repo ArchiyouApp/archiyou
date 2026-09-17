@@ -1464,12 +1464,40 @@ export class Shape
         return this;
     }
 
-    /** Alias for rotateToLayFlat 
-     *  Rotates a Shape to lay flat on XY plane
-    */
+    /** Lay this Shape flat on the XY plane, the mesh kernel's way (meshup Polygon/Mesh.layflat):
+     *  turn the normal of its (largest planar) face onto +z along the SHORTEST arc — so the
+     *  in-plane orientation is left alone, nothing is squared up to the axes — then drop it onto
+     *  z = 0. rotateToLayFlat() is the older brep variant that also aligns to the axes. */
     layflat():this
     {
-        return this.rotateToLayFlat('vertical');
+        const n = this._layflatNormal();
+        if (n)
+        {
+            const up = new Vector(0, 0, 1);
+            const dot = n.normalized().dot(up);
+            if (dot < 1 - 1e-6)
+            {
+                // facing straight down has no unique shortest arc: turn it over around x
+                const q = (dot <= -1 + 1e-6) ? { x: 1, y: 0, z: 0, w: 0 } : n.normalized().rotationBetween(up);
+                // about the centre of mass, as meshup turns about Mesh.center(): for a flat face
+                // that is its area centroid, not the middle of its uv range
+                const pivot = (this.type === 'Face') ? (this as any)._areaCentroid() : this.center();
+                this.rotateQuaternion(q, pivot);
+            }
+        }
+        const minZ = this.bbox().minZ();
+        if (Math.abs(minZ) > 1e-9) { this.move(0, 0, -minZ); }
+        return this;
+    }
+
+    /** The normal to lay flat by: a Face's own; for anything else the largest planar face's. */
+    _layflatNormal():Vector|null
+    {
+        if (this.type === 'Face') { return (this as any).normal?.() ?? null; }
+        const faces = (this.faces()?.toArray() ?? []).filter((f:any) => f.isPlanar?.());
+        if (!faces.length) { return null; }
+        const largest = faces.reduce((a:any, b:any) => (b.area() > a.area() ? b : a));
+        return largest.normal();
     }
 
     fillet(radius?: number, at?: any): this
@@ -2926,9 +2954,16 @@ export class Shape
         }
 
         const setAxisFunc = `set${axisNormal.toUpperCase()}`;
-        const cutPlane = new Face().makePlaneBetween(bb.min()[setAxisFunc](level), bb.max()[setAxisFunc](level));
+        // A little wider than the shape on every axis: a flat shape (a face in x = 0) would
+        // otherwise ask for a cutting plane with no area, and the margin makes the split robust
+        const margin = Math.max(bb.maxSize() * 0.05, 1);
+        const lo = bb.min(), hi = bb.max();
+        const from = new Point(lo.x - margin, lo.y - margin, lo.z - margin)[setAxisFunc](level);
+        const to = new Point(hi.x + margin, hi.y + margin, hi.z + margin)[setAxisFunc](level);
+        const cutPlane = new Face().makePlaneBetween(from, to);
+        if (!cutPlane){ console.warn(`Shape::cutoff: Could not make a cutting plane. Returned original`); return this; }
 
-        const splittedShapes = this._splitted(cutPlane.scale(1.1)); // Scaling makes results more robust
+        const splittedShapes = this._splitted(cutPlane);
 
         if(Shape.isShape(splittedShapes) || splittedShapes.length === 0){ console.warn(`Shape::cutoff: No splitted Shapes. Check level! Returned original`); return this; } // never null: scripts chain on it
         if(splittedShapes.length === 1){ console.warn(`Shape::cutoff: Only one splitted Shapes. Returned original`); return this; }
@@ -2954,7 +2989,16 @@ export class Shape
     @checkInput(['AnyShape',['Boolean', false]], ['auto', 'auto'])
     cutoffBy(other:AnyShape, keepSmallest?:boolean):this
     {
-        const splitResult = this._splitted(other);
+        // A straight line cutting a Face is read as the whole line through the face, as the
+        // mesh kernel reads it (Polygon.cutoffBy): a cutter whose ends sit on the boundary or
+        // inside would not split anything in OpenCascade, so it is extended well past the Face.
+        let cutter:AnyShape = other;
+        if (this.type === 'Face' && other?.type === 'Edge' && (other as any).edgeType?.() === 'Line')
+        {
+            const reach = this.bbox().maxSize() * 2 + (other as any).length();
+            cutter = ((other as any)._extended(reach, 'start') as any)._extended(reach, 'end');
+        }
+        const splitResult = this._splitted(cutter);
         if(Shape.isShape(splitResult))
         {
             console.warn('Shape::cutoffBy: No result. Are the Shapes overlapping? Returned original Shape');

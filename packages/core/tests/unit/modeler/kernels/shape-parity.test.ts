@@ -309,6 +309,22 @@ describe('mesh ↔ brep parity', () =>
         }, modelers)
     })
 
+    describe('surfaces (meshup Polygon ↔ brep Face)', () =>
+    {
+        /*  layflat() turns the face's normal onto +z along the shortest arc and drops it onto
+            z = 0 — and leaves the in-plane orientation alone (kernel-divergences item 34: brep used
+            to square the face up to the axes as well). The bbox after the drop tells both. */
+        runChain('planeBetween: tilt → layflat', {
+            family: 'surface' as any,
+            make: m => m.planeBetween([0, 0, 0], [100, 0, 50]),
+            steps: [
+                { name: 'rotateY(20) about origin', op: s => s.rotateY(20, [0, 0, 0]) },
+                { name: 'layflat()', op: s => s.layflat() },
+                { name: 'move(10,20,0)', op: s => s.move(10, 20, 0) },
+            ],
+        }, modelers)
+    })
+
     describe('the chain runner itself', () =>
     {
         it('aborts a chain instead of reporting noise once the kernels diverge grossly', () =>

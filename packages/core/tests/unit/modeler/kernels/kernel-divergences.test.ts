@@ -50,22 +50,29 @@
  *   32  side selectors over a collection of edges — went away with 8: the edges came from an
  *       open shell instead of a solid's bottom face
  *   33  brep Bbox.containsBbox() — added (contains() takes a Bbox too)
+ *   14  Polygon.center() — meshup now answers the area centroid (no double-counted closing
+ *       vertex), the same centre brep gives a Face; Polygon.layflat() turns about it
+ *   34  layflat() — brep turns the face normal onto +z along the shortest arc about the area
+ *       centroid, as meshup, instead of squaring the shape up to the axes; planeBetween() gets
+ *       its normal from the corner order on both; cutoffBy() reads a straight line through a
+ *       face as a full cut; cutoff() no longer asks for a zero-width cutting plane
+ *   30  gardenchair drift — it was 34's planeBetween() normal (longBeamBack extruded the other
+ *       way) and the coplanar line cut that brep did not perform; gardenchair is clean now
  *
  *  Still OPEN:
  *   29  urhousesketch on brep: the default run completes, but when the Runner re-executes the
  *       script for its `$pipeline('techdraw')` the OpenCascade WASM traps ("unreachable") at
  *       `wallFrontFace.copy().tmp().extrude(...).volume()` — a re-execution/lifetime issue
  *       in the brep kernel, not a modelling contract
- *   30  gardenchair: beams built from extend()/extendTo() lines still drift a few mm on brep
- *       after 5 (sideSeatingBeam depth 834.5 vs 836.8; longBeamBack ~11 mm in y)
- *   34  kakpinchedstool `seat` plane: 105 wide on mesh, 50.2 on brep; tomy: `flatLeg` after
- *       layflat()/obbox() differs (102.2 vs 100.5 wide) — layflat/obbox axis choice
+ *   35  meshup Mesh.obbox() is a PCA fit: on tomy's 626×100×100 leg it reports 626×141×142
+ *       and its axes carry an arbitrary sign, where brep's OBB is tight — so a rotation
+ *       derived from obbox().axes() lands the leg 1.7 mm wider and turned 180° on mesh.
+ *       A tighter OBB fitter on the mesh side (minimum-volume, not PCA) would close it
  *
  *    6  brep subtract() throws when the cut severs the solid
  *   10  area()/size()/length() answer for different shape families
  *   11  closed outlines are seamed differently, so start()/end()/middle() differ
  *   12  brep pointAt() is parameter-based where mesh pointAtPerc() is arc-length-based
- *   14  Polygon.center() double-counts the closing vertex on mesh
  *   15  odds and ends: a line ∩ a closed outline, distanceTo(), fillet()/chamfer(), circle spans
  *   22  the make module (walls, boarding, part lists) is mesh-only — brep now says so up front
  */
@@ -205,28 +212,6 @@ describe('mesh ↔ brep divergences (pinned, not accepted)', () =>
         expect(r4(lineA.middle().x)).toEqual(r4(lineB.middle().x))
     })
 
-    //// ==== 14. SMALL BUT SHARP ==== ////
-
-    it('14. Polygon.center() double-counts the closing vertex on mesh', () =>
-    {
-        /*  plane() is a meshup Polygon on mesh and a brep Face on brep. Polygon.center() averages
-            the vertex ring — and the ring that Curve.toPolygon() hands it repeats the first
-            vertex at the end, so a 100×50 plane centred on the origin reports its centre at
-            (−10, −5): the mean of five points where four were meant.
-
-            SHOULD BE: Polygon.center() drops a duplicated closing vertex (or uses the area
-                       centroid, which is what "centre" means for a face). */
-        const a = mesh.plane(100, 50) as any
-        const b = brep.plane(100, 50) as any
-
-        expect(r4(a.bbox().center().x), 'the bbox is right').toEqual(0)
-        expect([r4(a.center().x), r4(a.center().y)], 'the centre is not').toEqual([-10, -5])
-        expect([r4(b.center().x), r4(b.center().y)]).toEqual([0, 0])
-
-        // a polygon built from bare points, with no repeated vertex, is fine
-        const clean = mesh.polygon([[0, 0, 0], [100, 0, 0], [100, 50, 0], [0, 50, 0]] as any) as any
-        expect([r4(clean.center().x), r4(clean.center().y)]).toEqual([50, 25])
-    })
 
     //// ==== 15. ODDS AND ENDS ==== ////
 
