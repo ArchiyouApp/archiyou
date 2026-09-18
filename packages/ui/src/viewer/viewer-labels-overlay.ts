@@ -2,17 +2,28 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 
+import { capCentreShiftPx } from '../cap-centring.js';
+
 export interface OverlayLabel
 {
   id: string;
   text: string;
   variant: 'label' | 'dimension';
   class?: string;
+  /** The box the text sits in. Default 'circle' for a label, 'rect' for a dimension value —
+   *  which has no box of its own to speak of, only a knockout behind the digits. */
+  shape?: 'circle' | 'rect';
+  /** What marks the anchor end of the leader. Default 'none'. */
+  target?: 'circle' | 'arrow' | 'none';
+  /** Just the label: no leader, no marker, sitting on the anchor. Default false here — the
+   *  page defaults the other way, see AnnotatorLabel's header for why. */
+  labelOnly?: boolean;
   // Optional CSS leader (screen space). 90deg = straight up on screen.
   line?: boolean;     // leader shown unless explicitly false (default true)
-  offset?: number;    // leader length in screen px
-  angle?: number;     // leader angle in deg (90 = straight up)
-  circle?: boolean;   // circle marker at the anchor end of the leader
+  length?: number;    // leader length in screen px
+  offset?: number;    // DEPRECATED: `length`
+  angle?: number;     // leader angle in deg (0 = +x, 90 = straight up)
+  circle?: boolean;   // DEPRECATED: `target: 'circle'`
   /** When set, clicking the label turns it into an inline editor that
    *  fires `dim-param-change` with `{ param, value }` on commit. */
   param?: string;
@@ -81,8 +92,10 @@ export class ViewerLabelsOverlay extends LitElement
       ${repeat(this.labels, (l) => l.id, (l) =>
       {
         // Dimension values sit right on the anchor: never offset, never a leader
-        const hasLeader = l.variant !== 'dimension' && l.line !== false;
-        const len = hasLeader ? (l.offset ?? DEFAULT_LEN) : 0;
+        const hasLeader = l.variant !== 'dimension' && l.line !== false && l.labelOnly !== true;
+        const len = hasLeader ? (l.length ?? l.offset ?? DEFAULT_LEN) : 0;
+        const shape = l.shape ?? (l.variant === 'dimension' ? 'rect' : 'circle');
+        const target = l.target ?? (l.circle ? 'circle' : 'none');
         const angle = l.angle ?? DEFAULT_ANGLE;
         const rad = (angle * Math.PI) / 180;
         const dx = Math.cos(rad) * len;
@@ -98,7 +111,8 @@ export class ViewerLabelsOverlay extends LitElement
             ${hasLeader ? html`
               <div class="ay-leader" part="leader"
                    style="width:${len}px;transform:rotate(${phi}deg)">
-                ${l.circle ? html`<span class="ay-circle" part="circle"></span>` : ''}
+                ${target === 'circle' ? html`<span class="ay-circle" part="circle"></span>` : ''}
+                ${target === 'arrow' ? html`<span class="ay-arrow" part="arrow"></span>` : ''}
               </div>` : ''}
             ${editing ? html`
               <input
@@ -114,11 +128,11 @@ export class ViewerLabelsOverlay extends LitElement
               />
             ` : html`
               <div
-                class="ay-label ay-label--${l.variant} ${interactive ? 'ay-label--interactive' : ''} ${l.class ?? ''}"
+                class="ay-label ay-label--${l.variant} ay-label--${shape} ${interactive ? 'ay-label--interactive' : ''} ${l.class ?? ''}"
                 part="label"
                 style="left:${dx}px;top:${dy}px"
                 @click=${interactive ? (e: Event) => this._onLabelClick(l, e) : null}
-              >${l.text}</div>
+              ><span class="ay-label-text">${l.text}</span></div>
             `}
           </div>`;
       })}
@@ -206,6 +220,22 @@ export class ViewerLabelsOverlay extends LitElement
       const id = el.dataset['id'];
       if (id) this._nodes.set(id, el);
     });
+
+    this._syncCapCentring();
+  }
+
+  /** Put the measured cap-band shift where the stylesheet can reach it.
+   *
+   *  Measured off a real label rather than assumed, because where the browser puts a baseline
+   *  inside a line box is not a fixed fraction of the font size — see cap-centring.ts. Cached
+   *  per font there, so this costs nothing on a re-render.
+   */
+  private _syncCapCentring(): void
+  {
+    const label = this.renderRoot.querySelector<HTMLElement>('.ay-label');
+    if (!label) return;
+
+    this.style.setProperty('--ay-cap-shift', `${capCentreShiftPx(label).toFixed(3)}px`);
   }
 
   /** Imperatively position label anchors each frame (from the viewer loop). */
@@ -252,10 +282,15 @@ export class ViewerLabelsOverlay extends LitElement
       --ay-leader-color: var(--ay-label-border-color);
       --ay-leader-width: 1px;
 
-      /* Circle marker at the anchor end (replaces the arrowhead) */
+      /* Marker at the anchor end: a dot, or an arrowhead pointing back down the leader */
       --ay-circle-size: 8px;
       --ay-circle-bg: var(--ay-label-border-color);
       --ay-circle-border-color: var(--ay-label-border-color);
+      --ay-arrow-size: 9px;
+      --ay-arrow-color: var(--ay-label-border-color);
+
+      /* A circled label is sized off its text, never smaller than this */
+      --ay-label-circle-size: 1.9em;
     }
 
     /* 0-size anchor positioned at the projected screen point */
@@ -268,6 +303,14 @@ export class ViewerLabelsOverlay extends LitElement
       will-change: transform;
     }
 
+    /*  Optical centring: the cap band goes in the middle of the badge, not the line box.
+        The shift is measured — see cap-centring.ts for why it cannot be a constant — and
+        pushed in as a variable by _syncCapCentring(). */
+    .ay-label-text {
+      display: block;
+      transform: translateY(var(--ay-cap-shift, 0px));
+    }
+
     .ay-label {
       position: absolute;
       transform: translate(-50%, -50%);
@@ -278,10 +321,29 @@ export class ViewerLabelsOverlay extends LitElement
       color: var(--ay-label-color);
       background: var(--ay-label-bg);
       border: var(--ay-label-border);
-      border-radius: var(--ay-label-radius);
       padding: var(--ay-label-padding);
       box-shadow: var(--ay-label-shadow);
       user-select: none;
+    }
+
+    /* Square corners. The rounded box the labels used to have is gone: it read as a tooltip
+       rather than as a drawing annotation, and it has no counterpart on the printed page. */
+    .ay-label--rect {
+      border-radius: 0;
+    }
+
+    /* The circled letter a manual numbers its parts with. aspect-ratio keeps it round as the
+       text grows past the minimum, rather than letting it stretch into a pill. */
+    .ay-label--circle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      min-width: var(--ay-label-circle-size);
+      min-height: var(--ay-label-circle-size);
+      aspect-ratio: 1;
+      padding: 0 0.35em;
+      border-radius: 50%;
     }
 
     /* Dimension value text — background matches the viewer, no shadow */
@@ -339,6 +401,20 @@ export class ViewerLabelsOverlay extends LitElement
       height: var(--ay-leader-width);
       background: var(--ay-leader-color);
       transform-origin: 0 50%;
+    }
+
+    /* Arrowhead at the anchor end, pointing back down the leader at the shape. The leader is
+       already rotated, so this only ever points along its own -x. */
+    .ay-arrow {
+      position: absolute;
+      left: 0;
+      top: 50%;
+      width: 0;
+      height: 0;
+      border-top: calc(var(--ay-arrow-size) / 2) solid transparent;
+      border-bottom: calc(var(--ay-arrow-size) / 2) solid transparent;
+      border-right: var(--ay-arrow-size) solid var(--ay-arrow-color);
+      transform: translate(0, -50%);
     }
 
     /* Circle marker at the anchor end of the leader (points at the shape) */

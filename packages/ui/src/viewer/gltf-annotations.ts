@@ -63,7 +63,11 @@ interface LabelData
   position: [number, number, number];
   value: string;
   class?: string;
+  shape?: 'circle' | 'rect';
+  target?: 'circle' | 'arrow' | 'none';
+  labelOnly?: boolean;
   line?: boolean;
+  length?: number;
   offset?: number;
   angle?: number;
   circle?: boolean;
@@ -79,8 +83,15 @@ export interface HtmlLabelDef
   variant: 'label' | 'dimension';
   anchorLocal: THREE.Vector3;
   class?: string;
+  /** The box the text sits in: 'circle' (a manual's circled letter) or 'rect'. */
+  shape?: 'circle' | 'rect';
+  /** What marks the anchor end of the leader. */
+  target?: 'circle' | 'arrow' | 'none';
+  /** Just the label — no leader, no marker. */
+  labelOnly?: boolean;
   /** Optional CSS leader (screen space) */
   line?: boolean;
+  length?: number;
   offset?: number;
   angle?: number;
   circle?: boolean;
@@ -146,7 +157,14 @@ export async function applyAnnotations(
         variant: 'label',
         anchorLocal: _worldToViewerPoint(l.position),
         class: l.class,
+        shape: l.shape,
+        target: l.target,
+        /*  Left as the script set it, `null` included: the page and the viewer default this
+            one differently on purpose (see AnnotatorLabel's header), and the viewer's default
+            is applied where it is read, not here. */
+        labelOnly: l.labelOnly ?? undefined,
         line: l.line,
+        length: l.length,
         offset: l.offset,
         angle: l.angle,
         circle: l.circle,

@@ -32,6 +32,8 @@ export class View extends Container
     _overflow:'clip'|'fit' = 'clip';
     /** Line weight on the page in mm. Default DRAWING_LINE_WIDTH_MM. */
     _lineWeightMm:number|undefined = undefined;
+    /** Extra CSS rules for this view's drawing — see css(). */
+    _css:Record<string,string>|null = null;
     _style:any; // general style (TODO)
     _styles:{[key:string]:any}; // style overrides (TODO)
     _dimension:any; // TODO
@@ -154,13 +156,15 @@ export class View extends Container
         if(!(extents.width > 0) || !(extents.height > 0)){ return null }
 
         const archiyou = this._page?._docs?._archiyou as any;
-        const hasAnnotations = collectAnnotations(this._resolvedShapes).length > 0;
+        const annotations = collectAnnotations(this._resolvedShapes);
+        const hasAnnotations = annotations.length > 0;
 
         const resolved = resolveScale({
             extents,
             wMm, hMm,
-            // Room for the value text at the middle of a dimension line
-            marginMm: hasAnnotations ? annotationMarginMm(archiyou?.annotator) : 0,
+            // Room for what the annotations hang outside their own extents — a dimension's
+            // value text, a label's leader and text box
+            marginMm: hasAnnotations ? annotationMarginMm(archiyou?.annotator, annotations) : 0,
             modelUnits: archiyou?.modeler?.units?.(),
             unitSystem: archiyou?.modeler?.unitSystem?.(),
             input: this._scale,
@@ -176,7 +180,7 @@ export class View extends Container
                 + `fit — falling back to fitting the drawing (overflow:'fit').`);
             this._resolvedScale = resolveScale({
                 extents, wMm, hMm,
-                marginMm: hasAnnotations ? annotationMarginMm(archiyou?.annotator) : 0,
+                marginMm: hasAnnotations ? annotationMarginMm(archiyou?.annotator, annotations) : 0,
                 modelUnits: archiyou?.modeler?.units?.(),
                 unitSystem: archiyou?.modeler?.unitSystem?.(),
                 input: 'fit',
@@ -219,6 +223,7 @@ export class View extends Container
                         lineWidthMm: this._lineWeightMm,
                         all: this._forceAll,
                         scoped: this._svgScope(),
+                        css: this._scopedCss(),
                         frame: scale.fitted
                                 ? undefined
                                 : { mode: 'scale', unitsPerMm: scale.unitsPerMm, wMm, hMm,
@@ -249,8 +254,9 @@ export class View extends Container
         if(!(extentW > 0) || !(extentH > 0)){ return [wMm, hMm] }
 
         const archiyou = this._page?._docs?._archiyou as any;
-        const marginMm = collectAnnotations(this._resolvedShapes).length
-                            ? annotationMarginMm(archiyou?.annotator) : 0;
+        const annotations = collectAnnotations(this._resolvedShapes);
+        const marginMm = annotations.length
+                            ? annotationMarginMm(archiyou?.annotator, annotations) : 0;
         const bandMm = this._buildFurniture(wMm, hMm).bandMm;
 
         // A fixed ratio is a statement about real size, so the millimeters follow from it
@@ -394,6 +400,41 @@ export class View extends Container
         return this;
     }
 
+    /** Style parts of this view's drawing beyond the default line-work.
+     *
+     *  Takes selector → declarations, and prefixes each selector with this view's own scope
+     *  (see _svgScope) so the rules cannot leak into the other drawings on the page — a page
+     *  holds several drawings and they all end up in ONE document, which is the bug that
+     *  scoping exists to prevent.
+     *
+     *  The classes to aim at are the group names the drawing carries: a projection tags its
+     *  output per source shape and per visibility, and `meshGroupClasses()` writes those
+     *  group names out as CSS classes. So an instructable draws its context parts back like
+     *  this:
+     *
+     *      view.css({ '.instruct-context': 'stroke:#aaa' })
+     *
+     *  It has to be CSS rather than colouring the shapes: meshup writes a shape's own style
+     *  as presentation ATTRIBUTES, and in SVG a stylesheet rule beats an attribute, so the
+     *  drawing's own `.line{stroke:black}` would win.
+     */
+    css(rules:Record<string,string>):this
+    {
+        this._css = { ...(this._css ?? {}), ...rules };
+        return this;
+    }
+
+    /** This view's extra rules, scoped, as a stylesheet body. */
+    _scopedCss():string|undefined
+    {
+        if(!this._css || Object.keys(this._css).length === 0){ return undefined }
+
+        const scope = this._svgScope();
+        return Object.entries(this._css)
+                .map(([selector, declarations]) => `.${scope} ${selector}{${declarations}}`)
+                .join('');
+    }
+
     /** Apply the options object of `view('elevation', { scale: 1/100, caption: true })`. */
     setOptions(options?:ViewOptions):this
     {
@@ -405,6 +446,7 @@ export class View extends Container
         if(options.bar !== undefined){ this._viewBar = options.bar }
         if(options.lineWeight !== undefined){ this._lineWeightMm = options.lineWeight }
         if(options.overflow !== undefined){ this._overflow = options.overflow }
+        if(options.css !== undefined){ this.css(options.css) }
 
         return this;
     }

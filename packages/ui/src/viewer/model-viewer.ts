@@ -8,7 +8,8 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { buildScenegraphPath, executionResult, scenegraph, scriptParams, updateParam, selectedPath, setSelectedPath, interactiveShapes, activeParamEntry, setActiveParamEntry, isObjectListParam, paramItemSchema } from '@archiyou/editor/src/state/workspace';
 import { formatDimensionValue } from './gltf-annotations.js';
-import { scheduleExecution, resetCameraCounter } from '@archiyou/editor/src/state/viewer';
+import { scheduleExecution, resetCameraCounter,
+         instructName, instructStep, setInstructAvailable } from '@archiyou/editor/src/state/viewer';
 import type { ScriptOutputData } from '@archiyou/core/src/execution/types';
 import type { SceneNodeData } from '@archiyou/core/src/modeler/types';
 import { applyEdgeExtensions, applyPointStyles } from './gltf-edge-extensions.js';
@@ -37,6 +38,12 @@ import { VIEWER_AUTO_FRAME_ON_FIRST_LOAD, VIEWER_BACKGROUND_COLOR, VIEWER_BACKGR
   VIEWER_LIGHT_POSITION } from '@archiyou/editor/src/settings';
 import { THEME_CHANGE_EVENT } from '@archiyou/editor/src/styles/dark-theme.js';
 import { VIEW_STYLES } from './view-styles.js';
+import {
+  applyInstructStep, clearInstructStep as clearInstructApplied,
+  advanceInstructMove, instructCamera,
+} from './instruct-playback.js';
+import type { InstructApplied, InstructDoc, InstructStep } from './instruct-playback.js';
+export type { InstructDoc, InstructStep } from './instruct-playback.js';
 import type { ViewStyle, ViewStyleMaterialConfig } from './view-styles.js';
 import { FadingGrid } from './fading-grid.js';
 import './viewer-menu.js';
@@ -154,6 +161,8 @@ export class ModelViewer extends SignalWatcher(LitElement)
     this._interactiveShapes = interactiveShapes.get();
     this._pendingActiveEntry = activeParamEntry.get();
     this._pendingUnitSystem = (executionResult.get()?.request?.unitSystem as string) ?? null;
+    this._pendingInstructName = instructName.get();
+    this._pendingInstructStep = instructStep.get();
 
     return html`
       <canvas></canvas>
@@ -253,6 +262,19 @@ export class ModelViewer extends SignalWatcher(LitElement)
     {
       this._lastGlbOutput = this._directGlbOutput;
       this._loadGlbOutput(this._directGlbOutput);
+    }
+
+    /*  Instruct playback, driven by a tool through the signals rather than by the tool
+        reaching for this element across shadow roots. The API below is the real interface;
+        this is only the editor's way of calling it. */
+    if (this._pendingInstructStep !== this._instructIndex
+        || (this._pendingInstructStep >= 0 && this._pendingInstructName !== this._instructName))
+    {
+      if (this._pendingInstructStep < 0) { if (this._instructIndex >= 0) this.clearInstruct() }
+      else if (this._renderer)
+      {
+        this.showInstructStep(this._pendingInstructStep, { name: this._pendingInstructName ?? undefined });
+      }
     }
 
     // Metric/Imperial switch flipped → re-format existing dimension labels
@@ -378,7 +400,23 @@ export class ModelViewer extends SignalWatcher(LitElement)
   @state() private _activeAnimationName: string | null = null;
   private _dirty = true;
   private _currentModel?: THREE.Object3D;
+  /** The labels being projected each frame: the annotations, or the current step's. */
   private _htmlLabels: HtmlLabelDef[] = [];
+  /** The model's own annotations, as applyAnnotations() returned them. */
+  private _annotationLabels: HtmlLabelDef[] = [];
+  /** The current instruct step's labels, empty when playback is off. */
+  private _instructLabels: HtmlLabelDef[] = [];
+
+  // Instruct — step-by-step assembly playback. API only; the controls live in a tool.
+  /** Instructables from the run's state (or a standalone GLB's extras). */
+  private _instructData: InstructDoc[] = [];
+  /** Name of the instructable being stepped through, null when off. */
+  private _instructName: string | null = null;
+  /** Current step, -1 when off. */
+  private _instructIndex = -1;
+  /** Everything the current step changed in the scene, and enough to put it back. Kept apart
+   *  from _userHiddenObjects, which belongs to the scene explorer. */
+  private _instructApplied: InstructApplied | null = null;
   private _pendingUnitSystem: string | null = null;
   private _lastUnitSystem: string | null = null;
   private _htmlHandles: HandleDef[] = [];
@@ -424,6 +462,8 @@ export class ModelViewer extends SignalWatcher(LitElement)
 
   // Click-selection (identity by scene path; see state/editor.ts selectedPath).
   private _pendingSelectedPath: string | null = null;
+  private _pendingInstructName: string | null = null;
+  private _pendingInstructStep = -1;
   /** Sentinel `undefined` so the first apply always runs (null is a valid state). */
   private _lastAppliedSelectedPath: string | null | undefined = undefined;
   /** Scene paths the last run declared interactive (onClick). A click on one of
@@ -1292,6 +1332,189 @@ export class ModelViewer extends SignalWatcher(LitElement)
     this._dirty = true;
   }
 
+  //// INSTRUCT ////
+
+  /*  Step-by-step playback of an instructable (docs.instruct in a script).
+   *
+   *  API only — no buttons, no overlay. The controls belong in a tool, the way the document
+   *  viewer's do, so the viewer stays a viewer and a configurator can drive the same calls
+   *  with completely different controls.
+   *
+   *  The scene work itself lives in instruct-playback.ts; this holds the state and the
+   *  lifecycle. See that module for why the viewer does the work at all rather than just
+   *  playing the clip GLTFBuilder.addInstruct() bakes.
+   */
+
+  /** The instructables available, as summaries. Empty when the script declared none. */
+  instructs(): Array<{ name: string; title?: string; steps: number }>
+  {
+    return this._instructData.map(d => ({
+      name: d.name, title: d.title, steps: d.steps?.length ?? 0,
+    }));
+  }
+
+  /** One instructable's full data: the one named, else the one playing, else the first. */
+  instruct(name?: string): InstructDoc | null
+  {
+    if (name) return this._instructData.find(d => d.name === name) ?? null;
+    if (this._instructName) return this._instructData.find(d => d.name === this._instructName) ?? null;
+    return this._instructData[0] ?? null;
+  }
+
+  /** Index of the step being shown, or -1 when playback is off. */
+  instructStep(): number
+  {
+    return this._instructIndex;
+  }
+
+  /** Show one step: hide what it does not use, ghost its context, frame it, and slide its
+   *  subject into place.
+   *
+   *  False when there is no such step, so a caller can walk to the end without tracking the
+   *  count itself.
+   */
+  showInstructStep(index: number, options?: { name?: string; animate?: boolean; camera?: boolean }): boolean
+  {
+    const doc = options?.name ? this.instruct(options.name) : this.instruct();
+    const step = doc?.steps?.[index];
+    if (!doc || !step) return false;
+
+    this._instructName = doc.name;
+    this._instructIndex = index;
+
+    this._clearInstructVisuals();
+    this._instructApplied = applyInstructStep(step, this._pathToObject, {
+      animate: options?.animate !== false,
+    });
+    this._showInstructLabels(step);
+
+    if (options?.camera !== false) this._applyInstructCamera(step);
+
+    this._dirty = true;
+    this._emitInstructStep(doc, index, step);
+    return true;
+  }
+
+  /** Step forward. False when already at the last step. */
+  nextInstructStep(options?: { animate?: boolean; camera?: boolean }): boolean
+  {
+    return this.showInstructStep(this._instructIndex + 1, options);
+  }
+
+  /** Step back. False when already at the first step. */
+  prevInstructStep(options?: { animate?: boolean; camera?: boolean }): boolean
+  {
+    if (this._instructIndex <= 0) return false;
+    return this.showInstructStep(this._instructIndex - 1, options);
+  }
+
+  /** Leave playback: every part visible and solid again, as the model actually is. */
+  clearInstruct(): void
+  {
+    this._clearInstructVisuals();
+    this._instructName = null;
+    this._instructIndex = -1;
+    this._dirty = true;
+    this.dispatchEvent(new CustomEvent('instruct-step', {
+      detail: { name: null, index: -1, step: null, total: 0 },
+      bubbles: true, composed: true,
+    }));
+  }
+
+  /** Read the instructables off the run's state, falling back to a standalone GLB's extras.
+   *  Called on every model load. */
+  private _readInstruct(gltf?: any): void
+  {
+    const fromState = executionResult.get()?.state?.instruct as InstructDoc[] | undefined;
+    const fromGlb = gltf?.parser?.json?.extras?.instruct ?? (gltf?.userData as any)?.instruct;
+
+    this._instructData = Array.isArray(fromState) ? fromState
+      : fromGlb ? [fromGlb as InstructDoc]
+      : [];
+
+    /*  Hold the step across a re-run: someone tweaking a parameter while looking at step 3
+        wants to still be looking at step 3. Drop out only when that step is gone. The old
+        scene went with the old model, so there is nothing left to restore. */
+    const held = this._instructIndex;
+    const doc = this._instructName ? this.instruct(this._instructName) : null;
+    this._instructApplied = null;
+
+    if (doc && held >= 0 && doc.steps?.[held]) this.showInstructStep(held, { animate: false });
+    else if (held >= 0) { this._instructName = null; this._instructIndex = -1; }
+
+    const available = this.instructs();
+    setInstructAvailable(available);
+    this.dispatchEvent(new CustomEvent('instruct-available', {
+      detail: { instructs: available }, bubbles: true, composed: true,
+    }));
+  }
+
+  /** Ease the camera to where the step says to look from, then hand control back to the orbit
+   *  controls. Reuses the axis-snap tween, so it feels the same as the view gizmo. */
+  private _applyInstructCamera(step: InstructStep): void
+  {
+    const view = instructCamera(step);
+    if (!view) return;
+
+    this._controls.target.copy(view.target);
+    this._cameraTween = {
+      from: this._camera.position.clone(), to: view.position,
+      upTarget: view.up, t: 0, duration: 0.4,
+    };
+    this._dirty = true;
+  }
+
+  /** Undo everything the current step did to the scene. */
+  private _clearInstructVisuals(): void
+  {
+    clearInstructApplied(this._instructApplied);
+    this._instructApplied = null;
+
+    if (!this._instructLabels.length) return;
+    this._instructLabels = [];
+    this._pushLabelsToOverlay();
+  }
+
+  /** Put the step's labels on screen: the part labels the manual is written in ('fit B into
+   *  A'), and any the script wrote by hand.
+   *
+   *  Core resolves both, with the positions of THIS step — laid out where the step lays its
+   *  parts out — so this only has to turn them into overlay elements. The same labels are on
+   *  the printed step drawing, drawn there as SVG (Instruct._labelDrawing).
+   */
+  private _showInstructLabels(step: InstructStep): void
+  {
+    this._instructLabels = (step.labels ?? []).map((label, i) => ({
+      id: `instruct-${step.index}-${i}`,
+      text: label.text,
+      variant: 'label' as const,
+      anchorLocal: new THREE.Vector3(label.position[0], label.position[1], label.position[2]),
+      class: label.kind === 'custom' ? 'instruct-label' : 'instruct-part-label',
+      /*  Appearance comes resolved from core, so a script that restyles its labels restyles
+          them here and on the page from one call. The leader is on unless the label says
+          otherwise — the opposite of the page's default, and for the reason given in
+          AnnotatorLabel's header: a label floating over the model needs the tie to a part
+          that a label sitting on a drawing does not. */
+      shape: label.options?.shape,
+      target: label.options?.target,
+      labelOnly: label.options?.labelOnly,
+      line: label.options?.line,
+      length: label.options?.length,
+      angle: label.options?.angle,
+      circle: label.options?.circle,
+    }));
+
+    this._pushLabelsToOverlay();
+  }
+
+  private _emitInstructStep(doc: InstructDoc, index: number, step: InstructStep): void
+  {
+    this.dispatchEvent(new CustomEvent('instruct-step', {
+      detail: { name: doc.name, index, step, total: doc.steps.length },
+      bubbles: true, composed: true,
+    }));
+  }
+
   private _snapCameraToAxis(axis: 'x' | 'y' | 'z', negative: boolean)
   {
     const target = this._controls.target.clone();
@@ -1889,29 +2112,14 @@ export class ModelViewer extends SignalWatcher(LitElement)
     // Same scene-size scale factor as the origin gizmo (computed just above),
     // so dimension arrows stay proportionally legible across model sizes too.
     const { htmlLabels } = await applyAnnotations(gltf, model, anns, this._gizmoScale || 1);
-    this._htmlLabels = htmlLabels;
-    const overlay = this.renderRoot.querySelector('viewer-labels-overlay') as ViewerLabelsOverlay | null;
-    if (overlay)
+    this._annotationLabels = htmlLabels;
+    if (this.renderRoot.querySelector('viewer-labels-overlay'))
     {
       // dimension value text background = viewer background (kept in sync,
       // theme-aware so the text stays readable in dark mode)
       this._syncDimBackground();
-
-      overlay.labels = htmlLabels.map((l): OverlayLabel => ({
-        id: l.id,
-        text: l.text,
-        variant: l.variant,
-        class: l.class,
-        line: l.line,
-        offset: l.offset,
-        angle: l.angle,
-        circle: l.circle,
-        param: l.param,
-        paramRemapSrc: l.paramRemapSrc,
-        interactive: l.interactive,
-        rawValue: l.rawValue,
-      }));
     }
+    this._pushLabelsToOverlay();
 
     // Reconcile interaction handles via the op stream from the execution result.
     // _reconcileHandles preserves dragged positions and only re-renders the overlay
@@ -1944,6 +2152,10 @@ export class ModelViewer extends SignalWatcher(LitElement)
     // disposed geometry).
     this._lastAppliedSelectedPath = this._pendingSelectedPath;
     this._applySelectionHighlight(this._pendingSelectedPath);
+
+    // Instructables, last: re-applying a held step needs the path map, the view style and the
+    // scenegraph visibility to have settled first.
+    this._readInstruct(gltf);
   }
 
   private _loadGlbOutput(entry: ScriptOutputData)
@@ -2010,6 +2222,8 @@ export class ModelViewer extends SignalWatcher(LitElement)
     });
     // Clear HTML overlay labels (dimension text + shape labels)
     this._htmlLabels = [];
+    this._annotationLabels = [];
+    this._instructLabels = [];
     const overlay = this.renderRoot.querySelector('viewer-labels-overlay') as ViewerLabelsOverlay | null;
     if (overlay) overlay.labels = [];
 
@@ -2229,6 +2443,15 @@ export class ModelViewer extends SignalWatcher(LitElement)
     }
 
     // Camera axis-snap tween
+    if (this._instructApplied?.move)
+    {
+      if (!advanceInstructMove(this._instructApplied.move, dt))
+      {
+        this._instructApplied.move = undefined;
+      }
+      this._dirty = true;
+    }
+
     if (this._cameraTween)
     {
       const tw = this._cameraTween;
@@ -2284,14 +2507,32 @@ export class ModelViewer extends SignalWatcher(LitElement)
     }
     if (!changed) return;
 
+    this._pushLabelsToOverlay();
+  }
+
+  /** Render the labels that apply right now, and put them where they belong on screen.
+   *
+   *  Two sets, never both: the model's own annotations, and — while an instructable is being
+   *  stepped through — that step's. A step is a claim about four parts out of forty, and the
+   *  whole model's dimension lines over the top of it are noise.
+   */
+  private _pushLabelsToOverlay()
+  {
+    this._htmlLabels = this._instructLabels.length ? this._instructLabels : this._annotationLabels;
+
     const overlay = this.renderRoot.querySelector('viewer-labels-overlay') as ViewerLabelsOverlay | null;
     if (!overlay) return;
+
     overlay.labels = this._htmlLabels.map((l): OverlayLabel => ({
       id: l.id,
       text: l.text,
       variant: l.variant,
       class: l.class,
+      shape: l.shape,
+      target: l.target,
+      labelOnly: l.labelOnly,
       line: l.line,
+      length: l.length,
       offset: l.offset,
       angle: l.angle,
       circle: l.circle,
@@ -2300,7 +2541,9 @@ export class ModelViewer extends SignalWatcher(LitElement)
       interactive: l.interactive,
       rawValue: l.rawValue,
     }));
+
     this._updateLabelOverlay();
+    this._dirty = true;
   }
 
   private _updateLabelOverlay()
