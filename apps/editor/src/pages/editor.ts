@@ -39,7 +39,7 @@ import type { ToolDef } from '@archiyou/ui/editor/toolbar.js';
 import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystem, ensureScriptUnitSystem, perStatement, kernel, autoRun, wasActiveScriptRestored } from '../state/workspace';
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
 import { registerScheduleExecution, triggerResetCamera } from '../state/viewer';
-import { registerHelpRunner, openHelpDoc, claimOnboarding, ONBOARDING_PATH } from '../state/help';
+import { registerHelpRunner, openHelpDoc, claimOnboarding, setHelpCursor, lookupHelpAtCursor, ONBOARDING_PATH } from '../state/help';
 import { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 
@@ -112,6 +112,8 @@ export class PageEditor extends SignalWatcher(LitElement)
               ?readonly=${isReadOnly.get()}
             @change=${this._handleCodeChange}
             @execute=${this._handleExecute}
+            @cursor-change=${(e: CustomEvent<{ code: string, pos: number }>) => setHelpCursor(e.detail.code, e.detail.pos)}
+            @help-lookup=${this._handleHelpLookup}
           ></editor-code-box>
         </div>
         <wa-split-panel
@@ -422,6 +424,14 @@ export class PageEditor extends SignalWatcher(LitElement)
       console.warn('Editor::_consumeTutorialQueryParam():', err);
       return false;
     }
+  }
+
+  /** F1 in the code: the API reference for the word at the cursor, in the help panel. */
+  private _handleHelpLookup(e: CustomEvent<{ code: string, pos: number }>)
+  {
+    setHelpCursor(e.detail.code, e.detail.pos);
+    this._openTool('help');
+    void lookupHelpAtCursor();
   }
 
   /** Put help code (a tutorial step) in the editor and run it right away. */

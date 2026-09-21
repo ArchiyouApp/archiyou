@@ -16,6 +16,7 @@
 import { signal, computed } from '@lit-labs/signals';
 
 import { parseHelpDoc, codeAt, hasCode, resolveHelpPath, type HelpDoc } from '@archiyou/ui/editor/help/help-content.js';
+import { indexApi, lookupAt, type ApiIndex, type ApiLookup, type ApiEntry } from '@archiyou/ui/editor/help/help-reference.js';
 import { createNewScript, updateScriptName } from './core';
 import { scriptParams, deleteParam } from './editor';
 
@@ -24,6 +25,10 @@ import { scriptParams, deleteParam } from './editor';
 const DEFAULT_LOCALE = 'en';
 /** Set once the tour has been shown automatically, so it appears on a first visit only. */
 const ONBOARDED_KEY = 'archiyou:help:onboarded';
+/** The reference's "follow the cursor" switch, remembered per browser */
+const FOLLOW_CURSOR_KEY = 'archiyou:help:follow-cursor';
+/** Wait for the cursor to rest before looking up the word under it */
+const FOLLOW_CURSOR_DELAY = 250;
 /** The tour's path within a locale */
 export const ONBOARDING_PATH = 'onboarding';
 
@@ -55,6 +60,9 @@ export interface HelpEntry
 
 //// STATE ////
 
+export type HelpTab = 'tour' | 'tutorials' | 'reference';
+
+export const helpTab = signal<HelpTab>('tutorials');
 export const helpLocale = signal<string>(detectLocale());
 /** The document in the player, null when the tutorial list is shown */
 export const helpEntry = signal<HelpEntry | null>(null);
@@ -124,6 +132,7 @@ export async function openHelpDoc(path: string): Promise<boolean>
   }
 
   helpEntry.set(entry);
+  helpTab.set(path === ONBOARDING_PATH ? 'tour' : 'tutorials');
   _lastStepCode = null;
   goToHelpStep(0);
   return true;
@@ -150,6 +159,7 @@ export function closeHelpDoc(): void
 {
   helpEntry.set(null);
   helpStep.set(0);
+  helpTab.set('tutorials');
 }
 
 export async function setHelpLocale(locale: string): Promise<void>
@@ -162,6 +172,87 @@ export async function setHelpLocale(locale: string): Promise<void>
   if (!entry) return;
   const reloaded = await loadHelpDoc(entry.path);
   if (reloaded) helpEntry.set(reloaded);
+}
+
+//// API REFERENCE ////
+
+/** The reference data, loaded on first use (a separate chunk, ~100 kB gzipped) */
+export const helpApi = signal<ApiIndex | null>(null);
+export const helpApiQuery = signal<string>('');
+/** Id of the entry shown, null for the search results or overview */
+export const helpApiEntry = signal<string | null>(null);
+/** Last lookup of the word at the cursor */
+export const helpApiLookup = signal<ApiLookup | null>(null);
+/** On unless switched off in this browser */
+export const helpFollowCursor = signal<boolean>(readFlag(FOLLOW_CURSOR_KEY, true));
+/** Set by the help panel while it is on screen; the cursor is only followed then */
+export const helpPanelOpen = signal<boolean>(false);
+
+let _apiLoading: Promise<ApiIndex> | null = null;
+let _cursor: { code: string, pos: number } | null = null;
+let _followTimer: ReturnType<typeof setTimeout> | undefined;
+
+export function loadHelpApi(): Promise<ApiIndex>
+{
+  _apiLoading ??= import('@archiyou/ui/editor/help/api.generated.json')
+    .then(data =>
+    {
+      const index = indexApi((data.default as { entries: ApiEntry[] }).entries);
+      helpApi.set(index);
+      return index;
+    });
+  return _apiLoading;
+}
+
+/** Show one entry of the reference */
+export function showApiEntry(id: string | null): void
+{
+  helpApiEntry.set(id);
+  helpTab.set('reference');
+}
+
+/** Where the cursor is in the code; followed when the reference is open and following. */
+export function setHelpCursor(code: string, pos: number): void
+{
+  _cursor = { code, pos };
+  if (!helpFollowCursor.get() || !helpPanelOpen.get() || helpTab.get() !== 'reference') return;
+
+  clearTimeout(_followTimer);
+  _followTimer = setTimeout(() => void lookupHelpAtCursor(false), FOLLOW_CURSOR_DELAY);
+}
+
+/** Look up the word at the cursor and show it. `always` (F1) also clears a search in
+ *  progress; following the cursor leaves the previous result when there is no word. */
+export async function lookupHelpAtCursor(always = true): Promise<void>
+{
+  if (!_cursor) return;
+  const index = await loadHelpApi();
+  const result = lookupAt(index, _cursor.code, _cursor.pos);
+  if (!result.word && !always) return;
+
+  helpApiLookup.set(result);
+  helpApiQuery.set('');
+  // A single match is shown directly; a script parameter gets its own explanation
+  helpApiEntry.set(result.entries.length === 1 && !result.param ? result.entries[0].id : null);
+  helpTab.set('reference');
+}
+
+export function setHelpFollowCursor(on: boolean): void
+{
+  helpFollowCursor.set(on);
+  try { localStorage.setItem(FOLLOW_CURSOR_KEY, on ? '1' : '0'); } catch { /* storage unavailable */ }
+  if (on) void lookupHelpAtCursor(false);
+}
+
+/** A remembered on/off switch; `fallback` when never set (or storage is unavailable) */
+function readFlag(key: string, fallback = false): boolean
+{
+  try
+  {
+    const stored = localStorage.getItem(key);
+    return stored === null ? fallback : stored === '1';
+  }
+  catch { return fallback; }
 }
 
 //// FIRST VISIT ////

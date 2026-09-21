@@ -44,7 +44,8 @@
     "test:runner:components:recursive": "vitest run tests/unit/runner/runner.component.recursive.test.ts tests/unit/runner/runner.component.shared.test.ts",
     "test:watch": "vitest --project unit",
     "test:coverage": "vitest run --coverage",
-    "generate:completions": "tsx scripts/generate-completions.ts"
+    "generate:completions": "tsx scripts/generate-completions.ts",
+    "generate:api": "tsx scripts/generate-api.ts"
   },
   "keywords": [
     "cad",
@@ -69,6 +70,7 @@
     "ts-morph": "^25.0.1",
     "tsup": "^8.5.1",
     "tsx": "^4.19.3",
+    "typedoc": "^0.28.20",
     "typescript": "^6.0.2",
     "vite": "^8.0.8",
     "vitest": "^4.1.4",

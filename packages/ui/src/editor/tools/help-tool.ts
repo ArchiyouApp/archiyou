@@ -1,24 +1,28 @@
 import { LitElement, html, css, nothing } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { customElement, state } from 'lit/decorators.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { SignalWatcher } from '@lit-labs/signals';
 import { msg, str } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/input/input.js';
 
 import {
-  helpEntry, helpStep, helpTutorials, helpTutorialTag, helpCurrentStep, helpLocale, helpLocales,
+  helpTab, helpEntry, helpStep, helpTutorials, helpTutorialTag, helpCurrentStep, helpLocale, helpLocales,
+  helpApi, helpApiQuery, helpApiEntry, helpApiLookup, helpFollowCursor, helpPanelOpen,
   ONBOARDING_PATH, openHelpDoc, goToHelpStep, closeHelpDoc, loadHelpTutorials, setHelpLocale, runHelpCode, helpImageUrl,
+  loadHelpApi, showApiEntry, setHelpFollowCursor,
   type HelpEntry,
 } from '@archiyou/editor/src/state/help';
 import { codeAt, helpTags, HELP_TAGS, type HelpBlock, type HelpTag } from '../help/help-content.js';
+import { searchApi, type ApiEntry, type ApiIndex, type ApiLookup } from '../help/help-reference.js';
 import { renderMarkdown } from '../../utils/markdown.js';
 
 /**
- * The help panel: the editor tour and step-by-step tutorials, both played from
- * markdown in help/<locale>/ (see state/help.ts). A step's `<!-- highlight: … -->`
- * spotlights a part of the editor while the step is shown.
+ * The help panel: the editor tour, step-by-step tutorials (both played from markdown
+ * in help/<locale>/, see state/help.ts) and the API reference (help-reference.ts).
+ * A step's `<!-- highlight: … -->` spotlights a part of the editor while it is shown.
  */
 @customElement('editor-help-tool')
 export class EditorHelpTool extends SignalWatcher(LitElement)
@@ -26,24 +30,182 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
   // ── 1. Render ──
   override render()
   {
+    const tab = helpTab.get();
     const entry = helpEntry.get();
-    const onTour = entry?.path === ONBOARDING_PATH;
+    const tabButton = (id: typeof tab, icon: string, label: string) => html`
+      <button role="tab" class="tab ${tab === id ? 'active' : ''}" aria-selected=${tab === id} @click=${() => this._selectTab(id)}>
+        <wa-icon library="lucide" name=${icon}></wa-icon>${label}
+      </button>`;
 
     return html`
       <div class="tabs" role="tablist">
-        <button role="tab" class="tab ${onTour ? 'active' : ''}" aria-selected=${onTour} @click=${this._startTour}>
-          <wa-icon library="lucide" name="compass"></wa-icon>${msg('Tour')}
-        </button>
-        <button role="tab" class="tab ${onTour ? '' : 'active'}" aria-selected=${!onTour} @click=${closeHelpDoc}>
-          <wa-icon library="lucide" name="graduation-cap"></wa-icon>${msg('Tutorials')}
-        </button>
+        ${tabButton('tour', 'compass', msg('Tour'))}
+        ${tabButton('tutorials', 'graduation-cap', msg('Tutorials'))}
+        ${tabButton('reference', 'book-open', msg('Reference'))}
         <span class="spacer"></span>
         ${helpLocales.length > 1 ? html`
           <select class="locale" aria-label=${msg('Language')} @change=${this._handleLocale}>
             ${helpLocales.map(l => html`<option value=${l} ?selected=${l === helpLocale.get()}>${l.toUpperCase()}</option>`)}
           </select>` : nothing}
       </div>
-      ${entry ? this._renderPlayer(entry) : this._renderTutorialList()}
+      ${tab === 'reference' ? this._renderReference()
+        : tab === 'tour' ? (entry?.path === ONBOARDING_PATH ? this._renderPlayer(entry) : nothing)
+        : entry && entry.path !== ONBOARDING_PATH ? this._renderPlayer(entry) : this._renderTutorialList()}
+    `;
+  }
+
+  //// Reference ////
+
+  private _renderReference()
+  {
+    const index = helpApi.get();
+    if (!index)
+    {
+      void loadHelpApi();
+      return html`<div class="body empty">${msg('Loading the reference…')}</div>`;
+    }
+
+    const query = helpApiQuery.get();
+    const id = helpApiEntry.get();
+    const entry = id ? index.byId.get(id) : undefined;
+    const lookup = helpApiLookup.get();
+    const follow = helpFollowCursor.get();
+
+    return html`
+      <div class="ref-bar">
+        <wa-input
+          class="search"
+          size="small"
+          type="search"
+          placeholder=${msg('Search the API')}
+          .value=${query}
+          @input=${(e: Event) => this._search((e.target as HTMLInputElement).value)}
+        >
+          <wa-icon slot="start" library="lucide" name="search"></wa-icon>
+        </wa-input>
+        <button
+          class="follow ${follow ? 'active' : ''}"
+          aria-pressed=${follow}
+          title=${msg('Follow the cursor: show the reference for the word you are on. F1 looks up once.')}
+          @click=${() => setHelpFollowCursor(!follow)}
+        ><wa-icon library="lucide" name="text-cursor-input"></wa-icon></button>
+      </div>
+      <div class="body ref">
+        ${this._trail.length && entry ? html`
+          <button class="back" @click=${this._back}><wa-icon library="lucide" name="arrow-left"></wa-icon>${msg('Back')}</button>` : nothing}
+        ${entry ? this._renderApiEntry(index, entry)
+          : query ? this._renderApiList(searchApi(index, query), msg('Nothing matches.'))
+          : lookup?.word ? this._renderLookup(lookup)
+          : this._renderApiOverview(index)}
+      </div>
+    `;
+  }
+
+  private _renderApiOverview(index: ApiIndex)
+  {
+    const chips = (entries: ApiEntry[]) => html`
+      <div class="chips">${entries.map(e => html`<button class="chip" @click=${() => this._open(e.id)}>${e.name}</button>`)}</div>`;
+
+    return html`
+      <p class="hint">${msg('Search, or press F1 in the code for the word at the cursor.')}</p>
+      <h4>${msg('Functions')}</h4>
+      ${chips(index.globals.filter(e => e.kind === 'function'))}
+      <h4>${msg('Modules')}</h4>
+      ${chips(index.globals.filter(e => e.kind === 'module'))}
+      <h4>${msg('Classes')}</h4>
+      ${chips(index.classes)}
+    `;
+  }
+
+  private _renderLookup(lookup: ApiLookup)
+  {
+    if (lookup.param)
+    {
+      return html`
+        <h3 class="api-title"><code>$${lookup.param}</code></h3>
+        <p>${msg(str`A parameter of this script. It is defined with $PARAMS.define('${lookup.param}', …) and shows up as a control in the Parameters panel.`)}</p>
+        <button class="link" @click=${() => this._open('ParamManager.define')}>$PARAMS.define()</button>
+      `;
+    }
+    if (!lookup.entries.length) return html`<p class="empty">${msg(str`Nothing in the reference for “${lookup.word}”.`)}</p>`;
+
+    return html`
+      <p class="hint">${lookup.entries.every(e => e.owner)
+        ? msg(str`“${lookup.word}” exists on several kinds of object; which one is not clear from the code here.`)
+        : msg(str`Matches for “${lookup.word}”:`)}</p>
+      ${this._renderApiList(lookup.entries, '')}
+    `;
+  }
+
+  private _renderApiList(entries: ApiEntry[], empty: string)
+  {
+    if (!entries.length) return empty ? html`<p class="empty">${empty}</p>` : nothing;
+
+    return html`
+      <div class="api-list">
+        ${entries.map(e => html`
+          <button class="api-row" @click=${() => this._open(e.id)}>
+            <span class="api-name">
+              <code>${e.owner ? html`<span class="api-owner">${e.owner}.</span>` : nothing}${e.name}${e.kind === 'method' || e.kind === 'function' ? '()' : ''}</code>
+              ${e.deprecated ? html`<span class="badge">${msg('deprecated')}</span>` : nothing}
+            </span>
+            ${e.doc ? html`<span class="api-summary">${firstSentence(e.doc)}</span>` : nothing}
+          </button>`)}
+      </div>
+    `;
+  }
+
+  private _renderApiEntry(index: ApiIndex, e: ApiEntry)
+  {
+    const link = (id: string | undefined) => id && index.byId.has(id)
+      ? html`<button class="link" @click=${() => this._open(id)}>${id}</button>`
+      : html`<code>${id ?? ''}</code>`;
+    const members = e.kind === 'class' ? (index.byOwner.get(e.id) ?? []) : [];
+
+    return html`
+      <h3 class="api-title">
+        <code>${e.owner ? html`<button class="link" @click=${() => this._open(e.owner!)}>${e.owner}</button>.` : nothing}${e.name}</code>
+        <span class="kind">${e.static ? msg('static') + ' ' : ''}${e.kind}</span>
+      </h3>
+      ${e.deprecated ? html`<p class="deprecated">${msg('Deprecated: better not use this in new scripts.')}</p>` : nothing}
+      ${e.extends ? html`<p class="hint">${msg('Extends')} ${link(e.extends)}</p>` : nothing}
+      ${e.doc
+        ? html`<div class="markdown description">${unsafeHTML(renderMarkdown(e.doc))}</div>`
+        : html`<p class="empty">${msg('No description yet.')}</p>`}
+
+      ${e.params?.length ? html`
+        <h4>${msg('Arguments')}</h4>
+        <div class="section args">
+          ${e.params.map(p => html`
+            <p class="arg">
+              <span class="arg-name">${p.name}</span>
+              <span class="arg-type">${p.type}</span>
+              ${p.doc ? html`<span class="arg-doc">${unsafeHTML(inlineMarkdown(p.doc))}</span>` : nothing}
+              ${p.optional ? html`<span class="arg-optional">${p.default ? msg(str`(optional: default ${p.default})`) : msg('(optional)')}</span>` : nothing}
+            </p>`)}
+        </div>` : nothing}
+
+      ${e.returns && e.kind !== 'class' ? html`
+        <h4>${msg('Returns')}</h4>
+        <p class="section">${link(e.returns)}${e.returnsDoc ? html` <span class="arg-doc">${unsafeHTML(inlineMarkdown(e.returnsDoc))}</span>` : nothing}</p>` : nothing}
+
+      ${e.examples?.length ? html`
+        <h4>${e.examples.length > 1 ? msg('Examples') : msg('Example')}</h4>
+        <div class="section">
+          ${e.examples.map((code, i) => html`
+            <div class="code">
+              <div class="code-bar">
+                <button class="run" @click=${() => this._copy(code, i)}>
+                  <wa-icon library="lucide" name=${this._copied === i ? 'check' : 'copy'}></wa-icon>${this._copied === i ? msg('Copied') : msg('Copy')}
+                </button>
+              </div>
+              <pre><code>${code}</code></pre>
+            </div>`)}
+        </div>` : nothing}
+
+      ${members.length ? html`
+        <h4>${msg('Members')}</h4>
+        <div class="section">${this._renderApiList(members, '')}</div>` : nothing}
     `;
   }
 
@@ -165,7 +327,12 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
   }
 
   // ── 2. State & Signals ──
-  // helpEntry, helpStep, helpTutorials, helpCurrentStep, helpLocale (state/help.ts)
+  // helpTab, helpEntry, helpStep, helpTutorials, helpCurrentStep, helpLocale, helpApi… (state/help.ts)
+
+  /** Reference entries visited before the one shown, for Back */
+  @state() private _trail: string[] = [];
+  /** Index of the example just copied, for a moment */
+  @state() private _copied: number | null = null;
 
   private _spotlight = new Spotlight();
 
@@ -173,32 +340,84 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
   override connectedCallback()
   {
     super.connectedCallback();
+    helpPanelOpen.set(true);
     if (!helpTutorials.get()) void loadHelpTutorials();
   }
 
   override disconnectedCallback()
   {
     super.disconnectedCallback();
+    helpPanelOpen.set(false);
     this._spotlight.show([]);
   }
 
   override updated()
   {
-    this._spotlight.show(helpCurrentStep.get()?.highlight ?? []);
-    // A new step starts at its top, not where the previous one was scrolled to
-    if (this._shownStep !== helpCurrentStep.get())
+    // Spotlight only while a tour or tutorial step is on screen
+    const playing = helpTab.get() !== 'reference' && (helpTab.get() === 'tour') === (helpEntry.get()?.path === ONBOARDING_PATH);
+    this._spotlight.show(playing ? (helpCurrentStep.get()?.highlight ?? []) : []);
+
+    // A new step or entry starts at its top, not where the previous one was scrolled to
+    const shown = helpTab.get() === 'reference' ? helpApiEntry.get() : helpCurrentStep.get();
+    if (this._shown !== shown)
     {
-      this._shownStep = helpCurrentStep.get();
-      this.shadowRoot?.querySelector('.player')?.scrollTo({ top: 0 });
+      this._shown = shown;
+      this.shadowRoot?.querySelector('.body')?.scrollTo({ top: 0 });
     }
   }
 
   // ── 4. Behaviour & Methods ──
-  private _shownStep: unknown = null;
+  private _shown: unknown = null;
+  private _copiedTimer?: ReturnType<typeof setTimeout>;
 
-  private _startTour()
+  private _selectTab(tab: 'tour' | 'tutorials' | 'reference')
   {
-    if (helpEntry.get()?.path !== ONBOARDING_PATH) void openHelpDoc(ONBOARDING_PATH);
+    if (tab === 'tour' && helpEntry.get()?.path !== ONBOARDING_PATH)
+    {
+      void openHelpDoc(ONBOARDING_PATH);
+      return;
+    }
+    // Tutorials again, from a tutorial: back to the list
+    if (tab === 'tutorials' && helpTab.get() === 'tutorials')
+    {
+      closeHelpDoc();
+      return;
+    }
+    helpTab.set(tab);
+  }
+
+  /** Show a reference entry, remembering the current one for Back */
+  private _open(id: string)
+  {
+    const current = helpApiEntry.get();
+    if (current) this._trail = [...this._trail, current];
+    showApiEntry(id);
+  }
+
+  private _back()
+  {
+    const previous = this._trail[this._trail.length - 1];
+    this._trail = this._trail.slice(0, -1);
+    showApiEntry(previous ?? null);
+  }
+
+  private _search(query: string)
+  {
+    helpApiQuery.set(query);
+    helpApiEntry.set(null);
+    this._trail = [];
+  }
+
+  private async _copy(code: string, index: number)
+  {
+    try
+    {
+      await navigator.clipboard.writeText(code);
+      this._copied = index;
+      clearTimeout(this._copiedTimer);
+      this._copiedTimer = setTimeout(() => (this._copied = null), 1500);
+    }
+    catch { /* clipboard unavailable: the code is still there to select */ }
   }
 
   private async _handleLocale(e: Event)
@@ -215,6 +434,9 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
       height: 100%;
       min-height: 0;
       box-sizing: border-box;
+      /* The panel can be narrow; parts below adapt to its width, not the window's */
+      container-type: inline-size;
+      overflow: hidden;
       font-family: var(--font-sans);
       font-size: var(--text-sm);
       color: var(--color-text);
@@ -243,6 +465,10 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
       cursor: pointer;
     }
     .tab:hover { color: var(--color-text); }
+    @container (max-width: 340px)
+    {
+      .tab wa-icon { display: none; }
+    }
     .tab.active {
       background: var(--color-primary-subtle);
       color: var(--color-primary);
@@ -261,6 +487,7 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
       flex: 1;
       min-height: 0;
       overflow-y: auto;
+      overflow-x: hidden;
       padding: var(--space-md);
     }
     .empty { color: var(--color-text-muted); }
@@ -450,6 +677,172 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
     }
     .dot.done { background: color-mix(in srgb, var(--color-primary) 40%, transparent); }
     .dot.current { background: var(--color-primary); }
+
+    /* ── Reference ── */
+    .ref-bar {
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+      padding: var(--space-sm) var(--space-md) 0;
+      flex-shrink: 0;
+    }
+    /* Search field and follow button share one height */
+    .ref-bar .search {
+      flex: 1;
+      min-width: 0;
+      font-size: var(--text-sm);
+      --wa-form-control-height: 28px;
+    }
+    .follow {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--color-text-muted);
+      cursor: pointer;
+    }
+    .follow.active {
+      border-color: var(--color-primary);
+      background: var(--color-primary-subtle);
+      color: var(--color-primary);
+    }
+
+    .ref h4 {
+      margin: var(--space-md) 0 var(--space-xs);
+      font-size: var(--text-xs);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--color-text-muted);
+    }
+    .hint, .ref .empty {
+      margin: 0 0 var(--space-sm);
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+    }
+    .ref code {
+      font-family: var(--font-mono, monospace);
+    }
+
+    .back, .link {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 0;
+      border: none;
+      background: none;
+      color: var(--color-primary);
+      font: inherit;
+      cursor: pointer;
+    }
+    .back { font-size: var(--text-xs); margin-bottom: var(--space-xs); }
+    .link { font-family: var(--font-mono, monospace); }
+    .link:hover { text-decoration: underline; }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+    }
+    .chip {
+      padding: 0 5px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--color-text);
+      font-family: var(--font-mono, monospace);
+      font-size: var(--text-xs);
+      cursor: pointer;
+    }
+    .chip:hover { border-color: var(--color-primary); color: var(--color-primary); }
+
+    .api-list {
+      display: flex;
+      flex-direction: column;
+    }
+    .api-row {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      padding: 3px var(--space-xs);
+      border: none;
+      border-bottom: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+      background: none;
+      color: var(--color-text);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .api-row:hover { background: var(--color-primary-subtle); }
+    .api-name { font-size: var(--text-xs); }
+    .api-owner { color: var(--color-text-muted); }
+    .api-summary {
+      font-size: var(--text-x-xs, 0.625rem);
+      color: var(--color-text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .badge {
+      margin-left: var(--space-xs);
+      padding: 0 3px;
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--color-warning, #f59e0b) 20%, transparent);
+      font-size: var(--text-x-xs, 0.625rem);
+    }
+
+    .api-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      margin: 0 0 var(--space-xs);
+      font-size: var(--text-sm);
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+    .kind {
+      flex-shrink: 0;
+      font-size: var(--text-x-xs, 0.625rem);
+      font-weight: 400;
+      color: var(--color-text-muted);
+    }
+    .deprecated { color: var(--color-warning, #f59e0b); font-size: var(--text-xs); }
+    .description { font-size: var(--text-xs); }
+
+    /* Content under a section heading sits in, so the headings carry the structure */
+    .section {
+      margin: 0;
+      padding-left: var(--space-md);
+      font-size: var(--text-xs);
+    }
+
+    /* One argument per line: name  type  optional, default …  what it is */
+    .arg {
+      margin: 0 0 var(--space-xs);
+      line-height: 1.5;
+    }
+    .arg > span + span { margin-left: 6px; }
+    .arg-name {
+      font-family: var(--font-mono, monospace);
+      font-weight: 700;
+      color: var(--color-text);
+    }
+    .arg-type {
+      font-style: italic;
+      color: var(--color-primary);
+    }
+    .arg-optional {
+      color: var(--color-text-muted);
+      white-space: nowrap;
+    }
+    .arg-doc { color: var(--color-text-muted); }
   `;
 }
 
@@ -552,6 +945,21 @@ function deepQuery(selector: string, root: Document | ShadowRoot = document): El
     ?? [...root.querySelectorAll('*')]
       .filter(el => el.shadowRoot)
       .reduce<Element | null>((found, host) => found ?? deepQuery(selector, host.shadowRoot!), null);
+}
+
+/** One line of markdown (an argument's description) without the paragraph around it;
+ *  safe for unsafeHTML, as renderMarkdown() is */
+function inlineMarkdown(text: string): string
+{
+  return renderMarkdown(text).trim().replace(/^<p>([\s\S]*)<\/p>$/, '$1');
+}
+
+/** The first sentence of a doc comment, as plain text for a list row */
+function firstSentence(doc: string): string
+{
+  const para = doc.split(/\n\s*\n/)[0].replace(/\s+/g, ' ').replace(/`/g, '');
+  const end = para.search(/[.!?](\s|$)/);
+  return end > 0 ? para.slice(0, end + 1) : para;
 }
 
 function isVisible(el: Element): boolean

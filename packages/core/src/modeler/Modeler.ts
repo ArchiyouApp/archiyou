@@ -463,6 +463,16 @@ export class Modeler
         return this._mode;
     }
 
+    /** Get or set the units the model is built in: all sizes in the script are in these
+     *  units. The default is millimetres.
+     *
+     *  @param u The units to use, such as `'mm'`, `'cm'`, `'m'` or `'inch'`. Leave out to only read them.
+     *  @returns The units now in use
+     *
+     *  @example
+     *  units('cm')
+     *  box(100, 60, 4) // a table top of 1 m by 60 cm
+     */
     @validate(ModelUnitsSchema)
     units(u?:ModelUnits):ModelUnits
     {
@@ -503,7 +513,17 @@ export class Modeler
 
     //// POINTLIKES ////
 
-    /** Creates a 2D/3D Point */
+    /** Make a point: a position in space, used to place and measure shapes. A point is
+     *  not a shape and does not show up in the model; use vertex() for a visible one.
+     *
+     *  @param xp The x coordinate, or the whole point as `[x, y, z]`
+     *  @param y The y coordinate
+     *  @param z The z coordinate
+     *
+     *  @example
+     *  p = point(100, 0, 50)
+     *  box(20).moveTo(p)
+     */
     @validate(PointLikeSchema)
     point(xp?:PointLike, y?:number, z?:number): Point
     {
@@ -511,7 +531,16 @@ export class Modeler
         return new meshup.Point(xp, y, z) as meshup.Point
     }
 
-    /** Creates a 2D/3D Vector */
+    /** Make a vector: a direction with a length, for moving and orienting shapes.
+     *
+     *  @param xp The x component, or the whole vector as `[x, y, z]`
+     *  @param y The y component
+     *  @param z The z component
+     *
+     *  @example
+     *  up = vector(0, 0, 200)
+     *  box(50).move(up)
+     */
     @validate(PointLikeSchema)
     vector(xp?:PointLike, y?:number, z?:number): Vector
     {
@@ -520,8 +549,16 @@ export class Modeler
     }
 
 
-    /** Creates a Vertex and adds it to the scene so .color()/.name()/etc. work and the
-     *  point is exported to the GLB. */
+    /** Make a vertex: a point that is part of the model, so it shows in the viewer and
+     *  can be coloured, named and exported.
+     *
+     *  @param xp The x coordinate, or the whole point as `[x, y, z]`
+     *  @param y The y coordinate
+     *  @param z The z coordinate
+     *
+     *  @example
+     *  vertex(0, 0, 100).color('red').name('top')
+     */
     @validate(PointLikeSchema)
     vertex(xp?:PointLike, y?:number, z?:number): Vertex
     {
@@ -532,7 +569,14 @@ export class Modeler
 
     //// LINEAR SHAPES ////
 
-    /** Creates a Line Curve */
+    /** Make a straight line between two points.
+     *
+     *  @param start Where the line starts, like `[0, 0, 0]`
+     *  @param end Where the line ends
+     *
+     *  @example
+     *  line([0, 0, 0], [200, 100, 0]).color('blue')
+     */
     @validate(PointLikeSchema, PointLikeSchema)
     line(start: PointLike, end: PointLike): AnyKernelShape
     {
@@ -540,7 +584,15 @@ export class Modeler
         return this._adopt(meshup.Curve.Line(start, end) as meshup.Curve)
     }
 
-    /** Makes an Arc through start, mid and end Point */
+    /** Make a circular arc through three points.
+     *
+     *  @param start Where the arc starts
+     *  @param mid A point the arc passes through, which sets how far it bends
+     *  @param end Where the arc ends
+     *
+     *  @example
+     *  arc([0, 0, 0], [100, 50, 0], [200, 0, 0])
+     */
     @validate(PointLikeSchema, PointLikeSchema, PointLikeSchema)
     arc(start: PointLike, mid: PointLike, end: PointLike): AnyKernelShape
     {
@@ -550,14 +602,26 @@ export class Modeler
         return this._adopt(meshup.Curve.Arc(start, mid, end, 'threepoint') as meshup.Curve)
     }
 
-    /** Makes a Spline going through given Points */
+    /** Make a smooth curve through a list of points.
+     *
+     *  @param points The points the curve passes through, in order
+     *
+     *  @example
+     *  spline([0, 0, 0], [100, 80, 0], [200, 0, 0], [300, 60, 0])
+     */
     spline(...points: PointLike[]): AnyKernelShape
     {
         if (this._mode === 'brep') return this._adopt(new (this._brep().Edge)().makeSpline(points as any))
         return this._adopt(meshup.Curve.Interpolated(...points) as meshup.Curve)
     }
 
-    /** Makes a Polyline through multiple points */
+    /** Make a line with corners: straight segments from point to point.
+     *
+     *  @param points The points in order, as a list or one by one
+     *
+     *  @example
+     *  polyline([0, 0, 0], [100, 0, 0], [100, 100, 0], [200, 100, 0])
+     */
     polyline(points: PointLike | PointLike[], ...args: PointLike[]): AnyKernelShape
     {
         if (this._mode === 'brep')
@@ -586,17 +650,32 @@ export class Modeler
 
     //// CLOSED 2D SHAPES ////
 
-    /** Creates a rectangular outline.
-     *  Both kernels return the OUTLINE, not a surface: a Curve on mesh, a Wire on brep. Use
-     *  plane() for the filled version. (Getting this wrong made brep rects answer to the
-     *  surface API instead of the curve API — .segment()/.extend()/.toPolygon() all missed.) */
+    // Both kernels return the OUTLINE, not a surface: a Curve on mesh, a Wire on brep.
+    // (Getting this wrong made brep rects answer to the surface API instead of the curve
+    // API — .segment()/.extend()/.toPolygon() all missed.)
+    /** Make a rectangle outline, flat on the ground. Use plane() for a filled rectangle.
+     *
+     *  @param width Size along x
+     *  @param depth Size along y
+     *  @param center Where the middle of the rectangle goes
+     *
+     *  @example
+     *  rect(200, 100).color('orange')
+     */
     rect(width: number = 100, depth: number = 100, center: PointLike = [0, 0, 0]): AnyKernelShape
     {
         if (this._mode === 'brep') return this._adopt(new (this._brep().Wire)().makeRect(width, depth, center as any))
         return this._adopt(meshup.Curve.Rect(width, depth, center) as meshup.Curve)
     }
 
-    /** Creates a rectangular Curve between two Points */
+    /** Make a rectangle outline with two opposite corners at the given points.
+     *
+     *  @param from One corner
+     *  @param to The opposite corner
+     *
+     *  @example
+     *  rectBetween([0, 0, 0], [300, 200, 0])
+     */
     @validate(PointLikeSchema, PointLikeSchema)
     rectBetween(from: PointLike, to: PointLike): AnyKernelShape
     {
@@ -620,14 +699,29 @@ export class Modeler
         return this._adopt(new meshup.Polygon(points) as meshup.Polygon)
     }
 
-    /** Creates a circular outline — a Curve on mesh, a circular Edge on brep. */
+    /** Make a circle outline, flat on the ground.
+     *
+     *  @param radius Radius of the circle
+     *  @param center Where the middle of the circle goes
+     *
+     *  @example
+     *  circle(80, [100, 0, 0])
+     */
     circle(radius: number = 50, center: PointLike = [0, 0, 0]): AnyKernelShape
     {
         if (this._mode === 'brep') return this._adopt(new (this._brep().Edge)().makeCircle(radius, center as any))
         return this._adopt(meshup.Curve.Circle(radius, center) as meshup.Curve)
     }
 
-    /** Creates a planar surface */
+    /** Make a flat rectangular surface: `plane(width, depth, position, normal)`. Without a
+     *  normal it lies flat on the ground; the normal is the direction it faces.
+     *
+     *  @param args Width, depth, position of its middle and the direction it faces, in that order; all optional
+     *
+     *  @example
+     *  plane(200, 100)                            // on the ground
+     *  plane(200, 100, [0, 100, 50], [0, 1, 0])   // standing up, facing +y
+     */
     plane(...args: any[]): AnyKernelShape
     {
         const [
@@ -668,7 +762,14 @@ export class Modeler
         return this._adopt(shape)
     }
 
-    /** Creates a planar Face between two Points */
+    /** Make a flat rectangular surface with two opposite corners at the given points.
+     *
+     *  @param from One corner
+     *  @param to The opposite corner
+     *
+     *  @example
+     *  planeBetween([0, 0, 0], [300, 200, 0])
+     */
     @validate(PointLikeSchema, PointLikeSchema)
     planeBetween(from: PointLike, to: PointLike): AnyKernelShape
     {
@@ -686,7 +787,18 @@ export class Modeler
 
     //// 3D SHAPES ////
 
-    /** Creates a Box shape */
+    /** Make a box. Only the width given makes a cube. The box starts centred on the
+     *  origin; move it into place with move(), moveTo() or align().
+     *
+     *  @param width Size along x
+     *  @param depth Size along y; the width when left out
+     *  @param height Size along z; the width when left out
+     *  @param position How far to move it from the origin, as `[x, y, z]`
+     *
+     *  @example
+     *  top = box(1200, 700, 30).moveZ(735)
+     *  cube = box(100).color('red')
+     */
     @validate(Type.Number(), Type.Number(), Type.Number(), optional(PointLikeSchema))
     box(width: number = 100, depth?: number, height?: number, position?: PointLike): AnyKernelShape
     {
@@ -706,7 +818,15 @@ export class Modeler
         return this.box(width, depth, height, position)
     }
 
-    /** Creates a Box shape between two Points */
+    /** Make a box with two opposite corners at the given points. Handy when you know
+     *  where a part starts and ends rather than its size.
+     *
+     *  @param from One corner
+     *  @param to The opposite corner
+     *
+     *  @example
+     *  boxBetween([0, 0, 0], [60, 60, 720])   // a table leg standing on the ground
+     */
     @validate(PointLikeSchema, PointLikeSchema)
     boxBetween(from: PointLike, to: PointLike): AnyKernelShape
     {
@@ -722,7 +842,14 @@ export class Modeler
         return this._adopt(meshup.Mesh.BoxBetween(from, to) as meshup.Mesh)
     }
 
-    /** Creates a Sphere shape */
+    /** Make a ball, centred on the origin.
+     *
+     *  @param radius Radius of the ball
+     *  @param position Where to put its centre, as `[x, y, z]`
+     *
+     *  @example
+     *  sphere(80, [0, 0, 100]).color('blue')
+     */
     @validate(Type.Number(), PointLikeSchema)
     sphere(radius: number = 50, position?: PointLike): AnyKernelShape
     {
@@ -742,7 +869,15 @@ export class Modeler
         return this._adopt(cone)
     }
 
-    /** Creates a Cylinder shape */
+    /** Make an upright cylinder, centred on the origin.
+     *
+     *  @param radius Radius of the cylinder
+     *  @param height Height, along z
+     *  @param position How far to move it from the origin, as `[x, y, z]`
+     *
+     *  @example
+     *  post = cylinder(40, 900).moveZ(450)   // standing on the ground
+     */
     @validate(Type.Number(), Type.Number(), PointLikeSchema)
     cylinder(radius: number = 50, height: number = 100, position?: PointLike): AnyKernelShape
     {
@@ -759,14 +894,30 @@ export class Modeler
         return this._activeLayer;
     }
 
+    /** All shapes in the active layer (see layer()).
+     *
+     *  @example
+     *  layer('legs')
+     *  box(60, 60, 720)
+     *  box(60, 60, 720).moveX(500)
+     *  print(layerShapes().count())
+     */
     layerShapes(): meshup.ShapeCollection
     {
         return this._activeLayer ? this._activeLayer.shapes() : new meshup.ShapeCollection();
     }
 
-    /** Create or activate a named layer
-     *  a layer is always created as sibling of the active layer, and becomes the new active layer.
-    */
+    /** Start a layer, or go back to one: the shapes made after it go in that layer. Layers
+     *  group shapes in the scene tree, and colour or hide them together.
+     *
+     *  @param name Name of the layer
+     *
+     *  @example
+     *  layer('top').color('orange')
+     *  box(1200, 700, 30)
+     *  layer('legs').color('grey')
+     *  box(60, 60, 720)
+     */
     layer(name?: string): meshup.SceneNode
     {
         if (!name) { return this._activeLayer ?? this._scene }
@@ -788,7 +939,13 @@ export class Modeler
         return this._activeLayer!;
     }
 
-    /** Return all Shapes in the scene as a ShapeCollection */
+    /** All shapes in the model, as one collection to work on at once.
+     *
+     *  @example
+     *  box(100)
+     *  sphere(60).moveX(200)
+     *  all().moveZ(100)
+     */
     all(): meshup.ShapeCollection
     {
         if(!this._scene){ return new meshup.ShapeCollection(); }
@@ -805,7 +962,13 @@ export class Modeler
      *  exactly as it is, so shapes keep the layer they were made in. Safe to build anywhere,
      *  including as a throwaway argument (`make.partList(collection(a,b))`).
      *
-     *  Use group() when you also want the shapes gathered under a layer in the scene. */
+     *  Use group() when you also want the shapes gathered under a layer in the scene.
+     *
+     *  @example
+     *  a = box(100)
+     *  b = sphere(60).moveX(200)
+     *  collection(a, b).color('green')
+     */
     collection(...args: Array<any>): meshup.ShapeCollection
     {
         const col = new meshup.ShapeCollection() // empty: keep constructor scene-agnostic
@@ -822,7 +985,13 @@ export class Modeler
      *  `group(a, b)` names the layer after the variable it is assigned to (the Runner's
      *  auto-namer); `group('table', a, b)` names it explicitly.
      *
-     *  Use collection() when you only want to reference shapes without restructuring. */
+     *  Use collection() when you only want to reference shapes without restructuring.
+     *
+     *  @example
+     *  top = box(1200, 700, 30).moveZ(735)
+     *  leg = box(60, 60, 720)
+     *  table = group(top, leg)
+     */
     group(...args: Array<any>): meshup.ShapeCollection
     {
         const name = (typeof args[0] === 'string') ? args.shift() as string : null
@@ -860,14 +1029,25 @@ export class Modeler
 
     //// ==== SKETCH API ==== ////
 
-    /** Start a 2D sketch on a given base plane.
+    // ALWAYS a meshup.Sketch, in both kernels. brep had its own Sketch implementation but it
+    // was built around the deleted Brep god-class (layers, activeSketch) and duplicated what
+    // meshup.Sketch already does. In brep mode the sketch's curves are converted to brep
+    // Edges/Wires when the sketch ends (brep/toMeshup.ts, meshupShapeToBrep), so what a script
+    // gets back belongs to the active kernel and can be cut, extended and extruded against the
+    // rest of the model. Only the drawing happens in meshup.
+    /** Start a 2D drawing on a plane: move the pen with moveTo(), draw with lineTo(),
+     *  arcTo() and the like, and finish with close() for a closed shape.
      *
-     *  ALWAYS a meshup.Sketch, in both kernels. brep had its own Sketch implementation but it
-     *  was built around the deleted Brep god-class (layers, activeSketch) and duplicated what
-     *  meshup.Sketch already does. In brep mode the sketch's curves are converted to brep
-     *  Edges/Wires when the sketch ends (brep/toMeshup.ts, meshupShapeToBrep), so what a script
-     *  gets back belongs to the active kernel and can be cut, extended and extruded against the
-     *  rest of the model. Only the drawing happens in meshup. */
+     *  @param plane The plane to draw on: `'xy'` (the ground), `'xz'` (front) or `'yz'` (side)
+     *
+     *  @example
+     *  sketch('xy')
+     *     .moveTo(0, 0)
+     *     .lineTo(300, 0)
+     *     .lineTo(300, 200)
+     *     .lineTo(0, 200)
+     *     .close()
+     */
     sketch(plane: any = 'xy', _yAxis?: any): meshup.Sketch
     {
         this._activeSketch = new meshup.Sketch(plane);
