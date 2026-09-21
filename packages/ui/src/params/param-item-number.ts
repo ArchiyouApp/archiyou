@@ -447,8 +447,8 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
         {
             display:       flex;
             align-items:   stretch;
-            border:        1px solid var(--color-border);
-            border-radius: var(--radius-sm, 3px);
+            border:        1px solid var(--color-divider);
+            border-radius: var(--radius-md, 6px);
             overflow:      hidden;
             flex-shrink:   0;
             width:         110px;
@@ -466,9 +466,10 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
             color:       var(--color-text);
             background:  var(--color-bg-elevated);
             border:      none;
-            border-right: 1px solid var(--color-border);
+            border-right: 1px solid var(--color-divider);
             padding:     1px 4px;
             text-align:  right;
+            font-weight: 600;
         }
 
         .num:focus { outline: none; }
@@ -484,8 +485,10 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
             width:       58px;
             font-family: var(--font-sans);
             font-size:   var(--text-xs);
-            color:       var(--color-gray-dark, #666);
-            background:  var(--color-bg-elevated);
+            color:       var(--color-text-gray, #666);
+            /* Recessed against the white value cell, so the pair reads as
+               "number + its unit" rather than two equal fields. */
+            background:  var(--color-surface-subtle, #f5f5f5);
             border:      none;
             padding:     1px 6px;
             cursor:      pointer;
@@ -503,8 +506,8 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
             width:        38px;
             font-family:  var(--font-sans);
             font-size:    var(--text-xs);
-            color:        var(--color-gray-dark, #666);
-            background:   var(--color-bg-elevated);
+            color:        var(--color-text-gray, #666);
+            background:   var(--color-surface-subtle, #f5f5f5);
             padding:      1px 6px;
             user-select:  none;
         }

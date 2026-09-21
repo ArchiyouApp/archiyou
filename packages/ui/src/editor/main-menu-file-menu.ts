@@ -11,6 +11,7 @@ import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '@awesome.me/webawesome/dist/components/divider/divider.js';
 
 import { editorScript, isReadOnly } from '@archiyou/editor/src/state/workspace';
+import { APP_VERSION } from '@archiyou/editor/src/settings';
 
 @customElement('editor-main-menu-file-menu')
 export class MainMenuFileMenu extends SignalWatcher(LitElement)
@@ -129,20 +130,17 @@ export class MainMenuFileMenu extends SignalWatcher(LitElement)
 
         <wa-divider></wa-divider>
 
-        <wa-dropdown-item value="changelog">
-          <wa-icon slot="icon" library="lucide" name="layers"></wa-icon>
-          ${msg('Changelog')}
+        <!-- TODO: help --> 
+         <wa-dropdown-item value="help" class="help">
+          <wa-icon slot="icon" library="lucide" name="help-circle"></wa-icon>
+          ${msg('Help')}
         </wa-dropdown-item>
 
-        <wa-dropdown-item value="support">
-          <wa-icon slot="icon" library="lucide" name="circle-help"></wa-icon>
-          ${msg('Support')}
-        </wa-dropdown-item>
+        <wa-divider></wa-divider>
 
-        <wa-dropdown-item value="api">
-          <wa-icon slot="icon" library="lucide" name="box"></wa-icon>
-          ${msg('API')}
-        </wa-dropdown-item>
+        <!-- footer: build version, not selectable -->
+        <div class="version">archiyou editor v${APP_VERSION}</div>
+
       </wa-dropdown>
     `;
   }
@@ -184,6 +182,18 @@ export class MainMenuFileMenu extends SignalWatcher(LitElement)
     wa-dropdown::part(menu) {
       background-color: var(--color-secondary, #180c2d);
       border-color: color-mix(in srgb, var(--color-secondary, #180c2d) 60%, white);
+    }
+
+    /* help functionality TODO */
+    .help {
+      opacity: 0.5; 
+    }
+
+    .version {
+      padding: var(--space-1, 4px) var(--wa-space-m, 1rem) var(--space-1, 4px);
+      font-size: var(--text-xs, 0.75rem);
+      color: var(--wa-color-text-quiet);
+      user-select: all;
     }
 
     wa-button.trigger {

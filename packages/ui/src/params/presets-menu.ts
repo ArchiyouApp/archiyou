@@ -197,8 +197,8 @@ export class PresetsMenu extends SignalWatcher(LitElement)
       flex-shrink: 0;
       user-select: none;
       cursor: pointer;
-      background: var(--color-gray);
-      border-bottom: 1px solid var(--color-border);
+      background: var(--color-bg-elevated);
+      border-bottom: 1px solid var(--color-divider);
     }
 
     :host([collapsed]) .header {
@@ -206,10 +206,13 @@ export class PresetsMenu extends SignalWatcher(LitElement)
     }
 
     .title {
-      font-weight: 500;
+      font-weight: 600;
       color: var(--color-text);
       font-size: var(--text-sm);
     }
+
+    /* Sentence case ("Presets", not "presets") without touching the markup. */
+    .title::first-letter { text-transform: uppercase; }
 
     .spacer { flex: 1; }
 

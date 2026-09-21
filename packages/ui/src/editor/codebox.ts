@@ -23,6 +23,8 @@ import { EditorView, basicSetup } from 'codemirror';
 import { keymap, Decoration, DecorationSet } from '@codemirror/view';
 import { EditorState, Compartment, StateEffect, StateField } from '@codemirror/state';
 import { javascript } from '@codemirror/lang-javascript';
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { tags as t } from '@lezer/highlight';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { autocompletion, acceptCompletion, completionStatus } from '@codemirror/autocomplete';
 import { archiyouCompletions, registerModuleCompletions, registerComponentNames } from './completions.js';
@@ -63,7 +65,53 @@ function sharedComponentNames(user: string | undefined): string[]
   return cached && cached.user === user ? cached.labels : [];
 }
 
-const lightTheme = EditorView.theme({}, { dark: false });
+/** Light-mode syntax colours, driven by the --color-code-* design tokens.
+ *
+ *  CodeMirror compiles these into real CSS rules inside the shadow root, so
+ *  var() resolves against :root and the palette follows the design system
+ *  instead of hard-coding hexes here.
+ *
+ *  Plain variable references are the brand blue, which is what makes $PARAM
+ *  lookups stand out; anything being *called* or *defined* stays ink-coloured,
+ *  so `units(...)` and `const WIDTH` read as structure rather than data. */
+const lightHighlightStyle = HighlightStyle.define([
+  { tag: [t.comment, t.lineComment, t.blockComment, t.docComment],
+    color: 'var(--color-code-comment)', fontStyle: 'italic' },
+
+  { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword,
+          t.operatorKeyword, t.modifier, t.self, t.null, t.atom],
+    color: 'var(--color-code-keyword)' },
+
+  { tag: [t.string, t.special(t.string), t.regexp, t.escape],
+    color: 'var(--color-code-string)' },
+
+  { tag: [t.number, t.bool, t.integer, t.float, t.unit],
+    color: 'var(--color-code-number)' },
+
+  // Callees, declarations and members: the code's skeleton.
+  { tag: [t.function(t.variableName), t.function(t.propertyName), t.propertyName,
+          t.definition(t.variableName), t.definition(t.propertyName),
+          t.className, t.typeName, t.namespace, t.labelName],
+    color: 'var(--color-code-ident)' },
+
+  // Bare references — $PARAM lookups land here.
+  { tag: [t.variableName, t.special(t.variableName)],
+    color: 'var(--color-primary)' },
+
+  { tag: [t.operator, t.punctuation, t.separator, t.bracket, t.paren, t.brace],
+    color: 'var(--color-code-ident)' },
+
+  { tag: t.meta, color: 'var(--color-code-comment)' },
+  { tag: t.invalid, color: 'var(--color-alert)' },
+  { tag: t.link, color: 'var(--color-primary)', textDecoration: 'underline' },
+  { tag: t.strong, fontWeight: 'bold' },
+  { tag: t.emphasis, fontStyle: 'italic' },
+]);
+
+const lightTheme = [
+  EditorView.theme({}, { dark: false }),
+  syntaxHighlighting(lightHighlightStyle),
+];
 const themeCompartment = new Compartment();
 // Toggles editability without rebuilding the editor (read-only shared scripts).
 const editableCompartment = new Compartment();
@@ -391,7 +439,10 @@ export class CodeBox extends SignalWatcher(LitElement)
 
   private _currentTheme()
   {
-    const isDark = document.documentElement.dataset['theme'] === 'dark' || this._darkMQ.matches;
+    // data-theme is always set now (light or dark), so it decides; the media
+    // query is only a fallback for the first paint before the theme is applied.
+    const attr = document.documentElement.dataset['theme'];
+    const isDark = attr ? attr === 'dark' : this._darkMQ.matches;
     return isDark ? oneDark : lightTheme;
   }
 
@@ -590,8 +641,8 @@ export class CodeBox extends SignalWatcher(LitElement)
       font-size: var(--text-sm);
       color: var(--color-text);
       flex-shrink: 0;
-      background: var(--color-gray);
-      border-bottom: 1px solid var(--color-border);
+      background: var(--color-bg-elevated);
+      border-bottom: 1px solid var(--color-divider);
     }
 
     .subheader {
@@ -638,10 +689,13 @@ export class CodeBox extends SignalWatcher(LitElement)
     }
 
     .title {
-      font-weight: 500;
+      font-weight: 600;
       color: var(--color-text);
       font-size: var(--text-sm);
     }
+
+    /* Sentence case ("Code editor", not "code editor") — markup untouched. */
+    .title::first-letter { text-transform: uppercase; }
 
     .spacer { flex: 1; }
 
@@ -795,16 +849,19 @@ export class CodeBox extends SignalWatcher(LitElement)
       align-items: center;
       justify-content: center;
       font-size: 0.6rem;
-      color: var(--color-white);
+      color: var(--color-on-primary, #fff);
       background-color: var(--color-primary);
       border-radius: var(--radius-full);
       cursor: pointer;
       flex-shrink: 0;
       border: none;
+      box-shadow: 0 2px 6px color-mix(in srgb, var(--color-primary) 45%, transparent);
+      transition: background-color 0.1s, box-shadow 0.1s;
     }
 
     .execute-button:hover {
-      background-color: var(--color-alert);
+      background-color: var(--color-primary-dark);
+      box-shadow: 0 3px 10px color-mix(in srgb, var(--color-primary) 55%, transparent);
     }
 
     .cm-container {
@@ -828,6 +885,56 @@ export class CodeBox extends SignalWatcher(LitElement)
       font-size: 0.72rem !important;
     }
 
+    /* ── CodeMirror chrome ──
+       The code canvas sits one shade under the white panel headers, and the
+       gutter shares that surface instead of being a separate ruled column.
+       Token colours still come from CodeMirror's own highlight style. */
+    .cm-editor,
+    .cm-editor .cm-scroller,
+    .cm-editor .cm-gutters {
+      background: var(--color-bg-code);
+    }
+
+    .cm-editor.cm-focused { outline: none; }
+
+    .cm-editor .cm-gutters {
+      border-right: none;
+      color: var(--color-text-muted);
+      padding-right: var(--space-xs);
+    }
+
+    .cm-editor .cm-lineNumbers .cm-gutterElement {
+      color: color-mix(in srgb, var(--color-text-gray) 55%, transparent);
+    }
+
+    /* The caret's line is a tint of the brand blue rather than CodeMirror's
+       default grey-blue, and the gutter marks it with the same tint. */
+    .cm-editor .cm-activeLine {
+      background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+    }
+
+    .cm-editor .cm-activeLineGutter {
+      background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+      color: var(--color-text-gray);
+    }
+
+    .cm-editor .cm-cursor,
+    .cm-editor .cm-dropCursor {
+      border-left-color: var(--color-primary);
+      border-left-width: 2px;
+    }
+
+    .cm-editor .cm-selectionBackground,
+    .cm-editor .cm-content ::selection {
+      background: color-mix(in srgb, var(--color-primary) 18%, transparent) !important;
+    }
+
+    .cm-editor .cm-foldPlaceholder {
+      background: var(--color-surface-subtle);
+      border: 1px solid var(--color-divider);
+      color: var(--color-text-gray);
+    }
+
     /* Error line highlight (applied via CodeMirror StateField) */
     .cm-error-line {
       background: rgba(239, 68, 68, 0.18) !important;
@@ -839,19 +946,40 @@ export class CodeBox extends SignalWatcher(LitElement)
       flex-shrink: 0;
     }
 
+    /* Status + duration read as one badge, so the bar has a single "did it run"
+       signal instead of an icon and a stray number. Empty between runs, hence
+       :has() rather than unconditional padding. */
     .state {
       display: inline-flex;
       align-items: center;
       gap: var(--space-2xs, 0.25rem);
+      font-size: 0.7rem;
+    }
+
+    .state:has(.success-icon),
+    .state:has(.error-icon) {
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+    }
+
+    .state:has(.success-icon) {
+      background: var(--color-success-subtle);
+      color: var(--color-success);
+    }
+
+    .state:has(.error-icon) {
+      background: color-mix(in srgb, var(--color-alert) 12%, transparent);
+      color: var(--color-alert);
     }
 
     .success-icon {
-      color: var(--wa-color-success-500, #22c55e);
+      color: var(--color-success, #22c55e);
     }
 
     .duration {
       font-size: var(--text-xs, 0.75rem);
-      color: var(--color-gray-dark);
+      color: inherit;
+      font-weight: 500;
     }
 
   `;

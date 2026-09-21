@@ -11,7 +11,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { initRouter } from './router.js';
-import { applySystemTheme } from '../../styles/dark-theme.js';
+import { applyStoredTheme } from '../../styles/dark-theme.js';
 import { setLocale, detectLocale } from '../../i18n/locale-config.js';
 
 @customElement('app-shell')
@@ -26,7 +26,7 @@ export class AppShell extends LitElement
   // ── 3. Lifecycle ──
   override firstUpdated()
   {
-    applySystemTheme();
+    applyStoredTheme();
 
     // Initialise locale (best-effort — locale modules may not exist until lit-localize build)
     setLocale(detectLocale()).catch(() => {/* source locale, no module needed */});

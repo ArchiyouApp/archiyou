@@ -623,7 +623,12 @@ export class ParamDefineMenu extends SignalWatcher(LitElement)
             z-index: 201;
             width: ${unsafeCSS(OVERLAY_MENU_WIDTH)};
             max-width: calc(100vw - 32px);
-            max-height: ${unsafeCSS(OVERLAY_MENU_HEIGHT)};
+            /* Fixed floor so the dialog does not jump in height when switching
+               type (boolean/text forms are much shorter than number); it may
+               grow past it for tall forms. Only viewports too short for the
+               form still scroll. */
+            min-height: ${unsafeCSS(OVERLAY_MENU_HEIGHT)};
+            max-height: calc(100vh - 32px);
             background: var(--color-bg-elevated, #fff);
             border: 1px solid var(--color-border);
             border-radius: var(--radius-lg, 12px);

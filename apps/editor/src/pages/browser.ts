@@ -40,7 +40,7 @@ import { fetchPublicShared, fetchSharedWithMe } from '../services/sharing.js';
 import { fetchPublishedConfigurators } from '../services/publishing.js';
 import { enqueueBackfill, THUMBNAIL_STORED_EVENT, type BackfillTarget, type ThumbnailStoredDetail } from '../services/thumbnails.js';
 import { editorPathFor } from '../services/script-links.js';
-import { scripts, openScript, userState, browserSearch, browserSort, setBrowserSearch, setBrowserSort } from '../state/workspace';
+import { scripts, openScript, userState, browserSearch, browserSort, setBrowserSearch, setBrowserSort, editorScript } from '../state/workspace';
 
 type SectionId = 'all' | 'scripts' | 'shared' | 'configurators' | 'projects';
 
@@ -108,6 +108,7 @@ export class PageBrowser extends SignalWatcher(LitElement)
           .assets=${this._assetsFor(section, query)}
           sort=${browserSort.get()}
           ?showNew=${section.kinds.includes('script') && !query}
+          current=${editorScript.get() ? (editorScript.get()?.name || msg('untitled')) : ''}
           ?loading=${this._loading && section.kinds.some(k => k !== 'script')}
           .error=${this._error}
           emptyText=${query ? msg('Nothing matches your search.') : section.empty}
@@ -115,6 +116,7 @@ export class PageBrowser extends SignalWatcher(LitElement)
           @sort-change=${(e: CustomEvent<BrowserSort>) => setBrowserSort(e.detail)}
           @asset-open=${this._open}
           @create=${this._createScript}
+          @open-current=${this._openCurrent}
         ></browser-asset-grid>
       </section>
     `;
@@ -259,6 +261,7 @@ export class PageBrowser extends SignalWatcher(LitElement)
         kind: 'script',
         name: s.name || msg('untitled'),
         version: s.version,
+        created: s.created.getTime(),
         updated: s.updated.getTime(),
         thumbnail: assetUrl(s.thumbnail),
       })));
@@ -295,6 +298,7 @@ export class PageBrowser extends SignalWatcher(LitElement)
       name: data.name || msg('untitled'),
       author: data.author && data.author !== me ? data.author : undefined,
       version: data.version,
+      created: Date.parse(data.created ?? '') || undefined,
       updated: Date.parse(data.updated ?? '') || undefined,
       thumbnail: assetUrl(data.thumbnail),
     };
@@ -334,6 +338,12 @@ export class PageBrowser extends SignalWatcher(LitElement)
   private _createScript()
   {
     Router.go('/editor?new');
+  }
+
+  /** Back to the script the editor holds (the browser leaves it active). */
+  private _openCurrent()
+  {
+    Router.go(editorPathFor(editorScript.get()));
   }
 
   // ── 5. Styles ──

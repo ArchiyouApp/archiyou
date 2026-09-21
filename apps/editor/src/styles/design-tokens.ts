@@ -9,15 +9,16 @@
 
 export const tokens = {
   // --- Brand colors ---
-  colorPrimary: '#103eaa',       // ==> color-primary
-  colorPrimaryLight: '#1e3657',  // blue-500
-  colorPrimaryDark: '#1e3657',   // blue-700
+  colorPrimary: '#2447e6',       // ==> color-primary
+  colorPrimaryLight: '#4f6ef2',  // blue-500
+  colorPrimaryDark: '#1b35b0',   // blue-700
 
   colorSecondary: '#180c2d',     // ==> color-secondary
   colorSecondaryLight: '#1e3657',  // purple-500
   colorSecondaryDark: '#180c2d',   // purple-700
 
   colorAccent: '#ffe200',  
+  colorAvatarBg: '#f5b82e',      // brand-mark amber; avatar chips sit on it
   colorSuccess: '#16a34a',
   colorWarning: '#f59e0b',
   colorAlert: '#f10827',
@@ -44,7 +45,32 @@ export const tokens = {
   colorText: '#414651',
   colorTextMuted: '#999',
   colorBorder: '#cfcfcf',
-  colorDivider: '#e0e0e0',
+  /* One step darker than the viewer's background (VIEWER_BACKGROUND_COLOR,
+     #f1f5f9) on the same slate ramp, so split-pane dividers read as a seam in
+     the viewer rather than a foreign grey stripe. */
+  colorDivider: '#e2e8f0',
+
+  // --- Editor chrome surfaces ---
+  // The panel stack (file tab → presets → parameters → code) layers by surface
+  // colour rather than by borders, so each level needs its own token.
+  colorBgElevated: '#ffffff',      // panels and panel headers on top of --color-bg
+  colorSurfaceSubtle: '#f7f8fb',   // unit cells, count badges, param tab strip
+  colorTabStrip: '#ebe7f3',        // file tab bar *behind* the active (white) tab
+  colorBgCode: '#fcfcfe',          // code editor canvas + gutter
+  colorPrimarySubtle: '#eef1fe',   // tinted fill for primary-coloured chrome
+  colorOnPrimary: '#ffffff',       // text/icons on a --color-primary fill
+  colorSuccessSubtle: '#e8f5ee',   // "ran OK" pill behind the execution time
+  colorTextGray: '#6c7285',        // secondary label text
+
+  // --- Code syntax palette ---
+  // Drives the editor's highlight style. Kept here (not in the component) so
+  // both themes define the same set; the dark values mirror One Dark, which is
+  // what the editor still swaps to for its dark syntax colours.
+  colorCodeComment: '#8a8fa0',
+  colorCodeKeyword: '#7c3aed',
+  colorCodeString:  '#c2410c',
+  colorCodeNumber:  '#0f766e',
+  colorCodeIdent:   '#1b1d29',   // callees, definitions, property names
 
 
   // --- Typography ---
@@ -56,7 +82,7 @@ export const tokens = {
   lineHeightBase: '1.5',
 
   // --- Text sizing (Tailwind-inspired, rem) ---
-  textXXs:   '0.5rem',    // 8px
+  textXXs:   '0.625rem',  // 10px — every call site already wrote this as its fallback
   textXs:   '0.75rem',    // 12px
   textSm:   '0.875rem',   // 14px
   textBase: '1rem',       // 16px
@@ -77,6 +103,11 @@ export const tokens = {
   space3xl: '48px',
   space4xl: '64px',
   space5xl: '96px',
+
+  // --- Chrome sizing ---
+  // Split-pane divider track. Wide enough that the 16px grip icon sits in its
+  // own column instead of spilling over the panes either side of it.
+  sizeDivider: '12px',
 
   // --- Radius ---
   radiusSm: '4px',

@@ -33,7 +33,7 @@ export class PageConfigurator extends SignalWatcher(LitElement)
           class="split-grip"
           slot="divider"
           library="lucide"
-          name="grip-lines-vertical"
+          name="grip-vertical"
         ></wa-icon>
 
         <div class="sidebar" slot="start">
@@ -164,6 +164,9 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     {
       flex: 1;
       min-height: 0;
+      /* Left unset, Web Awesome's 0.25rem default is narrower than the grip,
+         so the handle spilled ~5px each side of its own track. */
+      --divider-width: var(--size-divider);
     }
 
     .sidebar

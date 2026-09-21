@@ -1,5 +1,13 @@
 import { defineConfig } from 'vite';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
+
+// The editor's own package.json version is the single source of truth for the
+// version shown in the UI (bump it with `pnpm version` in apps/editor). A CI or
+// deploy script can override it per build with VITE_APP_VERSION, e.g. to append
+// a git short-sha: VITE_APP_VERSION=0.1.0+a1b2c3d pnpm build.
+const pkg = JSON.parse(readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf8')) as { version: string };
+const appVersion = process.env['VITE_APP_VERSION'] || pkg.version;
 
 export default defineConfig(() => {
   // APP env var selects a single app for dev/build:
@@ -21,6 +29,11 @@ export default defineConfig(() => {
     // Expose SERVER_*-prefixed env vars to client code (in addition to the
     // default VITE_*), so `import.meta.env.SERVER_API_BASE_URL` is available.
     envPrefix: ['VITE_', 'SERVER_'],
+
+    // Build-time constant; declared in src/vite-env.d.ts, read via settings.ts.
+    define: {
+      __APP_VERSION__: JSON.stringify(appVersion),
+    },
 
     // WASM files served as assets; consumers use `?url` imports
     assetsInclude: ['**/*.wasm'],

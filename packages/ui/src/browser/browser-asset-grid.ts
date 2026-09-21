@@ -10,6 +10,7 @@
  *   sort-change     detail = BrowserSort   a sort was chosen
  *   asset-open      detail = BrowserAsset  a card was activated
  *   create          detail = 'script'      the "New script" tile was used
+ *   open-current    (no detail)            the tile's "Current script" button was used
  */
 
 import { LitElement, html, css, nothing } from 'lit';
@@ -37,6 +38,8 @@ export interface BrowserAsset
   /** Author handle; left out for the user's own scripts. */
   author?: string;
   version?: string | null;
+  /** Epoch ms of creation, for display. */
+  created?: number;
   /** Epoch ms of the last change, for sorting and display. */
   updated?: number;
   /** Absolute thumbnail URL. */
@@ -90,7 +93,7 @@ export class BrowserAssetGrid extends LitElement
 
     return html`
       <div class="grid">
-        ${this.showNew ? html`<browser-asset-new></browser-asset-new>` : nothing}
+        ${this.showNew ? html`<browser-asset-new current=${this.current}></browser-asset-new>` : nothing}
         ${this.assets.map(a => html`
           <browser-asset-card
             .asset=${a}
@@ -113,6 +116,8 @@ export class BrowserAssetGrid extends LitElement
   @property({ type: String }) sort: BrowserSort = 'modified';
   /** Show the leading "New script" tile. */
   @property({ type: Boolean }) showNew = false;
+  /** Name of the script open in the editor, for the tile's "Current script" button. */
+  @property({ type: String }) current = '';
   @property({ type: Boolean }) loading = false;
   @property({ type: String }) error = '';
   @property({ type: String }) emptyText = '';

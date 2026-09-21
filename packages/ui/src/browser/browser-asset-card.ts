@@ -2,7 +2,7 @@
  * <browser-asset-card> — presentational card for a single browser asset.
  *
  * Shows a preview image (or a placeholder icon for the kind), the kind, the name, the
- * version and who made it and when. Activating the card (click, Enter or Space) is a
+ * version, who made it and when it was created and last changed. Activating the card (click, Enter or Space) is a
  * plain `click` on the host, so the grid can listen for it.
  */
 
@@ -11,6 +11,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '../version-pill.js';
 
 import type { BrowserAsset, BrowserAssetKind } from './browser-asset-grid.js';
 
@@ -20,10 +21,11 @@ const KIND_ICONS: Record<BrowserAssetKind, string> = {
   configurator: 'tv-minimal-play', // as the configurator preview button in the editor
 };
 
+/** Numeric date in the browser's locale, e.g. "02-10-2020" (nl) or "10/02/2020" (en-US). */
 function fmtDate(ms: number | undefined): string
 {
   if (!ms) return '';
-  return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  return new Date(ms).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 @customElement('browser-asset-card')
@@ -34,7 +36,8 @@ export class BrowserAssetCard extends LitElement
   {
     const a = this.asset;
     if (!a) return nothing;
-    const meta = [a.author, fmtDate(a.updated)].filter(Boolean).join(' · ');
+    const created = fmtDate(a.created);
+    const updated = fmtDate(a.updated);
     const thumbnail = a.thumbnail && a.thumbnail !== this._failedThumbnail ? a.thumbnail : null;
 
     return html`
@@ -48,9 +51,18 @@ export class BrowserAssetCard extends LitElement
         <span class="type">${this._kindLabel(a.kind)}</span>
         <div class="title">
           <span class="name" title=${a.name}>${a.name}</span>
-          ${a.version ? html`<span class="version">v${a.version}</span>` : nothing}
+          ${a.version ? html`<version-pill version=${a.version}></version-pill>` : nothing}
         </div>
-        ${meta ? html`<span class="meta">${meta}</span>` : nothing}
+        ${a.author ? html`<span class="meta">${a.author}</span>` : nothing}
+        ${created || updated
+          ? html`
+            <span class="dates">
+              ${created ? html`<span class="date" title=${msg('Created')}>
+                <wa-icon library="lucide" name="calendar-plus"></wa-icon>${created}</span>` : nothing}
+              ${updated ? html`<span class="date" title=${msg('Last modified')}>
+                <wa-icon library="lucide" name="pencil"></wa-icon>${updated}</span>` : nothing}
+            </span>`
+          : nothing}
       </div>
     `;
   }
@@ -171,23 +183,28 @@ export class BrowserAssetCard extends LitElement
       color: var(--color-text);
     }
 
-    .version {
-      display: inline-block;
-      flex-shrink: 0;
-      padding: 4px var(--space-sm);
-      line-height: 1;
-      /* Trim the line box to the digits (cap height to baseline): line-height alone
-         centers the font's ascent/descent, which leaves the text riding high. */
-      text-box: trim-both cap alphabetic;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-full);
+    .meta {
       font-size: var(--text-xs);
       color: var(--color-text-muted);
     }
 
-    .meta {
+    .dates {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-xs) var(--space-md);
       font-size: var(--text-xs);
       color: var(--color-text-muted);
+    }
+
+    .date {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-xs);
+      white-space: nowrap;
+    }
+
+    .date wa-icon {
+      font-size: var(--text-xs);
     }
   `;
 }

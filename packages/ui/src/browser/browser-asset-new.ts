@@ -4,10 +4,13 @@
  * Card-shaped with a gray background; holds the new-asset actions (currently
  * "New script"). Emits `create` (detail = 'script') and leaves creating to the page,
  * the same as the header's Create menu.
+ *
+ * When the editor holds a script (`current` = its name), a "Current script" button
+ * sits on top so the user can return to it; it emits `open-current`.
  */
 
-import { LitElement, html, css } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { LitElement, html, css, nothing } from 'lit';
+import { customElement, property } from 'lit/decorators.js';
 import { msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/button/button.js';
@@ -22,6 +25,13 @@ export class BrowserAssetNew extends LitElement
   override render()
   {
     return html`
+      ${this.current
+        ? html`
+          <wa-button class="action current" appearance="plain" title=${this.current} @click=${this._openCurrent}>
+            <wa-icon slot="start" library="lucide" name="arrow-left"></wa-icon>
+            ${msg('Current script')}
+          </wa-button>`
+        : nothing}
       <wa-button class="action" appearance="plain" @click=${this._newScript}>
         <wa-icon slot="start" library="lucide" name="file-plus-2"></wa-icon>
         ${msg('New script')}
@@ -29,7 +39,16 @@ export class BrowserAssetNew extends LitElement
     `;
   }
 
+  // ── 2. Properties ──
+  /** Name of the script open in the editor; empty hides the "Current script" button. */
+  @property({ type: String }) current = '';
+
   // ── 4. Behaviour & Methods ──
+  private _openCurrent()
+  {
+    this.dispatchEvent(new CustomEvent('open-current', { bubbles: true, composed: true }));
+  }
+
   private _newScript()
   {
     this.dispatchEvent(new CustomEvent<BrowserCreateKind>('create', {
@@ -46,7 +65,7 @@ export class BrowserAssetNew extends LitElement
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: var(--space-sm);
+      gap: var(--space-xs);
       width: 220px;
       min-height: 200px;
       background: var(--color-gray);
@@ -54,13 +73,27 @@ export class BrowserAssetNew extends LitElement
       border-radius: var(--radius-md);
     }
 
+    .action {
+      width: 160px;
+    }
+
     .action::part(base) {
-      font-size: var(--text-base);
+      width: 100%;
+      justify-content: flex-start;
+      font-size: var(--text-sm);
       font-weight: 600;
       color: var(--color-text);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      background: var(--color-bg);
     }
 
     .action::part(base):hover {
+      color: var(--color-primary);
+      border-color: var(--color-primary);
+    }
+
+    .current::part(base) {
       color: var(--color-primary);
     }
   `;

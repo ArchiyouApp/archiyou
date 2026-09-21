@@ -206,7 +206,9 @@ export class ConfiguratorHeader extends SignalWatcher(LitElement)
       font-family: var(--font-sans);
       font-size: var(--text-xs);
       line-height: 1.5;
-      color: var(--color-text-muted, #888);
+      /* text-muted (#999) only reaches ~2.8:1 on the panel — this is body copy
+         people actually read, so it takes the darker secondary grey (~5.3:1). */
+      color: var(--color-text-gray, #6c7285);
       white-space: pre-wrap;
     }
 

@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 
+/** Injected by Vite `define` (see vite.config.ts): the editor's version string. */
+declare const __APP_VERSION__: string;
+
 declare module 'n8ao'
 {
   import { Pass } from 'three/examples/jsm/postprocessing/Pass.js';

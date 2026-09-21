@@ -12,7 +12,7 @@ import '../configurator/configurator.js';
 
 import { userState } from '@archiyou/editor/src/state/workspace';
 
-type MenuItem = 'info' | 'code' | 'history' | 'files' | 'templates' | 'help' | 'settings';
+type MenuItem = 'info' | 'code' | 'history' | 'files' | 'help' | 'settings';
 
 @customElement('editor-main-menu')
 export class MainMenu extends SignalWatcher(LitElement)
@@ -71,14 +71,6 @@ export class MainMenu extends SignalWatcher(LitElement)
             ><wa-icon library="lucide" name="shield-check" label="Admin"></wa-icon></wa-button>
             <wa-tooltip for="btn-admin" placement="right">${msg('Admin')}</wa-tooltip>`
           : nothing}
-
-        <wa-button
-          id="btn-templates"
-          appearance="plain"
-          class=${'dimmed ' + (this._active === 'templates' ? 'active' : '')}
-          @click=${() => this._select('templates')}
-        ><wa-icon library="lucide" name="rocket" label="Templates"></wa-icon></wa-button>
-        <wa-tooltip for="btn-templates" placement="right">${msg('Templates')}</wa-tooltip>
 
         <wa-button
           id="btn-help"

@@ -2,6 +2,11 @@
  *  General settings and configuration for the Archiyou web application.
  */
 
+/** Editor version, inlined at build time from apps/editor/package.json (or
+ *  VITE_APP_VERSION when set). Falls back to 'dev' where the define is absent
+ *  (e.g. vitest without the Vite config). */
+export const APP_VERSION: string = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
+
 // Overlay menus — percentages of viewport preferred; px accepted too
 export const OVERLAY_MENU_WIDTH  = '40vw';
 export const OVERLAY_MENU_HEIGHT = '50vh';

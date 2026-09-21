@@ -23,11 +23,11 @@ export class UnitSwitch extends LitElement
         <button
           class=${`seg-btn ${this.value === 'metric' ? 'active' : ''}`}
           @click=${() => this._select('metric')}
-        >Metric <span class="seg-hint">mm</span></button>
+        >Metric</button>
         <button
           class=${`seg-btn ${this.value === 'imperial' ? 'active' : ''}`}
           @click=${() => this._select('imperial')}
-        >Imperial <span class="seg-hint">in</span></button>
+        >Imperial</button>
       </div>
     `;
   }
@@ -56,10 +56,10 @@ export class UnitSwitch extends LitElement
       align-items: stretch;
       gap: 2px;
       padding: 2px;
-      /* gray-light (not gray) so the track still reads against the panel in the
-         dark theme, where --color-gray equals the elevated surface. */
-      background: var(--color-gray-light, #eee);
-      border: 1px solid var(--color-border);
+      /* surface-subtle (not gray) so the track still reads against the panel in
+         the dark theme, where --color-gray equals the elevated surface. */
+      background: var(--color-surface-subtle, #eee);
+      border: 1px solid var(--color-divider, #cfcfcf);
       border-radius: var(--radius-full, 9999px);
     }
 
@@ -82,15 +82,17 @@ export class UnitSwitch extends LitElement
 
     .seg-btn:hover { color: var(--color-text); }
 
+    /* Filled dark rather than a white chip: the active unit system is a claim
+       about the whole script, so it carries the strongest contrast in the bar. */
     .seg-btn.active
     {
-      background: var(--color-bg-elevated, #fff);
-      color: var(--color-text);
-      font-weight: 500;
+      background: var(--color-secondary, #180c2d);
+      color: var(--color-white, #fff);
+      font-weight: 600;
       box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
     }
 
-    .seg-hint { font-size: var(--text-x-xs, 0.625rem); opacity: 0.7; }
+    .seg-btn.active:hover { color: var(--color-white, #fff); }
   `;
 }
 

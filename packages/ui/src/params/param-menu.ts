@@ -166,7 +166,7 @@ export class ParamMenu extends SignalWatcher(LitElement)
           <span class="add-bar-spacer"></span>
           <button class="add-btn" @click=${this._openAddMenu}>
             <wa-icon library="lucide" name="plus"></wa-icon>
-            Add Parameter
+            Add parameter
           </button>
         </div>
 
@@ -673,15 +673,18 @@ export class ParamMenu extends SignalWatcher(LitElement)
       flex-shrink: 0;
       user-select: none;
       cursor: pointer;
-      background: var(--color-gray);
-      border-bottom: 1px solid var(--color-border);
+      background: var(--color-bg-elevated);
+      border-bottom: 1px solid var(--color-divider);
     }
 
     .title {
-      font-weight: 500;
+      font-weight: 600;
       color: var(--color-text);
       font-size: var(--text-sm);
     }
+
+    /* Sentence case ("Presets", not "presets") without touching the markup. */
+    .title::first-letter { text-transform: uppercase; }
 
     .spacer { flex: 1; }
 
@@ -690,10 +693,10 @@ export class ParamMenu extends SignalWatcher(LitElement)
     .tab-bar {
       display: flex;
       align-items: stretch;
-      border-bottom: 1px solid var(--color-border);
+      border-bottom: 1px solid var(--color-divider);
       flex-shrink: 0;
       overflow: hidden;
-      background: var(--color-gray-light, #f5f5f5);
+      background: var(--color-surface-subtle, #f5f5f5);
       padding: 0;
     }
 
@@ -715,10 +718,9 @@ export class ParamMenu extends SignalWatcher(LitElement)
       justify-content: center;
       width: 24px;
       border: none;
-      border-right: 1px solid var(--color-border);
-      background: var(--color-gray-light, #f5f5f5);
+      background: var(--color-surface-subtle, #f5f5f5);
       cursor: pointer;
-      color: var(--color-gray-dark, #555);
+      color: var(--color-text-gray, #555);
       font-size: 10px;
       padding: 0;
     }
@@ -744,21 +746,24 @@ export class ParamMenu extends SignalWatcher(LitElement)
       cursor: pointer;
       font-size: var(--text-xs);
       font-weight: 500;
-      color: var(--color-gray-dark);
-      border-right: 1px solid var(--color-border);
+      color: var(--color-text-gray);
+      /* Transparent twin of .tab.active's rule, so selecting a tab doesn't
+         shift the row by 2px. */
+      border-bottom: 2px solid transparent;
       white-space: nowrap;
       user-select: none;
-      transition: background 0.1s;
+      transition: background 0.1s, color 0.1s;
     }
 
     .tab:hover {
-      background: color-mix(in srgb, var(--color-border) 25%, transparent);
+      color: var(--color-text);
     }
 
     .tab.active {
-      color: var(--color-gray-dark);
-      background: color-mix(in srgb, var(--color-gray-dark) 5%, transparent);
-      border-bottom: 2px solid color-mix(in srgb, var(--color-gray-dark) 25%, transparent);
+      color: var(--color-primary);
+      font-weight: 600;
+      background: transparent;
+      border-bottom: 2px solid var(--color-primary);
     }
 
     .tab.drag-over {
@@ -878,17 +883,18 @@ export class ParamMenu extends SignalWatcher(LitElement)
       padding: 5px 10px;
       font-family: var(--font-sans);
       font-size: var(--text-xs);
-      font-weight: 500;
-      color: var(--color-gray-dark);
-      background: color-mix(in srgb, var(--color-gray-dark) 10%, transparent);
-      border: 1px solid var(--color-gray-dark);
-      border-radius: var(--radius-sm, 4px);
+      font-weight: 600;
+      color: var(--color-on-primary, #fff);
+      background: var(--color-primary);
+      border: 1px solid var(--color-primary);
+      border-radius: var(--radius-md, 6px);
       cursor: pointer;
       justify-content: center;
     }
 
     .add-btn:hover {
-      background: color-mix(in srgb, var(--color-gray-dark) 18%, transparent);
+      background: var(--color-primary-dark);
+      border-color: var(--color-primary-dark);
     }
 
     /* ── Save as preset ── */
@@ -905,10 +911,10 @@ export class ParamMenu extends SignalWatcher(LitElement)
       font-family: var(--font-sans);
       font-size: var(--text-xs);
       font-weight: 500;
-      color: var(--color-gray-dark, #666);
-      background: transparent;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-sm, 4px);
+      color: var(--color-text);
+      background: var(--color-bg-elevated);
+      border: 1px solid var(--color-divider);
+      border-radius: var(--radius-md, 6px);
       cursor: pointer;
     }
 

@@ -248,6 +248,13 @@ export class ViewerLabelsOverlay extends LitElement
          drawing itself, so keep them unobtrusive. */
       --ay-dim-font-size: 0.625rem;
 
+      /* Interactive (param-bound) dimension values are a bordered chip, so the
+         editable ones stand apart from plain dimension text. Their background
+         is the panel surface, NOT --ay-dim-bg: that one is re-pointed at the
+         canvas colour at runtime so static values blend into the drawing. */
+      --ay-dim-interactive-bg: var(--color-bg, #fff);
+      --ay-dim-interactive-border-hover-color: var(--color-primary, #2447e6);
+
       /* Leader line — its own style, matches the label border color */
       --ay-leader-color: var(--ay-label-border-color);
       --ay-leader-width: 1px;
@@ -299,11 +306,17 @@ export class ViewerLabelsOverlay extends LitElement
     .ay-label--interactive {
       pointer-events: auto;
       cursor: pointer;
-      text-decoration: underline dotted;
-      text-underline-offset: 2px;
+      background: var(--ay-dim-interactive-bg);
+      /* At rest the border carries the viewer's own background colour, so it
+         disappears into the canvas and reads as a clean edge even where the
+         label sits on top of the model. It still occupies its pixel, so
+         turning it blue on hover moves nothing. */
+      border: 1px solid var(--ay-dim-bg);
+      border-radius: var(--ay-label-radius);
+      transition: border-color 0.1s;
     }
     .ay-label--interactive:hover {
-      background: color-mix(in srgb, var(--ay-label-bg) 70%, var(--ay-label-color) 30%);
+      border-color: var(--ay-dim-interactive-border-hover-color);
     }
 
     /* Inline editor for interactive dimensions */

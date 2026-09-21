@@ -10,6 +10,7 @@ import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '@dile/editor/editor.js';
 import '../unit-switch.js';
+import '../version-pill.js';
 
 import {
   editorScript,
@@ -84,8 +85,6 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
 
     return html`
       <div class="header" @click=${this._toggleCollapse}>
-        <wa-icon library="lucide" name="file"></wa-icon>
-
         ${this._editingName && !readOnly
           ? (() => {
               const taken = this._nameCollides(this._nameDraft);
@@ -117,12 +116,12 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
 
               ${this._displayVersion()
                 ? html`
-                    <span
+                    <version-pill
                       id=${`fm-version-${this._uid}`}
                       class="script-version"
-                    ><span class="version-text">${this._displayVersion()}</span>${this._isChangedSinceVersion()
-                      ? html`<wa-icon class="version-changed" library="lucide" name="file-diff" label="Changed since this version"></wa-icon>`
-                      : nothing}</span>
+                      version=${this._displayVersion() ?? ''}
+                      ?changed=${this._isChangedSinceVersion()}
+                    ></version-pill>
                     <wa-tooltip for=${`fm-version-${this._uid}`} placement="bottom">
                       ${this._isChangedSinceVersion()
                         ? `Shared/published as ${this._displayVersion()}, but the code changed since. Others using this script get ${this._displayVersion()}; share or publish again to update it. Your own scripts always use the latest code.`
@@ -138,11 +137,19 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
                       @click=${(e: Event) => e.stopPropagation()}
                     >
                       <wa-icon library="lucide" name="lock"></wa-icon>
-                      read-only
                     </span>
                     <wa-tooltip for=${`fm-readonly-${this._uid}`} placement="bottom">
                       This is a shared script${script?.author ? ` by ${script.author}` : ''}. Fork it to make your own editable copy.
-                    </wa-tooltip>`
+                    </wa-tooltip>
+
+                    <button
+                      class="fork-btn"
+                      title="Fork to an editable copy"
+                      @click=${(e: Event) => { e.stopPropagation(); this._handleFork(); }}
+                    >
+                      <wa-icon library="lucide" name="git-fork"></wa-icon>
+                      Fork
+                    </button>`
                 : html`
                     ${userState.get().anonymous
                       ? html`
@@ -170,18 +177,6 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
         }
 
         <span class="spacer"></span>
-
-        ${readOnly
-          ? html`
-              <button
-                class="fork-btn"
-                title="Fork to an editable copy"
-                @click=${(e: Event) => { e.stopPropagation(); this._handleFork(); }}
-              >
-                <wa-icon library="lucide" name="git-fork"></wa-icon>
-                Fork
-              </button>`
-          : nothing}
 
         <unit-switch
             class="unit-quick"
@@ -798,8 +793,10 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
       width: 100%;
       font-family: var(--font-sans);
       font-size: var(--text-sm);
-      background: var(--color-bg-elevated);
-      border-bottom: 1px solid var(--color-border);
+      /* The strip the file "tab" sits on. The header itself paints the tab, so
+         this colour is only ever seen to the right of it (and through the tab's
+         rounded top corners). */
+      background: var(--color-tab-strip);
       flex-shrink: 0;
     }
 
@@ -819,24 +816,65 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
 
     /* ── Header ── */
 
+    /* The header *is* the tab: it paints the elevated surface and merges into
+       the panel below. Everything from .spacer rightwards re-paints the strip
+       colour, so the tab ends where the name/version group ends. Items carry
+       their own spacing (gap: 0) so those two runs stay gap-free. */
     .header
     {
       display: flex;
       align-items: center;
-      gap: var(--space-sm);
-      height: var(--space3xl);
-      padding: 0 var(--space-md);
+      gap: 0;
+      /* Inset from the top and left so the strip flows around the tab. The
+         height gives back exactly what the margin takes, so the bar as a whole
+         still measures --space3xl. */
+      margin: var(--space-sm) 0 0 var(--space-sm);
+      height: calc(var(--space3xl) - var(--space-sm));
+      padding: 0 0 0 var(--space-md);
       flex-shrink: 0;
       user-select: none;
       cursor: pointer;
-      color: color-mix(in srgb, var(--color-primary) 72%, var(--color-text) 28%);
-      background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-elevated) 90%);
-      border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--color-border) 78%);
+      color: var(--color-text);
+      background: var(--color-bg-elevated);
+      border-top-left-radius: var(--radius-lg);
+      border-bottom: none;
     }
 
-    :host([collapsed]) .header
+    /* Right-hand controls live on the strip, beside the tab. */
+    .spacer,
+    .unit-quick,
+    .header > wa-icon:last-child
     {
-      border-bottom: none;
+      align-self: stretch;
+      background: var(--color-tab-strip);
+    }
+
+    .spacer { position: relative; }
+
+    /* Rounds the tab's trailing top corner into the strip. */
+    .spacer::before
+    {
+      content: '';
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: var(--radius-lg);
+      background: var(--color-bg-elevated);
+      border-top-right-radius: var(--radius-lg);
+    }
+
+    /* wa-icon sizes itself to 1em, so align-self: stretch is ignored (the item
+       has a definite cross size). An explicit height is what fills the strip. */
+    /* The other panel headers sit their chevron at (header padding + half an
+       18px wa-icon box) from the edge; this one carries that inset as padding
+       because it also has to paint the strip out to the header's edge. */
+    .header > wa-icon:last-child
+    {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 calc(var(--space-md) + 9px) 0 var(--space-md);
+      color: var(--color-text-gray);
     }
 
     /* Name + version are separate items of the centered header row, so they only
@@ -846,10 +884,13 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
        secondary through its muted color and regular weight. */
     .script-name
     {
-      font-weight: 500;
-      color: color-mix(in srgb, var(--color-primary) 68%, var(--color-text) 32%);
+      font-weight: 600;
+      color: var(--color-text);
       font-size: var(--text-sm);
       line-height: 20px;
+      /* Breathing room either side of the name inside the tab. */
+      margin-left: var(--space-md);
+      margin-right: var(--space-md);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -857,35 +898,13 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
       cursor: default;
     }
 
-    /* Same pill as the configurator header's version badge. */
+    /* Same pill as the configurator header's version badge. Keeps the 8px
+       chip-to-chip margin the lock/fork/pencil chips use, so whichever chip
+       happens to follow the name sits at the same distance from it. */
     .script-version
     {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
       flex-shrink: 0;
-      font-family: var(--font-mono, monospace);
-      font-size: var(--text-x-xs, 0.625rem);
-      line-height: 1;
-      color: var(--color-gray-dark, #666);
-      background: var(--color-gray-light, #eee);
-      border: 1px solid var(--color-border, #cfcfcf);
-      border-radius: var(--radius-full, 9999px);
-      padding: 4px 7px;
-      white-space: nowrap;
-    }
-
-    .version-text
-    {
-      /* Trim the line box to the digits (cap height to baseline): line-height alone
-         centers the font's ascent/descent, which leaves the text riding high. */
-      text-box: trim-both cap alphabetic;
-    }
-
-    .version-changed
-    {
-      font-size: 0.625rem;
-      color: var(--color-alert, #ef4444);
+      margin-left: var(--space-sm);
     }
 
     .name-input
@@ -924,8 +943,9 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
       background: none;
       border: none;
       cursor: pointer;
-      color: color-mix(in srgb, var(--color-primary) 52%, var(--color-text-muted) 48%);
+      color: var(--color-text-gray, #999);
       border-radius: var(--radius-sm, 4px);
+      margin-left: var(--space-sm);
       opacity: 0;
       transition: opacity 0.1s;
       flex-shrink: 0;
@@ -936,24 +956,36 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
     .spacer { flex: 1; }
 
     /* ── Quick mm/in unit switch (header) — shared <unit-switch> pill ── */
-    .unit-quick { flex-shrink: 0; }
+    .unit-quick
+    {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      padding-left: var(--space-sm);
+      /* Padding, not margin: this element paints the strip, so a margin would
+         leave an unpainted gap showing the white tab through. Pairs with the
+         chevron's own --space-md to double the gap between the two. */
+      padding-right: var(--space-md);
+    }
 
     /* Read-only badge (foreign shared script) */
+    /* Icon only — the tooltip spells out what read-only means, so the word
+       itself is dead weight in a tab this size. Sized to match .script-version
+       so the two chips beside the name read as one row. */
     .fm-readonly
     {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      height: 22px;
-      padding: 0 8px;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
       border-radius: var(--radius-sm, 4px);
       background: color-mix(in srgb, var(--color-warning, #d97706) 16%, transparent);
       color: var(--color-warning, #d97706);
-      font-size: var(--text-xs);
-      font-weight: 500;
-      white-space: nowrap;
+      font-size: 0.625rem;
       cursor: help;
       flex-shrink: 0;
+      margin-left: var(--space-sm);
     }
 
     /* Fork button (read-only header) */
@@ -961,19 +993,20 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
     {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      height: 22px;
-      padding: 0 10px;
+      gap: 3px;
+      height: 16px;
+      padding: 0 6px;
       border: 1px solid var(--color-primary);
       border-radius: var(--radius-sm, 4px);
       background: var(--color-primary);
-      color: var(--color-white, #fff);
+      color: var(--color-on-primary, #fff);
       font-family: var(--font-sans);
-      font-size: var(--text-xs);
-      font-weight: 500;
+      font-size: 0.625rem;
+      font-weight: 600;
       cursor: pointer;
       white-space: nowrap;
       flex-shrink: 0;
+      margin-left: var(--space-sm);
     }
 
     .fork-btn:hover { opacity: 0.88; }
@@ -988,6 +1021,7 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
       font-size: 1rem;
       cursor: help;
       flex-shrink: 0;
+      margin-left: var(--space-sm);
     }
 
     /* ── Body ── */
@@ -999,6 +1033,10 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
       position: relative;
       max-height: 480px;
       font-size: var(--text-sm);
+      /* :host paints the tab strip, so the expanded form has to restate the
+         panel surface or it would sit on the strip colour. */
+      background: var(--color-bg-elevated);
+      border-bottom: 1px solid var(--color-divider);
     }
 
     .form

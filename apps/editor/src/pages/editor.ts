@@ -919,7 +919,7 @@ export class PageEditor extends SignalWatcher(LitElement)
     wa-split-panel {
       flex: 1;
       min-height: 0;
-      --divider-width: 12px;
+      --divider-width: var(--size-divider);
     }
 
     /* Outer horizontal split: keep both panels at least 300px wide.
@@ -986,7 +986,7 @@ export class PageEditor extends SignalWatcher(LitElement)
     .viewer-tools-split {
       width: 100%;
       height: 100%;
-      --divider-width: 12px;
+      --divider-width: var(--size-divider);
     }
 
     editor-tool-panels {
@@ -1013,7 +1013,6 @@ export class PageEditor extends SignalWatcher(LitElement)
 
     wa-split-panel::part(divider) {
       background-color: var(--color-divider);
-      backdrop-filter: blur(5px);
     }
 
     wa-icon.split-grip,

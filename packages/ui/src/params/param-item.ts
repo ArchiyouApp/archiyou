@@ -255,12 +255,14 @@ export class ParamItem extends LitElement
       display: flex;
       align-items: center;
       gap: 6px;
-      padding-left: var(--space-lg);
+      /* Tight on the left so the grip sits in the gutter and the labels line up
+         close to the panel edge; the controls still breathe on the right. */
+      padding-left: var(--space-xs);
       padding-right: var(--space-lg);
       height: var(--space2xl);
       font-family: var(--font-sans);
       font-size: var(--text-sm);
-      border-bottom: 1px solid var(--color-border);
+      border-bottom: 1px solid var(--color-divider);
       background: var(--color-bg-elevated);
       cursor: default;
       user-select: none;
@@ -306,19 +308,26 @@ export class ParamItem extends LitElement
 
     .grip {
       flex-shrink: 0;
-      color: var(--color-gray-dark, #666);
-      opacity: 0.35;
+      color: var(--color-text-gray, #666);
+      /* Hidden until the row is hovered — the rows read as a clean list, and the
+         handle appears where it is actually actionable. visibility (not display)
+         keeps the labels from shifting sideways on hover. */
+      visibility: hidden;
+      opacity: 0.45;
       cursor: grab;
       display: flex;
       align-items: center;
       font-size: 11px;
+      transition: opacity 0.1s;
     }
 
-    .grip:hover { opacity: 0.8; }
+    :host(:hover) .grip { visibility: visible; }
+
+    .grip:hover { opacity: 0.9; }
 
     .label {
       flex: 0 1 auto;
-      color: var(--color-gray-dark, #555);
+      color: var(--color-text-gray, #555);
       font-size: var(--text-sm);
       overflow: hidden;
       text-overflow: ellipsis;
@@ -425,7 +434,10 @@ export class ParamItem extends LitElement
     :host([mode="presentation"]) {
       display: block;
       height: auto;
-      padding: var(--space-sm) var(--space-lg);
+      /* Tight vertically: each entry already reads as a block (label row over
+         its control), so the row gap does the separating and the padding only
+         has to keep the name off its neighbour. */
+      padding: var(--space-xs) var(--space-lg);
     }
 
     :host([mode="presentation"]:hover) { background: var(--color-bg-elevated); }

@@ -74,7 +74,7 @@ export class EditorToolPanels extends LitElement
     .vertical-split {
       width: 100%;
       height: 100%;
-      --divider-width: 10px;
+      --divider-width: var(--size-divider);
     }
 
     .vertical-split editor-tool-panel {
@@ -93,6 +93,10 @@ export class EditorToolPanels extends LitElement
       flex: 1;
       min-height: 120px;
       border-bottom: 1px solid var(--color-border);
+    }
+
+    .vertical-split::part(divider) {
+      background-color: var(--color-divider);
     }
 
     .split-grip-h {
