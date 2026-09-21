@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-16 → 2026-09-18 |
+| Dates | 2026-09-16 → 2026-09-21 |
 | Model | Claude Opus 5 (claude-opus-5), 1M context, Claude Code agent |
 | Tool | Claude Code in plan mode (agent researches and writes the plan), then as agent (writes code and tests, runs them) |
 | Human | Mark van der Net: wrote the prompts, set the scope, reviewed and corrected the plan, took the design decisions |
@@ -350,9 +350,10 @@ Never run the whole core vitest suite at once. No commits unless asked.
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
-| (none yet) | | |
+| 1a317b3 | First broad setup of fabrication in modeler/Fab.ts | the go-ahead prompts of 2026-09-16 13:31 and 20:34 and of 2026-09-18 15:01; committed on the prompt of 2026-09-21 |
+| (this commit) | Fabrication: close the AI disclosure record | the prompt of 2026-09-21 |
 
-Nothing is committed yet: the human asks for commits themselves, and this unit's work is still in the working tree. The commits get made with `pnpm commit:ai` against this record, and this table is filled then.
+Committed on 2026-09-21 by a later Claude Code session (Claude Fable 5.1) on the human's request, with the subject in the human's words. Left out of the commit: `packages/core/src/modeler/SVGExporter.ts` and the `packages/meshup` submodule, which hold the human's uncommitted kernel work and are not part of this unit.
 
 ## Design document (plans/FAB.md, copied 2026-09-18)
 
