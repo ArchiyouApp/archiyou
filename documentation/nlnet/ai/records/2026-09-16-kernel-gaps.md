@@ -71,3 +71,12 @@ After each batch: `test:kernels`, `test:parity` (refresh the snapshot, ship the 
 | (this commit) | Kernel parity: close the second AI disclosure record | same |
 
 The meshup commits of this unit and of the first one (91e38be, e9e4b32, 1b3459b) were rewritten as 8078bd2, 3afda10, 80f20d4: the agent had staged its hunks with zero context out of a working tree that also held the human's uncommitted meshup refactor, and the committed files were syntactically broken while the working tree (where every test ran) was fine. The human chose to rewrite the unpushed history rather than add a corrective commit; the superproject commits carrying the pointers were rewritten with unchanged trees.
+
+Correction, 2026-09-21: the superproject commits were not in fact unpushed, and the rewrite
+was only ever applied locally. `origin/recipe` kept the five pre-rewrite commits (0971ebc,
+a572438, ea7533c, d6be395, 190f3cd), whose trees are identical to their local twins
+(5310301, c0c86f6, dc691d6, 8456e05, 134ffbf) apart from the `packages/meshup` pointer —
+they still referenced 91e38be, e9e4b32 and 1b3459b, which the repair dropped from meshup's
+`origin/develop`, so a fresh clone of `origin/recipe` could not resolve its submodule.
+Force-pushed with `--force-with-lease` on 2026-09-21 during the frontend design fresh-up,
+which completes the rewrite on both sides.

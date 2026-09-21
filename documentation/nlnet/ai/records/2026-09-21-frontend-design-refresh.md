@@ -99,3 +99,10 @@ uses `var(--space-4)`, which is not a token in the scale and so resolves to noth
 | Commit | Subject | Prompt it answers |
 |---|---|---|
 | (this commit) | Frontend designs fresh-up | the whole session, closed by the 12:30 prompt |
+| be090cc (packages/meshup, develop) | Consistency: Curve.trim and iso/elevation/section | plain commit: the human's own refactor, not generated code |
+| e12d673 | Meshup 0.4.0: Curve.trim and projection API consistency | plain commit: submodule pointer bump |
+| (this commit) | Kernel parity record: correct the note on the rewrite's push state | "yes add that line and commit it" |
+
+The unit also finished the 2026-09-17 kernel-parity rewrite: `origin/recipe` still carried the
+five pre-rewrite commits, so it was force-pushed on 2026-09-21. See the correction appended to
+[2026-09-16-kernel-gaps.md](./2026-09-16-kernel-gaps.md).
