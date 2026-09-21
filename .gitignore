@@ -33,10 +33,11 @@ target/
 # OS cruft
 .DS_Store
 
-# TMP output fileas
+# TMP output files
 *.svg
 *.glb
 *.gltf
+packages/core/tests/outputs/*
 
 .claude/
 
