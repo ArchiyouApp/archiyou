@@ -19,6 +19,8 @@ export interface ToolDef
   height: number;
   /** Runner output paths this tool needs; only requested while the tool is active */
   outputs?: string[];
+  /** 'end' places the button at the bottom of the toolbar */
+  align?: 'end';
 }
 
 @customElement('editor-toolbar')
@@ -29,18 +31,27 @@ export class EditorToolbar extends LitElement
   {
     return html`
       <div class="tool-buttons">
-        ${this.tools.map((tool, i) => html`
-          <wa-button
-            id="tool-btn-${i}"
-            appearance="plain"
-            class=${this.activeIds.includes(tool.id) ? 'active' : ''}
-            @click=${() => this._toggle(tool.id)}
-          >
-            <wa-icon library="lucide" name=${tool.icon} label=${tool.name}></wa-icon>
-          </wa-button>
-          <wa-tooltip for="tool-btn-${i}" placement="left">${msg(tool.name)}</wa-tooltip>
-        `)}
+        ${this.tools.filter(t => t.align !== 'end').map(tool => this._renderButton(tool))}
       </div>
+      <div class="tool-buttons end">
+        ${this.tools.filter(t => t.align === 'end').map(tool => this._renderButton(tool))}
+      </div>
+    `;
+  }
+
+  private _renderButton(tool: ToolDef)
+  {
+    return html`
+      <wa-button
+        id="tool-btn-${tool.id}"
+        data-help="tool-${tool.id}"
+        appearance="plain"
+        class=${this.activeIds.includes(tool.id) ? 'active' : ''}
+        @click=${() => this._toggle(tool.id)}
+      >
+        <wa-icon library="lucide" name=${tool.icon} label=${tool.name}></wa-icon>
+      </wa-button>
+      <wa-tooltip for="tool-btn-${tool.id}" placement="left">${msg(tool.name)}</wa-tooltip>
     `;
   }
 
@@ -80,6 +91,10 @@ export class EditorToolbar extends LitElement
       align-items: center;
       gap: var(--space-1, 4px);
       width: 100%;
+    }
+
+    .tool-buttons.end {
+      margin-top: auto;
     }
 
     wa-button.active::part(base) {

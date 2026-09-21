@@ -174,7 +174,7 @@ export class CodeBox extends SignalWatcher(LitElement)
             }
           </span>
           <span class="spacer"></span>
-          <button class="execute-button"
+          <button class="execute-button" data-help="run"
               @click=${this._handleRunClick} title="Run (Ctrl+Enter)">
               <wa-icon library="lucide" name="play" label="Execute"></wa-icon>
           </button>

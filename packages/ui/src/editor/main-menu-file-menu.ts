@@ -27,7 +27,7 @@ export class MainMenuFileMenu extends SignalWatcher(LitElement)
       <wa-dropdown placement="bottom-start" @wa-select=${this._handleSelect}>
 
         <!-- hamburger button -->
-        <wa-button slot="trigger" appearance="plain" class="trigger">
+        <wa-button slot="trigger" appearance="plain" class="trigger" data-help="file-menu">
             <wa-icon library="lucide" name="menu" label="Menu"></wa-icon>
         </wa-button>
 
@@ -130,8 +130,8 @@ export class MainMenuFileMenu extends SignalWatcher(LitElement)
 
         <wa-divider></wa-divider>
 
-        <!-- TODO: help --> 
-         <wa-dropdown-item value="help" class="help">
+        <!-- opens the help tool (editor.ts _handleMenuAction) -->
+        <wa-dropdown-item value="help" class="help">
           <wa-icon slot="icon" library="lucide" name="help-circle"></wa-icon>
           ${msg('Help')}
         </wa-dropdown-item>
