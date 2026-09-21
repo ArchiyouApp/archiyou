@@ -1,10 +1,6 @@
 // Archiyou -> OpenSCAD  |  script: timberwallopenings  |  units: mm
 // OpenSCAD has no units: coordinates are in mm.
-// Parts: 27 CSG, 13 baked, 2 2D
-//   baked: crippleTop (made by split())
-//   baked: crippleTop_2 (made by split())
-//   baked: crippleBottom (made by split())
-//   baked: crippleBottom_2 (made by split())
+// Parts: 31 CSG, 9 baked, 2 2D
 //   baked: insulation1 (made by _separateSolids())
 //   baked: insulation1_2 (made by _separateSolids())
 //   baked: insulation2 (made by _separateSolids())
@@ -48,44 +44,29 @@ module topplate() {
     color([0, 0.502, 0]) translate([2000, 0, 2481]) cube([4000, 120, 38], center = true);
 }
 
-// crippleTop  (layer wall/cripplesTop): baked, made by split()
+// crippleTop  (layer wall/cripplesTop)
 module crippleTop() {
-    color([0, 0.502, 0]) polyhedron(
-        points = [[1239, -60, 2337], [1201, -60, 2337], [1201, 60, 2337], [1239, 60, 2337], [1201, -60, 2462], [1239, -60, 2462], [1201, 60, 2462], [1239, 60, 2462]],
-        faces = [[3, 2, 1, 0], [5, 0, 1, 4], [7, 5, 4, 6], [7, 6, 2, 3], [0, 5, 7, 3], [2, 6, 4, 1]]
-    );
+    color([0, 0.502, 0]) translate([1220, 0, 2399.5]) cube([38, 120, 125], center = true);
 }
 
-// crippleTop  (layer wall/cripplesTop): baked, made by split()
+// crippleTop  (layer wall/cripplesTop)
 module crippleTop_2() {
-    color([0, 0.502, 0]) polyhedron(
-        points = [[1849, 60, 2337], [1811, 60, 2337], [1811, 60, 2462], [1849, 60, 2462], [1811, -60, 2462], [1811, -60, 2337], [1849, -60, 2337], [1849, -60, 2462]],
-        faces = [[3, 2, 1, 0], [5, 1, 2, 4], [0, 1, 5, 6], [0, 6, 7, 3], [2, 3, 7, 4], [4, 7, 6, 5]]
-    );
+    color([0, 0.502, 0]) translate([1830, 0, 2399.5]) cube([38, 120, 125], center = true);
 }
 
 // crippleTop  (layer wall/cripplesTop)
 module crippleTop_3() {
-    color([0, 0.502, 0]) difference() {
-        translate([3050, 0, 1250]) cube([38, 120, 2424], center = true);
-        multmatrix([[1, 0, 0, 2460], [0, 0, -1, 120], [0, 1, 0, 1], [0, 0, 0, 1]]) linear_extrude(height = 240) polygon([[0, 0], [974, 0], [974, 2174], [0, 2174]]);
-    }
+    color([0, 0.502, 0]) translate([3050, 0, 2318.5]) cube([38, 120, 287], center = true);
 }
 
-// crippleBottom  (layer wall/cripplesBottom): baked, made by split()
+// crippleBottom  (layer wall/cripplesBottom)
 module crippleBottom() {
-    color([0, 0.502, 0]) polyhedron(
-        points = [[1201, -60, 38], [1239, -60, 38], [1239, -60, 863], [1201, -60, 863], [1239, 60, 863], [1201, 60, 863], [1201, 60, 38], [1239, 60, 38]],
-        faces = [[3, 2, 1, 0], [5, 4, 2, 3], [3, 0, 6, 5], [1, 2, 4, 7], [6, 0, 1, 7], [7, 4, 5, 6]]
-    );
+    color([0, 0.502, 0]) translate([1220, 0, 450.5]) cube([38, 120, 825], center = true);
 }
 
-// crippleBottom  (layer wall/cripplesBottom): baked, made by split()
+// crippleBottom  (layer wall/cripplesBottom)
 module crippleBottom_2() {
-    color([0, 0.502, 0]) polyhedron(
-        points = [[1811, 60, 38], [1811, -60, 38], [1811, -60, 863], [1811, 60, 863], [1849, 60, 863], [1849, 60, 38], [1849, -60, 38], [1849, -60, 863]],
-        faces = [[3, 2, 1, 0], [5, 4, 3, 0], [6, 5, 0, 1], [5, 6, 7, 4], [4, 7, 2, 3], [1, 2, 7, 6]]
-    );
+    color([0, 0.502, 0]) translate([1830, 0, 450.5]) cube([38, 120, 825], center = true);
 }
 
 // openingHorizontal  (layer wall/openingFramesHorizontals)
@@ -194,67 +175,67 @@ module insulation0() {
     color([0.133, 0.133, 0.133]) difference() {
         translate([314.5, 0, 1250]) cube([553, 120, 2424], center = true);
         multmatrix([[1, 0, 0, 630], [0, 0, -1, 120], [0, 1, 0, 863], [0, 0, 0, 1]]) linear_extrude(height = 240) polygon([[0, 0], [1274, 0], [1274, 1474], [0, 1474]]);
-        translate([629, 0, 1250]) cube([76, 132, 2500], center = true);
-        translate([1905, 0, 1250]) cube([76, 132, 2500], center = true);
+        translate([630, 0, 1250]) cube([76, 132, 2500], center = true);
+        translate([1904, 0, 1250]) cube([76, 132, 2500], center = true);
         multmatrix([[1, 0, 0, 2460], [0, 0, -1, 120], [0, 1, 0, 1], [0, 0, 0, 1]]) linear_extrude(height = 240) polygon([[0, 0], [974, 0], [974, 2174], [0, 2174]]);
-        translate([2459, 0, 1250]) cube([76, 132, 2500], center = true);
-        translate([3435, 0, 1250]) cube([76, 132, 2500], center = true);
+        translate([2460, 0, 1250]) cube([76, 132, 2500], center = true);
+        translate([3434, 0, 1250]) cube([76, 132, 2500], center = true);
     }
 }
 
 // insulation1  (layer wall/insulation): baked, made by _separateSolids()
 module insulation1() {
     color([0.133, 0.133, 0.133]) polyhedron(
-        points = [[1201, 60, 863], [667, 60, 863], [667, -60, 863], [1201, -60, 863], [1201, 60, 38], [1201, -60, 38], [667, -60, 38], [667, 60, 38]],
-        faces = [[3, 2, 1, 0], [5, 3, 0, 4], [5, 4, 7, 6], [2, 6, 7, 1], [2, 3, 5, 6], [0, 1, 7, 4]]
+        points = [[668, -60, 2337], [668, -60, 2462], [668, 60, 2462], [668, 60, 2337], [1201, -60, 2337], [1201, -60, 2462], [1201, 60, 2462], [1201, 60, 2337]],
+        faces = [[3, 2, 1, 0], [5, 4, 0, 1], [5, 1, 2, 6], [6, 7, 4, 5], [3, 7, 6, 2], [3, 0, 4, 7]]
     );
 }
 
 // insulation1  (layer wall/insulation): baked, made by _separateSolids()
 module insulation1_2() {
     color([0.133, 0.133, 0.133]) polyhedron(
-        points = [[667, -60, 2462], [1201, -60, 2462], [1201, 60, 2462], [667, 60, 2462], [1201, 60, 2337], [1201, -60, 2337], [667, -60, 2337], [667, 60, 2337]],
-        faces = [[3, 2, 1, 0], [5, 1, 2, 4], [5, 6, 0, 1], [0, 6, 7, 3], [7, 6, 5, 4], [3, 7, 4, 2]]
+        points = [[1201, -60, 38], [668, -60, 38], [668, 60, 38], [1201, 60, 38], [1201, 60, 863], [1201, -60, 863], [668, -60, 863], [668, 60, 863]],
+        faces = [[3, 2, 1, 0], [0, 5, 4, 3], [5, 0, 1, 6], [5, 6, 7, 4], [1, 2, 7, 6], [4, 7, 2, 3]]
     );
 }
 
 // insulation2  (layer wall/insulation): baked, made by _separateSolids()
 module insulation2() {
     color([0.133, 0.133, 0.133]) polyhedron(
-        points = [[1239, -60, 863], [1239, 60, 863], [1239, 60, 38], [1239, -60, 38], [1811, 60, 863], [1811, -60, 863], [1811, -60, 38], [1811, 60, 38]],
-        faces = [[3, 2, 1, 0], [7, 6, 5, 4], [4, 1, 2, 7], [2, 3, 6, 7], [6, 3, 0, 5], [5, 0, 1, 4]]
+        points = [[1239, -60, 2462], [1239, -60, 2337], [1811, -60, 2337], [1811, -60, 2462], [1239, 60, 2462], [1811, 60, 2462], [1811, 60, 2337], [1239, 60, 2337]],
+        faces = [[3, 2, 1, 0], [5, 3, 0, 4], [7, 1, 2, 6], [5, 4, 7, 6], [0, 1, 7, 4], [5, 6, 2, 3]]
     );
 }
 
 // insulation2  (layer wall/insulation): baked, made by _separateSolids()
 module insulation2_2() {
     color([0.133, 0.133, 0.133]) polyhedron(
-        points = [[1239, 60, 2337], [1239, 60, 2462], [1811, 60, 2462], [1811, 60, 2337], [1239, -60, 2337], [1239, -60, 2462], [1811, -60, 2462], [1811, -60, 2337]],
-        faces = [[3, 2, 1, 0], [1, 5, 4, 0], [6, 5, 1, 2], [7, 6, 2, 3], [5, 6, 7, 4], [3, 0, 4, 7]]
+        points = [[1239, -60, 38], [1811, -60, 38], [1811, -60, 863], [1239, -60, 863], [1239, 60, 863], [1239, 60, 38], [1811, 60, 38], [1811, 60, 863]],
+        faces = [[3, 2, 1, 0], [0, 5, 4, 3], [2, 7, 6, 1], [1, 6, 5, 0], [7, 4, 5, 6], [2, 3, 4, 7]]
     );
 }
 
 // insulation3  (layer wall/insulation): baked, made by _separateSolids()
 module insulation3() {
     color([0.133, 0.133, 0.133]) polyhedron(
-        points = [[1849, 60, 38], [1849, -60, 38], [1849, -60, 863], [1849, 60, 863], [1867, -60, 38], [1867, -60, 863], [1867, 60, 863], [1867, 60, 38]],
-        faces = [[3, 2, 1, 0], [5, 4, 1, 2], [7, 6, 3, 0], [5, 2, 3, 6], [7, 0, 1, 4], [5, 6, 7, 4]]
+        points = [[1849, 60, 863], [1866, 60, 863], [1866, 60, 38], [1849, 60, 38], [1849, -60, 863], [1866, -60, 863], [1866, -60, 38], [1849, -60, 38]],
+        faces = [[3, 2, 1, 0], [5, 4, 0, 1], [1, 2, 6, 5], [6, 7, 4, 5], [2, 3, 7, 6], [0, 4, 7, 3]]
     );
 }
 
 // insulation3  (layer wall/insulation): baked, made by _separateSolids()
 module insulation3_2() {
     color([0.133, 0.133, 0.133]) polyhedron(
-        points = [[2421, 60, 2462], [2421, -60, 2462], [2421, -60, 38], [2421, 60, 38], [1943, -60, 2462], [1943, -60, 38], [1943, 60, 2462], [1943, 60, 38]],
-        faces = [[3, 2, 1, 0], [2, 5, 4, 1], [4, 6, 0, 1], [2, 3, 7, 5], [5, 7, 6, 4], [3, 0, 6, 7]]
+        points = [[2421, 60, 2462], [1942, 60, 2462], [1942, -60, 2462], [2421, -60, 2462], [2421, -60, 38], [2421, 60, 38], [1942, -60, 38], [1942, 60, 38]],
+        faces = [[3, 2, 1, 0], [3, 0, 5, 4], [7, 1, 2, 6], [5, 7, 6, 4], [6, 2, 3, 4], [7, 5, 0, 1]]
     );
 }
 
 // insulation3  (layer wall/insulation): baked, made by _separateSolids()
 module insulation3_3() {
     color([0.133, 0.133, 0.133]) polyhedron(
-        points = [[1849, 60, 2462], [1849, 60, 2337], [1849, -60, 2337], [1849, -60, 2462], [1867, -60, 2462], [1867, 60, 2462], [1867, 60, 2337], [1867, -60, 2337]],
-        faces = [[3, 2, 1, 0], [5, 4, 3, 0], [0, 1, 6, 5], [6, 1, 2, 7], [2, 3, 4, 7], [4, 5, 6, 7]]
+        points = [[1866, 60, 2462], [1866, 60, 2337], [1849, 60, 2337], [1849, 60, 2462], [1866, -60, 2462], [1866, -60, 2337], [1849, -60, 2337], [1849, -60, 2462]],
+        faces = [[3, 2, 1, 0], [1, 5, 4, 0], [7, 6, 2, 3], [6, 7, 4, 5], [1, 2, 6, 5], [3, 0, 4, 7]]
     );
 }
 
@@ -263,27 +244,27 @@ module insulation4() {
     color([0.133, 0.133, 0.133]) difference() {
         translate([2745, 0, 1250]) cube([572, 120, 2424], center = true);
         multmatrix([[1, 0, 0, 630], [0, 0, -1, 120], [0, 1, 0, 863], [0, 0, 0, 1]]) linear_extrude(height = 240) polygon([[0, 0], [1274, 0], [1274, 1474], [0, 1474]]);
-        translate([629, 0, 1250]) cube([76, 132, 2500], center = true);
-        translate([1905, 0, 1250]) cube([76, 132, 2500], center = true);
+        translate([630, 0, 1250]) cube([76, 132, 2500], center = true);
+        translate([1904, 0, 1250]) cube([76, 132, 2500], center = true);
         multmatrix([[1, 0, 0, 2460], [0, 0, -1, 120], [0, 1, 0, 1], [0, 0, 0, 1]]) linear_extrude(height = 240) polygon([[0, 0], [974, 0], [974, 2174], [0, 2174]]);
-        translate([2459, 0, 1250]) cube([76, 132, 2500], center = true);
-        translate([3435, 0, 1250]) cube([76, 132, 2500], center = true);
+        translate([2460, 0, 1250]) cube([76, 132, 2500], center = true);
+        translate([3434, 0, 1250]) cube([76, 132, 2500], center = true);
     }
 }
 
 // insulation5  (layer wall/insulation): baked, made by _separateSolids()
 module insulation5() {
     color([0.133, 0.133, 0.133]) polyhedron(
-        points = [[3069, 60, 2175], [3397, 60, 2175], [3397, -60, 2175], [3069, -60, 2175], [3397, -60, 2462], [3069, -60, 2462], [3069, 60, 2462], [3397, 60, 2462]],
-        faces = [[3, 2, 1, 0], [5, 4, 2, 3], [7, 4, 5, 6], [1, 7, 6, 0], [5, 3, 0, 6], [1, 2, 4, 7]]
+        points = [[3641, -60, 38], [3641, 60, 38], [3641, 60, 2462], [3641, -60, 2462], [3472, -60, 38], [3472, 60, 38], [3472, -60, 2462], [3472, 60, 2462]],
+        faces = [[3, 2, 1, 0], [1, 5, 4, 0], [6, 3, 0, 4], [7, 6, 4, 5], [7, 5, 1, 2], [7, 2, 3, 6]]
     );
 }
 
 // insulation5  (layer wall/insulation): baked, made by _separateSolids()
 module insulation5_2() {
     color([0.133, 0.133, 0.133]) polyhedron(
-        points = [[3641, 60, 2462], [3473, 60, 2462], [3473, -60, 2462], [3641, -60, 2462], [3641, -60, 38], [3641, 60, 38], [3473, 60, 38], [3473, -60, 38]],
-        faces = [[3, 2, 1, 0], [0, 5, 4, 3], [5, 0, 1, 6], [2, 3, 4, 7], [4, 5, 6, 7], [1, 2, 7, 6]]
+        points = [[3069, -60, 2175], [3069, 60, 2175], [3396, 60, 2175], [3396, -60, 2175], [3069, 60, 2462], [3396, 60, 2462], [3069, -60, 2462], [3396, -60, 2462]],
+        faces = [[3, 2, 1, 0], [5, 4, 1, 2], [7, 3, 0, 6], [4, 5, 7, 6], [5, 2, 3, 7], [6, 0, 1, 4]]
     );
 }
 
@@ -292,11 +273,11 @@ module insulation6() {
     color([0.133, 0.133, 0.133]) difference() {
         translate([3820.5, 0, 1250]) cube([283, 120, 2424], center = true);
         multmatrix([[1, 0, 0, 630], [0, 0, -1, 120], [0, 1, 0, 863], [0, 0, 0, 1]]) linear_extrude(height = 240) polygon([[0, 0], [1274, 0], [1274, 1474], [0, 1474]]);
-        translate([629, 0, 1250]) cube([76, 132, 2500], center = true);
-        translate([1905, 0, 1250]) cube([76, 132, 2500], center = true);
+        translate([630, 0, 1250]) cube([76, 132, 2500], center = true);
+        translate([1904, 0, 1250]) cube([76, 132, 2500], center = true);
         multmatrix([[1, 0, 0, 2460], [0, 0, -1, 120], [0, 1, 0, 1], [0, 0, 0, 1]]) linear_extrude(height = 240) polygon([[0, 0], [974, 0], [974, 2174], [0, 2174]]);
-        translate([2459, 0, 1250]) cube([76, 132, 2500], center = true);
-        translate([3435, 0, 1250]) cube([76, 132, 2500], center = true);
+        translate([2460, 0, 1250]) cube([76, 132, 2500], center = true);
+        translate([3434, 0, 1250]) cube([76, 132, 2500], center = true);
     }
 }
 

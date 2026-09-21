@@ -1398,6 +1398,87 @@ export function leafNodes(node: RecipeNode): LeafNode[]
     }
 }
 
+/** For every leaf: the boolean it is a tool of (the nearest one whose tools it sits under), or 'base' for
+ *  the leaves the shape itself is built from. */
+export function toolOpsOf(root: RecipeNode): Map<LeafNode, BooleanOp | 'base'>
+{
+    const result = new Map<LeafNode, BooleanOp | 'base'>();
+    const visit = (node: RecipeNode, role: BooleanOp | 'base') =>
+    {
+        if (node.kind === 'leaf') result.set(node, role);
+        if (node.kind !== 'boolean') return;
+        visit(node.base, role);
+        node.tools.forEach(tool => visit(tool, node.op));
+    };
+    visit(root, 'base');
+    return result;
+}
+
+/** The flat faces of a leaf in world space, as outward normals with a point on each face. Curved
+ *  surfaces (the side of a cylinder or cone, a sphere) have none. */
+export function leafPlanes(leaf: LeafNode): Array<{ normal: Vec3, point: Vec3 }>
+{
+    const M = leaf.matrix;
+    const flip = affineDeterminant(M) < 0; // a mirror turns the winding, so the normals too
+    const face = (corners: Vec3[]) =>
+    {
+        const world = corners.map(p => affineApply(M, p));
+        const n = world.reduce<Vec3>((acc, a, i) =>
+        {
+            const b = world[(i + 1) % world.length];
+            return [acc[0] + (a[1] - b[1]) * (a[2] + b[2]), acc[1] + (a[2] - b[2]) * (a[0] + b[0]), acc[2] + (a[0] - b[0]) * (a[1] + b[1])];
+        }, [0, 0, 0]);
+        const unit = normalize(n);
+        return { normal: (flip ? [-unit[0], -unit[1], -unit[2]] : unit) as Vec3, point: world[0] };
+    };
+    const step = leaf.step;
+    switch (step.op)
+    {
+        case 'box':
+        {
+            const [w, d, h] = step.size.map(s => s / 2);
+            return [
+                face([[w, -d, -h], [w, d, -h], [w, d, h], [w, -d, h]]),
+                face([[-w, -d, -h], [-w, -d, h], [-w, d, h], [-w, d, -h]]),
+                face([[-w, d, -h], [-w, d, h], [w, d, h], [w, d, -h]]),
+                face([[-w, -d, -h], [w, -d, -h], [w, -d, h], [-w, -d, h]]),
+                face([[-w, -d, h], [w, -d, h], [w, d, h], [-w, d, h]]),
+                face([[-w, -d, -h], [-w, d, -h], [w, d, -h], [w, -d, -h]]),
+            ];
+        }
+        case 'cylinder':
+        {
+            const axis = normalize([M[2], M[6], M[10]]); // image of the local +z
+            return [
+                { normal: [-axis[0], -axis[1], -axis[2]], point: affineApply(M, [0, 0, 0]) },
+                { normal: axis, point: affineApply(M, [0, 0, step.height]) },
+            ];
+        }
+        case 'extrude':
+        {
+            // the ring's own winding decides which cap faces out; the swept vector says which way
+            const ring = step.ring;
+            const along = dot(normalize(ring.reduce<Vec3>((acc, a, i) =>
+            {
+                const b = ring[(i + 1) % ring.length];
+                return [acc[0] + (a[1] - b[1]) * (a[2] + b[2]), acc[1] + (a[2] - b[2]) * (a[0] + b[0]), acc[2] + (a[0] - b[0]) * (a[1] + b[1])];
+            }, [0, 0, 0])), step.vector) > 0;
+            const bottom = along ? [...ring].reverse() : [...ring];
+            const top = (along ? [...ring] : [...ring].reverse()).map(p => add(p, step.vector));
+            const sides = ring.map((a, i) =>
+            {
+                const b = ring[(i + 1) % ring.length];
+                return along
+                    ? face([a, b, add(b, step.vector), add(a, step.vector)])
+                    : face([b, a, add(a, step.vector), add(b, step.vector)]);
+            });
+            return [face(bottom), face(top), ...sides];
+        }
+        default:
+            return [];
+    }
+}
+
 export interface Cuboid
 {
     /** Edge lengths along the local axes, after scaling */

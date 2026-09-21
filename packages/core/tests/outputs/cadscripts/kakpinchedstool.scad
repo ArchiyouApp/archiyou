@@ -1,7 +1,7 @@
 // Archiyou -> OpenSCAD  |  script: kakpinchedstool  |  units: mm
 // OpenSCAD has no units: coordinates are in mm.
 // Parts: 7 CSG, 0 baked, 1 2D
-// Skipped: horizontalSideEdge (open curve), Curve:Line (open curve)
+// Skipped: horizontalSideEdge (open curve), horizontalSideEdge (open curve)
 // Parameters at export, for reference only (nothing in this file is linked to them):
 //   HEIGHT = 480
 //   DEPTH = 270

@@ -83,3 +83,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-09-16 | [Kernel parity: cadscript bbox table, divergence inventory and brep API fixes](./records/2026-09-16-kernel-parity.md) | Claude Fable 5.1 | recipe (+ meshup develop) | 3 |
 | 2026-09-16 | [Kernel parity, second unit: closing the remaining mesh ↔ brep gaps](./records/2026-09-16-kernel-gaps.md) | Claude Fable 5.1 | recipe (+ meshup develop) | 8 |
 | 2026-09-17 | [Plugins cleanup: remove the editor plugin system, to be revisited with modules](./records/2026-09-17-plugins-cleanup.md) | Claude Fable 5.1 | recipe | 2 |
+| 2026-09-16 | [Fabrication from the model: fab module, norm book, estimate and BTLx](./records/2026-09-16-fab-fabrication.md) | Claude Opus 5 | recipe | 0 (not committed yet) |

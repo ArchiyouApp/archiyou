@@ -63,14 +63,14 @@ module longBeamBack() {
 // Mesh  (layer longitudinal): baked, made by flatten()
 module Mesh() {
     color([1, 0, 0]) polyhedron(
-        points = [[0, 0, 350], [0, 0, 0], [0, 90, 0], [0, 90, 345.283299865]],
-        faces = [[3, 2, 1, 0], [1, 2, 3, 0]]
+        points = [[0, 0, 0], [0, 90, 0], [0, 90, 345.283299865], [0, 0, 350]],
+        faces = [[3, 2, 1, 0], [2, 3, 0, 1]]
     );
 }
 
-// Mesh  (layer longitudinal): 2D, a surface without volume, drawn in its own plane: origin [0, 789.817591033, 0], x [0, -0.432477594418, 0.901644680751], y [0, -0.901644680751, -0.432477594418]
+// Mesh  (layer longitudinal): 2D, a surface without volume, drawn in its own plane: origin [0, 474.52553723, 657.332095036], x [0, -0.358367949545, -0.933580426497], y [0, 0.933580426497, -0.358367949545]
 module Mesh_2() {
-    color([1, 0, 0]) polygon([[0, 0], [729.036735944, 0], [644.002018945, 90], [43.1688716504, 90]]);
+    color([1, 0, 0]) polygon([[0, 0], [123.818024112, 0], [536.453236232, 436.729495921], [500.681810805, 529.917245129]]);
 }
 
 // Mesh:Box  (layer seat)

@@ -42,7 +42,7 @@ import { isPointLike, isPivot, isAxis, isColorInput, isMainAxis, isSide, isCurso
     isAnyShapeOrCollectionOrSelectionString, isSelectionString,
     isPointLikeOrAnyShapeOrCollectionOrSelectionString, isSelectorPointRange,
     isLayoutOptions, isModelUnits, isDimensionOptions, isDimensionLevelSettings,
-    isOrientationXY, isAnnotationAutoDimStrategy, isBeam, isBeamBaseLineAlignment } from './typeguards'
+    isOrientationXY, isAnnotationAutoDimStrategy } from './typeguards'
 
 //// TYPES ////
 
@@ -444,20 +444,6 @@ export function inputTypes(): Record<string, InputTypeInfo>
             obj: isModelUnits,
             check: isModelUnits,
             errorMessage: { possible: [`ModelUnits: 'mm','cm','dm','m','km','inch','feet','yd','mi'`] },
-            transformInput: null,
-        },
-        'isBeam': {
-            name: 'Beam',
-            obj: isBeam,
-            check: isBeam,
-            errorMessage: { possible: ['Beam'] },
-            transformInput: null,
-        },
-        'isBeamBaseLineAlignment': {
-            name: 'BeamBaseLineAlignment',
-            obj: isBeamBaseLineAlignment,
-            check: isBeamBaseLineAlignment,
-            errorMessage: { possible: ['start|end|center|middle|number'] },
             transformInput: null,
         },
     }

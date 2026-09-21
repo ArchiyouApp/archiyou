@@ -182,6 +182,7 @@ topLevelCompletions.push(
   { label: 'let',     type: 'keyword' },
   { label: 'await',   type: 'keyword' },
   { label: 'console', type: 'variable', detail: 'Console API' },
+  { label: 'fab',     type: 'variable', detail: 'Fabrication: contacts and fastenings' },
 );
 
 /* ------------------------------------------------------------------ */
@@ -283,6 +284,18 @@ const componentImporterMembers: Completion[] = [
   { label: 'get',     type: 'method', detail: '(...outputs: string|string[])', info: 'Execute the component and get outputs by path, like "default/docs/*"' },
   { label: 'all',     type: 'method', detail: '()',                         info: 'Execute the component and get all outputs of the pipeline' },
   { label: 'list',    type: 'method', detail: '(): string[]',               info: 'Print and return the names of the available components' },
+];
+
+/** Methods of `fab`, the fabrication facade (packages/core/src/modeler/Fab.ts). */
+const fabMembers: Completion[] = [
+  { label: 'operations',  type: 'method', detail: '(shapes, options?): FabOperations', info: 'Read how each part is cut, drilled and fastened, from the model and the norm book. The result has members(), contacts(), fastenings(), fasteners(), list(), parts() (the cut list), warnings(), table() and explain().' },
+  { label: 'estimate',    type: 'method', detail: '(ops, options?): FabEstimate',      info: 'Time, stock and cost of the operations, by the norm book: hours, labour, material, total, lines, stock, warnings(), table(), metrics(), explain(). Every number names its norm row.' },
+  { label: 'fasten',      type: 'method', detail: '(a, b, options?): Fastening',       info: 'Fasten two touching parts, optionally your way: { count: 3 }, { method: \'toe\' } or { fastener: { type: \'screw\', diameter: 5, length: 90 } }. Later operations() use it.' },
+  { label: 'contact',     type: 'method', detail: '(a, b, options?): Contact | null',  info: 'How two parts touch (end-side, side-side, face-side, ...), or null' },
+  { label: 'connections', type: 'method', detail: '(shapes, options?): Contact[]',     info: 'Every touching pair among the shapes' },
+  { label: 'configure',   type: 'method', detail: '(change): fab',                     info: 'Change the norm book for this run, like { joints: { \'stud-plate\': { count: 3 } } }' },
+  { label: 'normBook',    type: 'method', detail: '(tables, { name, version }): fab',  info: 'Use a norm book kept in a sheet for this run: { joints: wb.table(\'joints\'), times: wb.table(\'times\') }. The tables given replace those of fab.json; call it before configure().' },
+  { label: 'config',      type: 'method', detail: '(): FabBook',                       info: 'The norm book in effect, with where every value came from' },
 ];
 
 /** Importer methods that return the importer itself, so a chain stays completable. */
@@ -450,6 +463,14 @@ export function archiyouCompletions(
     // which knows only about shape classes and would fall back to the union of
     // every shape member — badly wrong for a module.
     const moduleRoot = textBefore.match(/(\w+)$/)?.[1];
+    if (moduleRoot === 'fab')
+    {
+      return {
+        from: memberMatch.from + 1,
+        options: fabMembers,
+        validFor: /^\w*$/,
+      };
+    }
     const moduleMembers = moduleRoot ? moduleMemberMap.get(moduleRoot) : undefined;
     if (moduleMembers)
     {

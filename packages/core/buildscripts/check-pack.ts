@@ -85,6 +85,8 @@ const LAZY_ONLY = [
     { what: 'the FreeCAD exporter (FCStdExporter.ts)', marker: 'FreeCAD Document, see https://www.freecad.org' },
     { what: 'the IFC classifier and exporter (IFC4Exporter.ts)', marker: 'ViewDefinition [ReferenceView_V1.2]' },
     { what: 'the shared faceted-geometry helpers (exportGeometry.ts)', marker: 'function splitTJunctions(' },
+    { what: 'the fabrication module (Fab.ts)', marker: 'Archiyou fab: fabrication from the model' },
+    { what: 'the BTLx exporter (BTLxExporter.ts)', marker: 'https://www.design2machine.com/btlx/BTLx_2_3_0.xsd' },
 ];
 
 const ENTRIES = ['index.js', 'runner.worker.js'];

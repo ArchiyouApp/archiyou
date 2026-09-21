@@ -12,13 +12,12 @@ slidercabinet              18 solids    18 procedural 100%    0 baked   0 unreco
 strawwall                  48 solids    48 procedural 100%    0 baked   0 unrecorded
 timberfloor                10 solids    10 procedural 100%    0 baked   0 unrecorded
 timberwall                 13 solids    13 procedural 100%    0 baked   0 unrecorded
-timberwallopenings         40 solids    27 procedural  68%   13 baked   0 unrecorded
+timberwallopenings         40 solids    31 procedural  78%    9 baked   0 unrecorded
                           9 × made by _separateSolids()
-                          4 × made by split()
 tomy                        4 solids     0 procedural   0%    3 baked   1 unrecorded
                           3 × made by copy()
 urhousesketch               7 solids     5 procedural  71%    1 baked   1 unrecorded
                           1 × extrude of a surface with # faces
 workbench                  23 solids    23 procedural 100%    0 baked   0 unrecorded
 
-corpus                    320 solids   294 procedural  92%
+corpus                    320 solids   298 procedural  93%

@@ -71,6 +71,8 @@ describe('fulfillmentExports', () =>
     // throwing takes down every other format in the same run.
     expect(formats).not.toContain('step');
     expect(formats).not.toContain('obj');
+    // BTLx is for timber models only, and needs the mesh kernel
+    expect(formats).not.toContain('btlx');
   });
 
   it('expands a table wildcard to every table format — all of them are files', () =>

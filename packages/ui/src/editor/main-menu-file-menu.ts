@@ -98,6 +98,9 @@ export class MainMenuFileMenu extends SignalWatcher(LitElement)
             <wa-icon slot="icon" library="lucide" name="code"></wa-icon>
             OpenSCAD
           </wa-dropdown-item>
+          <!-- BTLx (timber) export is hidden until it is tested. The handler in
+               editor.ts ('export-btlx') stays wired; restoring it is putting the
+               <wa-dropdown-item slot="submenu" value="export-btlx"> entry back. -->
           <wa-dropdown-item slot="submenu" value="export-script-data">
             <wa-icon slot="icon" library="lucide" name="file-code"></wa-icon>
             Script JS

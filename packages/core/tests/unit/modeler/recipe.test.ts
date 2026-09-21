@@ -9,7 +9,7 @@ import {
     installRecipeRecorder, uninstallRecipeRecorder, setRecipeRecording, isRecipeRecording,
     recipeOf, resolveRecipe, verifyRecipe, explainRecipe, explainNode, isRecipeLive,
     affineInverse, affineApply, affineCompose, rotationMatrix, mirrorMatrix, affineFrame, axesToQuaternion,
-    asCuboid, leafNodes, classify, mapRecipe, RecipeReport, outputsNeedRecipes, nodeBounds,
+    asCuboid, leafNodes, classify, mapRecipe, RecipeReport, outputsNeedRecipes, nodeBounds, toolOpsOf, leafPlanes,
     type Recipe, type RecipeNode, type LeafNode, type RecipeMapping, type ClassificationRule,
 } from '../../../src/modeler/Recipe'
 
@@ -624,6 +624,55 @@ describe('Recipe', () =>
             const [w, x, y, z] = axesToQuaternion(frame.axes)
             const s = Math.sin(Math.PI / 3) / Math.sqrt(3)
             close([w, x, y, z], [Math.cos(Math.PI / 3), s, s, s])
+        })
+    })
+
+    //// faces and tool roles ////
+
+    describe('leaf planes and tool roles', () =>
+    {
+        /** Every face normal points away from a point inside the primitive */
+        const outward = (leaf: LeafNode, inside: readonly number[]) =>
+            leafPlanes(leaf).every(p => (p.point[0] - inside[0]) * p.normal[0] + (p.point[1] - inside[1]) * p.normal[1] + (p.point[2] - inside[2]) * p.normal[2] > 0)
+
+        it('gives the six outward faces of a turned and mirrored box', () =>
+        {
+            const box = makeBox(40, 20, 10)
+            box.rotate(33, [1, 2, 3])
+            box.mirror([1, 0, 0], [5, 0, 0])
+            const leaf = resolveRecipe(recipe(box)) as LeafNode
+            const planes = leafPlanes(leaf)
+            expect(planes).toHaveLength(6)
+            const centre = box.bbox().center()
+            expect(outward(leaf, [centre.x, centre.y, centre.z])).toBe(true)
+            // the faces sit at half the sizes from the centre
+            const distances = planes.map(p => Math.abs((p.point[0] - centre.x) * p.normal[0] + (p.point[1] - centre.y) * p.normal[1] + (p.point[2] - centre.z) * p.normal[2]))
+            expect(distances.map(d => Math.round(d * 1e6) / 1e6).sort((a, b) => a - b)).toEqual([5, 5, 10, 10, 20, 20])
+        })
+
+        it('gives the caps and sides of an extrusion, and only the caps of a cylinder', () =>
+        {
+            const prism = mesh(modeler.polygon([[0, 0, 0], [100, 0, 0], [0, 50, 0]])).extrude(30) as unknown as meshup.Mesh
+            const leaf = resolveRecipe(recipe(prism)) as LeafNode
+            expect(leaf.step.op).toBe('extrude')
+            expect(leafPlanes(leaf)).toHaveLength(5)
+            expect(outward(leaf, [30, 15, 15])).toBe(true)
+
+            const cylinder = makeCylinder(5, 40, [10, 0, -20])
+            const caps = leafPlanes(resolveRecipe(recipe(cylinder)) as LeafNode)
+            expect(caps.map(p => p.normal[2])).toEqual([-1, 1])
+            expect(caps.map(p => p.point[2])).toEqual([-20, 20])
+        })
+
+        it('tells the base of a shape from the tools cut from it', () =>
+        {
+            const base = makeBox(100, 50, 20)
+            base.subtract(makeCylinder(5, 40, [10, 0, -20]))
+            ;(base as any)._intersection(makeBox(80, 80, 80))
+            const roles = toolOpsOf(resolveRecipe(recipe(base)))
+            expect([...roles.entries()].map(([leaf, role]) => [leaf.step.op, role])).toEqual([
+                ['box', 'base'], ['cylinder', 'cut'], ['box', 'common'],
+            ])
         })
     })
 

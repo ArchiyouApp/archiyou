@@ -63,7 +63,6 @@ export * from './Face'
 export * from './Shell'
 export * from './Solid'
 export * from './OBbox'
-export * from './Beams'
 
 
 

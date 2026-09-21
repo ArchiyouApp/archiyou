@@ -16,7 +16,9 @@ Building                                                        IfcBuilding (syn
       wall/openingDiagrams/opening0                             IfcOpeningElement.OPENING               name: hidden polygon named 'opening'
       wall/insulation/insulation0, insulation1[0], insulation1[1] x3 IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical, not a box
       wall/insulation/insulation1[2], insulation2[0] x2         IfcBuildingElementPart.INSULATION       name: 'insulation' · block, horizontal, short  (or IfcMember)
-      wall/insulation/insulation2[1], insulation2[2], insulation3 x3 IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical, not a box
+      wall/insulation/insulation2[1]                            IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical, not a box
+      wall/insulation/insulation2[2]                            IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical
+      wall/insulation/insulation3                               IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical, not a box
     wallLeft                                                    IfcWall.ELEMENTEDWALL                   children: thin horizontal, 4000 x 200 x 2550, sticks 23 vertical, 4 horizontal, 0 sloped
       wall/studs/stud0 .. stud6 x6                              IfcMember.STUD                          name: 'stud' · stick, vertical
       wall/studs/endstud                                        IfcMember.STUD                          name: 'endstud' · stick, vertical
@@ -32,9 +34,11 @@ Building                                                        IfcBuilding (syn
       wall/openingJackStuds/openingJackLeftTop, openingJackRightTop x2 IfcMember.STUD                          name: 'jack' · stick, vertical, short
       wall/openingDiagrams/opening0                             IfcOpeningElement.OPENING               name: hidden polygon named 'opening'
       wall/openingDiagrams/opening0                             IfcWindow.WINDOW                        opening: fills the opening, 600 x 1000, sill 500
-      wall/insulation/insulation0, insulation1[0] x2            IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical
+      wall/insulation/insulation0                               IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical
+      wall/insulation/insulation1[0]                            IfcBuildingElementPart.INSULATION       name: 'insulation' · block, vertical, short
       wall/insulation/insulation1[1]                            IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical, short
-      wall/insulation/insulation1[2], insulation2[0] x2         IfcBuildingElementPart.INSULATION       name: 'insulation' · block, vertical, short
+      wall/insulation/insulation1[2]                            IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical
+      wall/insulation/insulation2[0]                            IfcBuildingElementPart.INSULATION       name: 'insulation' · block, vertical, short
       wall/insulation/insulation2[1]                            IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical, short
       wall/insulation/insulation2[2] .. insulation6 x5          IfcBuildingElementPart.INSULATION       name: 'insulation' · stick, vertical
     wallRight                                                   IfcWall.ELEMENTEDWALL                   children: thin horizontal, 4000 x 200 x 2550, sticks 15 vertical, 2 horizontal, 0 sloped

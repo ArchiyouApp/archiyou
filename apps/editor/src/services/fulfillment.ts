@@ -58,6 +58,7 @@ const FORMAT_META: Record<string, { ext: string, mime: string }> = {
   fcstd: { ext: 'FCStd', mime: 'application/x-extension-fcstd' },
   ifc:   { ext: 'ifc',  mime: 'application/x-step' },
   scad:  { ext: 'scad', mime: 'application/x-openscad' },
+  btlx:  { ext: 'btlx', mime: 'application/xml' },
   dxf:   { ext: 'dxf',  mime: 'application/dxf' },
   svg:   { ext: 'svg',  mime: 'image/svg+xml' },
   // docs
@@ -78,10 +79,10 @@ const CATEGORY_FORMATS: Record<string, readonly string[]> = {
 };
 
 /**
- * Formats a `*` never expands to. All three CAN be exported — an author who wants one
+ * Formats a `*` never expands to. All four CAN be exported — an author who wants one
  * names it explicitly in the fulfillment — but none of them may be pulled in by a
  * wildcard, because a wildcard promises "everything this model can give" and these
- * three depend on something the model does not control:
+ * four depend on something the model does not control:
  *
  *   step    — needs the brep kernel (scope.exporter); on the default kernel the
  *             export throws, and one throwing format fails the whole run, taking the
@@ -91,8 +92,10 @@ const CATEGORY_FORMATS: Record<string, readonly string[]> = {
  *   svg-pages — the per-page intermediate the PDF is painted from, not a separate
  *             deliverable: in a `*` it would ship the same drawing twice (once as
  *             the document SVG, once as page SVGs with a "-2" suffix)
+ *   btlx    — timber machining data: it only means something for a timber model, and
+ *             it needs the mesh kernel (on brep it throws, with the same effect as step)
  */
-const WILDCARD_EXCLUDED_FORMATS = ['step', 'obj', 'svg-pages'];
+const WILDCARD_EXCLUDED_FORMATS = ['step', 'obj', 'svg-pages', 'btlx'];
 
 /** The file extension a format ends up as, without the dot ('svg-pages' → 'svg'). */
 export function formatExtension(format: string): string

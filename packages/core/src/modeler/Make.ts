@@ -801,33 +801,27 @@ export class Make
                         stud.overlapPerc(openingTestBuffer) > 0.02
                     ) // use overlapPerc for robustness
                     {
-                        const splitStuds = this.modeler.collection(
-                            stud.copy().split(openingTestBuffer)
-                        ); // force ShapeCollection
-
-                        if (splitStuds.length >= 1)
+                        // Cripples are the parts of the stud below and above the opening's frame. Built as boxes
+                        // (not by splitting the stud) so they keep a recipe: fabrication reads their cuts from it.
+                        // Under a ridge the top cripple is trimmed by the roof like the stud was.
+                        const studBox = stud.bbox();
+                        const frameBox = openingTestBuffer.bbox();
+                        // box() rather than boxBetween(): it marks the shape a Box, as the studs are
+                        const cripple = (z0: number, z1: number) => this.modeler.box(
+                            studBox.maxX() - studBox.minX(), studBox.maxY() - studBox.minY(), z1 - z0,
+                            [(studBox.minX() + studBox.maxX()) / 2, (studBox.minY() + studBox.maxY()) / 2, (z0 + z1) / 2]);
+                        if (frameBox.minZ() > studBox.minZ() + 1e-6)
                         {
-                            // check if cripples top and bottom are made
-                            const bottomPieces = splitStuds.filter(
-                                s => s.center().z < checkedOpening.center().z
-                            );
-                            const topPieces = splitStuds.filter(
-                                s => s.center().z > checkedOpening.center().z
-                            );
-                            if (bottomPieces.length > 0)
-                                crippleStudsBottom.add(
-                                    bottomPieces.first().name('crippleBottom')
-                                );
-                            if (topPieces.length > 0)
-                                crippleStudsTop.add(topPieces.first().name('crippleTop'));
-
-                            removedStuds.add(stud);
+                            crippleStudsBottom.add(cripple(studBox.minZ(), frameBox.minZ()).name('crippleBottom'));
                         }
-                        else
+                        if (frameBox.maxZ() < studBox.maxZ() - 1e-6)
                         {
-                            // remove primary stud that touches (but is not entirely cut to become cripples)
-                            removedStuds.add(stud);
+                            const crippleTop = cripple(frameBox.maxZ(), studBox.maxZ()).name('crippleTop');
+                            if (ridge) crippleTop._intersection(wallRidgeContourSolid);
+                            crippleStudsTop.add(crippleTop);
                         }
+                        // the primary stud itself makes way for the opening
+                        removedStuds.add(stud);
                     }
                 });
 
@@ -1003,14 +997,16 @@ export class Make
                     ? -studThickness
                     : 0;
 
+                // exactly where the king and jack studs stand, around the frame's outer edges: the
+                // insulation then touches them, with no overlap and no gap
                 insulation
                     .subtract(
                         // king/jack studs combination: left
                         this.modeler
                             .boxBetween(
-                                [checkedOpening.bbox().min().x, (depth / 2) * 1.1, 0], // make it bigger along wall frame (there is no insulation there anyway)
+                                [openingFrameBbox.minX() - studThickness, (depth / 2) * 1.1, 0], // wider than the wall (there is no insulation there anyway)
                                 [
-                                    checkedOpening.bbox().min().x - 2 * studThickness,
+                                    openingFrameBbox.minX() + studThickness,
                                     (-depth / 2) * 1.1,
                                     height
                                 ]
@@ -1022,9 +1018,9 @@ export class Make
                         // right
                         this.modeler
                             .boxBetween(
-                                [checkedOpening.bbox().max().x, (depth / 2) * 1.1, 0],
+                                [openingFrameBbox.maxX() - studThickness, (depth / 2) * 1.1, 0],
                                 [
-                                    checkedOpening.bbox().max().x + 2 * studThickness,
+                                    openingFrameBbox.maxX() + studThickness,
                                     (-depth / 2) * 1.1,
                                     height
                                 ]

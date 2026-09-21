@@ -1,0 +1,193 @@
+{
+    "version": "2026-09-A",
+    "about": {
+        "what": "The fabrication norm book: how Archiyou decides which touching parts are joined, and with what. Scripts change it per run with fab.configure(); fab.config() shows the result.",
+        "units": "Lengths in mm, angles in degrees, whatever unit the model uses.",
+        "measure": "How parts are read from the geometry. A stick is long (length/width >= stickMinLengthRatio) with a compact section (width/thickness <= stickMaxSectionAspect); a sheet is flat (width/thickness >= sheetMinAspect); anything else is a block. The ratios mirror TUNING in IFC4Exporter.ts. A part is a fill (insulation, not fastened) when its material group is in fillMaterialGroups, its name contains one of fillNames, or it sits between two parts on opposite faces and is at least fillMinWidth wide across.",
+        "checks": "Warnings for every fastening, in multiples of the fastener diameter d: penetration into the receiving part, distance to the edge of the contact, spacing between fasteners. minCover is the wood left beyond the tip when a length is chosen automatically.",
+        "fasteners": "The catalogue that length 'auto' picks from: the shortest length that reaches the wanted penetration without coming out of the far side. A row lists one length or several (lengths).",
+        "joints": "Read top to bottom: the first row whose `when` holds decides the joint. `when` can test: contact (end-side, side-side, end-end, face-side, face-face, end-face, edge-...), kinds (stick, sheet, block, fill; 'sheet+stick' in any order, 'stick|block+stick' for either on one side, * for any), relation (parallel, perpendicular, skew), entering and receiving (vertical, horizontal, sloped), direction (both parts), section ('38x120'), thickness (mm), material (name or group of either part) and name (a word in either part's name). Values may be 'a|b', '!=a', '>30', '<=12', '20-40' or use * as a wildcard. `method` is through, toe or none; the row gives the layout for each method it supports. `covered: toe` handles two parts that end on opposite faces of one part at the same place: they block each other's through fasteners, so the later one is fastened toe-wise (unless a method was chosen explicitly).",
+        "patterns": "endRow: `count` fasteners across the end of a member, `inset` from its sides. row: along the contact every `pitch` at most, `end` from both ends, one or two (`rows`) staggered rows; a contact shorter than twice `end` gets one per row, in the middle. corners: `count` (1, 2 or 4) at `edge` from the corners. sheet: along each framing member under a sheet, `edgePitch` within `edgeZone` of the sheet edge and `pitch` in the field. toe: `count` inclined fasteners through the two wide sides of the entering member in turn (so they pass each other), at `angle` from its axis, `start` from the contact and `inset` from its edges. The defaults keep through fasteners at 30 (stud-plate), 15 (header-stud) and toe fasteners at 20 from the edges of a 120 member apart, so they never meet where joints share a part.",
+        "rates": "The hourly labour rate and currency every time is priced at.",
+        "times": "Minutes per operation, read top to bottom like joints: the first row whose `op` and `when` hold is used. Units: handle and notch per part, sawCut per cut, drilling per hole, fasten per fastener (plus `setup` once per joint), sheathe and insulate per m². `when` can test the operation (kind, through, face, diameter, method, joint, pattern, type, shaped) and its part (partKind, section, material, thickness, length). An operation without a row is reported and priced at nothing: the estimate says it is incomplete.",
+        "stock": "What parts are cut from, first matching row wins. Sticks and blocks: stock `lengths`, `pricePerM`, saw `kerf` and the shortest reusable offcut `minOffcut` (mm). Sheets: sheet `size` [width, length], `pricePerM2`, `wastePct` on top of the area cut from part sheets. Fills: `pricePerM3` and `wastePct`. `when` tests partKind, section, material and thickness.",
+        "prices": "Fastener prices sit in the catalogue: `prices` per length (or `price` for a single length), per piece.",
+        "confidence": "Rows marked \"placeholder\" are illustrative numbers, not prices or times from a real workshop. The estimate warns about every line that uses one.",
+        "sources": "Defaults after IRC Table R602.3(1) and EN 1995-1-1 section 8. They are a starting point: calibrate them against your own workshop before trusting counts or times.",
+        "sheet": "The same book can live in a spreadsheet: fab.normBook({ joints: wb.table('joints'), times: wb.table('times') }, { name: 'norms', version: '2026-10' }) uses those tables instead of these sections for the run. One table per section, one row per entry; headers with dots nest (when.contact, through.fastener.diameter), lists go comma separated in one cell (lengths: 2400, 3000), empty cells are left out, rates, measure and checks are one row or key/value rows. Rows are named after the table: norms.joints#0 is the first row under the header.",
+        "calibration": "est.compare({ hours, minutes: { sawCut: 70 } }) holds what a job really took against its estimate and gives the time rows scaled to match (cmp.calibrations[i].row), ready for fab.configure({ times: [...] }) or for the book."
+    },
+    "measure": {
+        "contactTolerance": 0.5,
+        "angleTolerance": 1,
+        "relationTolerance": 5,
+        "minContactArea": 1,
+        "stickMinLengthRatio": 2.5,
+        "stickMaxSectionAspect": 8,
+        "sheetMinAspect": 10,
+        "verticalDeg": 15,
+        "horizontalDeg": 10,
+        "fillMinWidth": 150,
+        "fillMaterialGroups": ["insulation"],
+        "fillNames": ["insulation", "isolatie"]
+    },
+    "checks": {
+        "minPenetrationD": 6,
+        "minEdgeD": 3,
+        "minSpacingD": 5,
+        "minCover": 5
+    },
+    "fasteners": [
+        { "type": "screw", "diameter": 3.5, "lengths": [25, 30, 35, 40, 45], "prices": [0.02, 0.02, 0.02, 0.03, 0.03], "confidence": "placeholder" },
+        { "type": "screw", "diameter": 4, "lengths": [30, 35, 40, 45, 50, 60, 70], "prices": [0.03, 0.03, 0.03, 0.04, 0.04, 0.05, 0.05], "confidence": "placeholder" },
+        { "type": "screw", "diameter": 4.5, "lengths": [40, 45, 50, 60, 70, 80], "prices": [0.04, 0.04, 0.05, 0.05, 0.06, 0.07], "confidence": "placeholder" },
+        { "type": "screw", "diameter": 5, "lengths": [50, 60, 70, 80, 90, 100, 120], "prices": [0.05, 0.06, 0.06, 0.07, 0.08, 0.09, 0.11], "confidence": "placeholder" },
+        { "type": "screw", "diameter": 6, "lengths": [60, 80, 100, 120, 140, 160, 180, 200], "prices": [0.08, 0.10, 0.12, 0.14, 0.16, 0.19, 0.22, 0.25], "confidence": "placeholder" },
+        { "type": "screw", "diameter": 8, "lengths": [100, 120, 160, 200, 240, 300], "prices": [0.25, 0.29, 0.36, 0.44, 0.52, 0.65], "confidence": "placeholder" },
+        { "type": "nail", "diameter": 2.8, "lengths": [50, 60, 65], "prices": [0.01, 0.01, 0.01], "confidence": "placeholder" },
+        { "type": "nail", "diameter": 3.1, "lengths": [75, 90], "prices": [0.01, 0.02], "confidence": "placeholder" },
+        { "type": "nail", "diameter": 3.4, "lengths": [90, 100], "prices": [0.02, 0.02], "confidence": "placeholder" }
+    ],
+    "rates": { "currency": "EUR", "labour": 48, "source": "illustrative workshop rate", "confidence": "placeholder" },
+    "times": [
+        { "op": "handle", "when": { "partKind": "stick|block" }, "unit": "part", "minutes": 1.5, "note": "take from the stack, measure, mark, place", "confidence": "placeholder" },
+        { "op": "sawCut", "when": { "kind": "square" }, "unit": "cut", "minutes": 0.5, "confidence": "placeholder" },
+        { "op": "sawCut", "when": { "kind": "angled" }, "unit": "cut", "minutes": 1.5, "note": "set the saw to the angle", "confidence": "placeholder" },
+        { "op": "sawCut", "when": { "kind": "compound|double" }, "unit": "cut", "minutes": 3, "confidence": "placeholder" },
+        { "op": "drilling", "when": { "through": true }, "unit": "hole", "minutes": 0.8, "confidence": "placeholder" },
+        { "op": "drilling", "unit": "hole", "minutes": 0.6, "confidence": "placeholder" },
+        { "op": "notch", "unit": "part", "minutes": 6, "note": "saw the shoulders, chisel out", "confidence": "placeholder" },
+        { "op": "fasten", "when": { "method": "toe" }, "unit": "fastener", "minutes": 0.4, "setup": 1, "confidence": "placeholder" },
+        { "op": "fasten", "unit": "fastener", "minutes": 0.25, "setup": 1, "note": "setup: bring the parts together, square and clamp", "confidence": "placeholder" },
+        { "op": "sheathe", "when": { "shaped": true }, "unit": "m2", "minutes": 15, "note": "measure and cut to shape", "confidence": "placeholder" },
+        { "op": "sheathe", "unit": "m2", "minutes": 10, "confidence": "placeholder" },
+        { "op": "insulate", "unit": "m2", "minutes": 5, "confidence": "placeholder" }
+    ],
+    "stock": [
+        { "when": { "partKind": "stick|block", "section": "38x89" }, "lengths": [2400, 3000, 3600, 4200, 4800, 5400], "pricePerM": 1.45, "kerf": 4, "minOffcut": 300, "confidence": "placeholder" },
+        { "when": { "partKind": "stick|block", "section": "38x120" }, "lengths": [2400, 3000, 3600, 4200, 4800, 5400], "pricePerM": 1.95, "kerf": 4, "minOffcut": 300, "confidence": "placeholder" },
+        { "when": { "partKind": "stick|block", "section": "38x140" }, "lengths": [2400, 3000, 3600, 4200, 4800, 5400], "pricePerM": 2.25, "kerf": 4, "minOffcut": 300, "confidence": "placeholder" },
+        { "when": { "partKind": "stick|block", "section": "38x184" }, "lengths": [3000, 3600, 4200, 4800, 5400, 6000], "pricePerM": 2.95, "kerf": 4, "minOffcut": 300, "confidence": "placeholder" },
+        { "when": { "partKind": "stick|block", "section": "38x235" }, "lengths": [3000, 3600, 4200, 4800, 5400, 6000], "pricePerM": 3.8, "kerf": 4, "minOffcut": 300, "confidence": "placeholder" },
+        { "when": { "partKind": "sheet", "thickness": 9 }, "size": [1220, 2440], "pricePerM2": 5.2, "wastePct": 10, "confidence": "placeholder" },
+        { "when": { "partKind": "sheet", "thickness": 12 }, "size": [1220, 2440], "pricePerM2": 6.4, "wastePct": 10, "confidence": "placeholder" },
+        { "when": { "partKind": "sheet", "thickness": 18 }, "size": [1220, 2440], "pricePerM2": 8.9, "wastePct": 10, "confidence": "placeholder" },
+        { "when": { "partKind": "fill" }, "pricePerM3": 60, "wastePct": 5, "confidence": "placeholder" }
+    ],
+    "joints": [
+        {
+            "joint": "fill",
+            "when": { "kinds": "fill+*" },
+            "method": "none",
+            "note": "insulation or bay fill: not fastened"
+        },
+        {
+            "joint": "sheet",
+            "when": { "contact": "face-side", "kinds": "sheet+stick|block" },
+            "method": "through",
+            "through": {
+                "pattern": "sheet", "from": "sheet",
+                "fastener": { "type": "screw", "diameter": 4, "length": "auto" },
+                "pitch": 300, "edgePitch": 150, "edgeZone": 50, "end": 15, "penetration": 30
+            },
+            "source": "IRC R602.3(1): sheathing 6 in (150 mm) at edges, 12 in (300 mm) in the field"
+        },
+        {
+            "joint": "stud-plate",
+            "when": { "contact": "end-side", "kinds": "stick|block+stick|block", "entering": "vertical" },
+            "method": "through",
+            "through": {
+                "pattern": "endRow",
+                "fastener": { "type": "screw", "diameter": 5, "length": "auto" },
+                "count": 2, "inset": 30, "penetration": 50
+            },
+            "toe": {
+                "pattern": "toe",
+                "fastener": { "type": "screw", "diameter": 5, "length": 70 },
+                "count": 2, "angle": 30, "inset": 20
+            },
+            "covered": "toe",
+            "source": "IRC R602.3(1): stud to plate, 2 end nails through the plate, or toe nails"
+        },
+        {
+            "joint": "header-stud",
+            "when": { "contact": "end-side", "kinds": "stick|block+stick|block", "entering": "horizontal" },
+            "method": "through",
+            "through": {
+                "pattern": "endRow",
+                "fastener": { "type": "screw", "diameter": 6, "length": "auto" },
+                "count": 2, "inset": 45, "penetration": 60
+            },
+            "toe": {
+                "pattern": "toe",
+                "fastener": { "type": "screw", "diameter": 5, "length": 70 },
+                "count": 2, "angle": 30, "inset": 20
+            },
+            "covered": "toe",
+            "source": "IRC R602.3(1): header, sill or blocking end nailed through the stud. Inset 45 keeps these screws clear of the stud-plate screws (inset 30) that pass through the same header."
+        },
+        {
+            "joint": "rafter-plate",
+            "when": { "contact": "end-side", "kinds": "stick|block+stick|block", "entering": "sloped" },
+            "method": "toe",
+            "toe": {
+                "pattern": "toe",
+                "fastener": { "type": "screw", "diameter": 5, "length": 70 },
+                "count": 2, "angle": 30, "inset": 20
+            },
+            "note": "a sloped member ending on another: toe fastened; a birdsmouth or tie is not modelled",
+            "source": "IRC R602.3(1): rafter to plate, toe nails"
+        },
+        {
+            "joint": "stud-stud",
+            "when": { "contact": "side-side", "kinds": "stick|block+stick|block", "relation": "parallel", "direction": "vertical" },
+            "method": "through",
+            "through": {
+                "pattern": "row", "from": "thinner",
+                "fastener": { "type": "screw", "diameter": 5, "length": "auto" },
+                "pitch": 400, "end": 100, "rows": "auto", "penetration": 30
+            },
+            "source": "IRC R602.3(1): built-up studs and king to jack, face nailed at 16 in (400 mm). 100 from the ends keeps them clear of the end screws, which reach 50 into the studs."
+        },
+        {
+            "joint": "plate-plate",
+            "when": { "contact": "side-side", "kinds": "stick|block+stick|block", "relation": "parallel" },
+            "method": "through",
+            "through": {
+                "pattern": "row", "from": "thinner",
+                "fastener": { "type": "screw", "diameter": 5, "length": "auto" },
+                "pitch": 400, "end": 100, "rows": 2, "penetration": 30
+            },
+            "source": "IRC R602.3(1): double top plate face nailed at 16 in (400 mm)"
+        },
+        {
+            "joint": "cross",
+            "when": { "contact": "side-side", "kinds": "stick|block+stick|block" },
+            "method": "through",
+            "through": {
+                "pattern": "corners", "from": "thinner",
+                "fastener": { "type": "screw", "diameter": 5, "length": "auto" },
+                "count": 2, "edge": 25, "penetration": 30
+            },
+            "source": "IRC R602.3(1): lapped plates at corners and intersections, face nailed"
+        },
+        {
+            "joint": "end-end",
+            "when": { "contact": "end-end" },
+            "method": "none",
+            "note": "end grain to end grain: use a plate or a bracket"
+        },
+        {
+            "joint": "sheet-edge",
+            "when": { "contact": "edge-*|*-edge" },
+            "method": "none",
+            "note": "sheet edges touching: not fastened to each other"
+        },
+        {
+            "joint": "sheet-sheet",
+            "when": { "kinds": "sheet+sheet" },
+            "method": "none",
+            "note": "layered sheets: add a rule for them"
+        }
+    ]
+}

@@ -53,7 +53,7 @@ import { Db } from '../calc/Db';
 
 // Archiyou modules
 import { Console, NATIVE_CONSOLE } from '../console/Console';
-import { Modeler, loadIFCModule } from '../modeler/Modeler';
+import { Modeler, loadIFCModule, loadFabModule } from '../modeler/Modeler';
 import type { ModelMode } from '../modeler/types';
 import { isAnyShape } from '../modeler/types';
 import { Annotator } from '../annotator/Annotator';
@@ -398,6 +398,7 @@ export class Runner
             annotator: state._archiyou.annotator, // dimension/label settings live here (DIMENSION_TEXT_SIZE_MM, ...)
             materials: state._archiyou.materials,
             make: state._archiyou.modeler.make, // Make lives on Modeler, not directly on ArchiyouModules
+            fab: state._archiyou.modeler.fab, // fabrication facade; its module loads on demand (_loadFabWhenUsed)
             interactor: state._archiyou.interactor,
         });
 
@@ -704,11 +705,13 @@ export class Runner
         // loading is async and the per-scope setup (_executionStartRunInScope) is not.
         await this._ensureKernel(request.kernel);
 
-        // Record how shapes are made only when an exporter will read it (FreeCAD and friends)
-        await this._syncRecipeRecording(request.outputs);
+        // Record how shapes are made only when something reads it: FreeCAD and friends, or `fab`
+        await this._syncRecipeRecording(request);
 
         // The IFC classifier loads on demand; explainIFC() is synchronous, so load it up front when used
         await this._loadIFCWhenUsed(request);
+        // Same for the fabrication module behind `fab`
+        await this._loadFabWhenUsed(request);
 
         // Per-statement mode: split the script and execute statement-by-statement so a
         // single failure halts with a partial model instead of losing the whole run, and
@@ -721,11 +724,12 @@ export class Runner
         return await this._execute(request, true, true);
     }
 
-    /** Switch shape recipe recording on for runs that request a recipe format, off for all others.
-     *  Recording stays on through the export at the end of the run, which is what reads it. */
-    private async _syncRecipeRecording(outputs: string[] | undefined): Promise<void>
+    /** Switch shape recipe recording on for runs that request a recipe format or use `fab` (which reads
+     *  saw cuts and drillings from recipes), off for all others. Recording stays on through the export at
+     *  the end of the run, which is what reads it. */
+    private async _syncRecipeRecording(request: RunnerScriptExecutionRequest): Promise<void>
     {
-        const wanted = outputsNeedRecipes(outputs);
+        const wanted = outputsNeedRecipes(request.outputs) || this._usesFab(request);
         if (!wanted && !this._recipe) return;
         this._recipe ??= await import('../modeler/Recipe');
         if (wanted)
@@ -743,6 +747,20 @@ export class Runner
     {
         const codes = [request.script?.code, ...Object.values(this._componentScripts).map(s => (s as any)?.code)];
         if (codes.some(code => typeof code === 'string' && /\bexplainIFC\s*\(/.test(code))) await loadIFCModule();
+    }
+
+    /** Load the fabrication module before a run whose script, or any of its components, uses `fab`:
+     *  every fab.*() call is synchronous for scripts. Components are already prefetched at this point. */
+    private async _loadFabWhenUsed(request: RunnerScriptExecutionRequest): Promise<void>
+    {
+        if (this._usesFab(request)) await loadFabModule();
+    }
+
+    /** Whether the script, or any of its components, calls fab.something() */
+    private _usesFab(request: RunnerScriptExecutionRequest): boolean
+    {
+        const codes = [request.script?.code, ...Object.values(this._componentScripts).map(s => (s as any)?.code)];
+        return codes.some(code => typeof code === 'string' && /\bfab\s*\.\s*\w+\s*\(/.test(code));
     }
 
     private _finalizeExecutionDuration(result: RunnerScriptExecutionResult | null | undefined, executeStartTime: number): void
@@ -1161,6 +1179,7 @@ ${description === '***** CODE ****\nUnexpected end of input' ? code : ''}
         await this._prefetchComponentScripts(request); // idempotent; needed when called via executeUrl()
         await this._prefetchImportAssets(request);      // idempotent; $import() assets for the direct path
         await this._prepareModules(request);            // idempotent; script modules for the direct path
+        await this._loadFabWhenUsed(request);           // idempotent; `fab` for the direct path
 
         const executeStartTime = performance.now();
 
@@ -1328,7 +1347,6 @@ ${contextLines.join('\n')}
         if (request.unitSystem) { scope._archiyou.modeler.unitSystem(request.unitSystem); }
         scope._archiyou.docs.reset(); // TODO: check after rename doc => docs
         scope._archiyou.calc.reset();
-        // scope._archiyou.beams?.reset();
         scope._archiyou.annotator?.reset(); // doesnt have it
         // beginRun registers the script identity so getManagedHandlesData() can detect
         // script switches and produce delete/add ops accordingly. Also passes param names
@@ -2656,6 +2674,24 @@ ${contextLines.join('\n')}
                         name: script?.name,
                         version: script?.version,
                         params: scope._paramManager?.getParams?.() ?? [],
+                    });
+                    if(outp)
+                    {
+                        outputs.push({
+                            path: outputPathData,
+                            output: outp
+                        } as ScriptOutputData);
+                    }
+                    break;
+                }
+
+                case 'btlx': // BTLx timber machining data: parts with saw cuts and drillings, see BTLxExporter.ts
+                {
+                    const script = request.script as any;
+                    outp = await scope.modeler.toBTLx({
+                        ...(outputPath?.formatOptions as any ?? {}),
+                        name: script?.name,
+                        version: script?.version,
                     });
                     if(outp)
                     {

@@ -1,7 +1,7 @@
 import { Point, Vector, Shape, Vertex, Edge, Wire, Face, Shell,
         Solid, ShapeCollection, VertexCollection, Bbox } from '.'
 
-import type { Brep, Beams, Exporter } from '.'
+import type { Brep, Exporter } from '.'
 
 /*  This file still holds a slab of legacy APP types (Doc/Container/Script/Runner/Metric)
     from before the monorepo split — they predate those modules having their own type files.
@@ -154,7 +154,6 @@ export interface ArchiyouApp
     services?: Services,
     // TODO: importer?
     gizmos?: Array<Gizmo>, // TODO: move this to Geom?
-    beams?: Beams,
     paramManager?:ParamManager
     config?: Record<string,any> // all environment variables
 }

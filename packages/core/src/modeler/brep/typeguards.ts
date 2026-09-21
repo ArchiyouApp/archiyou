@@ -1,4 +1,4 @@
-import { Point, Vector, Shape, Vertex, Edge, Wire, Face, Shell, ShapeCollection, VertexCollection, Beam } from '.'
+import { Point, Vector, Shape, Vertex, Edge, Wire, Face, Shell, ShapeCollection, VertexCollection } from '.'
 
 import type { Side, Plane, CoordArray, Coord, Cursor, MainAxis, Axis, SketchPlaneName, PointLike,
           LinearShape, AnyShape, PointLikeSequence, AnyShapeCollection, AnyShapeSequence,
@@ -163,15 +163,6 @@ export function isSelectionString(o:any): o is SelectionString
     return (typeof(o) === 'string')
 }
 
-//// BEAMS MODULE ////
-
-export function isBeamBaseLineAlignment(o:any): o is BeamBaseLineAlignment
-{
-    return (typeof o === 'string') ?
-        ['start','end','center','middle'].includes(o)
-        : isNumeric(o)
-}
-
 //// ADDITIONAL TYPEGUARDS ////
 
 export function isLinearShapeTail(o: any): o is LinearShapeTail
@@ -289,9 +280,4 @@ export function isOrientationXY(o: any): o is OrientationXY
 export function isAnnotationAutoDimStrategy(o: any): o is AnnotationAutoDimStrategy
 {
     return o === 'part' || o === 'levels';
-}
-
-export function isBeam(o: any): o is Beam
-{
-    return o instanceof Beam;
 }

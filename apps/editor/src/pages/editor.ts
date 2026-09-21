@@ -41,7 +41,7 @@ import { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 
 /** Model formats offered in the main menu ▸ Export to… (see _exportModel()) */
-type ExportModelFormat = 'glb'|'stl'|'amf'|'dae'|'svg'|'dxf'|'fcstd'|'ifc'|'scad';
+type ExportModelFormat = 'glb'|'stl'|'amf'|'dae'|'svg'|'dxf'|'fcstd'|'ifc'|'scad'|'btlx';
 
 @customElement('page-editor')
 export class PageEditor extends SignalWatcher(LitElement)
@@ -776,6 +776,8 @@ export class PageEditor extends SignalWatcher(LitElement)
       fcstd: { path: 'default/model/fcstd', mimeType: 'application/x-extension-fcstd', emptyMsg: 'the model produced no geometry.', ext: 'FCStd' },
       ifc: { path: 'default/model/ifc', mimeType: 'application/x-step', emptyMsg: 'the model produced no building elements.' },
       scad: { path: 'default/model/scad', mimeType: 'application/x-openscad', emptyMsg: 'the model produced no geometry.' },
+      // BTLx is XML without a registered mime type
+      btlx: { path: 'default/model/btlx', mimeType: 'application/xml', emptyMsg: 'the model produced no timber parts.' },
     };
 
     const { path: requestPath, mimeType, emptyMsg, ext } = EXPORT_FORMATS[format];

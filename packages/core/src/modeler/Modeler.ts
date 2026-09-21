@@ -48,6 +48,8 @@ import type { toDAEOptions } from "./DAEExporter";
 import type { toFCStdOptions } from "./FCStdExporter";
 import type { toSCADOptions } from "./SCADExporter";
 import type { BuildIFCOptions } from "./IFC4Exporter";
+import type { FabFacade, FabRunState } from "./Fab";
+import type { toBTLxOptions } from "./BTLxExporter";
 
 /** The IFC classifier and exporter, loaded on demand like the other exporters: it is large and most
  *  runs never use it. toIFC() loads it itself. explainIFC() is synchronous for scripts, so the Runner
@@ -59,6 +61,18 @@ export async function loadIFCModule(): Promise<typeof import("./IFC4Exporter")>
 {
     ifcModule ??= await import("./IFC4Exporter");
     return ifcModule;
+}
+
+/** The fabrication module behind `fab` (contacts, fastenings; plans/FAB.md), loaded on demand like the
+ *  exporters. `fab` is synchronous for scripts, so the Runner loads it before running a script that uses
+ *  it (Runner._loadFabWhenUsed). */
+let fabModule: typeof import("./Fab") | null = null;
+
+/** Load the fabrication module once; later calls resolve immediately. */
+export async function loadFabModule(): Promise<typeof import("./Fab")>
+{
+    fabModule ??= await import("./Fab");
+    return fabModule;
 }
 
 // Meshup namespace — imported as value (for instanceof) and type
@@ -117,6 +131,9 @@ export class Modeler
     declare private _activeLayer: meshup.SceneNode | null
     declare private _activeSketch: any
     declare private _make: Make
+    declare private _fab: FabFacade
+    /** Per-run state of the fabrication module. Fab.ts owns its shape; reset() drops it. */
+    _fabState: FabRunState | null = null
     /** Cached brep view of `classes` — see the getter. */
     private _brepClasses: KernelClasses | null = null
 
@@ -172,6 +189,50 @@ export class Modeler
         return this._make;
     }
 
+    /** Fabrication: which parts touch and how they are fastened, from the model and the norm book.
+     *  One stable object: its state lives on the Modeler and reset() clears it, so a scope that bound
+     *  `fab` once keeps working run after run.
+     *
+     *  @example
+     *  ops = fab.operations(make.wall(3000, 2400, 120))
+     *  print(ops.explain())
+     */
+    get fab(): FabFacade
+    {
+        if (!this._fab)
+        {
+            const api = (method: string) => this._requireFab(method);
+            const facade: FabFacade = {
+                contact: (a, b, options) => api('contact').contact(this, a, b, options),
+                connections: (shapes, options) => api('connections').connections(this, shapes, options),
+                fasten: (a, b, options) => api('fasten').fasten(this, a, b, options),
+                operations: (shapes, options) => api('operations').operations(this, shapes, options),
+                estimate: (ops, options) => api('estimate').estimate(this, ops, options),
+                configure: (change) => { api('configure').configure(this, change); return facade; },
+                normBook: (tables, options) => { api('normBook').normBook(this, tables, options); return facade; },
+                config: () => api('config').config(this),
+            };
+            this._fab = facade;
+        }
+        return this._fab;
+    }
+
+    /** Load the fabrication module that `fab` needs. Scripts never call this: the Runner does it for them. */
+    async loadFab(): Promise<void>
+    {
+        await loadFabModule();
+    }
+
+    private _requireFab(method: string): typeof import("./Fab")
+    {
+        if (!fabModule)
+        {
+            throw new Error(`fab.${method}(): the fabrication module is not loaded. Scripts get it automatically; `
+                + 'when calling the Modeler directly, await modeler.loadFab() first.');
+        }
+        return fabModule;
+    }
+
     /** Reset state */
     reset()
     {
@@ -180,6 +241,7 @@ export class Modeler
         this._scene.setSidProvider(() => this._nextSid());
         this._setActiveLayer(this._scene);
         this.setMake();
+        this._fabState = null; // fab.configure() changes, fab.fasten() pairs and drawn diagrams belong to one run
     }
 
     /** Hand out the next shape serial id. Installed on the scene root as a provider by
@@ -1227,6 +1289,16 @@ export class Modeler
         const { buildSCAD } = await import('./SCADExporter')
         const result = buildSCAD(this.scene(), { units: this.units(), ...(options ?? {}) })
         if (result) console.info(`Modeler::toSCAD(): ${result.report.toString()}`)
+        return result?.text ?? null
+    }
+
+    /** BTLx 2.3 (.btlx), the timber machining format: one Part per stick, block or sheet, with its angled saw cuts
+     *  and drillings, as fab.operations() reads them. Mesh kernel only. See BTLxExporter.ts. */
+    async toBTLx(options?: toBTLxOptions): Promise<string | null>
+    {
+        const { buildBTLx } = await import('./BTLxExporter')
+        const result = buildBTLx(this, this.all(), options ?? {})
+        if (result) console.info(`Modeler::toBTLx(): ${result.report.toString()}`)
         return result?.text ?? null
     }
 

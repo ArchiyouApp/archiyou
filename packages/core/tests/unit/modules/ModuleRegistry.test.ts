@@ -154,6 +154,7 @@ describe('ModuleRegistry — validation', () =>
 {
     const cases: Array<[string, Partial<AyModuleCatalogEntry>, RegExp]> = [
         ['a reserved module name', { global: 'calc' }, /already used by Archiyou/],
+        ['the fab facade', { global: 'fab' }, /already used by Archiyou/],
         ['a reserved modeling function', { global: 'box' }, /already used by Archiyou/],
         ['a lowercased modeling function', { global: 'planebetween' }, /already used by Archiyou/],
         ['the $ param namespace', { global: '$fem' }, /not a valid global name/],

@@ -72,3 +72,13 @@ describe('$component completions', () =>
     expect(labels(`$component('wall').model().`)).not.toContain('noCache');
   });
 });
+
+describe('fab completions', () =>
+{
+  it('offers the fabrication methods on fab. and fab as a global', () =>
+  {
+    const labels = (doc: string) => complete(doc)!.options.map(o => o.label);
+    expect(labels(`ops = fab.`)).toEqual(['operations', 'estimate', 'fasten', 'contact', 'connections', 'configure', 'normBook', 'config']);
+    expect(labels(`fa`)).toContain('fab');
+  });
+});
