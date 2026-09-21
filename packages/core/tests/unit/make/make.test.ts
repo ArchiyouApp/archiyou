@@ -52,7 +52,10 @@ describe('Make', async () =>
 
         expect(wall).toBeInstanceOf(SmartShapeCollection)
         expect((wall as any).openingJackStuds.length).toBe(4)
-        expect((wall as any).diagram.toArray().every((shape: any) => shape.style.strokeDash.length > 0)).toBe(true)
+        // The dashed lines are the stud grid; the diagram is the wall's outline, kept hidden.
+        expect((wall as any).gridlines.toArray().length).toBeGreaterThan(0)
+        expect((wall as any).gridlines.toArray().every((shape: any) => shape.style.strokeDash.length > 0)).toBe(true)
+        expect((wall as any).diagram.toArray().every((shape: any) => shape.style.visible === false)).toBe(true)
 
         const probe = localModeler
             .boxBetween([1120, -100, 520], [1480, 100, 1080])

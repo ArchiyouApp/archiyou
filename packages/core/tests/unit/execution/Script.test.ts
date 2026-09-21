@@ -9,6 +9,7 @@ describe('Execution Script Schemas', () =>
     {
         const param = ScriptParam.fromData({
             name: 'settings',
+            type: 'object',
             label: 'Settings',
             schema: {
                 type: 'object',
@@ -55,6 +56,7 @@ describe('Execution Script Schemas', () =>
                 params: {
                     CONFIG: {
                         name:  'config',
+                        type:  'object',
                         label: 'Config',
                         schema: {
                             type:       'object',

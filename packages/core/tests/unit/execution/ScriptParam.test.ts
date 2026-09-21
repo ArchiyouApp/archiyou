@@ -43,19 +43,19 @@ describe('ScriptParam.fromData() — name normalisation', () =>
 {
     it('uppercases the param name', () =>
     {
-        const p = makeParam({ name: 'myParam' })
+        const p = makeParam({ name: 'myParam', type: 'number' })
         expect(p.name).toBe('MYPARAM')
     })
 
     it('keeps an already-uppercase name unchanged', () =>
     {
-        const p = makeParam({ name: 'WIDTH' })
+        const p = makeParam({ name: 'WIDTH', type: 'number' })
         expect(p.name).toBe('WIDTH')
     })
 
     it('uppercases a mixed-case name with underscores', () =>
     {
-        const p = makeParam({ name: 'wall_height' })
+        const p = makeParam({ name: 'wall_height', type: 'number' })
         expect(p.name).toBe('WALL_HEIGHT')
     })
 })
@@ -66,13 +66,13 @@ describe('ScriptParam.fromData() — label', () =>
 {
     it('uses the provided label', () =>
     {
-        const p = makeParam({ name: 'width', label: 'Width (mm)' })
+        const p = makeParam({ name: 'width', type: 'number', label: 'Width (mm)' })
         expect(p.label).toBe('Width (mm)')
     })
 
     it('falls back to the normalised name when no label given', () =>
     {
-        const p = makeParam({ name: 'depth' })
+        const p = makeParam({ name: 'depth', type: 'number' })
         expect(p.label).toBe('DEPTH')
     })
 })
@@ -164,6 +164,7 @@ describe('ScriptParam.validate()', () =>
     {
         const data: ScriptParamData = {
             name:   'width',
+            type:   'number',
             schema: { type: 'number', minimum: 0, maximum: 100 },
         }
         const out = ScriptParam.validate(data)
@@ -282,25 +283,25 @@ describe('ScriptParam.isIterable()', () =>
 {
     it('is true for a number param',   () =>
     {
-        const p = makeParam({ name: 'n', type: 'number' as any, schema: { type: 'number' } })
+        const p = makeParam({ name: 'num', type: 'number', schema: { type: 'number' } })
         expect(p.isIterable()).toBe(true)
     })
 
     it('is true for a boolean param',  () =>
     {
-        const p = makeParam({ name: 'b', type: 'boolean' as any, schema: { type: 'boolean' } })
+        const p = makeParam({ name: 'flag', type: 'boolean', schema: { type: 'boolean' } })
         expect(p.isIterable()).toBe(true)
     })
 
     it('is true for an options param (enum)', () =>
     {
-        const p = makeParam({ name: 'c', schema: { type: 'string', enum: ['a', 'b'] } })
+        const p = makeParam({ name: 'choice', type: 'options', schema: { type: 'string', enum: ['a', 'b'] } })
         expect(p.isIterable()).toBe(true)
     })
 
     it('is false for a text param',    () =>
     {
-        const p = makeParam({ name: 't', schema: { type: 'string' } })
+        const p = makeParam({ name: 'txt', type: 'text', schema: { type: 'string' } })
         expect(p.isIterable()).toBe(false)
     })
 })
@@ -311,19 +312,19 @@ describe('ScriptParam.numValues()', () =>
 {
     it('counts steps for a number param', () =>
     {
-        const p = makeParam({ name: 'n', schema: { type: 'number', minimum: 0, maximum: 10, multipleOf: 2 } })
+        const p = makeParam({ name: 'num', type: 'number', schema: { type: 'number', minimum: 0, maximum: 10, multipleOf: 2 } })
         expect(p.numValues()).toBe(5)
     })
 
     it('returns 2 for a boolean param', () =>
     {
-        const p = makeParam({ name: 'b', schema: { type: 'boolean' } })
+        const p = makeParam({ name: 'flag', type: 'boolean', schema: { type: 'boolean' } })
         expect(p.numValues()).toBe(2)
     })
 
     it('returns enum length for an options param', () =>
     {
-        const p = makeParam({ name: 'c', schema: { type: 'string', enum: ['x', 'y', 'z'] } })
+        const p = makeParam({ name: 'choice', type: 'options', schema: { type: 'string', enum: ['x', 'y', 'z'] } })
         expect(p.numValues()).toBe(3)
     })
 })
@@ -334,25 +335,25 @@ describe('ScriptParam.iterateValues()', () =>
 {
     it('iterates over number steps', () =>
     {
-        const p = makeParam({ name: 'n', schema: { type: 'number', minimum: 0, maximum: 4, multipleOf: 2 } })
+        const p = makeParam({ name: 'num', type: 'number', schema: { type: 'number', minimum: 0, maximum: 4, multipleOf: 2 } })
         expect([...p.iterateValues()]).toEqual([0, 2, 4])
     })
 
     it('iterates over boolean values', () =>
     {
-        const p = makeParam({ name: 'b', schema: { type: 'boolean' } })
+        const p = makeParam({ name: 'flag', type: 'boolean', schema: { type: 'boolean' } })
         expect([...p.iterateValues()]).toEqual([true, false])
     })
 
     it('iterates over enum values', () =>
     {
-        const p = makeParam({ name: 'c', schema: { type: 'string', enum: ['a', 'b', 'c'] } })
+        const p = makeParam({ name: 'choice', type: 'options', schema: { type: 'string', enum: ['a', 'b', 'c'] } })
         expect([...p.iterateValues()]).toEqual(['a', 'b', 'c'])
     })
 
     it('yields the default for a non-iterable param', () =>
     {
-        const p = makeParam({ name: 't', default: 'hello', schema: { type: 'string' } })
+        const p = makeParam({ name: 'txt', type: 'text', default: 'hello', schema: { type: 'string' } })
         expect([...p.iterateValues()]).toEqual(['hello'])
     })
 })
@@ -365,6 +366,7 @@ describe('ScriptParam — toData() round-trip', () =>
     {
         const original: ScriptParamData = {
             name:        'radius',
+            type:        'number',
             label:       'Radius',
             description: 'Sphere radius',
             order:       1,
@@ -384,7 +386,7 @@ describe('ScriptParam — toData() round-trip', () =>
 
     it('re-instantiating from toData() yields an equivalent param', () =>
     {
-        const p1 = ScriptParam.fromData({ name: 'x', schema: { type: 'number', minimum: 0, maximum: 10 } } as ScriptParamData)
+        const p1 = ScriptParam.fromData({ name: 'size', type: 'number', schema: { type: 'number', minimum: 0, maximum: 10 } } as ScriptParamData)
         const p2 = ScriptParam.fromData(p1.toData())
 
         expect(p2.name).toBe(p1.name)
