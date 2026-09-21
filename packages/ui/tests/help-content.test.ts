@@ -13,7 +13,9 @@ import path from 'node:path';
 
 import { describe, it, expect } from 'vitest';
 
-import { parseHelpDoc, codeAt, hasCode, unknownHighlights } from '../src/editor/help/help-content.js';
+import {
+  parseHelpDoc, codeAt, hasCode, unknownHighlights, helpTags, unknownTags, resolveHelpPath,
+} from '../src/editor/help/help-content.js';
 
 const HELP_DIR = path.resolve(import.meta.dirname, '../../../help');
 
@@ -135,6 +137,28 @@ describe('codeAt', () =>
   });
 });
 
+describe('tags and paths', () =>
+{
+  it('reads comma separated tags, trimmed and lower case', () =>
+  {
+    const doc = parseHelpDoc('---\ntags: Beginner, modeling ,IO\n---\n## A\n');
+    expect(helpTags(doc)).toEqual(['beginner', 'modeling', 'io']);
+    expect(unknownTags(doc)).toEqual([]);
+    expect(unknownTags(parseHelpDoc('---\ntags: beginner, cooking\n---\n'))).toEqual(['cooking']);
+    expect(helpTags(parseHelpDoc('## no frontmatter'))).toEqual([]);
+  });
+
+  it('resolves a path against the file it is written in', () =>
+  {
+    expect(resolveHelpPath('en/tutorials/table', 'table.webp')).toBe('en/tutorials/table.webp');
+    expect(resolveHelpPath('en/tutorials/table', './img/a.gif')).toBe('en/tutorials/img/a.gif');
+    expect(resolveHelpPath('en/tutorials/table', '../tour.gif')).toBe('en/tour.gif');
+    expect(resolveHelpPath('en/onboarding', '../../../secret.png')).toBeNull();
+    expect(resolveHelpPath('en/onboarding', 'https://x.org/a.png')).toBeNull();
+    expect(resolveHelpPath('en/onboarding', '/abs.png')).toBeNull();
+  });
+});
+
 describe('help content files', () =>
 {
   const files = listMarkdown(HELP_DIR);
@@ -161,8 +185,34 @@ describe('help content files', () =>
       expect(unknownHighlights(doc)).toEqual([]);
     });
 
+    it(`${file}: has every image it refers to, next to it`, () =>
+    {
+      const markdown = doc.steps.flatMap(s => s.blocks).concat(doc.intro)
+        .filter(b => b.kind === 'markdown')
+        .map(b => b.text)
+        .join('\n');
+      const images = [...markdown.matchAll(/!\[[^\]]*\]\(([^)\s]+)/g)].map(m => m[1])
+        .concat(doc.meta.thumbnail ? [doc.meta.thumbnail] : [])
+        .filter(src => !/^(https?:|data:)/i.test(src));
+
+      images.forEach(src =>
+      {
+        const target = resolveHelpPath(file.replace(/\.md$/, ''), src);
+        // A translation may lean on the English image
+        const english = target?.replace(/^[^/]+\//, 'en/');
+        const found = [target, english].some(p => p && fs.existsSync(path.join(HELP_DIR, p)));
+        expect(found, `${file}: missing image ${src}`).toBe(true);
+      });
+    });
+
     if (file.includes('/tutorials/'))
     {
+      it(`${file}: has tags, all of them tabs in the tutorial list`, () =>
+      {
+        expect(helpTags(doc).length).toBeGreaterThan(0);
+        expect(unknownTags(doc)).toEqual([]);
+      });
+
       it(`${file}: is a tutorial whose first code block replaces the script`, () =>
       {
         expect(hasCode(doc)).toBe(true);

@@ -8,11 +8,11 @@ import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 import {
-  helpEntry, helpStep, helpTutorials, helpCurrentStep, helpLocale, helpLocales,
-  ONBOARDING_PATH, openHelpDoc, goToHelpStep, closeHelpDoc, loadHelpTutorials, setHelpLocale, runHelpCode,
+  helpEntry, helpStep, helpTutorials, helpTutorialTag, helpCurrentStep, helpLocale, helpLocales,
+  ONBOARDING_PATH, openHelpDoc, goToHelpStep, closeHelpDoc, loadHelpTutorials, setHelpLocale, runHelpCode, helpImageUrl,
   type HelpEntry,
 } from '@archiyou/editor/src/state/help';
-import { codeAt, type HelpBlock } from '../help/help-content.js';
+import { codeAt, helpTags, HELP_TAGS, type HelpBlock, type HelpTag } from '../help/help-content.js';
 import { renderMarkdown } from '../../utils/markdown.js';
 
 /**
@@ -52,19 +52,56 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
     const tutorials = helpTutorials.get();
     if (!tutorials) return html`<div class="body empty">${msg('Loading…')}</div>`;
 
+    const tag = helpTutorialTag.get();
+    const shown = tag === 'all' ? tutorials : tutorials.filter(t => helpTags(t.doc).includes(tag));
+
     return html`
+      <div class="tags" role="tablist" aria-label=${msg('Tutorial topics')}>
+        ${['all', ...HELP_TAGS].map(id => html`
+          <button
+            role="tab"
+            class="tag ${id === tag ? 'active' : ''}"
+            aria-selected=${id === tag}
+            @click=${() => helpTutorialTag.set(id)}
+          >${this._tagLabel(id)}</button>`)}
+      </div>
       <div class="body list">
-        ${tutorials.map(t => html`
-          <button class="card" @click=${() => openHelpDoc(t.path)}>
-            <span class="card-title">${t.doc.meta.title ?? t.path}</span>
-            ${t.doc.meta.description ? html`<span class="card-text">${t.doc.meta.description}</span>` : nothing}
-            <span class="card-meta">
-              ${t.doc.meta.level ? html`<span class="level">${t.doc.meta.level}</span>` : nothing}
-              ${msg(str`${t.doc.steps.length} steps`)}
-            </span>
-          </button>`)}
+        ${shown.length ? shown.map(t => this._renderCard(t)) : html`<p class="empty">${msg('No tutorials on this topic yet.')}</p>`}
       </div>
     `;
+  }
+
+  private _renderCard(t: HelpEntry)
+  {
+    const thumbnail = t.doc.meta.thumbnail ? helpImageUrl(t, t.doc.meta.thumbnail) : null;
+
+    return html`
+      <button class="card" @click=${() => openHelpDoc(t.path)}>
+        ${thumbnail ? html`<img class="thumbnail" src=${thumbnail} alt="" loading="lazy">` : nothing}
+        <span class="card-body">
+          <span class="card-title">${t.doc.meta.title ?? t.path}</span>
+          ${t.doc.meta.description ? html`<span class="card-text">${t.doc.meta.description}</span>` : nothing}
+          <span class="card-meta">
+            ${helpTags(t.doc).map(tag => html`<span class="card-tag">${this._tagLabel(tag)}</span>`)}
+          </span>
+        </span>
+      </button>`;
+  }
+
+  /** Display name of a tutorial tab; unknown tags show as written. */
+  private _tagLabel(tag: string): string
+  {
+    const labels: Record<HelpTag | 'all', string> = {
+      all:           msg('All'),
+      beginner:      msg('Beginner'),
+      advanced:      msg('Advanced'),
+      practical:     msg('Practical'),
+      modeling:      msg('Modeling'),
+      documentation: msg('Documentation'),
+      io:            msg('IO'),
+      publishing:    msg('Publishing'),
+    };
+    return labels[tag as HelpTag] ?? tag;
   }
 
   private _renderPlayer(entry: HelpEntry)
@@ -110,8 +147,9 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
   private _renderBlocks(blocks: HelpBlock[], entry: HelpEntry, stepIndex: number)
   {
     return blocks.map((block, i) => block.kind === 'markdown'
-      // Safe by construction: see utils/markdown.ts (raw HTML in the source is escaped)
-      ? html`<div class="markdown">${unsafeHTML(renderMarkdown(block.text))}</div>`
+      // Safe by construction: see utils/markdown.ts (raw HTML in the source is escaped;
+      // relative images resolve only to files bundled next to the help markdown)
+      ? html`<div class="markdown">${unsafeHTML(renderMarkdown(block.text, { resolveImage: src => helpImageUrl(entry, src) }))}</div>`
       : html`
         <div class="code">
           ${block.action ? html`
@@ -228,6 +266,31 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
     .empty { color: var(--color-text-muted); }
 
     /* ── Tutorial list ── */
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-xs);
+      padding: var(--space-sm) var(--space-md) 0;
+      flex-shrink: 0;
+    }
+    .tag {
+      padding: 0 6px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-full);
+      background: transparent;
+      color: var(--color-text-muted);
+      font: inherit;
+      font-size: var(--text-x-xs, 0.625rem);
+      line-height: 1.6;
+      cursor: pointer;
+    }
+    .tag:hover { color: var(--color-text); }
+    .tag.active {
+      border-color: var(--color-primary);
+      background: var(--color-primary-subtle);
+      color: var(--color-primary);
+    }
+
     .list {
       display: flex;
       flex-direction: column;
@@ -235,9 +298,10 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
     }
     .card {
       display: flex;
-      flex-direction: column;
-      gap: var(--space-xs);
-      padding: var(--space-sm) var(--space-md);
+      align-items: flex-start;
+      gap: var(--space-sm);
+      padding: var(--space-xs);
+      overflow: hidden;
       border: 1px solid var(--color-border);
       border-radius: var(--radius-md);
       background: var(--color-bg);
@@ -247,16 +311,37 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
       cursor: pointer;
     }
     .card:hover { border-color: var(--color-primary); }
-    .card-title { font-weight: 600; }
-    .card-text { color: var(--color-text-muted); }
+    /* Beside the text; the whole model shows, whatever the image's own proportions */
+    .thumbnail {
+      display: block;
+      flex: 0 0 15%;
+      max-width: 60px;
+      aspect-ratio: 1;
+      object-fit: contain;
+      background: var(--color-bg-code, rgba(0, 0, 0, 0.04));
+      border-radius: var(--radius-sm);
+    }
+    .card-body {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      line-height: 1.35;
+    }
+    .card-title { font-size: var(--text-sm); font-weight: 600; }
+    .card-text { font-size: var(--text-xs); color: var(--color-text-muted); }
     .card-meta {
       display: flex;
-      gap: var(--space-sm);
-      font-size: var(--text-xs);
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 3px;
       color: var(--color-text-muted);
     }
-    .level {
-      padding: 0 var(--space-xs);
+    .card-tag {
+      padding: 0 3px;
+      font-size: var(--text-x-xs, 0.625rem);
+      line-height: 1.5;
       border-radius: var(--radius-sm);
       background: var(--color-primary-subtle);
       color: var(--color-primary);
@@ -287,6 +372,18 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
     .markdown p, .markdown ul, .markdown ol { margin: 0.6rem 0; }
     .markdown ul, .markdown ol { padding-left: 1.4rem; }
     .markdown a { color: var(--color-primary); }
+    /* Images (screenshots, animations) sit in a 16:9 box the width of the panel.
+       A portrait image is centred with space left and right instead of growing tall
+       and pushing the text out of view. */
+    .markdown img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: contain;
+      background: var(--color-bg-code, rgba(0, 0, 0, 0.04));
+      border-radius: var(--radius-md);
+      border: 1px solid var(--color-border);
+    }
     .markdown code,
     .code pre {
       font-family: var(--font-mono, monospace);

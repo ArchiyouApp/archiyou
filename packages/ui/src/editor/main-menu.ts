@@ -7,7 +7,7 @@ import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
-import './main-menu-file-menu.js';
+import './main-menu-hamburger.js';
 import '../configurator/configurator.js';
 
 import { userState } from '@archiyou/editor/src/state/workspace';
@@ -22,7 +22,7 @@ export class MainMenu extends SignalWatcher(LitElement)
   {
     return html`
       <!-- top: hamburger dropdown -->
-      <editor-main-menu-file-menu></editor-main-menu-file-menu>
+      <editor-main-menu-hamburger></editor-main-menu-hamburger>
 
       <!-- sections -->
       <div class="sections">
@@ -60,7 +60,7 @@ export class MainMenu extends SignalWatcher(LitElement)
           : ''}
       </wa-dialog>
 
-      <!-- bottom: admin (operators only), settings. Help lives in the right-hand toolbar. -->
+      <!-- bottom: admin (operators only), settings. Help is the first tool in the right-hand toolbar. -->
       <div class="bottom">
         ${userState.get().isAdmin
           ? html`

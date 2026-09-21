@@ -5,7 +5,9 @@
  * so they read well on GitHub, on a future docs site and to a translator. Three
  * conventions carry the extra meaning, all invisible to a normal markdown renderer:
  *
- *   1. Flat frontmatter (`key: value` lines between `---`) — title, description, level, order.
+ *   1. Flat frontmatter (`key: value` lines between `---`) — title, description, order,
+ *      tags (comma separated, see HELP_TAGS) and thumbnail (an image next to the file).
+ *      Images in the text (`![alt](tour.gif)`) are also relative to the file.
  *   2. Every `## ` heading starts a step. Text before the first one is the intro.
  *   3. A word after a code fence's language says what the editor does with it:
  *        ```js run     replace the tutorial's code with this block, then execute
@@ -72,6 +74,52 @@ export const HELP_TARGETS = Object.freeze([
 ] as const);
 
 export type HelpTarget = typeof HELP_TARGETS[number];
+
+/** Tags a tutorial may carry; each is a tab in the tutorial list, in this order.
+ *  A unit test fails on tags used in content but not listed here. */
+export const HELP_TAGS = Object.freeze([
+  'beginner',
+  'advanced',
+  'practical',
+  'modeling',
+  'documentation',
+  'io',
+  'publishing',
+] as const);
+
+export type HelpTag = typeof HELP_TAGS[number];
+
+/** The document's tags from its `tags:` frontmatter, lower case. */
+export function helpTags(doc: HelpDoc): string[]
+{
+  return (doc.meta.tags ?? '')
+    .split(',')
+    .map(tag => tag.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** Tags the content uses that have no tab. */
+export function unknownTags(doc: HelpDoc): string[]
+{
+  return helpTags(doc).filter(tag => !(HELP_TAGS as readonly string[]).includes(tag));
+}
+
+/** Resolve a path written in a help file (`thumbnail:`, an image) against that file's
+ *  own path, e.g. ('en/tutorials/table', './table.png') → 'en/tutorials/table.png'.
+ *  null for an absolute URL or a path that climbs out of the help directory. */
+export function resolveHelpPath(filePath: string, relative: string): string | null
+{
+  if (/^([a-z]+:|\/)/i.test(relative)) return null;
+
+  const parts = relative.split('/').reduce<string[] | null>((dir, part) =>
+  {
+    if (!dir || part === '.' || part === '') return dir;
+    if (part === '..') return dir.length ? dir.slice(0, -1) : null;
+    return [...dir, part];
+  }, filePath.split('/').slice(0, -1));
+
+  return parts ? parts.join('/') : null;
+}
 
 const FENCE = /^(\s*)(`{3,}|~{3,})\s*([^`\s]*)\s*(.*)$/;
 const STEP = /^##\s+(.+?)\s*#*\s*$/;

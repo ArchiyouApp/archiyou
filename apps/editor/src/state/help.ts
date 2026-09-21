@@ -15,7 +15,7 @@
 
 import { signal, computed } from '@lit-labs/signals';
 
-import { parseHelpDoc, codeAt, hasCode, type HelpDoc } from '@archiyou/ui/editor/help/help-content.js';
+import { parseHelpDoc, codeAt, hasCode, resolveHelpPath, type HelpDoc } from '@archiyou/ui/editor/help/help-content.js';
 import { createNewScript, updateScriptName } from './core';
 import { scriptParams, deleteParam } from './editor';
 
@@ -34,6 +34,11 @@ const SOURCES = import.meta.glob('../../../../help/*/**/*.md', { query: '?raw', 
 
 const FILES = new Map(Object.entries(SOURCES)
   .map(([file, load]) => [file.replace(/^.*?\/help\//, '').replace(/\.md$/, ''), load] as const));
+
+/** `help/<locale>/<path>.<image>` → its URL. Only the URLs are in the bundle; the
+ *  browser fetches an image when a card or step shows it. */
+const IMAGES = new Map(Object.entries(import.meta.glob('../../../../help/*/**/*.{png,jpg,jpeg,gif,webp,avif,svg}', { query: '?url', import: 'default', eager: true }) as Record<string, string>)
+  .map(([file, url]) => [file.replace(/^.*?\/help\//, ''), url] as const));
 
 /** Locales with any help content, English first */
 export const helpLocales: string[] = [...new Set([...FILES.keys()].map(key => key.split('/')[0]))]
@@ -56,6 +61,8 @@ export const helpEntry = signal<HelpEntry | null>(null);
 export const helpStep = signal<number>(0);
 /** Tutorials of the current locale, sorted for the list; null until loaded */
 export const helpTutorials = signal<HelpEntry[] | null>(null);
+/** The tab of the tutorial list: a tag (HELP_TAGS), or 'all' */
+export const helpTutorialTag = signal<string>('all');
 
 export const helpCurrentStep = computed(() => helpEntry.get()?.doc.steps[helpStep.get()] ?? null);
 
@@ -74,7 +81,7 @@ export async function loadHelpDoc(path: string): Promise<HelpEntry | null>
   return { path, locale, doc: parseHelpDoc(source) };
 }
 
-/** Load the tutorial list: every `tutorials/*` of the locale (or English), by level then order. */
+/** Load the tutorial list: every `tutorials/*` of the locale (or English), by `order`. */
 export async function loadHelpTutorials(): Promise<void>
 {
   const paths = [...new Set([...FILES.keys()]
@@ -82,15 +89,22 @@ export async function loadHelpTutorials(): Promise<void>
     .filter(path => path.startsWith('tutorials/')))];
 
   const entries = (await Promise.all(paths.map(loadHelpDoc))).filter((e): e is HelpEntry => !!e);
-  const LEVELS = ['beginner', 'intermediate', 'advanced'];
-  const rank = (e: HelpEntry) => [LEVELS.indexOf(e.doc.meta.level ?? ''), Number(e.doc.meta.order ?? 999)];
+  const order = (e: HelpEntry) => Number(e.doc.meta.order ?? Infinity);
 
-  helpTutorials.set(entries.sort((a, b) =>
-  {
-    const [la, oa] = rank(a);
-    const [lb, ob] = rank(b);
-    return la - lb || oa - ob || a.path.localeCompare(b.path);
-  }));
+  helpTutorials.set(entries.sort((a, b) => order(a) - order(b) || a.path.localeCompare(b.path)));
+}
+
+/** URL of an image a help file refers to (its `thumbnail:`, or `![](…)` in the text),
+ *  relative to that file. A translation without its own copy uses the English image.
+ *  Absolute URLs pass through; unknown files give null. */
+export function helpImageUrl(entry: HelpEntry, src: string): string | null
+{
+  if (/^(https?:|data:)/i.test(src)) return src;
+
+  return [entry.locale, DEFAULT_LOCALE]
+    .map(locale => resolveHelpPath(`${locale}/${entry.path}`, src))
+    .map(path => (path ? IMAGES.get(path) : undefined))
+    .find((url): url is string => !!url) ?? null;
 }
 
 /** Open a help document in the player at its first step. A tutorial (a document

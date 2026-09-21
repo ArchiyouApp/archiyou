@@ -1,7 +1,8 @@
 ---
 title: Combining shapes
 description: Subtract, union and intersect shapes to make new ones
-level: beginner
+tags: beginner, modeling
+thumbnail: combining-shapes.webp
 order: 2
 ---
 

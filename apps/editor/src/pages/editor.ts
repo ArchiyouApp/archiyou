@@ -55,6 +55,7 @@ export class PageEditor extends SignalWatcher(LitElement)
 
   /** Toolbar order, top to bottom. */
   readonly TOOLS: ToolDef[] = [
+    { id: 'help',    icon: 'circle-question-mark', name: 'Help', exclusive: false, component: 'editor-help-tool',   width: 32, height: 60 },
     { id: 'console', icon: 'terminal',   name: 'Console',   exclusive: false, component: 'editor-console-tool',  width: 30, height: 50 },
     { id: 'scene',   icon: 'network',    name: 'Scene',     exclusive: false, component: 'editor-scene-tool',    width: 30, height: 50 },
     { id: 'data',    icon: 'table',      name: 'Data',      exclusive: false, component: 'editor-data-tool',     width: 30, height: 50 },
@@ -62,7 +63,6 @@ export class PageEditor extends SignalWatcher(LitElement)
     { id: 'docs',    icon: 'file-text',  name: 'Documents', exclusive: true,  component: 'editor-document-tool', width: 40, height: 100, outputs: ['default/docs/*/svg', 'default/docs/*/svg-pages'] },
     { id: 'instruct', icon: 'list-ordered', name: 'Instructions', exclusive: false, component: 'editor-instruct-tool', width: 30, height: 50 },
     { id: 'profiling', icon: 'timer',    name: 'Profiling', exclusive: false, component: 'editor-profiling-tool', width: 30, height: 50 },
-    { id: 'help',      icon: 'circle-help', name: 'Help',   exclusive: false, component: 'editor-help-tool',     width: 32, height: 60, align: 'end' },
   ];
 
   //// 

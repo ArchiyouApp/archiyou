@@ -19,8 +19,6 @@ export interface ToolDef
   height: number;
   /** Runner output paths this tool needs; only requested while the tool is active */
   outputs?: string[];
-  /** 'end' places the button at the bottom of the toolbar */
-  align?: 'end';
 }
 
 @customElement('editor-toolbar')
@@ -31,10 +29,7 @@ export class EditorToolbar extends LitElement
   {
     return html`
       <div class="tool-buttons">
-        ${this.tools.filter(t => t.align !== 'end').map(tool => this._renderButton(tool))}
-      </div>
-      <div class="tool-buttons end">
-        ${this.tools.filter(t => t.align === 'end').map(tool => this._renderButton(tool))}
+        ${this.tools.map(tool => this._renderButton(tool))}
       </div>
     `;
   }
@@ -91,10 +86,6 @@ export class EditorToolbar extends LitElement
       align-items: center;
       gap: var(--space-1, 4px);
       width: 100%;
-    }
-
-    .tool-buttons.end {
-      margin-top: auto;
     }
 
     wa-button.active::part(base) {

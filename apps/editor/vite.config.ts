@@ -68,6 +68,19 @@ export default defineConfig(() => {
       },
     },
 
+    plugins: [
+      // Help content (help/ at the repository root, see src/state/help.ts) lies outside
+      // this app, where the dev server does not look for new files. Watch it, so a new
+      // tutorial or image shows up without restarting.
+      {
+        name: 'archiyou-watch-help',
+        configureServer(server)
+        {
+          server.watcher.add(path.resolve(import.meta.dirname, '../../help'));
+        },
+      },
+    ],
+
     // Workers must be ES modules so they can use dynamic imports and top-level await
     worker: {
       format: 'es' as const,

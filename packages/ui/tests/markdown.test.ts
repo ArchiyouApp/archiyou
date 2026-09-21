@@ -119,3 +119,25 @@ describe('renderMarkdown', () => {
     expect(renderMarkdown(source)).toBe(markdownToHtml(source));
   });
 });
+
+describe('markdownToHtml — resolveImage (help content)', () => {
+  const resolveImage = (src: string) => (src === 'tour.gif' ? '/assets/tour-abc.gif' : null);
+
+  it('uses the URL the caller resolves a relative image to', () => {
+    const out = markdownToHtml('![Tour](tour.gif)', { resolveImage });
+    expect(out).toContain('src="/assets/tour-abc.gif"');
+    expect(out).toContain('alt="Tour"');
+  });
+
+  it('still shows the alt text for a relative image it cannot resolve', () => {
+    const out = markdownToHtml('![Missing](missing.png)', { resolveImage });
+    expect(out).not.toContain('<img');
+    expect(out).toContain('Missing');
+  });
+
+  it('never asks about an absolute image', () => {
+    const asked: string[] = [];
+    markdownToHtml('![x](https://example.com/x.png)', { resolveImage: src => { asked.push(src); return null; } });
+    expect(asked).toEqual([]);
+  });
+});
