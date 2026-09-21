@@ -78,23 +78,22 @@ export interface toProjectionSVGOptions extends toSVGOptions
     view?: ProjectionView
     /** Explicit camera direction, overrides `view`. Default [-1,-1,1]. */
     cam?: [number, number, number]
-    /** Tessellation samples for curved edges. Default 16 (8 for thumbnails). */
+    /** Visibility samples per edge, `'raycast'` only. Default 16 (8 for thumbnails). */
     samples?: number
     /** Facet-boundary edges below this angle are dropped. Default 10 (20 for thumbnails). */
     featureAngle?: number
     /** Which hidden-line-removal algorithm the kernel should run.
      *
-     *  - `'raycast'` (default) — samples visibility along each edge. Endpoints
-     *    are approximate and an occluder narrower than the sample spacing is
-     *    missed.
-     *  - `'exact'` — computes occlusion analytically. Correct endpoints, finds
-     *    occluders of any size, and ignores `samples`.
+     *  - `'exact'` (default) — computes occlusion analytically. Correct endpoints,
+     *    finds occluders of any size, and ignores `samples`.
+     *  - `'raycast'` — samples visibility along each edge. Endpoints are
+     *    approximate and an occluder narrower than the sample spacing is missed.
      *  - `'clip'` / `'painter'` — per shape, no merge into a single solid.
      *    Need convex, non-interpenetrating shapes. `'painter'` emits opaque
      *    fills, so it is unsuitable for DXF export.
      */
     strategy?: 'raycast' | 'exact' | 'clip' | 'painter'
-    /** Downgrade to `'raycast'` with a warning when a per-shape strategy does
+    /** Downgrade to `'exact'` with a warning when a per-shape strategy does
      *  not apply, instead of throwing. Default false. */
     fallback?: boolean
 }
@@ -123,7 +122,6 @@ export interface ThumbnailSVGResult
 
 const DEFAULT_PADDING       = 0.06
 const DEFAULT_STROKE_WIDTH  = 1.25
-const DEFAULT_CAM: [number, number, number] = [-1, -1, 1]
 
 /** Thumbnail-tuned projection settings. Coarser than the library defaults because at
  *  40–220px an 8-sample arc is indistinguishable from a 16-sample one, and near-coplanar
@@ -764,19 +762,22 @@ export function projectMeshes(meshCollection: any, options?: toProjectionSVGOpti
     if (!meshCollection || meshCollection.length === 0) return null
 
     const o = options ?? {}
-    const samples = o.samples ?? 16
-    const featureAngle = o.featureAngle ?? 10
-    const hiddenLines = o.hidden !== false
 
+    // Settings left undefined — the camera, samples, feature angle and hidden-line
+    // algorithm — take meshup's own defaults, so there is one set of them.
+    const settings = {
+        hiddenLines: o.hidden !== false,
+        samples: o.samples,
+        featureAngle: o.featureAngle,
+        method: o.strategy,
+        fallback: o.fallback,
+    }
     const view = o.view ?? 'iso'
-    // Which hidden-line algorithm to run. Undefined means the kernel default
-    // ('raycast'), so nothing changes for a caller that does not ask.
-    const viewOpts = { strategy: o.strategy, fallback: o.fallback }
     if (!o.cam && view !== 'iso')
     {
-        return meshCollection._elevation(view, hiddenLines, false, samples, featureAngle, viewOpts)
+        return meshCollection._elevation(view, settings)
     }
-    return meshCollection._iso(o.cam ?? DEFAULT_CAM, hiddenLines, false, samples, featureAngle, viewOpts)
+    return meshCollection._iso(o.cam, settings)
 }
 
 /** Projection + serialization in one step. Null when there are no meshes / nothing visible. */
