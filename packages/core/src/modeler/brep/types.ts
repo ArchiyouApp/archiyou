@@ -225,18 +225,6 @@ export interface ExportGLTFOptions
 }   
 
 
-/** Archiyou-specific information in GLTF */
-export interface ArchiyouData
-{
-    scenegraph: SceneGraphNode
-    gizmos: Array<Gizmo>,
-    annotations: Array<DimensionLineData>, 
-    docs: {[key:string]:DocData} // all documents in data and serialized content
-    errors?: Array<StatementResult>, // only needed for internal use in the future
-    messages?: Array<ConsoleMessage>, // NOTE: for internal use and export in GLTF
-    tables?:{[key:string]:any}, // raw data tables
-}
-
 
 export type EngineStateStatus = 'init' | 'loaded' | 'executing' | 'executed'
 

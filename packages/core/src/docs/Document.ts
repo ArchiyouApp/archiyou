@@ -49,7 +49,7 @@ import type { DocUnits, PageSize, PageOrientation, DocPipeline, DocData,
     ContainerPositionLike, ContainerPositionAbs, DocUnitsWithPerc, PercentageString,
     ValueWithUnitsString, WidthHeightInput, ContainerTableInput,
     DocGraphicInputRect, DocGraphicInputCircle, DocGraphicInputOrthoLine,
-    ContainerBlock, TitleBlockInput, LabelBlockOptions, DocSVGPage, ViewOptions } from './types'
+    ContainerBlock, TitleBlockInput, LabelBlockOptions, InstructableOptions, DocSVGPage, ViewOptions } from './types'
 
 import { isDocUnits, isPercentageString, isValueWithUnitsString, isAnyPageContainer,
     isContainerPositionCoordRel, isWidthHeightInput, isContainerTableInput, isPageOrientation,
@@ -836,6 +836,188 @@ export class Document
         }
 
         return this // Return Document to not break chaining. Use doc.lastBlock() to get block info
+    }
+
+    //// INSTRUCTABLES ////
+
+    /** Lay an instructable's steps out over this document's pages.
+     *
+     *      docs.create('manual').instructable('assembly', { columns: 2, rows: 2 });
+     *
+     *  Pure composition over the containers that already exist — a view, some text — the same
+     *  way titleblock() and labelblock() are built. There is no flow layout anywhere in a
+     *  Page (every container is absolutely positioned), so the grid and the page breaks are
+     *  computed here, in relative page-content coordinates.
+     *
+     *  Each cell is: a step number, a title, the step's drawing, and a note under it. The
+     *  drawing is a hidden-line projection taken by the Instruct — a document view draws only
+     *  2D line-work, so handing it the 3D scene directly would draw nothing at all.
+     *
+     *  Text does not reflow the cell it is in. There are no font metrics in a worker, so
+     *  TextArea wraps on an estimated character width and a long note is clipped by the
+     *  cell's own clip path rather than pushing the drawing off the page. Give the step
+     *  shorter prose, or more `noteLines`.
+     */
+    instructable(name?:string, options?:InstructableOptions):this
+    {
+        const OPTIONS_DEFAULT = {
+            columns: 2,
+            rows: 2,
+            gutter: 0.03,
+            numbering: true,
+            numberSize: '7mm',
+            titleSize: '4.5mm',
+            noteSize: '3mm',
+            noteLines: 2,
+            border: false,
+            contextColor: '#b0b0b0' as string|null,
+            subjectColor: null as string|null,
+            strategy: 'clip' as const,
+        } as Required<Omit<InstructableOptions,'pageName'>>
+
+        const o = { ...OPTIONS_DEFAULT, ...(options ?? {}) };
+
+        const instruct = (name)
+                            ? this._docs.getInstruct(name)
+                            : (this._docs._instructs[0] ?? null);
+
+        if(!instruct)
+        {
+            throw new Error(`Document::instructable(): No instructable ${name ? `named "${name}" ` : ''}found. `
+                + `Make one first with docs.instruct(${name ? `'${name}'` : ''}), then add steps to it. `
+                + `Available: ${this._docs.instructs().join(', ') || '(none)'}`);
+        }
+
+        const data = instruct.toData();
+        if(data.steps.length === 0)
+        {
+            console.warn(`Document::instructable(): instructable "${instruct._name}" has no steps yet, `
+                + `so nothing was placed. Add them with docs.instruct('${instruct._name}').step('...')`);
+            return this;
+        }
+
+        this._getOrMakeActivePage();
+
+        const pageBase = options?.pageName ?? instruct._name;
+        const perPage = Math.max(1, o.columns * o.rows);
+
+        // Cell geometry, in relative page-content coordinates ([0-1], y up from the bottom)
+        const cellW = (1 - o.gutter * (o.columns - 1)) / o.columns;
+        const cellH = (1 - o.gutter * (o.rows - 1)) / o.rows;
+
+        const toRelH = (v:string|number) => this._activePage._resolveValueWithUnitsStringToRel(v, 'height');
+        const numberH = o.numbering ? toRelH(o.numberSize) : 0;
+        const titleH = toRelH(o.titleSize);
+        const noteH = toRelH(o.noteSize) * o.noteLines;
+
+        data.steps.forEach((step, i) =>
+        {
+            /*  A new page whenever the grid is full. The first page is whatever was already
+                active, so a script can put a title block on it first. */
+            if(i > 0 && i % perPage === 0)
+            {
+                this.page(`${pageBase}-${Math.floor(i / perPage) + 1}`);
+            }
+
+            const slot = i % perPage;
+            const col = slot % o.columns;
+            const row = Math.floor(slot / o.columns);
+
+            const left = col * (cellW + o.gutter);
+            const top = 1 - row * (cellH + o.gutter);   // y up, so the first row is at the top
+
+            this._placeStep(instruct, step, i, { left, top, cellW, cellH, numberH, titleH, noteH }, o);
+        });
+
+        return this;
+    }
+
+    /** One step's cell: number, title, drawing, note. Stacked from the top of the cell down. */
+    _placeStep(
+        instruct:any,
+        step:any,
+        index:number,
+        box:{ left:number, top:number, cellW:number, cellH:number, numberH:number, titleH:number, noteH:number },
+        o:Required<Omit<InstructableOptions,'pageName'>>):void
+    {
+        const { left, top, cellW, cellH, numberH, titleH, noteH } = box;
+        let y = top;
+
+        if(o.border)
+        {
+            this.rect({ width: cellW, height: cellH, units: '%' } as any, { lineWidth: 0.3, strokeColor: '#dddddd' })
+                .pivot('topleft')
+                .position(left, top);
+        }
+
+        if(o.numbering)
+        {
+            this.text(String(step.number), { size: this.parseInputNumberUnitsConvertTo(o.numberSize, 'pnt'), bold: true })
+                .pivot('topleft')
+                .position(left, y);
+        }
+
+        // the title sits beside the number, indented past it
+        const numberIndent = o.numbering ? numberH * 0.9 : 0;
+        this.text(step.title, { size: this.parseInputNumberUnitsConvertTo(o.titleSize, 'pnt') })
+            .width(cellW - numberIndent)
+            .pivot('topleft')
+            .position(left + numberIndent, y - (o.numbering ? (numberH - titleH) / 2 : 0));
+
+        y -= Math.max(numberH, titleH) * 1.4;
+
+        const drawingH = cellH - (top - y) - noteH;
+
+        /*  The drawing. projectStep() is what makes this possible at all: a view draws only 2D
+            line-work, so the step's 3D parts have to be hidden-line projected first, and that
+            projection is cached because it is the expensive part of a page render. */
+        const projection = instruct.projectStep(index, { strategy: o.strategy });
+
+        if(projection && drawingH > 0)
+        {
+            const css:Record<string,string> = {};
+            if(o.contextColor && !projection.degraded)
+            {
+                css[`.${projection.contextGroup}`] = `stroke:${o.contextColor}`;
+            }
+            if(o.subjectColor && !projection.degraded)
+            {
+                css[`.${projection.subjectGroup}`] = `stroke:${o.subjectColor}`;
+            }
+
+            this.view(`step${step.number}`, projection.drawing, { caption: false })
+                .contentAlign(['center','center'])
+                .width(cellW)
+                .height(drawingH)
+                .pivot('topleft')
+                .position(left, y);
+
+            if(Object.keys(css).length){ (this._activeContainer as any).css(css) }
+        }
+        else if(!projection)
+        {
+            console.warn(`Document::instructable(): step ${step.number} ("${step.title}") has no `
+                + `geometry to draw — it named no parts, or the ones it named are not solids.`);
+        }
+
+        y -= drawingH;
+
+        const noteText = [
+            step.note,
+            step.tools?.length ? `Tools: ${step.tools.join(', ')}` : null,
+            step.hardware?.length
+                ? step.hardware.map((h:any) => `${h.quantity}x ${h.name}`).join(', ')
+                : null,
+        ].filter(Boolean).join('  ·  ');
+
+        if(noteText && noteH > 0)
+        {
+            this.textarea(noteText, { size: this.parseInputNumberUnitsConvertTo(o.noteSize, 'pnt') })
+                .width(cellW)
+                .height(noteH)
+                .pivot('topleft')
+                .position(left, y);
+        }
     }
 
     /** Get last created ContainerBlock */

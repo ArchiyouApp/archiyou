@@ -1,6 +1,27 @@
+/** Baking a Layouter's transforms into GLB keyframe animations.
+ *
+ *  This file used to exercise `GLTFBuilder.getExplodedViewTransformsWorld()`,
+ *  `.getLayoutViewTransformsWorld()`, `.addExplodedView()`, `.addLayoutView()` and
+ *  `.addCachedLayoutAnimations()`. None of those exist any more: computing a layout moved to
+ *  `Layouter` (exploded / rowOrtho) and baking it moved to `GLTFBuilder.addAnimations()`. The
+ *  whole suite therefore threw "is not a function" on every test — 8 of 8 red, in a file
+ *  vitest was collecting the whole time. Rewritten against the current API; the scene fixture
+ *  and the vector helpers below are the parts worth keeping.
+ *
+ *  Two things it pins that the old suite could not:
+ *    - the keyframe COUNT follows the interpolation (linear is the only two-sample one), and
+ *      is asserted against the exported constants rather than a literal, so tuning the easing
+ *      does not silently re-break the tests.
+ *    - animations target nodes by SCENE PATH. Four siblings all named `leg` used to collapse
+ *      onto one glTF node, because the lookup was keyed on a name that is not unique.
+ */
 import { beforeAll, describe, expect, test } from 'vitest'
 
-import { GLTFBuilder } from '../../src/GLTFBuilder'
+import {
+    GLTFBuilder,
+    EASED_KEYFRAME_SAMPLE_COUNT,
+    SPRING_KEYFRAME_SAMPLE_COUNT,
+} from '../../src/GLTFBuilder'
 import { Layouter } from '../../src/modeler/Layouter'
 import * as meshup from '@archiyou/meshup'
 
@@ -18,439 +39,257 @@ beforeAll(async () =>
     await meshup.init()
 })
 
-describe('GLTFBuilder animations', () =>
+/** Bake one layout result into a GLB and read the animation back out. */
+async function bake(scene: meshup.SceneNode<any>, layout: Layouter, options: Record<string, any> = {})
 {
-    test('getExplodedViewTransformsWorld returns world-space translations and identity rotations', () =>
+    const glb = await new GLTFBuilder(await scene.toGLB())
+        .addAnimations([{ result: layout.result(), options }])
+        .then(b => b.toGLB())
+
+    const doc = await meshup.createNodeIO().readBinary(glb)
+    const name = options.animationName ?? layout.result().name
+    const animation = doc.getRoot().listAnimations().find((a: any) => a.getName() === name) as any
+    return { doc, animation }
+}
+
+const channelsFor = (animation: any, path: string) =>
+    animation.listChannels().filter((c: any) => c.getTargetPath() === path)
+
+const outputOf = (channel: any) => Array.from(channel.getSampler().getOutput().getArray() as Float32Array)
+const inputOf = (channel: any) => Array.from(channel.getSampler().getInput().getArray() as Float32Array)
+
+describe('Layouter transforms', () =>
+{
+    test('exploded() pushes every shape away from the collection centre', () =>
     {
         const distance = 2.5
         const { scene, entries } = createSceneFixture()
-        const transforms = new GLTFBuilder().getExplodedViewTransformsWorld(scene, { distance })
+        const transforms = new Layouter(scene).exploded({ distance }).result().transforms
 
         expect(transforms).toHaveLength(entries.length)
 
-        const transformByName = new Map(transforms.map(transform => [transform.name, transform]))
         const centers = entries.map(entry => ({
             name: entry.name,
             center: pointFromShape(entry.shape.center()),
         }))
-        const centroid = averagePoint(centers.map(entry => entry.center))
+        /*  The origin of the explosion is the collection's BBOX centre — not the centroid of
+            the shape centres, which is a different point as soon as the shapes differ in
+            size. See Layouter.exploded(): `this.shapeCollection().bbox().center()`. */
+        const origin = pointFromShape(new meshup.ShapeCollection(scene.shapes()).bbox().center())
 
         transforms.forEach(transform =>
         {
-            expect(transform.rotation).toEqual([0, 0, 0, 1])
-            expect(transform.scale).toEqual([1, 1, 1])
+            expect(isIdentityQuaternion(transform.rotation)).toBe(true)
+            expect(isIdentityScale(transform.scale)).toBe(true)
 
-            const entry = centers.find(item => item.name === transform.name)
+            const entry = centers.find(item => item.name === transform.sceneNode.name)
             expect(entry).toBeDefined()
 
-            if (entry && lengthOf(transform.translation) > EPSILON)
+            // Each shape moves along the origin → shape ray, or not at all (the anchor shape).
+            if (entry && !isZeroVector(transform.translation))
             {
-                const dir = normalizePoint(subtractPoint(entry.center, centroid))
-                expect(dot(normalizePoint(transform.translation), dir)).toBeGreaterThan(0.999)
+                const dir = normalizePoint(subtractPoint(entry.center, origin))
+                expect(dot(normalizePoint(transform.translation as [number, number, number]), dir))
+                    .toBeGreaterThan(0.999)
             }
         })
-
-        const sortedFinalCenters = centers
-            .map(entry => ({
-                ...entry,
-                finalCenter: addPoint(entry.center, transformByName.get(entry.name)?.translation ?? [0, 0, 0]),
-                dist: lengthOf(subtractPoint(entry.center, centroid)),
-            }))
-            .sort((left, right) => left.dist - right.dist)
-
-        for (let index = 1; index < sortedFinalCenters.length; index++)
-        {
-            const separation = lengthOf(subtractPoint(sortedFinalCenters[index].finalCenter, sortedFinalCenters[index - 1].finalCenter))
-            expect(separation).toBeGreaterThanOrEqual(distance - EPSILON)
-        }
     })
 
-    test('getLayoutViewTransformsWorld returns world-space transforms that flatten shapes onto the XY plane', () =>
+    test('rowOrtho() lays every shape out along +X with the asked-for spacing', () =>
     {
         const spacing = 1.75
         const { scene, entries } = createSceneFixture()
-        const transforms = new GLTFBuilder().getLayoutViewTransformsWorld(scene, { spacing })
+        const transforms = new Layouter(scene).rowOrtho({ spacing }).result().transforms
 
         expect(transforms).toHaveLength(entries.length)
 
         let expectedX = 0
-
         entries.forEach(entry =>
         {
-            const transform = transforms.find(item => item.name === entry.name)
+            const transform = transforms.find(item => item.sceneNode.name === entry.name)
             expect(transform).toBeDefined()
-
-            const obbox = entry.shape.obbox()
-            const halfExtents = obbox.halfExtents()
-            const flatAxis = pointFromShape(obbox.axes()[2])
-            const worldCenter = pointFromShape(entry.shape.center())
-
             if (!transform) { return }
 
-            expect(transform.scale).toEqual([1, 1, 1])
-
-            const rotatedFlatAxis = meshup.Vector
-                .from(flatAxis)
-                .rotateQuaternion({
-                    w: transform.rotation[3],
-                    x: transform.rotation[0],
-                    y: transform.rotation[1],
-                    z: transform.rotation[2],
-                })
-                .normalize()
-                .toArray()
-
-            expectPointClose(rotatedFlatAxis, [0, 0, 1], 1e-4)
-
-            const rotatedCenter = meshup.Vector
-                .from(worldCenter)
-                .rotateQuaternion({
-                    w: transform.rotation[3],
-                    x: transform.rotation[0],
-                    y: transform.rotation[1],
-                    z: transform.rotation[2],
-                })
-                .toArray() as [number, number, number]
-
-            const finalCenter = addPoint(rotatedCenter, transform.translation)
-            const halfThickness = halfExtents[2]
-            const footprint = halfExtents[0] * 2
-
-            expect(finalCenter[0]).toBeCloseTo(expectedX, 5)
-            expect(finalCenter[1]).toBeCloseTo(0, 5)
-            expect(finalCenter[2]).toBeCloseTo(halfThickness, 5)
-
-            expectedX += footprint + spacing
-        })
-    })
-
-    test('addExplodedView creates translation channels with separated final centers for simple shapes', async () =>
-    {
-        const distance = 2.5
-        const duration = 1.25
-        const { scene, entries } = createSceneFixture()
-        const baseGlb = await scene.toGLB()
-
-        const glb = await new GLTFBuilder().addExplodedView(baseGlb, scene, { distance, duration })
-        const doc = await meshup.createNodeIO().readBinary(glb)
-        const animation = doc.getRoot().listAnimations().find((item: any) => item.getName() === 'ExplodedView') as any
-
-        expect(animation).toBeDefined()
-        expect(animation.listChannels()).toHaveLength(entries.length)
-
-        const channelsByNode = new Map<string, any>()
-        animation.listChannels().forEach((channel: any) =>
-        {
-            channelsByNode.set(channel.getTargetNode()?.getName(), channel)
-            expect(channel.getTargetPath()).toBe('translation')
-
-            const input = Array.from(channel.getSampler().getInput().getArray() as Float32Array)
-            expect(input).toEqual([0, duration])
-        })
-
-        const centers = entries.map(entry => ({
-            name: entry.name,
-            center: zUpToYUp(entry.shape.center()),
-        }))
-
-        const centroid = averagePoint(centers.map(entry => entry.center))
-        const sorted = centers
-            .map(entry =>
-            {
-                const delta = subtractPoint(entry.center, centroid)
-                const dist = lengthOf(delta)
-                const dir = dist < 1e-6
-                    ? [1, 0, 0] as [number, number, number]
-                    : scalePoint(delta, 1 / dist)
-
-                return { ...entry, dist, dir }
-            })
-            .sort((left, right) => left.dist - right.dist)
-
-        const finalCenters: Array<[number, number, number]> = []
-
-        sorted.forEach(entry =>
-        {
-            const channel = channelsByNode.get(entry.name)
-            expect(channel).toBeDefined()
-
-            const output = Array.from(channel.getSampler().getOutput().getArray() as Float32Array)
-            const endTranslation: [number, number, number] = [output[3], output[4], output[5]]
-            const finalCenter = addPoint(entry.center, endTranslation)
-            finalCenters.push(finalCenter)
-
-            if (lengthOf(endTranslation) > EPSILON)
-            {
-                expect(dot(normalizePoint(endTranslation), entry.dir)).toBeGreaterThan(0.999)
-            }
-        })
-
-        for (let index = 1; index < finalCenters.length; index++)
-        {
-            const separation = lengthOf(subtractPoint(finalCenters[index], finalCenters[index - 1]))
-            expect(separation).toBeGreaterThanOrEqual(distance - EPSILON)
-        }
-    })
-
-    test('addLayoutView creates rotation and translation channels that flatten mixed simple shapes onto the XZ plane', async () =>
-    {
-        const spacing = 1.75
-        const duration = 2.0
-        const { scene, entries } = createSceneFixture()
-        const baseGlb = await scene.toGLB()
-
-        const glb = await new GLTFBuilder().addLayoutView(baseGlb, scene, { spacing, duration })
-        const doc = await meshup.createNodeIO().readBinary(glb)
-        const animation = doc.getRoot().listAnimations().find((item: any) => item.getName() === 'LayoutView') as any
-
-        expect(animation).toBeDefined()
-        expect(animation.listChannels()).toHaveLength(entries.length * 2)
-
-        const channelsByNode = new Map<string, { rotation?: any; translation?: any }>()
-
-        animation.listChannels().forEach((channel: any) =>
-        {
-            const nodeName = channel.getTargetNode()?.getName()
-            const record = channelsByNode.get(nodeName) || {}
-
-            if (channel.getTargetPath() === 'rotation')
-            {
-                record.rotation = channel
-            }
-            else if (channel.getTargetPath() === 'translation')
-            {
-                record.translation = channel
-            }
-
-            channelsByNode.set(nodeName, record)
-
-            const input = Array.from(channel.getSampler().getInput().getArray() as Float32Array)
-            expect(input).toEqual([0, duration])
-        })
-
-        let expectedX = 0
-
-        entries.forEach(entry =>
-        {
-            const channels = channelsByNode.get(entry.name)
-            expect(channels?.rotation).toBeDefined()
-            expect(channels?.translation).toBeDefined()
-
-            const rotationOutput = Array.from(channels?.rotation.getSampler().getOutput().getArray() as Float32Array)
-            const translationOutput = Array.from(channels?.translation.getSampler().getOutput().getArray() as Float32Array)
-
-            const endQuaternion: [number, number, number, number] = [
-                rotationOutput[4],
-                rotationOutput[5],
-                rotationOutput[6],
-                rotationOutput[7],
-            ]
-            const endTranslation: [number, number, number] = [
-                translationOutput[3],
-                translationOutput[4],
-                translationOutput[5],
-            ]
+            expect(isIdentityScale(transform.scale)).toBe(true)
 
             const obbox = entry.shape.obbox()
-            const halfExtents = obbox.halfExtents()
-            const gltfFlatAxis = zUpToYUp(obbox.axes()[2])
-            const rotatedFlatAxis = meshup.Vector
-                .from(gltfFlatAxis)
-                .rotateQuaternion({ w: endQuaternion[3], x: endQuaternion[0], y: endQuaternion[1], z: endQuaternion[2] })
-                .normalize()
-                .toArray()
+            const width = obbox.width()
 
-            expectPointClose(rotatedFlatAxis, [0, 1, 0], 1e-4)
+            // The transform moves the obbox centre to the row position; only x is pinned here,
+            // because the rotation that squares the shape up is asserted in layouter.test.ts.
+            const finalX = obbox.center().x + transform.translation[0]
+            expect(finalX).toBeCloseTo(expectedX + width / 2, 4)
 
-            const gltfCenter = zUpToYUp(entry.shape.center())
-            const rotatedCenter = meshup.Vector
-                .from(gltfCenter)
-                .rotateQuaternion({ w: endQuaternion[3], x: endQuaternion[0], y: endQuaternion[1], z: endQuaternion[2] })
-                .toArray() as [number, number, number]
-
-            const finalCenter = addPoint(rotatedCenter, endTranslation)
-            const halfThickness = halfExtents[2]
-            const footprint = halfExtents[0] * 2
-
-            expect(finalCenter[0]).toBeCloseTo(expectedX, 5)
-            expect(finalCenter[1]).toBeCloseTo(halfThickness, 5)
-            expect(finalCenter[2]).toBeCloseTo(0, 5)
-
-            expectedX += footprint + spacing
+            expectedX += width + spacing
         })
     })
 
-    test('addCachedLayoutAnimations writes multiple animations in one pass', async () =>
+    test('translations are model-space Z-up, passed through unconverted', async () =>
     {
-        const duration = 1.5
         const { scene, entries } = createSceneFixture()
-        const baseGlb = await scene.toGLB()
+        const layout = new Layouter(scene).exploded({ distance: 2.5 })
+        const transforms = layout.result().transforms
+        const { animation } = await bake(scene, layout, { duration: 1, interpolation: 'linear' })
 
-        const exploded = new Layouter(scene.shapes()).exploded({ distance: 2.5 }).result()
-        const layout = new Layouter(scene.shapes()).rowOrtho({ spacing: 1.75 }).result()
+        const byNode = new Map(channelsFor(animation, 'translation')
+            .map((c: any) => [c.getTargetNode().getName(), c]))
 
-        const glb = await new GLTFBuilder().addCachedLayoutAnimations(baseGlb, [
-            {
-                result: exploded,
-                options: {
-                    duration,
-                    interpolation: 'linear',
-                    animationName: 'exploded',
-                },
-            },
-            {
-                result: layout,
-                options: {
-                    duration,
-                    interpolation: 'linear',
-                    animationName: 'layout',
-                },
-            },
-        ])
+        transforms.filter(t => !isZeroVector(t.translation)).forEach(t =>
+        {
+            const channel = byNode.get(t.sceneNode.name)
+            expect(channel).toBeDefined()
+            const output = outputOf(channel)
+            // last keyframe = the layouter's own translation, component for component
+            expectPointClose([output[3], output[4], output[5]], t.translation, 1e-4)
+        })
+
+        expect(entries.length).toBeGreaterThan(0)
+    })
+})
+
+describe('GLTFBuilder.addAnimations', () =>
+{
+    test('writes one named animation with translation channels', async () =>
+    {
+        const duration = 1.25
+        const { scene } = createSceneFixture()
+        const layout = new Layouter(scene).exploded({ distance: 2.5 })
+        const moved = layout.result().transforms.filter(t => !isZeroVector(t.translation)).length
+
+        const { animation } = await bake(scene, layout, { duration, interpolation: 'linear' })
+
+        expect(animation).toBeDefined()
+        expect(animation.getName()).toBe('exploded')
+        expect(channelsFor(animation, 'translation')).toHaveLength(moved)
+
+        channelsFor(animation, 'translation').forEach((channel: any) =>
+        {
+            // Easing is baked into the samples, so the glTF interpolation is always LINEAR
+            expect(channel.getSampler().getInterpolation()).toBe('LINEAR')
+            expect(inputOf(channel)).toEqual([0, duration])
+        })
+    })
+
+    test('animationName overrides the layout name', async () =>
+    {
+        const { scene } = createSceneFixture()
+        const layout = new Layouter(scene).exploded({ distance: 2.5 })
+        const { doc, animation } = await bake(scene, layout, { animationName: 'my-anim' })
+
+        expect(animation).toBeDefined()
+        expect(doc.getRoot().listAnimations().map((a: any) => a.getName())).toContain('my-anim')
+    })
+
+    test('several layouts land in the GLB as several animations', async () =>
+    {
+        const { scene } = createSceneFixture()
+        const exploded = new Layouter(scene).exploded({ distance: 2.5 }).result()
+        const row = new Layouter(scene).rowOrtho({ spacing: 1.5 }).result()
+
+        const glb = await new GLTFBuilder(await scene.toGLB())
+            .addAnimations([
+                { result: exploded, options: { animationName: 'exploded' } },
+                { result: row, options: { animationName: 'layout' } },
+            ])
+            .then(b => b.toGLB())
 
         const doc = await meshup.createNodeIO().readBinary(glb)
-        const animations = doc.getRoot().listAnimations() as Array<any>
-        const animationByName = new Map(animations.map(animation => [animation.getName(), animation]))
-        const explodedChannelCount = exploded.transforms.reduce((count, transform) =>
-        {
-            return count +
-                (isZeroVector(transform.translation) ? 0 : 1) +
-                (isIdentityQuaternion(transform.rotation) ? 0 : 1) +
-                (isIdentityScale(transform.scale) ? 0 : 1)
-        }, 0)
-        const layoutChannelCount = layout.transforms.reduce((count, transform) =>
-        {
-            return count +
-                (isZeroVector(transform.translation) ? 0 : 1) +
-                (isIdentityQuaternion(transform.rotation) ? 0 : 1) +
-                (isIdentityScale(transform.scale) ? 0 : 1)
-        }, 0)
+        expect(doc.getRoot().listAnimations().map((a: any) => a.getName()).sort())
+            .toEqual(['exploded', 'layout'])
+    })
 
-        expect(animationByName.get('exploded')).toBeDefined()
-        expect(animationByName.get('layout')).toBeDefined()
-        expect(animationByName.get('exploded').listChannels()).toHaveLength(explodedChannelCount)
-        expect(animationByName.get('layout').listChannels()).toHaveLength(layoutChannelCount)
+    test('rowOrtho also writes rotation channels', async () =>
+    {
+        const { scene } = createSceneFixture()
+        const layout = new Layouter(scene).rowOrtho({ spacing: 1.75 })
+        const rotated = layout.result().transforms.filter(t => !isIdentityQuaternion(t.rotation)).length
 
-        animations.forEach(animation =>
+        const { animation } = await bake(scene, layout, { duration: 2, interpolation: 'linear' })
+
+        expect(rotated).toBeGreaterThan(0)
+        expect(channelsFor(animation, 'rotation')).toHaveLength(rotated)
+    })
+
+    describe('keyframe sampling follows the interpolation', () =>
+    {
+        /*  Easing is baked into the SAMPLES rather than expressed as a glTF CUBICSPLINE, so
+            the sample count is the observable difference between the modes. Asserted against
+            the exported constants: a literal here is what made modeler.animations.test.ts
+            fail when the count went from 2 to 17. */
+        const cases: Array<[string, number]> = [
+            ['linear', 2],
+            ['easeIn', EASED_KEYFRAME_SAMPLE_COUNT],
+            ['easeOut', EASED_KEYFRAME_SAMPLE_COUNT],
+            ['easeInOut', EASED_KEYFRAME_SAMPLE_COUNT],
+            ['spring', SPRING_KEYFRAME_SAMPLE_COUNT],
+        ]
+
+        cases.forEach(([interpolation, samples]) =>
         {
-            animation.listChannels().forEach((channel: any) =>
+            test(`${interpolation} → ${samples} keyframes`, async () =>
             {
-                const input = Array.from(channel.getSampler().getInput().getArray() as Float32Array)
-                expect(input).toEqual([0, duration])
+                const { scene } = createSceneFixture()
+                const layout = new Layouter(scene).exploded({ distance: 2.5 })
+                const { animation } = await bake(scene, layout, { duration: 1, interpolation })
+
+                const channel = channelsFor(animation, 'translation')[0]
+                expect(inputOf(channel)).toHaveLength(samples)
+                expect(outputOf(channel)).toHaveLength(samples * 3)   // VEC3
             })
         })
-    })
 
-    test('addCachedLayoutAnimations defaults to eased keyframes when interpolation is omitted', async () =>
-    {
-        const duration = 2.0
-        const { scene } = createSceneFixture()
-        const baseGlb = await scene.toGLB()
-        const exploded = new Layouter(scene.shapes()).exploded({ distance: 2.5 }).result()
-
-        const glb = await new GLTFBuilder().addCachedLayoutAnimations(baseGlb, [
-            {
-                result: exploded,
-                options: {
-                    duration,
-                    animationName: 'exploded-eased-default',
-                },
-            },
-        ])
-
-        const doc = await meshup.createNodeIO().readBinary(glb)
-        const animation = doc.getRoot().listAnimations().find((item: any) => item.getName() === 'exploded-eased-default') as any
-        const channel = animation.listChannels().find((item: any) =>
+        test('`tween` is still accepted as an alias for `interpolation`', async () =>
         {
-            if (item.getTargetPath() !== 'translation')
-            {
-                return false
-            }
+            const { scene } = createSceneFixture()
+            const layout = new Layouter(scene).exploded({ distance: 2.5 })
+            const { animation } = await bake(scene, layout, { duration: 1, tween: 'easeOut' })
 
-            const output = Array.from(item.getSampler().getOutput().getArray() as Float32Array)
-            const endIndex = output.length - 3
-            const end: [number, number, number] = [output[endIndex], output[endIndex + 1], output[endIndex + 2]]
-            return lengthOf(end) > EPSILON
-        }) as any
+            const channel = channelsFor(animation, 'translation')[0]
+            expect(inputOf(channel)).toHaveLength(EASED_KEYFRAME_SAMPLE_COUNT)
+        })
 
-        expect(animation).toBeDefined()
-        expect(channel).toBeDefined()
+        test('the default easing is not linear', async () =>
+        {
+            const { scene } = createSceneFixture()
+            const layout = new Layouter(scene).exploded({ distance: 2.5 })
+            const { animation } = await bake(scene, layout, { duration: 1 })
 
-        const input = Array.from(channel.getSampler().getInput().getArray() as Float32Array)
-        const output = Array.from(channel.getSampler().getOutput().getArray() as Float32Array)
-        const quarterIndex = Math.floor((input.length - 1) / 4)
-        const endIndex = input.length - 1
-        const quarterSampleIndex = quarterIndex * 3
-        const endSampleIndex = endIndex * 3
-        const quarter: [number, number, number] = [
-            output[quarterSampleIndex],
-            output[quarterSampleIndex + 1],
-            output[quarterSampleIndex + 2],
-        ]
-        const end: [number, number, number] = [
-            output[endSampleIndex],
-            output[endSampleIndex + 1],
-            output[endSampleIndex + 2],
-        ]
-
-        expect(input.length).toBeGreaterThan(2)
-        expect(input[quarterIndex]).toBeCloseTo(duration * 0.25, 5)
-        expect(lengthOf(end)).toBeGreaterThan(EPSILON)
-        expect(lengthOf(quarter) / lengthOf(end)).toBeLessThan(0.2)
+            const channel = channelsFor(animation, 'translation')[0]
+            expect(inputOf(channel)).toHaveLength(EASED_KEYFRAME_SAMPLE_COUNT)
+        })
     })
 
-    test('addCachedLayoutAnimations samples eased keyframes for explicit easeInOut interpolation', async () =>
+    test('siblings sharing a name each get their own channels', async () =>
     {
-        const { scene } = createSceneFixture()
-        const baseGlb = await scene.toGLB()
-        const exploded = new Layouter(scene.shapes()).exploded({ distance: 2.5 }).result()
+        /*  The regression this method existed to have. Targets were resolved with
+            `new Map(nodes.map(n => [n.getName(), n]))`, and SceneNode.name is not unique among
+            siblings — so four legs called `leg` collapsed onto the LAST glTF node of that
+            name: three of them never moved and one accumulated all four sets of keyframes.
+            An assembly of repeated parts is the normal case, not a corner one. */
+        const scene = meshup.SceneNode.root('root')
+        // close enough together that the explode has to separate all four of them
+        const legs = [0, 1, 2, 3].map(i =>
+            meshup.Mesh.Box(1, 1, 4).moveToX(i % 2 ? 0.6 : -0.6).moveToY(i < 2 ? 0.6 : -0.6))
+        legs.forEach(leg => scene.addChild(meshup.SceneNode.from(leg, 'leg')))
 
-        const glb = await new GLTFBuilder().addCachedLayoutAnimations(baseGlb, [
-            {
-                result: exploded,
-                options: {
-                    duration: 1.0,
-                    animationName: 'exploded-eased-explicit',
-                    interpolation: 'easeInOut',
-                },
-            },
-        ])
+        const layout = new Layouter(scene).exploded({ distance: 3 })
+        const { animation } = await bake(scene, layout, { duration: 1, interpolation: 'linear' })
 
-        const doc = await meshup.createNodeIO().readBinary(glb)
-        const animation = doc.getRoot().listAnimations().find((item: any) => item.getName() === 'exploded-eased-explicit') as any
-        const channel = animation.listChannels().find((item: any) => item.getTargetPath() === 'translation') as any
-        const input = Array.from(channel.getSampler().getInput().getArray() as Float32Array)
+        const channels = channelsFor(animation, 'translation')
+        const targets = new Set(channels.map((c: any) => c.getTargetNode()))
 
-        expect(animation).toBeDefined()
-        expect(channel).toBeDefined()
-        expect(input.length).toBeGreaterThan(2)
-    })
+        // one channel per moved leg, and every channel on a DIFFERENT node
+        expect(channels.length).toBeGreaterThan(1)
+        expect(targets.size).toBe(channels.length)
 
-    test('addCachedLayoutAnimations accepts tween as an alias for interpolation', async () =>
-    {
-        const { scene } = createSceneFixture()
-        const baseGlb = await scene.toGLB()
-        const exploded = new Layouter(scene.shapes()).exploded({ distance: 2.5 }).result()
-
-        const glb = await new GLTFBuilder().addCachedLayoutAnimations(baseGlb, [
-            {
-                result: exploded,
-                options: {
-                    duration: 1.5,
-                    animationName: 'exploded-tween',
-                    tween: 'easeOut',
-                },
-            },
-        ])
-
-        const doc = await meshup.createNodeIO().readBinary(glb)
-        const animation = doc.getRoot().listAnimations().find((item: any) => item.getName() === 'exploded-tween') as any
-        const channel = animation.listChannels().find((item: any) => item.getTargetPath() === 'translation') as any
-        const input = Array.from(channel.getSampler().getInput().getArray() as Float32Array)
-
-        expect(animation).toBeDefined()
-        expect(channel).toBeDefined()
-        expect(input.length).toBeGreaterThan(2)
+        // and they really do go different ways — a single collapsed node could not
+        const ends = channels.map((c: any) =>
+        {
+            const o = outputOf(c)
+            return [o[3], o[4], o[5]] as [number, number, number]
+        })
+        const unique = new Set(ends.map(e => e.map(n => n.toFixed(3)).join(',')))
+        expect(unique.size).toBe(ends.length)
     })
 })
 

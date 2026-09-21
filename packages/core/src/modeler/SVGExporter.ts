@@ -612,6 +612,10 @@ export interface BuildSVGDocumentOptions
     scoped?: string
     /** Extra `data-*` attributes on the root element. */
     data?: Record<string, string | number>
+    /** Extra CSS rules, appended after the base stylesheet so they win at equal specificity.
+     *  Already-scoped text: the caller prefixes its own selectors, because only it knows
+     *  which scope they belong to (see View.css). */
+    css?: string
 }
 
 /** Frame a set of layers into one SVG document — the single writer of an Archiyou drawing.
@@ -651,11 +655,18 @@ export function buildSVGDocument(o: BuildSVGDocumentOptions): string | null
 
     const stroke: SVGStroke = o.stroke ?? { mode: 'device' }
     const scope = o.scoped ? `.${o.scoped} ` : ''
-    const style = (stroke.mode === 'device')
+    const base = (stroke.mode === 'device')
                     ? stylesheet(stroke.width ?? DEFAULT_STROKE_WIDTH, scope)
                     : stylesheetMm(
                         +(stroke.mode === 'mm' ? stroke.widthMm * stroke.unitsPerMm : stroke.width).toFixed(4),
                         scope)
+
+    /*  Extra rules go in their own <style>, AFTER the base one. Same specificity, later
+        source, so they win — which is what lets a caller draw one group of a drawing
+        differently (an instructable's context parts, say) without this module knowing what a
+        group means. Inline presentation attributes could not do it: in SVG a stylesheet rule
+        beats an attribute, so `.line{stroke:black}` would override the shape's own colour. */
+    const style = o.css ? `${base}<style>${o.css}</style>` : base
 
     const content = layers.map(l =>
         {
@@ -929,6 +940,8 @@ export interface RenderDrawingOptions
     plane?: ExportPlane
     /** Confine the stylesheet to this class — see BuildSVGDocumentOptions.scoped. */
     scoped?: string
+    /** Extra CSS rules, already scoped by the caller — see BuildSVGDocumentOptions.css. */
+    css?: string
     units?: ModelUnits
     title?: string
 }
@@ -975,9 +988,11 @@ export function renderDrawingFromLayer(
     const layers: Array<SVGLayer> = [geometry]
 
     let annotated = false
+    let drawn:Array<any> = []
     if (options?.annotations !== false)
     {
-        const annotations = annotationLayer(collectAnnotations(o), {
+        drawn = collectAnnotations(o)
+        const annotations = annotationLayer(drawn, {
             unitsPerMm: options?.unitsPerMm,
             drawingSize: size,
             // A dimension has to travel to the drawing's plane with the geometry it measures,
@@ -990,11 +1005,14 @@ export function renderDrawingFromLayer(
         layers.push(annotations)
     }
 
-    /*  Room for the value text at the middle of a dimension line — a few characters wide.
-        In real page millimeters when the scale is known; otherwise a fraction of the drawing,
-        since a flat number of model units cropped anything bigger than a small part. */
+    /*  Room for what an annotation hangs outside its own extents — the value text at the
+        middle of a dimension line, the leader and text box of a label. In real page
+        millimeters when the scale is known; otherwise a fraction of the drawing, since a flat
+        number of model units cropped anything bigger than a small part. The annotations are
+        handed over so a drawing with labels gets their longer reach and one without is framed
+        exactly as before. */
     const margin = !annotated ? 0
-                    : (options?.unitsPerMm) ? options.unitsPerMm * annotationMarginMm(o?._modeler?.modules?.annotator)
+                    : (options?.unitsPerMm) ? options.unitsPerMm * annotationMarginMm(o?._modeler?.modules?.annotator, drawn)
                     : Math.max(10, size / 30)
 
     const stroke: SVGStroke = (options?.unitsPerMm)
@@ -1012,6 +1030,7 @@ export function renderDrawingFromLayer(
                 ? { ...options.frame, margin: (options.frame as any).margin ?? margin }
                 : { mode: 'fit', padding: options?.padding ?? 0, square: options?.square === true, margin },
         scoped: options?.scoped,
+        css: options?.css,
         units: options?.units ?? o?._modeler?.units?.(),
         title: options?.title,
     })

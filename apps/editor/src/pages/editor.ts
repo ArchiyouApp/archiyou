@@ -23,6 +23,7 @@ import '@archiyou/ui/editor/tools/scene-tool.js';
 import '@archiyou/ui/editor/tools/data-tool.js';
 import '@archiyou/ui/editor/tools/metrics-tool.js';
 import '@archiyou/ui/editor/tools/document-viewer.js';
+import '@archiyou/ui/editor/tools/instruct-tool.js';
 import '@archiyou/ui/editor/tools/console-tool.js';
 import '@archiyou/ui/editor/tools/profiling-tool.js';
 import '@archiyou/ui/editor/file-info.js';
@@ -57,6 +58,7 @@ export class PageEditor extends SignalWatcher(LitElement)
     { id: 'data',    icon: 'table',      name: 'Data',      exclusive: false, component: 'editor-data-tool',     width: 30, height: 50 },
     { id: 'metrics', icon: 'chart-bar',  name: 'Metrics',   exclusive: false, component: 'editor-metrics-tool',  width: 30, height: 50,  outputs: ['default/metrics/*/json'] },
     { id: 'docs',    icon: 'file-text',  name: 'Documents', exclusive: true,  component: 'editor-document-tool', width: 40, height: 100, outputs: ['default/docs/*/svg', 'default/docs/*/svg-pages'] },
+    { id: 'instruct', icon: 'list-ordered', name: 'Instructions', exclusive: false, component: 'editor-instruct-tool', width: 30, height: 50 },
     { id: 'profiling', icon: 'timer',    name: 'Profiling', exclusive: false, component: 'editor-profiling-tool', width: 30, height: 50 },
   ];
 

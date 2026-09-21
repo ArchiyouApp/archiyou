@@ -5,6 +5,7 @@ import type * as meshup from '@archiyou/meshup'
 
 import { type Static } from 'typebox'
 import { ModelUnitsSchema, ModelModeSchema, MainAxisSchema } from './schemas'
+import type { Part } from './parts'
 
 
 //// SHAPE TYPES ////
@@ -102,12 +103,38 @@ export interface ModelerSceneExportGLTFOptions
     /** Write the annotator's annotations into the GLTF extras alongside the scenegraph.
      *  Default false — an unannotated export carries an empty list. */
     annotations?: boolean
+    /** Bake an instructable into the GLB: one continuous assembly animation, a camera per
+     *  step, and the step data in `extras.instruct`. Name one, or `true` for the first.
+     *  Default off. See GLTFBuilder.addInstruct(). */
+    instruct?: string | boolean
+    /** Write a glTF camera per instruct step. Default true when `instruct` is set. */
+    instructCameras?: boolean
 }
 
 export interface LayoutViewOptions
 {
     /** Lateral spacing between shapes when laid flat. Default 1.5 */
     spacing?: number
+}
+
+/** Options for {@link Layouter.partStack} — one flat stack per part, side by side. */
+export interface PartStackLayoutOptions
+{
+    /** Gap between one stack and the next, in model units. Default 5, as rowOrtho. */
+    spacing?: number
+    /** Gap between the pieces WITHIN a stack. Default 0 — they sit on each other, which is
+     *  what a stack of boards does. */
+    gap?: number
+    /** Stack shapes whose style marks them invisible too. Default false. */
+    includeHidden?: boolean
+    /** The parts to stack, when the caller has already worked them out. Left out, they are
+     *  detected from the scene with collectParts().
+     *
+     *  An instructable passes its own: its steps are written in terms of parts it has already
+     *  named A, B, C, and re-detecting them from the handful of shapes one step holds would
+     *  merge two same-sized parts of different layers into one pile — leaving the labels
+     *  pointing at stacks that are not theirs. */
+    parts?: Array<Part>
 }
 
 export interface LayoutAnimationOptions

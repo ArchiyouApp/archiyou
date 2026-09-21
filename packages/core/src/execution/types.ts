@@ -102,6 +102,9 @@ export interface ExecutionRequestOutputFormatGLTFOptions
         when flag is true, data is included in GLTF extras field
     */
     annotations?: boolean // include annotations (dimensions etc) in output
+    /** Bake an instructable in: `default/model/glb?instruct=assembly`. See Instruct. */
+    instruct?: string | boolean
+    instructCameras?: boolean
     docs?: boolean, // include data raw doc data
     tables?: boolean, // include data tables
     metrics?: boolean, // include metrics data

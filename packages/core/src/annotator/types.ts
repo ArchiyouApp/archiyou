@@ -23,13 +23,24 @@ export interface LabelData
     position:[number,number,number] // anchor point (shape center) in model coords
     value:string
     class?:string // extra CSS class for viewer styling
+    shape?:LabelShape // the box the text sits in
+    target?:LabelTarget // what marks the anchor end of the leader
+    labelOnly?:boolean // just the label — no leader, no marker. Undefined means "the renderer decides"
     line?:boolean // draw a leader line from anchor to the label box
-    offset?:number // leader length in screen px
-    angle?:number // leader angle in degrees (90 = up on screen)
-    circle?:boolean // circle marker at the anchor end of the leader
-    arrow?:boolean // DEPRECATED: legacy alias for `circle`
+    length?:number // leader length: screen px in the viewer, page mm on paper
+    offset?:number // DEPRECATED: `length`, viewer-side only
+    angle?:number // leader angle in degrees (0 = +x, 90 = up on screen)
+    circle?:boolean // DEPRECATED: `target: 'circle'`
+    arrow?:boolean // DEPRECATED: `target: 'arrow'`
     param?:string // name param bound to this label
 }
+
+/** The box a label's text sits in. `circle` is a circled letter — what a manual numbers its
+ *  parts with — and the default; `rect` is a plain rectangle with square corners. */
+export type LabelShape = 'circle' | 'rect'
+
+/** What marks the end of a label's leader, where it touches the thing being labelled. */
+export type LabelTarget = 'circle' | 'arrow' | 'none'
 
 /** Exporting DimensionLine instances as data */
 export interface DimensionLineData

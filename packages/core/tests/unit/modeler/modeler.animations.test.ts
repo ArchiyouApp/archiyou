@@ -4,6 +4,7 @@ import { Modeler } from '../../../src/modeler/Modeler'
 import { createNodeIO } from '@archiyou/meshup'
 import { ShapeCollection } from '@archiyou/meshup'
 import { Layouter } from '../../../src/modeler/Layouter'
+import { EASED_KEYFRAME_SAMPLE_COUNT } from '../../../src/GLTFBuilder'
 import { save } from '@archiyou/meshup/src/utils'
 
 describe('Modeler animations', () =>
@@ -22,35 +23,6 @@ describe('Modeler animations', () =>
         const slice = raw.subarray(byteOffset, byteOffset + byteLength)
 
         return new Float32Array(slice.buffer, slice.byteOffset, byteLength / 4)
-    }
-
-    const multiplyQuaternion = (
-        quaternionA: [number, number, number, number],
-        quaternionB: [number, number, number, number],
-    ): [number, number, number, number] =>
-    {
-        const [ax, ay, az, aw] = quaternionA
-        const [bx, by, bz, bw] = quaternionB
-
-        return [
-            aw * bx + ax * bw + ay * bz - az * by,
-            aw * by - ax * bz + ay * bw + az * bx,
-            aw * bz + ax * by - ay * bx + az * bw,
-            aw * bw - ax * bx - ay * by - az * bz,
-        ]
-    }
-
-    const worldToGltfQuaternion = (
-        rotation: [number, number, number, number],
-    ): [number, number, number, number] =>
-    {
-        const axisConversion: [number, number, number, number] = [-Math.SQRT1_2, 0, 0, Math.SQRT1_2]
-        const axisConversionInverse: [number, number, number, number] = [Math.SQRT1_2, 0, 0, Math.SQRT1_2]
-
-        return multiplyQuaternion(
-            multiplyQuaternion(axisConversion, rotation),
-            axisConversionInverse,
-        )
     }
 
     const normalizeQuaternion = (
@@ -124,29 +96,41 @@ describe('Modeler animations', () =>
         })
 
         const box = modeler.box(2, 4, 6).rotateX(45)
+        /*  The GLB carries the kernel's native Z-up coordinates, and the layouter's transforms
+            are already in that same space — so the quaternion arrives in the animation exactly
+            as the obbox gave it. This used to be wrapped in a -90 degrees X axis conversion,
+            left over from when the export flipped to Y-up; see
+            GLTFBuilder._worldToGltfQuaternion(), which is now the identity. */
         const obboxQuaternion = box.obbox().toOrthoQuaternion()
-        const expectedQuaternion = worldToGltfQuaternion([
+        const expectedQuaternion: [number, number, number, number] = [
             obboxQuaternion.x,
             obboxQuaternion.y,
             obboxQuaternion.z,
             obboxQuaternion.w,
-        ])
+        ]
 
         const gltf = JSON.parse(await modeler.toGLTF({ animations: true }))
         const layoutAnimation = (gltf.animations ?? []).find((animation: any) => animation.name === 'layout')
         const rotationChannel = layoutAnimation.channels.find((channel: any) => channel.target.path === 'rotation')
         const rotationSampler = layoutAnimation.samplers[rotationChannel.sampler]
         const rotationValues = decodeAccessorFloat32(gltf, rotationSampler.output)
+
+        /*  The LAST keyframe, wherever it is. This used to read indices 4..7 and assert a
+            length of 8, i.e. two keyframes — true only while the default easing was linear.
+            Easing is baked into the samples rather than expressed as a glTF CUBICSPLINE, so
+            the default now writes EASED_KEYFRAME_SAMPLE_COUNT of them and the literal went
+            stale. Derived from the constant so tuning the easing cannot re-break this. */
+        const end = rotationValues.length - 4
         const finalQuaternion: [number, number, number, number] = [
-            rotationValues[4],
-            rotationValues[5],
-            rotationValues[6],
-            rotationValues[7],
+            rotationValues[end],
+            rotationValues[end + 1],
+            rotationValues[end + 2],
+            rotationValues[end + 3],
         ]
 
         expect(layoutAnimation).toBeDefined()
         expect(rotationChannel).toBeDefined()
-        expect(rotationValues).toHaveLength(8)
+        expect(rotationValues).toHaveLength(EASED_KEYFRAME_SAMPLE_COUNT * 4)   // VEC4 per sample
         expect(quaternionDistance(finalQuaternion, expectedQuaternion)).toBeLessThan(1e-5)
     })
 

@@ -2244,6 +2244,24 @@ ${contextLines.join('\n')}
         state.managedParams = managedParams;
         state.managedPresets = managedPresets;
         state.managedBehaviours = managedBehaviours;
+
+        /*  Instructables, resolved. Only the main scope: a component's manual is its own
+            business and would otherwise be merged into the host's step list. Wrapped so one
+            bad instructable cannot fail a run that is otherwise fine — resolving touches the
+            scene, and a manual is never the reason someone pressed run. */
+        if (scope._main)
+        {
+            try
+            {
+                const instructs = scope._archiyou?.docs?._instructs ?? [];
+                if (instructs.length) { state.instruct = instructs.map((i: any) => i.toData()) }
+            }
+            catch (e)
+            {
+                console.warn(`Runner::_buildArchiyouState(): could not resolve an instructable: ${e}`);
+            }
+        }
+
         return state;
     }
 

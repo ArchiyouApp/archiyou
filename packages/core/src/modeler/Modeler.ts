@@ -1437,6 +1437,27 @@ export class Modeler
             await builder.addAnimations(animations);
         }
 
+        /*  An instructable: one continuous assembly animation, a camera per step, and the
+            step data in extras. Kept separate from the layout animations above — those are two
+            fixed views of the finished model, this is a sequence that says how it is built. */
+        if (options?.instruct)
+        {
+            const name = (typeof options.instruct === 'string') ? options.instruct : undefined
+            const docs = this._modules?.docs as any
+            const instruct = name ? docs?.getInstruct?.(name) : docs?._instructs?.[0]
+
+            if (instruct)
+            {
+                await builder.addInstruct(instruct.toData(), { cameras: options.instructCameras !== false })
+            }
+            else
+            {
+                console.warn(`Modeler::toGLB(): no instructable ${name ? `named "${name}" ` : ''}to bake in. `
+                    + `Make one with docs.instruct(${name ? `'${name}'` : ''}) first. `
+                    + `Available: ${docs?.instructs?.().join(', ') || '(none)'}`)
+            }
+        }
+
         // Archiyou state in GLTF extras: scenegraph (path-keyed) + annotations.
         // Mirrors RunnerScriptExecutionResult.state so a standalone .glb still
         // carries the data the viewer/scene-navigator need. Legacy `annotations`
