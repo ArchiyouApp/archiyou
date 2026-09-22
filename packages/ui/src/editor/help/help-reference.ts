@@ -75,18 +75,8 @@ export interface ApiLookup
 
 //// INDEX ////
 
-export function indexApi(raw: ApiEntry[]): ApiIndex
+export function indexApi(entries: ApiEntry[]): ApiIndex
 {
-  // The modeling factories are typed with the kernel-neutral AnyKernelShape; a script
-  // gets the mesh class, which is the one worth showing and linking to
-  const entries = raw.map(e =>
-  {
-    const concrete = !e.owner && e.returns === 'AnyKernelShape' ? FACTORY_RETURN_TYPES[e.name] : undefined;
-    return concrete
-      ? { ...e, returns: concrete, sig: e.sig?.replace(/: AnyKernelShape$/, `: ${concrete}`) }
-      : e;
-  });
-
   const group = (key: (e: ApiEntry) => string | undefined) => entries.reduce((map, e) =>
   {
     const k = key(e);

@@ -2,11 +2,12 @@
 /**
  * state/help.ts — the help panel: which help document is open, at which step.
  *
- * Help content is markdown in `help/<locale>/` at the repository root (format:
- * packages/ui/src/editor/help/help-content.ts). It is bundled with the editor as
- * lazy chunks, one per file, so a document is fetched when it is first opened and
- * always matches the editor version it ships with. A file missing in the reader's
- * language falls back to English.
+ * Help content is markdown in `help/<section>/<locale>/` at the repository root
+ * (format: packages/ui/src/editor/help/help-content.ts). The editor uses the sections
+ * `onboarding` and `tutorials`; the docs site (apps/docs) shows those and the rest of
+ * help/. They are bundled with the editor as lazy chunks, one per file, so a document
+ * is fetched when it is first opened and always matches the editor version it ships
+ * with. A file missing in the reader's language falls back to English.
  *
  * Running a step's code needs the editor page (it owns execution), which is not in
  * the help panel's component tree — the page registers a runner here, the same
@@ -29,20 +30,26 @@ const ONBOARDED_KEY = 'archiyou:help:onboarded';
 const FOLLOW_CURSOR_KEY = 'archiyou:help:follow-cursor';
 /** Wait for the cursor to rest before looking up the word under it */
 const FOLLOW_CURSOR_DELAY = 250;
-/** The tour's path within a locale */
-export const ONBOARDING_PATH = 'onboarding';
+/** The tour's path (help/onboarding/<locale>/tour.md) */
+export const ONBOARDING_PATH = 'onboarding/tour';
 
 //// CONTENT ////
 
-/** `help/<locale>/<path>.md` → loader of the raw markdown */
-const SOURCES = import.meta.glob('../../../../help/*/**/*.md', { query: '?raw', import: 'default' }) as Record<string, () => Promise<string>>;
+/** `help/<section>/<locale>/<rest>.md` → loader of the raw markdown. Only the sections
+ *  the editor shows; the guide pages are for the docs site. */
+const SOURCES = import.meta.glob(['../../../../help/onboarding/*/**/*.md', '../../../../help/tutorials/*/**/*.md'], { query: '?raw', import: 'default' }) as Record<string, () => Promise<string>>;
 
-const FILES = new Map(Object.entries(SOURCES)
-  .map(([file, load]) => [file.replace(/^.*?\/help\//, '').replace(/\.md$/, ''), load] as const));
+/** Keyed `<locale>/<section>/<rest>`: the path within a locale is what a document is known by */
+const FILES = new Map<string, () => Promise<string>>(Object.entries(SOURCES)
+  .map(([file, load]) =>
+  {
+    const [section, locale, ...rest] = file.replace(/^.*?\/help\//, '').replace(/\.md$/, '').split('/');
+    return [`${locale}/${section}/${rest.join('/')}`, load];
+  }));
 
-/** `help/<locale>/<path>.<image>` → its URL. Only the URLs are in the bundle; the
- *  browser fetches an image when a card or step shows it. */
-const IMAGES = new Map(Object.entries(import.meta.glob('../../../../help/*/**/*.{png,jpg,jpeg,gif,webp,avif,svg}', { query: '?url', import: 'default', eager: true }) as Record<string, string>)
+/** `help/<section>/<locale>/<rest>.<image>` → its URL, keyed by the path inside help/.
+ *  Only the URLs are in the bundle; the browser fetches an image when it is shown. */
+const IMAGES = new Map(Object.entries(import.meta.glob(['../../../../help/onboarding/*/**/*.{png,jpg,jpeg,gif,webp,avif,svg}', '../../../../help/tutorials/*/**/*.{png,jpg,jpeg,gif,webp,avif,svg}'], { query: '?url', import: 'default', eager: true }) as Record<string, string>)
   .map(([file, url]) => [file.replace(/^.*?\/help\//, ''), url] as const));
 
 /** Locales with any help content, English first */
@@ -109,8 +116,10 @@ export function helpImageUrl(entry: HelpEntry, src: string): string | null
 {
   if (/^(https?:|data:)/i.test(src)) return src;
 
+  // The file's own place in help/: <section>/<locale>/<rest>
+  const [section, ...rest] = entry.path.split('/');
   return [entry.locale, DEFAULT_LOCALE]
-    .map(locale => resolveHelpPath(`${locale}/${entry.path}`, src))
+    .map(locale => resolveHelpPath(`${section}/${locale}/${rest.join('/')}`, src))
     .map(path => (path ? IMAGES.get(path) : undefined))
     .find((url): url is string => !!url) ?? null;
 }

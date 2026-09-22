@@ -10,7 +10,7 @@ import { Runner } from '../../../src/runner/Runner'
 /**
  * Everything the help panel offers to run, runs:
  *
- *  - every tutorial step in help/<locale>/tutorials/, as the editor runs it: the
+ *  - every tutorial step in help/tutorials/<locale>/, as the editor runs it: the
  *    tutorial's code folded up to that block
  *  - every `@example` in the API reference (packages/ui/src/editor/help/api.generated.json,
  *    made from the doc comments by scripts/generate-api.ts)
@@ -40,7 +40,7 @@ const isFragment = (id: string) => FRAGMENTS.includes(id.replace(/ #\d+$/, ''))
 
 const TUTORIALS = (fs.readdirSync(HELP_DIR, { recursive: true }) as string[])
     .map(f => f.split(path.sep).join('/'))
-    .filter(f => /^[^/]+\/tutorials\/.+\.md$/.test(f))
+    .filter(f => /^tutorials\/[^/]+\/.+\.md$/.test(f))
     .sort()
 
 describe('Runner runs every help tutorial step', () =>

@@ -32,6 +32,43 @@ export const MODELER_METHODS_INTO_GLOBAL = [
     'explainIFC',
 ];
 
+/** The class each modeling factory returns in mesh mode (the default kernel). Modeler
+ *  types them with the kernel-neutral AnyKernelShape; the editor's autocomplete, the API
+ *  reference (scripts/generate-api.ts) and so the docs site need the concrete class.
+ *  Keep in step with the return types in src/modeler/Modeler.ts. Factories that throw in
+ *  mesh mode (cone, spiral, helix, basePlane) are deliberately absent. */
+export const FACTORY_RETURN_TYPES: Record<string, string> = {
+    // 3D shapes
+    box:          'Mesh',
+    cube:         'Mesh',
+    boxBetween:   'Mesh',
+    sphere:       'Mesh',
+    cylinder:     'Mesh',
+    // curves / wires
+    line:         'Curve',
+    arc:          'Curve',
+    spline:       'Curve',
+    polyline:     'Curve',
+    rect:         'Curve',
+    rectBetween:  'Curve',
+    circle:       'Curve',
+    // planar faces
+    plane:        'Polygon',
+    planeBetween: 'Polygon',
+    // Sketch
+    sketch:       'Sketch',
+    // Math types
+    point:        'Point',
+    vertex:       'Vertex',
+    vector:       'Vector',
+    // Collections / scene
+    all:          'ShapeCollection',
+    collection:   'ShapeCollection',
+    layerShapes:  'ShapeCollection',
+    text:         'ShapeCollection',
+    layer:        'SceneNode',
+};
+
 
 //// EXECUTION AND OUTPUT SETTINGS ////
 

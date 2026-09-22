@@ -5,7 +5,7 @@ description: Where everything is, in one minute
 
 ## Welcome to Archiyou
 
-![A table appears as its code is written](tour-welcome.gif)
+![A table appears as its code is written](./tour-welcome.gif)
 
 Archiyou turns a few lines of code into a 3D model, drawings and data. This short tour
 shows where everything is. Use **Next** to go on, or close this panel at any time: you
@@ -54,7 +54,7 @@ users.
 The toolbar on the right opens tools next to the model: the console with messages and
 errors, the scene tree, data tables, drawings and more.
 
-![Drawings made from the model](tour-drawings.gif)
+![Drawings made from the model](./tour-drawings.gif)
 
 ## Where to go next
 <!-- highlight: tool-help -->

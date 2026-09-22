@@ -17,6 +17,8 @@ import {
 
 import { localCompletionSource } from '@codemirror/lang-javascript';
 
+import { FACTORY_RETURN_TYPES } from '@archiyou/core/src/constants';
+
 import {
   type MethodInfo,
   modelerFunctions as autoModelerFunctions,
@@ -60,42 +62,8 @@ const modelerFunctions: MethodInfo[] = [...autoModelerFunctions, ...sketchForwar
 /*  Factory → shape class mapping (mesh mode default)                  */
 /* ------------------------------------------------------------------ */
 
-/** Maps every factory function name to the meshup class it returns (mesh mode).
- *  Keep in step with the return types in packages/core/src/modeler/Modeler.ts.
- *  Factories that Modeler declares `: never` (cone, spiral, helix, basePlane — they throw
- *  via _brepNotWired/not-implemented) are deliberately absent: there is no instance to
- *  complete on. */
-export const FACTORY_RETURN_TYPES: Record<string, string> = {
-  // 3D shapes
-  box:          'Mesh',
-  cube:         'Mesh',
-  boxBetween:   'Mesh',
-  sphere:       'Mesh',
-  cylinder:     'Mesh',
-  // curves / wires
-  line:         'Curve',
-  arc:          'Curve',
-  spline:       'Curve',
-  polyline:     'Curve',
-  rect:         'Curve',
-  rectBetween:  'Curve',
-  circle:       'Curve',
-  // planar faces
-  plane:        'Polygon',
-  planeBetween: 'Polygon',
-  // Sketch
-  sketch:       'Sketch',
-  // Math types
-  point:        'Point',
-  vertex:       'Vertex',
-  vector:       'Vector',
-  // Collections / scene
-  all:          'ShapeCollection',
-  collection:   'ShapeCollection',
-  layerShapes:  'ShapeCollection',
-  text:         'ShapeCollection',
-  layer:        'SceneNode',
-};
+// Which class each factory returns lives in core, next to the list of globals (imported above)
+export { FACTORY_RETURN_TYPES };
 
 /**
  * Scans the document text for variable assignments like:

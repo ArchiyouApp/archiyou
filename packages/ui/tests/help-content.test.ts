@@ -150,33 +150,64 @@ describe('tags and paths', () =>
 
   it('resolves a path against the file it is written in', () =>
   {
-    expect(resolveHelpPath('en/tutorials/table', 'table.webp')).toBe('en/tutorials/table.webp');
-    expect(resolveHelpPath('en/tutorials/table', './img/a.gif')).toBe('en/tutorials/img/a.gif');
-    expect(resolveHelpPath('en/tutorials/table', '../tour.gif')).toBe('en/tour.gif');
-    expect(resolveHelpPath('en/onboarding', '../../../secret.png')).toBeNull();
-    expect(resolveHelpPath('en/onboarding', 'https://x.org/a.png')).toBeNull();
-    expect(resolveHelpPath('en/onboarding', '/abs.png')).toBeNull();
+    expect(resolveHelpPath('tutorials/en/table', 'table.webp')).toBe('tutorials/en/table.webp');
+    expect(resolveHelpPath('tutorials/en/table', './img/a.gif')).toBe('tutorials/en/img/a.gif');
+    expect(resolveHelpPath('tutorials/en/table', '../shared.gif')).toBe('tutorials/shared.gif');
+    expect(resolveHelpPath('onboarding/en/tour', '../../../../secret.png')).toBeNull();
+    expect(resolveHelpPath('onboarding/en/tour', 'https://x.org/a.png')).toBeNull();
+    expect(resolveHelpPath('onboarding/en/tour', '/abs.png')).toBeNull();
   });
 });
 
 describe('help content files', () =>
 {
+  // help/<section>/<locale>/<rest>.md: every section is on the docs site; the editor
+  // plays onboarding and tutorials, so only those follow the step format
   const files = listMarkdown(HELP_DIR);
-  const locales = fs.readdirSync(HELP_DIR).filter(f => fs.statSync(path.join(HELP_DIR, f)).isDirectory());
+  const played = files.filter(f => /^(onboarding|tutorials)\//.test(f));
+  const localeOf = (file: string) => file.split('/')[1];
+  const inEnglish = (file: string) => file.replace(/^([^/]+)\/[^/]+\//, '$1/en/');
 
   it('has English content', () =>
   {
-    expect(files.some(f => f.startsWith('en/tutorials/'))).toBe(true);
-    expect(files).toContain('en/onboarding.md');
+    expect(files.some(f => f.startsWith('tutorials/en/'))).toBe(true);
+    expect(files).toContain('onboarding/en/tour.md');
   });
 
   files.forEach(file =>
   {
-    const doc = parseHelpDoc(fs.readFileSync(path.join(HELP_DIR, file), 'utf8'));
+    const source = fs.readFileSync(path.join(HELP_DIR, file), 'utf8');
+    const doc = parseHelpDoc(source);
 
-    it(`${file}: has a title and steps`, () =>
+    it(`${file}: has a title`, () =>
     {
       expect(doc.meta.title).toBeTruthy();
+    });
+
+    it(`${file}: has every image it refers to, next to it`, () =>
+    {
+      // Code blocks can hold anything that looks like an image link
+      const prose = source.replace(/^(`{3,}|~{3,})[\s\S]*?^\1/gm, '');
+      const images = [...prose.matchAll(/!\[[^\]]*\]\(([^)\s]+)/g)].map(m => m[1])
+        .concat(doc.meta.thumbnail ? [doc.meta.thumbnail] : [])
+        .filter(src => !/^(https?:|data:)/i.test(src));
+
+      images.forEach(src =>
+      {
+        const target = resolveHelpPath(file.replace(/\.md$/, ''), src);
+        // A translation may lean on the English image
+        const found = [target, target && inEnglish(target)].some(p => p && fs.existsSync(path.join(HELP_DIR, p)));
+        expect(found, `${file}: missing image ${src}`).toBe(true);
+      });
+    });
+  });
+
+  played.forEach(file =>
+  {
+    const doc = parseHelpDoc(fs.readFileSync(path.join(HELP_DIR, file), 'utf8'));
+
+    it(`${file}: has steps`, () =>
+    {
       expect(doc.steps.length).toBeGreaterThan(0);
     });
 
@@ -185,27 +216,7 @@ describe('help content files', () =>
       expect(unknownHighlights(doc)).toEqual([]);
     });
 
-    it(`${file}: has every image it refers to, next to it`, () =>
-    {
-      const markdown = doc.steps.flatMap(s => s.blocks).concat(doc.intro)
-        .filter(b => b.kind === 'markdown')
-        .map(b => b.text)
-        .join('\n');
-      const images = [...markdown.matchAll(/!\[[^\]]*\]\(([^)\s]+)/g)].map(m => m[1])
-        .concat(doc.meta.thumbnail ? [doc.meta.thumbnail] : [])
-        .filter(src => !/^(https?:|data:)/i.test(src));
-
-      images.forEach(src =>
-      {
-        const target = resolveHelpPath(file.replace(/\.md$/, ''), src);
-        // A translation may lean on the English image
-        const english = target?.replace(/^[^/]+\//, 'en/');
-        const found = [target, english].some(p => p && fs.existsSync(path.join(HELP_DIR, p)));
-        expect(found, `${file}: missing image ${src}`).toBe(true);
-      });
-    });
-
-    if (file.includes('/tutorials/'))
+    if (file.startsWith('tutorials/'))
     {
       it(`${file}: has tags, all of them tabs in the tutorial list`, () =>
       {
@@ -224,19 +235,16 @@ describe('help content files', () =>
 
   // A translation must keep the structure of its English source, or Back/Next and
   // the code of each step would differ between languages.
-  locales.filter(l => l !== 'en').forEach(locale =>
+  played.filter(f => localeOf(f) !== 'en').forEach(file =>
   {
-    files.filter(f => f.startsWith(`${locale}/`)).forEach(file =>
+    it(`${file}: matches the steps and code of the English file`, () =>
     {
-      it(`${file}: matches the steps and code of the English file`, () =>
-      {
-        const source = path.join(HELP_DIR, 'en', file.slice(locale.length + 1));
-        expect(fs.existsSync(source), `no English source for ${file}`).toBe(true);
-        const en = parseHelpDoc(fs.readFileSync(source, 'utf8'));
-        const tr = parseHelpDoc(fs.readFileSync(path.join(HELP_DIR, file), 'utf8'));
-        expect(tr.steps.map(s => s.highlight)).toEqual(en.steps.map(s => s.highlight));
-        expect(tr.steps.map((_, i) => codeAt(tr, i))).toEqual(en.steps.map((_, i) => codeAt(en, i)));
-      });
+      const source = path.join(HELP_DIR, inEnglish(file));
+      expect(fs.existsSync(source), `no English source for ${file}`).toBe(true);
+      const en = parseHelpDoc(fs.readFileSync(source, 'utf8'));
+      const tr = parseHelpDoc(fs.readFileSync(path.join(HELP_DIR, file), 'utf8'));
+      expect(tr.steps.map(s => s.highlight)).toEqual(en.steps.map(s => s.highlight));
+      expect(tr.steps.map((_, i) => codeAt(tr, i))).toEqual(en.steps.map((_, i) => codeAt(en, i)));
     });
   });
 });

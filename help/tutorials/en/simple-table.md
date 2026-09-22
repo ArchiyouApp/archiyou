@@ -2,7 +2,7 @@
 title: A simple table
 description: Boxes, moving and aligning, colours and your first parameter
 tags: beginner, practical, modeling
-thumbnail: simple-table.webp
+thumbnail: ./simple-table.webp
 order: 1
 ---
 

@@ -21,7 +21,7 @@ import { renderMarkdown } from '../../utils/markdown.js';
 
 /**
  * The help panel: the editor tour, step-by-step tutorials (both played from markdown
- * in help/<locale>/, see state/help.ts) and the API reference (help-reference.ts).
+ * in help/<section>/<locale>/, see state/help.ts) and the API reference (help-reference.ts).
  * A step's `<!-- highlight: … -->` spotlights a part of the editor while it is shown.
  */
 @customElement('editor-help-tool')

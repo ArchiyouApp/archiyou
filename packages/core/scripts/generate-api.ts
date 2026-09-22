@@ -26,7 +26,7 @@ import { writeFileSync } from 'fs'
 import { join, dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 
-import { MODELER_METHODS_INTO_GLOBAL } from '../src/constants'
+import { MODELER_METHODS_INTO_GLOBAL, FACTORY_RETURN_TYPES } from '../src/constants'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const OUTPUT = resolve(ROOT, '../ui/src/editor/help/api.generated.json')
@@ -130,7 +130,7 @@ async function main()
 
     const globalNames = new Set(MODELER_METHODS_INTO_GLOBAL)
     const entries: ApiEntry[] = [
-        ...members(modeler).filter(m => globalNames.has(m.name)).map(m => toEntry(m, undefined)),
+        ...members(modeler).filter(m => globalNames.has(m.name)).map(m => concreteFactory(toEntry(m, undefined))),
         ...members(globalsIface).map(m => toEntry(m, undefined)),
         ...CLASSES.flatMap(name =>
         {
@@ -165,6 +165,16 @@ function members(cls: Reflection): Reflection[]
         && !m.name.startsWith('_')
         && !m.name.startsWith('[')
         && !HIDDEN.has(m.name))
+}
+
+/** Modeler types its factories with the kernel-neutral AnyKernelShape; a script gets the
+ *  mesh class, which is the one worth showing and linking to */
+function concreteFactory(entry: ApiEntry): ApiEntry
+{
+    const concrete = entry.returns === 'AnyKernelShape' ? FACTORY_RETURN_TYPES[entry.name] : undefined
+    return concrete
+        ? { ...entry, returns: concrete, sig: entry.sig?.replace(/: AnyKernelShape$/, `: ${concrete}`) }
+        : entry
 }
 
 function classEntry(cls: Reflection): ApiEntry

@@ -1,0 +1,111 @@
+---
+/**
+ * One API entry on a reference page: heading, description, arguments, result and
+ * examples. Laid out like the editor's help panel (packages/ui/src/editor/tools/help-tool.ts).
+ */
+import { Code } from '@astrojs/starlight/components';
+import MarkdownIt from 'markdown-it';
+
+import { anchor, referenceUrl, type ApiEntry } from '../reference';
+
+interface Props
+{
+  entry: ApiEntry;
+  /** Class names that have a page, for linking the result type */
+  classNames: Set<string>;
+  /** Heading level of the entry's name */
+  level?: 2 | 3;
+}
+
+const { entry: e, classNames, level = 3 } = Astro.props;
+
+// Doc comments are ours, but raw HTML in them is shown as text, as in the editor
+const md = new MarkdownIt({ html: false, linkify: true });
+const inline = (text: string) => md.renderInline(text);
+
+const Heading = `h${level}`;
+const isCall = e.kind === 'function' || e.kind === 'method';
+---
+
+<section class="ay-entry">
+  <Heading id={anchor(e.name)}>
+    <code>{e.name}{isCall ? '()' : ''}</code>
+    <span class="ay-kind">{e.static ? 'static ' : ''}{e.kind}</span>
+  </Heading>
+
+  {e.deprecated && <p class="ay-deprecated">Deprecated: better not use this in new scripts.</p>}
+
+  {e.doc
+    ? <div class="ay-doc" set:html={md.render(e.doc)} />
+    : <p class="ay-empty">No description yet.</p>}
+
+  {e.params?.length ? (<Fragment>
+    <p class="ay-label">Arguments</p>
+    <ul class="ay-args">
+      {e.params.map(p => (
+        <li>
+          <span class="ay-arg-name">{p.name}</span>
+          <span class="ay-arg-type">{p.type}</span>
+          {p.doc && <span class="ay-arg-doc" set:html={inline(p.doc)} />}
+          {p.optional && <span class="ay-arg-optional">{p.default ? `(optional: default ${p.default})` : '(optional)'}</span>}
+        </li>
+      ))}
+    </ul>
+  </Fragment>) : null}
+
+  {e.returns && e.kind !== 'class' && e.kind !== 'property' ? (<Fragment>
+    <p class="ay-label">Returns</p>
+    <p class="ay-section">
+      {classNames.has(e.returns) ? <a href={referenceUrl(e.returns)}>{e.returns}</a> : <code>{e.returns}</code>}
+      {e.returnsDoc && <span class="ay-arg-doc" set:html={' ' + inline(e.returnsDoc)} />}
+    </p>
+  </Fragment>) : null}
+
+  {e.examples?.length ? (<Fragment>
+    <p class="ay-label">{e.examples.length > 1 ? 'Examples' : 'Example'}</p>
+    <div class="ay-section">
+      {e.examples.map(code => <Code code={code} lang="js" />)}
+    </div>
+  </Fragment>) : null}
+</section>
+
+<style>
+  .ay-entry { margin-top: 2rem; }
+  .ay-entry :is(h2, h3) {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    /* A page has many entries: their names stay below the section headings in size */
+    font-size: var(--sl-text-xl);
+  }
+  .ay-entry :is(h2, h3) code { font-size: inherit; background: none; padding: 0; }
+  .ay-kind {
+    font-size: var(--sl-text-xs);
+    font-weight: 400;
+    color: var(--sl-color-gray-3);
+  }
+  .ay-deprecated { color: var(--sl-color-orange); font-size: var(--sl-text-sm); }
+  .ay-empty { color: var(--sl-color-gray-3); font-size: var(--sl-text-sm); }
+  .ay-label {
+    margin-top: 1rem;
+    font-size: var(--sl-text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--sl-color-gray-3);
+  }
+  /* Content under a label sits in, so the labels carry the structure */
+  .ay-args, .ay-section {
+    margin-top: 0.25rem;
+    padding-left: 1rem;
+    font-size: var(--sl-text-sm);
+  }
+  .ay-args { list-style: none; }
+  .ay-args li + li { margin-top: 0.25rem; }
+  .ay-args li > span + span { margin-left: 0.4rem; }
+  .ay-arg-name { font-family: var(--__sl-font-mono); font-weight: 700; color: var(--sl-color-white); }
+  .ay-arg-type { font-style: italic; color: var(--sl-color-text-accent); }
+  .ay-arg-doc, .ay-arg-optional { color: var(--sl-color-gray-3); }
+  .ay-arg-optional { white-space: nowrap; }
+</style>

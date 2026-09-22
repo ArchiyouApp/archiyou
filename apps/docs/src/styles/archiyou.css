@@ -1,0 +1,61 @@
+/* Archiyou look on Starlight. Brand values from apps/editor/src/styles/design-tokens.ts;
+   every --sl-* property Starlight has is in
+   node_modules/@astrojs/starlight/dist/style/props.css (they sit in a CSS layer, so the
+   unlayered rules here win). */
+
+:root
+{
+  /* Same typeface as the editor (loaded in astro.config.mjs `head`) */
+  --sl-font: 'Plus Jakarta Sans';
+
+  --sl-color-accent-low: #10183f;
+  --sl-color-accent: #4f6ef2;
+  --sl-color-accent-high: #c8d2fc;
+
+  /* Header in the brand's secondary colour, like the editor's nav bar, in both themes */
+  --sl-color-bg-nav: #180c2d;
+
+  /* Some overrides */
+  --sl-text-h1: var(--sl-text-3xl);
+  --sl-text-h2: var(--sl-text-2xl);
+
+
+}
+
+@media (min-width: 50em)
+{
+  :root { --sl-text-h1: var(--sl-text-4xl); }
+}
+
+:root[data-theme='light']
+{
+  --sl-color-accent-low: #eef1fe;
+  --sl-color-accent: #2447e6;
+  --sl-color-accent-high: #1b35b0;
+}
+
+/* The header is dark in the light theme too, so its search box, icons and menus use
+   Starlight's dark palette there */
+header.header
+{
+  --sl-color-white: hsl(0, 0%, 100%);
+  --sl-color-gray-1: hsl(224, 20%, 94%);
+  --sl-color-gray-2: hsl(224, 6%, 77%);
+  --sl-color-gray-3: hsl(224, 6%, 56%);
+  --sl-color-gray-4: hsl(224, 7%, 36%);
+  --sl-color-gray-5: rgba(255, 255, 255, 0.18);
+  --sl-color-gray-6: rgba(255, 255, 255, 0.08);
+  --sl-color-black: rgba(255, 255, 255, 0.06);
+  --sl-color-text: var(--sl-color-gray-2);
+  --sl-color-text-accent: var(--sl-color-white);
+  --sl-color-hairline-shade: #180c2d;
+  border-bottom-color: #180c2d;
+}
+
+/* Overrides for index */
+.sl-link-button.btn-editor
+{
+  background: red;
+  color: white;
+  border: none;
+}

@@ -1,7 +1,7 @@
 /**
  * help-content.ts — parse help markdown (onboarding, tutorials) into steps.
  *
- * The files live in `help/<locale>/` at the repository root and are plain markdown,
+ * The files live in `help/<section>/<locale>/` at the repository root and are plain markdown,
  * so they read well on GitHub, on a future docs site and to a translator. Three
  * conventions carry the extra meaning, all invisible to a normal markdown renderer:
  *
@@ -105,7 +105,7 @@ export function unknownTags(doc: HelpDoc): string[]
 }
 
 /** Resolve a path written in a help file (`thumbnail:`, an image) against that file's
- *  own path, e.g. ('en/tutorials/table', './table.png') → 'en/tutorials/table.png'.
+ *  own path, e.g. ('tutorials/en/table', './table.png') → 'tutorials/en/table.png'.
  *  null for an absolute URL or a path that climbs out of the help directory. */
 export function resolveHelpPath(filePath: string, relative: string): string | null
 {
