@@ -127,6 +127,14 @@ import type { ComponentGraphNode } from '@archiyou/meshup';
 import type { Document } from '../docs/Document';
 
 
+/** What `$component()` returns: another script, used as a part of this one. Set its
+ *  parameters, then take its model (or its drawings, tables, …):
+ *
+ *  ```js
+ *  leg = $component('./table-leg').params({ HEIGHT: 720 }).model()
+ *  ```
+ *
+ *  Nothing runs until `.model()`, `.get()`, `.docs()` or `.all()` asks for a result. */
 export class RunnerComponentImporter
 {
     //// SETTINGS ////
@@ -159,7 +167,10 @@ export class RunnerComponentImporter
         console.info(`RunnerComponentImporter: Created importer for component from ref "${this.ref}"`);
     }
 
-    /** Set param values before execution */
+    /** Set the component's parameters, by name. Parameters left out keep their default.
+     *
+     *  @param params Values by parameter name, like `{ WIDTH: 800, HEIGHT: 720 }`
+     */
     params(params?: Record<string, any>): this
     {
         if(typeof params !== 'object')
@@ -170,7 +181,10 @@ export class RunnerComponentImporter
         return this;
     }
 
-    /** Set single pipeline to get outputs from */
+    /** Take the results of one of the component's pipelines instead of the default one.
+     *
+     *  @param p Name of the pipeline (see `$pipeline()`)
+     */
     pipeline(p:string): this
     {
         if(typeof p !== 'string')
@@ -274,8 +288,8 @@ export class RunnerComponentImporter
         return this._getAndExecute();
     }
 
-    /** Shortcut method for getting model from single pipeline */
-    model(): ImportComponentResult 
+    /** Run the component and get its shapes, to place in this model like any other shape. */
+    model(): ImportComponentResult
     {
         return this.get(`${this._pipeline}/model/internal`);
     }

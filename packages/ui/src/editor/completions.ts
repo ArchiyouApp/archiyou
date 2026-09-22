@@ -17,6 +17,8 @@ import {
 
 import { localCompletionSource } from '@codemirror/lang-javascript';
 
+import { FACTORY_RETURN_TYPES } from '@archiyou/core/src/constants';
+
 import {
   type MethodInfo,
   modelerFunctions as autoModelerFunctions,
@@ -60,49 +62,15 @@ const modelerFunctions: MethodInfo[] = [...autoModelerFunctions, ...sketchForwar
 /*  Factory → shape class mapping (mesh mode default)                  */
 /* ------------------------------------------------------------------ */
 
-/** Maps every factory function name to the meshup class it returns (mesh mode).
- *  Keep in step with the return types in packages/core/src/modeler/Modeler.ts.
- *  Factories that Modeler declares `: never` (cone, spiral, helix, basePlane — they throw
- *  via _brepNotWired/not-implemented) are deliberately absent: there is no instance to
- *  complete on. */
-const FACTORY_RETURN_TYPES: Record<string, string> = {
-  // 3D shapes
-  box:          'Mesh',
-  cube:         'Mesh',
-  boxBetween:   'Mesh',
-  sphere:       'Mesh',
-  cylinder:     'Mesh',
-  // curves / wires
-  line:         'Curve',
-  arc:          'Curve',
-  spline:       'Curve',
-  polyline:     'Curve',
-  rect:         'Curve',
-  rectBetween:  'Curve',
-  circle:       'Curve',
-  // planar faces
-  plane:        'Polygon',
-  planeBetween: 'Polygon',
-  // Sketch
-  sketch:       'Sketch',
-  // Math types
-  point:        'Point',
-  vertex:       'Vertex',
-  vector:       'Vector',
-  // Collections / scene
-  all:          'ShapeCollection',
-  collection:   'ShapeCollection',
-  layerShapes:  'ShapeCollection',
-  text:         'ShapeCollection',
-  layer:        'SceneNode',
-};
+// Which class each factory returns lives in core, next to the list of globals (imported above)
+export { FACTORY_RETURN_TYPES };
 
 /**
  * Scans the document text for variable assignments like:
  *   `let b = box(10, 10, 10)` · `const s = sphere(50)` · `c = line(...)`
  * and returns a map from variable name → inferred shape class name.
  */
-function buildScopeTypeMap(docText: string): Map<string, string>
+export function buildScopeTypeMap(docText: string): Map<string, string>
 {
   const map = new Map<string, string>();
   const re = /\b(?:(?:let|const|var)\s+)?([a-zA-Z_$]\w*)\s*=\s*([a-z_$]\w*)\s*\(/g;
@@ -127,7 +95,7 @@ function buildScopeTypeMap(docText: string): Map<string, string>
  *   `box(10).color('red')`       → `box(10)`
  *   `const x = sphere(50)`       → `sphere(50)`   ← assignment stripped
  */
-function extractChainRoot(textBefore: string): string
+export function extractChainRoot(textBefore: string): string
 {
   // Take the last statement (after last newline or semicolon)
   const parts = textBefore.split(/[;\n]/);
@@ -156,7 +124,7 @@ function extractChainRoot(textBefore: string): string
  *  - Plain identifier  → scope-map lookup
  *  - Call expression   → FACTORY_RETURN_TYPES lookup
  */
-function resolveType(root: string, scopeMap: Map<string, string>): string | null
+export function resolveType(root: string, scopeMap: Map<string, string>): string | null
 {
   if (/^[a-zA-Z_$]\w*$/.test(root)) return scopeMap.get(root) ?? null;
   const callMatch = root.match(/^([a-z_$]\w*)\s*\(/);

@@ -20,7 +20,8 @@
  * Relative links and images are the one thing markdown cannot express safely here:
  * a README's `./docs/diagram.png` is a path in the module's own repository, which
  * the editor has no way to resolve. Those images become their alt text rather than
- * a broken-image icon.
+ * a broken-image icon — unless the caller can resolve them (`resolveImage`, used by
+ * the help panel for images bundled next to its markdown).
  *
  * Synchronous, and markdown-it is imported statically: the editor already pulls it
  * in through @dile/editor (prosemirror-markdown), so deferring it would buy no
@@ -67,13 +68,15 @@ function configure(md: MarkdownIt): MarkdownIt
   };
 
   /** Drop images the editor cannot resolve, keeping their alt text. */
-  md.renderer.rules.image = (tokens, idx, options, env, self) =>
+  md.renderer.rules.image = (tokens, idx, options, env: MarkdownOptions | undefined, self) =>
   {
     const token = tokens[idx];
     const src = token.attrGet('src') ?? '';
     const alt = self.renderInlineAsText(token.children ?? [], options, env);
 
-    if (!ABSOLUTE.test(src)) return md.utils.escapeHtml(alt);
+    const resolved = ABSOLUTE.test(src) ? null : env?.resolveImage?.(src) ?? null;
+    if (!ABSOLUTE.test(src) && !resolved) return md.utils.escapeHtml(alt);
+    if (resolved) token.attrSet('src', resolved);
 
     token.attrSet('alt', alt);
     token.attrSet('loading', 'lazy');
@@ -83,15 +86,22 @@ function configure(md: MarkdownIt): MarkdownIt
   return md;
 }
 
+export interface MarkdownOptions
+{
+  /** URL for a relative image path, or null to show its alt text instead.
+   *  Only ever given paths the source wrote; the URL returned is trusted. */
+  resolveImage?: (src: string) => string | null;
+}
+
 /**
  * Markdown → HTML, with none of the source's own markup surviving.
  *
  * Exported separately from renderMarkdown() so the escaping rules can be tested
  * where there is no DOM for DOMPurify to use.
  */
-export function markdownToHtml(source: string): string
+export function markdownToHtml(source: string, options: MarkdownOptions = {}): string
 {
-  return md.render(source ?? '');
+  return md.render(source ?? '', options);
 }
 
 /** Markdown → HTML, sanitized. This is what a component injects.
@@ -100,9 +110,9 @@ export function markdownToHtml(source: string): string
  *  a bare factory — no `sanitize` at all — so the call is skipped rather than
  *  allowed to throw. Nothing is lost by that: point 1 in the file header is what
  *  makes the output safe, and the sanitizer is the second lock on the same door. */
-export function renderMarkdown(source: string): string
+export function renderMarkdown(source: string, options: MarkdownOptions = {}): string
 {
-  const html = markdownToHtml(source);
+  const html = markdownToHtml(source, options);
   if (typeof DOMPurify.sanitize !== 'function') return html;
 
   return DOMPurify.sanitize(html, {

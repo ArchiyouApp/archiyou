@@ -434,7 +434,9 @@ export class ParamManager
      *      width:  { type:'number', min:100, max:5000, step:10, default:1200 },
      *      name:   'text',
      *  });
-     *  $PARAMS.define('OPENINGS', 'list', { of: 'Opening', default: [ ... ] });
+     *  $PARAMS.define('OPENINGS', 'list', { of: 'Opening', default: [
+     *      { wall: 'front', width: 900, name: 'door' },
+     *  ] });
      */
     defineObject(name:string, props:Record<string,ScriptObjectPropDef>, options:ScriptObjectDefineOptions = {}):Record<string,any>
     {
@@ -493,15 +495,20 @@ export class ParamManager
     //// PROGRAMMATIC PARAM DEFINITION ////
 
     /**
-     * Programmatically define a param from the script. Two forms:
+     * Add a parameter to the script: a control in the Parameters panel (and in a published
+     * configurator) whose value the code reads as `$NAME`. Give a name, a type
+     * (`'number'`, `'boolean'`, `'options'`, `'text'`, `'list'`, …) and options such as the
+     * default and the range. An object with the full definition also works, for advanced use.
      *
-     * Ergonomic (primary):
-     * @example $PARAMS.define('WIDTH', 'number', { minimum: 50, maximum: 200, multipleOf: 5, default: 120, group: 'Size' })
-     * @example $PARAMS.define('MODE',  'options', { options: ['a','b','c'], default: 'a' })
-     * @example $PARAMS.define('SHOW',  'boolean', { default: true })
+     * @example
+     * $PARAMS.define('WIDTH', 'number', { minimum: 50, maximum: 200, multipleOf: 5, default: 120, group: 'Size' })
+     * $PARAMS.define('MODE',  'options', { options: ['a','b','c'], default: 'a' })
+     * $PARAMS.define('SHOW',  'boolean', { default: true })
+     * if ($SHOW) box($WIDTH, 50, 20)
      *
-     * Advanced (object / ScriptParam):
-     * @example $PARAMS.define({ name: 'SIZE', type:'number', schema: { type: 'number', minimum: 0, maximum: 100, default: 50 } })
+     * @example
+     * // Advanced: the whole definition as one object
+     * $PARAMS.define({ name: 'SIZE', type:'number', schema: { type: 'number', minimum: 0, maximum: 100, default: 50 } })
      */
     define(p: ScriptParam | ScriptParamData): this
     define(name: string, type: ScriptParamType, options?: ScriptParamDefineOptions): this

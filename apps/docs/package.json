@@ -1,0 +1,22 @@
+{
+  "name": "@archiyou/docs",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "docs.archiyou.com: tutorials and guides from help/ at the repository root, built with Astro Starlight",
+  "scripts": {
+    "dev": "astro dev --port 4321",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.42.2",
+    "astro": "^7.3.3",
+    "markdown-it": "^14.3.2",
+    "sharp": "^0.35.4"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2"
+  }
+}

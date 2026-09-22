@@ -29,18 +29,24 @@ export class EditorToolbar extends LitElement
   {
     return html`
       <div class="tool-buttons">
-        ${this.tools.map((tool, i) => html`
-          <wa-button
-            id="tool-btn-${i}"
-            appearance="plain"
-            class=${this.activeIds.includes(tool.id) ? 'active' : ''}
-            @click=${() => this._toggle(tool.id)}
-          >
-            <wa-icon library="lucide" name=${tool.icon} label=${tool.name}></wa-icon>
-          </wa-button>
-          <wa-tooltip for="tool-btn-${i}" placement="left">${msg(tool.name)}</wa-tooltip>
-        `)}
+        ${this.tools.map(tool => this._renderButton(tool))}
       </div>
+    `;
+  }
+
+  private _renderButton(tool: ToolDef)
+  {
+    return html`
+      <wa-button
+        id="tool-btn-${tool.id}"
+        data-help="tool-${tool.id}"
+        appearance="plain"
+        class=${this.activeIds.includes(tool.id) ? 'active' : ''}
+        @click=${() => this._toggle(tool.id)}
+      >
+        <wa-icon library="lucide" name=${tool.icon} label=${tool.name}></wa-icon>
+      </wa-button>
+      <wa-tooltip for="tool-btn-${tool.id}" placement="left">${msg(tool.name)}</wa-tooltip>
     `;
   }
 

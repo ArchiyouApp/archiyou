@@ -66,6 +66,110 @@ import { ModuleRegistry } from '../modules/ModuleRegistry'; // optional, entitle
 // Settings
 import { MODELER_METHODS_INTO_GLOBAL, SCRIPT_OUTPUT_GLTF_OPTIONS_DEFAULT, outputsNeedRecipes } from '../constants'; 
 import { ParamManager } from '../execution/ParamManager';
+import type { Make } from '../modeler/Make';
+import type { FabFacade } from '../modeler/Fab';
+import type { Handle } from '../interaction/Handle';
+import type { ShapeCollection } from '@archiyou/meshup';
+
+/**
+ * What a script can use besides the modeling functions (`box()`, `sketch()`, …, see
+ * MODELER_METHODS_INTO_GLOBAL): the modules, the `$` functions and the helpers.
+ *
+ * Documentation only. The Runner builds the real scope in _addModulesToScopeState(),
+ * _addLoggingToScopeState() and _addMetaMethodsToScopeState(); this interface is what
+ * the editor's API reference (scripts/generate-api.ts) reads to describe them. Keep
+ * the two in step when adding a global.
+ */
+export interface ScriptGlobals
+{
+    //// MODULES ////
+
+    /** Drawings and documents: pages with views of the model, text, tables and images.
+     *
+     *  @example
+     *  b = box(100, 60, 40)
+     *  doc.create('drawing')
+     *     .page('front')
+     *     .view('front')
+     *     .text('A box')
+     */
+    doc: Docs;
+    /** Same as `doc` */
+    docs: Docs;
+    /** Tables and metrics: numbers and lists that come out of the model, shown in the
+     *  Data and Metrics tools and available to configurators.
+     *
+     *  @example
+     *  b = box(100, 60, 40)
+     *  calc.metric('Volume', Math.round(b.volume()), { unit: 'mm3' })
+     */
+    calc: Calc;
+    /** Ready-made building parts: walls, floors, frames and part lists. */
+    make: Make;
+    /** Fabrication: how the parts of the model are cut, joined and priced. */
+    fab: FabFacade;
+    /** Materials to assign to shapes, with their colour, weight and carbon. */
+    materials: MaterialManager;
+    /** The parameters of the script. `$PARAMS.define()` adds one; every parameter is
+     *  also available as its own global, like `$WIDTH`.
+     *
+     *  @example
+     *  $PARAMS.define('WIDTH', 'number', { default: 100, minimum: 50, maximum: 200 })
+     *  box($WIDTH, 50, 20)
+     */
+    $PARAMS: ParamManager;
+
+    //// $ FUNCTIONS ////
+
+    /** Use another script as a component. Returns an importer: set its parameters with
+     *  `.params()` and get the shapes with `.get()`. Without a name it lists the scripts
+     *  you can use.
+     *
+     *  @param name The script: `'./name'` for one of your own, `'@author/name:version'` for a published one
+     *  @param params Parameter values for the component, same as `.params()`
+     */
+    $component(name?: string, params?: Record<string, any>): RunnerComponentImporter;
+    /** Register a pipeline: a named step that runs after the model, for instance to
+     *  prepare shapes for a drawing.
+     *
+     *  @param name Name of the pipeline, referred to by docs and outputs
+     *  @param fn The function to run
+     */
+    $pipeline(name: string, fn: () => any): void;
+    /** Declare a script module (an optional extension installed on the server) and get it.
+     *
+     *  @param name Name of the module, e.g. `'cloudcalc'`
+     */
+    $module(name: string): any;
+    /** Make a handle: a point in the viewer that users drag to change a parameter.
+     *  Place it with `.start(target)` or `.at(target)`. */
+    $handle(): Handle;
+    /** Import a file from the web (SVG, GeoJSON, DXF, STL, OBJ, glTF, AMF, 3MF) as shapes.
+     *  The address must be written out as text, not computed.
+     *
+     *  @param url Web address of the file
+     *  @param opts Import options, such as scaling and centring
+     */
+    $import(url: string, opts?: Record<string, any>): ShapeCollection;
+
+    //// HELPERS ////
+
+    /** Print values to the console, like `console.log()`. Objects are printed as data.
+     *
+     *  @example
+     *  b = box(100, 60, 40)
+     *  print('volume', b.volume())
+     */
+    print(...values: any[]): void;
+    /** Log a message to the console at info level */
+    log(...values: any[]): void;
+    /** Stop the script here, for instance to look at the model built so far.
+     *  The shapes made before it are still shown.
+     *
+     *  @param message Shown with the warning in the console
+     */
+    exit(message?: string): never;
+}
 
 /** How many component execution results the Runner memoises before evicting the
  *  least-recently-used one. Every entry pins that run's Shapes in memory, so this is a

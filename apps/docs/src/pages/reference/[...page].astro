@@ -1,0 +1,97 @@
+---
+/**
+ * The API reference pages: /reference/, /reference/globals/ and /reference/<class>/.
+ * Generated from the editor's reference data (see src/reference.ts).
+ */
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import MarkdownIt from 'markdown-it';
+
+import ApiEntryView from '../../components/ApiEntry.astro';
+import api from '../../../../../packages/ui/src/editor/help/api.generated.json';
+import { anchor, classes, classGroups, globals, membersOf, referenceUrl, type ApiEntry } from '../../reference';
+
+const ENTRIES = (api as { entries: ApiEntry[] }).entries;
+const md = new MarkdownIt({ html: false, linkify: true });
+
+export function getStaticPaths()
+{
+  const entries = (api as { entries: ApiEntry[] }).entries;
+  return [
+    { params: { page: undefined }, props: { page: 'overview' } },
+    { params: { page: 'globals' }, props: { page: 'globals' } },
+    ...classes(entries).map(c => ({ params: { page: c.name.toLowerCase() }, props: { page: c.name } })),
+  ];
+}
+
+const { page } = Astro.props as { page: string };
+const classNames = new Set(classes(ENTRIES).map(c => c.name));
+
+const cls = page !== 'overview' && page !== 'globals' ? ENTRIES.find(e => e.id === page) : undefined;
+const functions = globals(ENTRIES).filter(e => e.kind === 'function');
+const modules = globals(ENTRIES).filter(e => e.kind === 'module');
+const members = cls ? membersOf(ENTRIES, cls.name) : [];
+const methods = members.filter(e => e.kind === 'method');
+const properties = members.filter(e => e.kind === 'property');
+
+const title = page === 'overview' ? 'API reference' : page === 'globals' ? 'Globals' : cls!.name;
+const description = page === 'overview'
+  ? 'Everything a script can use, from the doc comments in the source'
+  : page === 'globals' ? 'Functions and modules a script can use directly' : cls?.doc?.split('\n')[0];
+
+/** Table of contents: section headings, then entries */
+const toc = (label: string, list: ApiEntry[]) => list.length
+  ? [{ depth: 2, slug: anchor(label.toLowerCase()), text: label }, ...list.map(e => ({ depth: 3, slug: anchor(e.name), text: e.name }))]
+  : [];
+const headings = page === 'overview' ? []
+  : page === 'globals' ? [...toc('Functions', functions), ...toc('Modules', modules)]
+  : [...toc('Methods', methods), ...toc('Properties', properties)];
+---
+
+<StarlightPage frontmatter={{ title, description }} headings={headings}>
+  {page === 'overview' && (<Fragment>
+    <p>
+      Everything a script can use. It is made from the doc comments in the Archiyou source, the
+      same reference as the help panel in the editor (press F1 on a word in the code there).
+    </p>
+    <h2 id="functions">Functions</h2>
+    <p class="ay-chips">{functions.map(e => <a href={referenceUrl(undefined, e.name)}><code>{e.name}()</code></a>)}</p>
+    <h2 id="modules">Modules</h2>
+    <p class="ay-chips">{modules.map(e => <a href={referenceUrl(undefined, e.name)}><code>{e.name}</code></a>)}</p>
+    <h2 id="classes">Classes</h2>
+    {classGroups(ENTRIES).map(g => (
+      <Fragment>
+        <p class="ay-group">{g.label}</p>
+        <p class="ay-chips">{g.classes.map(c => <a href={referenceUrl(c.name)}><code>{c.name}</code></a>)}</p>
+      </Fragment>
+    ))}
+  </Fragment>)}
+
+  {page === 'globals' && (<Fragment>
+    <h2 id="functions">Functions</h2>
+    {functions.map(e => <ApiEntryView entry={e} classNames={classNames} />)}
+    <h2 id="modules">Modules</h2>
+    {modules.map(e => <ApiEntryView entry={e} classNames={classNames} />)}
+  </Fragment>)}
+
+  {cls && (<Fragment>
+    {cls.extends && <p>Extends {classNames.has(cls.extends) ? <a href={referenceUrl(cls.extends)}>{cls.extends}</a> : <code>{cls.extends}</code>}</p>}
+    {cls.doc ? <div set:html={md.render(cls.doc)} /> : <p>No description yet.</p>}
+    {methods.length > 0 && <h2 id="methods">Methods</h2>}
+    {methods.map(e => <ApiEntryView entry={e} classNames={classNames} />)}
+    {properties.length > 0 && <h2 id="properties">Properties</h2>}
+    {properties.map(e => <ApiEntryView entry={e} classNames={classNames} />)}
+  </Fragment>)}
+</StarlightPage>
+
+<style>
+  .ay-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .ay-chips a { text-decoration: none; }
+  .ay-group {
+    margin-top: 1rem;
+    font-size: var(--sl-text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--sl-color-gray-3);
+  }
+</style>

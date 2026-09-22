@@ -26,6 +26,7 @@ import '@archiyou/ui/editor/tools/document-viewer.js';
 import '@archiyou/ui/editor/tools/instruct-tool.js';
 import '@archiyou/ui/editor/tools/console-tool.js';
 import '@archiyou/ui/editor/tools/profiling-tool.js';
+import '@archiyou/ui/editor/tools/help-tool.js';
 import '@archiyou/ui/editor/file-info.js';
 import '@archiyou/ui/editor/script-manager.js';
 import '@archiyou/ui/editor/script-importer.js';
@@ -38,6 +39,7 @@ import type { ToolDef } from '@archiyou/ui/editor/toolbar.js';
 import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystem, ensureScriptUnitSystem, perStatement, kernel, autoRun, wasActiveScriptRestored } from '../state/workspace';
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
 import { registerScheduleExecution, triggerResetCamera } from '../state/viewer';
+import { registerHelpRunner, openHelpDoc, claimOnboarding, setHelpCursor, lookupHelpAtCursor, ONBOARDING_PATH } from '../state/help';
 import { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 
@@ -53,6 +55,7 @@ export class PageEditor extends SignalWatcher(LitElement)
 
   /** Toolbar order, top to bottom. */
   readonly TOOLS: ToolDef[] = [
+    { id: 'help',    icon: 'circle-question-mark', name: 'Help', exclusive: false, component: 'editor-help-tool',   width: 32, height: 60 },
     { id: 'console', icon: 'terminal',   name: 'Console',   exclusive: false, component: 'editor-console-tool',  width: 30, height: 50 },
     { id: 'scene',   icon: 'network',    name: 'Scene',     exclusive: false, component: 'editor-scene-tool',    width: 30, height: 50 },
     { id: 'data',    icon: 'table',      name: 'Data',      exclusive: false, component: 'editor-data-tool',     width: 30, height: 50 },
@@ -72,6 +75,7 @@ export class PageEditor extends SignalWatcher(LitElement)
     this._pendingKernel = kernel.get();
     return html`
       <editor-main-menu
+        data-help="main-menu"
         .active=${this._activeSection}
         @menu-action=${this._handleMenuAction}
         @menu-select=${this._handleMenuSelect}
@@ -99,14 +103,17 @@ export class PageEditor extends SignalWatcher(LitElement)
         <wa-icon class="split-grip"
             slot="divider" library="lucide" name="grip-vertical"></wa-icon>
         <div class="left-panel" slot="start">
-          <editor-file-info @script-forked=${this._handleScriptForked}></editor-file-info>
+          <editor-file-info data-help="file-info" @script-forked=${this._handleScriptForked}></editor-file-info>
           <presets-menu></presets-menu>
-          <param-menu @param-value-change=${() => this._scheduleParamExecute()}></param-menu>
+          <param-menu data-help="params" @param-value-change=${() => this._scheduleParamExecute()}></param-menu>
           <editor-code-box
+              data-help="code"
               .code=${editorScript.get()?.code ?? ''}
               ?readonly=${isReadOnly.get()}
             @change=${this._handleCodeChange}
             @execute=${this._handleExecute}
+            @cursor-change=${(e: CustomEvent<{ code: string, pos: number }>) => setHelpCursor(e.detail.code, e.detail.pos)}
+            @help-lookup=${this._handleHelpLookup}
           ></editor-code-box>
         </div>
         <wa-split-panel
@@ -115,7 +122,7 @@ export class PageEditor extends SignalWatcher(LitElement)
           position=${this._activeTools.length > 0 ? 100 - this._activeTools.reduce((max, t) => Math.max(max, t.width), 0) : 100}
         >
           ${this._activeTools.length > 0 ? html`<wa-icon slot="divider" class="split-grip" library="lucide" name="grip-vertical"></wa-icon>` : ''}
-          <model-viewer slot="start"></model-viewer>
+          <model-viewer slot="start" data-help="viewer"></model-viewer>
           <editor-tool-panels
             slot="end"
             .tools=${this._activeTools}
@@ -124,6 +131,7 @@ export class PageEditor extends SignalWatcher(LitElement)
         </wa-split-panel>
       </wa-split-panel>
       <editor-toolbar
+        data-help="toolbar"
         .tools=${this.TOOLS}
         .activeIds=${this._activeTools.map(t => t.id)}
         @tool-toggle=${this._handleToolToggle}
@@ -208,12 +216,20 @@ export class PageEditor extends SignalWatcher(LitElement)
     // Register execution callback so the viewer can trigger re-execution
     // when a handle (or other interaction) changes a param value.
     registerScheduleExecution(() => this._scheduleParamExecute());
+    // The help panel's tutorials put code in the editor and run it through here
+    registerHelpRunner(code => void this._runHelpCode(code));
     // Default: open scene tool
     const sceneTool = this.TOOLS.find(t => t.id === 'scene');
     if (sceneTool) this._activeTools = [sceneTool];
 
     this._consumeNewQueryParam();
     void this._consumeScriptLink();
+    // A tutorial link wins over the first-visit tour. Either way the help panel gets
+    // the tool area to itself, instead of half of it under the scene tool.
+    const tutorial = this._consumeTutorialQueryParam();
+    const tour = !tutorial && claimOnboarding();
+    if (tour) void openHelpDoc(ONBOARDING_PATH);
+    if (tutorial || tour) this._activeTools = this.TOOLS.filter(t => t.id === 'help');
 
     console.info('Editor::connectedCallback(): Warming up worker…');
     warmupWorker()
@@ -238,6 +254,7 @@ export class PageEditor extends SignalWatcher(LitElement)
     {
       this._consumeNewQueryParam();
       void this._consumeScriptLink();
+      this._consumeTutorialQueryParam();
     }
   }
 
@@ -380,6 +397,69 @@ export class PageEditor extends SignalWatcher(LitElement)
     {
       console.warn('Editor::_consumeNewQueryParam():', err);
     }
+  }
+
+  /** `/editor?tutorial=<name>` opens the help panel on that tutorial (in a new script),
+   *  then cleans the URL so a refresh doesn't start it again. Returns true when the
+   *  param was there. */
+  private _consumeTutorialQueryParam(): boolean
+  {
+    try
+    {
+      const url = new URL(window.location.href);
+      const name = url.searchParams.get('tutorial');
+      if (name === null) return false;
+
+      url.searchParams.delete('tutorial');
+      history.replaceState(null, '', `${url.pathname}${url.search}`);
+      this._openTool('help');
+      void openHelpDoc(`tutorials/${name}`).then(found =>
+      {
+        if (!found) this._showNotice(`There is no tutorial called “${name}”.`);
+      });
+      return true;
+    }
+    catch (err)
+    {
+      console.warn('Editor::_consumeTutorialQueryParam():', err);
+      return false;
+    }
+  }
+
+  /** F1 in the code: the API reference for the word at the cursor, in the help panel. */
+  private _handleHelpLookup(e: CustomEvent<{ code: string, pos: number }>)
+  {
+    setHelpCursor(e.detail.code, e.detail.pos);
+    this._openTool('help');
+    void lookupHelpAtCursor();
+  }
+
+  /** Put help code (a tutorial step) in the editor and run it right away. */
+  private async _runHelpCode(code: string)
+  {
+    if (isReadOnly.get()) return;
+    updateScriptCode(code);
+
+    // The code box echoes the new code back as a change event, which schedules an
+    // automatic run a moment later — on top of this one. Let it do so, then cancel it.
+    await this.updateComplete;
+    await this.shadowRoot?.querySelector('editor-code-box')?.updateComplete;
+    if (this._codeChangeTimeout !== null)
+    {
+      clearTimeout(this._codeChangeTimeout);
+      this._codeChangeTimeout = null;
+    }
+
+    // A run already in progress would make _handleExecute() drop this one
+    await this._whenIdle();
+    void this._handleExecute();
+  }
+
+  private _whenIdle(): Promise<void>
+  {
+    return executing.get()
+      ? new Promise(resolve => setTimeout(() => resolve(this._whenIdle()), 50))
+      : Promise.resolve();
   }
 
   // Internal state
@@ -636,6 +716,12 @@ export class PageEditor extends SignalWatcher(LitElement)
       return;
     }
 
+    if (value === 'help')
+    {
+      this._openTool('help');
+      return;
+    }
+
     if (value === 'export-script-data')
     {
       this._exportScriptDataAsJs();
@@ -867,14 +953,23 @@ export class PageEditor extends SignalWatcher(LitElement)
     }
     else
     {
-      const base = tool.exclusive ? [] : this._activeTools.filter(t => !t.exclusive);
-      this._activeTools = [...base, tool];
-      // If the newly active tool declares outputs and we already have a result,
-      // run a lean extra execute immediately to populate its data.
-      if (tool.outputs?.length && executionResult.get())
-      {
-        this._executeToolOutputs();
-      }
+      this._openTool(id);
+    }
+  }
+
+  /** Open a tool panel if it is not open yet. */
+  private _openTool(id: string)
+  {
+    const tool = this.TOOLS.find(t => t.id === id);
+    if (!tool || this._activeTools.some(t => t.id === id)) return;
+
+    const base = tool.exclusive ? [] : this._activeTools.filter(t => !t.exclusive);
+    this._activeTools = [...base, tool];
+    // If the newly active tool declares outputs and we already have a result,
+    // run a lean extra execute immediately to populate its data.
+    if (tool.outputs?.length && executionResult.get())
+    {
+      this._executeToolOutputs();
     }
   }
 

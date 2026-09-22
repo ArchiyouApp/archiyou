@@ -1,0 +1,3 @@
+# Astro's generated types and cache
+.astro/
+dist/

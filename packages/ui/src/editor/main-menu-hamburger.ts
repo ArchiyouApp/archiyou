@@ -13,8 +13,8 @@ import '@awesome.me/webawesome/dist/components/divider/divider.js';
 import { editorScript, isReadOnly } from '@archiyou/editor/src/state/workspace';
 import { APP_VERSION } from '@archiyou/editor/src/settings';
 
-@customElement('editor-main-menu-file-menu')
-export class MainMenuFileMenu extends SignalWatcher(LitElement)
+@customElement('editor-main-menu-hamburger')
+export class MainMenuHamburger extends SignalWatcher(LitElement)
 {
   // ── 1. Render ──
   override render()
@@ -27,7 +27,7 @@ export class MainMenuFileMenu extends SignalWatcher(LitElement)
       <wa-dropdown placement="bottom-start" @wa-select=${this._handleSelect}>
 
         <!-- hamburger button -->
-        <wa-button slot="trigger" appearance="plain" class="trigger">
+        <wa-button slot="trigger" appearance="plain" class="trigger" data-help="file-menu">
             <wa-icon library="lucide" name="menu" label="Menu"></wa-icon>
         </wa-button>
 
@@ -130,8 +130,8 @@ export class MainMenuFileMenu extends SignalWatcher(LitElement)
 
         <wa-divider></wa-divider>
 
-        <!-- TODO: help --> 
-         <wa-dropdown-item value="help" class="help">
+        <!-- opens the help tool (editor.ts _handleMenuAction) -->
+        <wa-dropdown-item value="help">
           <wa-icon slot="icon" library="lucide" name="help-circle"></wa-icon>
           ${msg('Help')}
         </wa-dropdown-item>
@@ -184,11 +184,6 @@ export class MainMenuFileMenu extends SignalWatcher(LitElement)
       border-color: color-mix(in srgb, var(--color-secondary, #180c2d) 60%, white);
     }
 
-    /* help functionality TODO */
-    .help {
-      opacity: 0.5; 
-    }
-
     .version {
       padding: var(--space-1, 4px) var(--wa-space-m, 1rem) var(--space-1, 4px);
       font-size: var(--text-xs, 0.75rem);
@@ -211,6 +206,6 @@ declare global
 {
   interface HTMLElementTagNameMap
   {
-    'editor-main-menu-file-menu': MainMenuFileMenu;
+    'editor-main-menu-hamburger': MainMenuHamburger;
   }
 }

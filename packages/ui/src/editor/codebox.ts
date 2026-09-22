@@ -174,7 +174,7 @@ export class CodeBox extends SignalWatcher(LitElement)
             }
           </span>
           <span class="spacer"></span>
-          <button class="execute-button"
+          <button class="execute-button" data-help="run"
               @click=${this._handleRunClick} title="Run (Ctrl+Enter)">
               <wa-icon library="lucide" name="play" label="Execute"></wa-icon>
           </button>
@@ -337,6 +337,11 @@ export class CodeBox extends SignalWatcher(LitElement)
               mac: 'Cmd-Enter',
               run: () => { this._fireExecute(); return true; },
             },
+            {
+              // Help for the word at the cursor (the help panel's API reference)
+              key: 'F1',
+              run: view => { this._fireCursor('help-lookup', view); return true; },
+            },
           ]),
           themeCompartment.of(this._currentTheme()),
           editableCompartment.of(this._editableExtension()),
@@ -350,6 +355,10 @@ export class CodeBox extends SignalWatcher(LitElement)
                 bubbles: true,
                 composed: true,
               }));
+            }
+            if (update.docChanged || update.selectionSet)
+            {
+              this._fireCursor('cursor-change', update.view);
             }
           }),
         ],
@@ -456,6 +465,17 @@ export class CodeBox extends SignalWatcher(LitElement)
   {
     this.dispatchEvent(new CustomEvent<string>('execute', {
       detail: this.getCode(),
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  /** Tell the page where the cursor is ('cursor-change'), or ask for help on the word
+   *  there ('help-lookup', F1). The API reference works out the word from code + pos. */
+  private _fireCursor(type: 'cursor-change' | 'help-lookup', view: EditorView)
+  {
+    this.dispatchEvent(new CustomEvent<{ code: string, pos: number }>(type, {
+      detail: { code: view.state.doc.toString(), pos: view.state.selection.main.head },
       bubbles: true,
       composed: true,
     }));

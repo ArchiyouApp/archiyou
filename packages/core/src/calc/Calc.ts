@@ -67,10 +67,17 @@
 
     //// CREATION API ////
 
-    /** Make or get table with data 
-     *  @param name string
-     *  @param data [ val1, val2, val3 ] or [{ col1: val1, col2: val2 }{ ... }]
-    */
+    /** Make a table of data, shown in the Data tool and exported with the model; or get
+     *  an existing table by its name.
+     *
+     *  @param name Name of the table
+     *  @param data The rows: a list of objects with one key per column, or a list of values
+     *  @param columns Which columns to keep, in this order
+     *
+     *  @example
+     *  legs = [1, 2, 3, 4].map(i => box(60, 60, 720).moveX(i * 300))
+     *  calc.table('parts', legs.map((leg, i) => ({ name: `leg ${i + 1}`, volume: Math.round(leg.volume()) })))
+     */
     table(name:string, data?:DataRows, columns?:Array<string>):Calc|Table
     {   
 
@@ -135,7 +142,17 @@
         return Object.values(this._metrics).filter(m => only.includes(m.name));
     }
 
-    /** Add Metric element to dashboard */
+    /** Show a key number of the design, like its weight or price, in the Metrics tool and
+     *  on a published configurator.
+     *
+     *  @param name Label of the number
+     *  @param data The value
+     *  @param options How to show it, like `{ unit: 'kg', icon: 'weight' }`
+     *
+     *  @example
+     *  top = box(1200, 700, 30)
+     *  calc.metric('Top volume', Math.round(top.volume() / 1e6), { unit: 'dm3' })
+     */
     metric(name:MetricName, data:string|number, options:MetricOptions):Metric // TODO: Metric setting typing
     {
         // some decent checking
