@@ -110,7 +110,7 @@ export async function registerExecuteRoutes(fastify: FastifyInstance): Promise<v
         allowlistChecked = true;
       }
 
-      const scriptData = scriptStore.getPublished(user, scriptName, validVersion);
+      const scriptData = await scriptStore.getPublished(user, scriptName, validVersion);
       if (!scriptData) {
         reply.code(404);
         return { success: false, error: `Script ${user}/${scriptName}:${version ?? 'latest'} not found`, data: null };
@@ -173,7 +173,7 @@ export async function registerExecuteRoutes(fastify: FastifyInstance): Promise<v
       // Module entitlement is the SCRIPT AUTHOR's, not the caller's — the caller may be
       // anonymous, and it is the author's script that declares the dependency.
       const { internalApiUrl } = config.execution;
-      const authorModules = scriptData.author ? userService.getModules(scriptData.author) : [];
+      const authorModules = scriptData.author ? await userService.getModules(scriptData.author) : [];
 
       const executionRequest: RunnerScriptExecutionRequest = {
         kernel: (body.kernel as any) || 'mesh', // geometry kernel for the whole run: 'mesh' | 'brep'

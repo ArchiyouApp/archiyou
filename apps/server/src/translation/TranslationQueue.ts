@@ -111,7 +111,7 @@ export class TranslationQueue {
     if (!this.queue) return;
 
     try {
-      const script = scriptStore.findVersionById(data.author, data.versionId);
+      const script = await scriptStore.findVersionById(data.author, data.versionId);
       if (!script?.published) return;
 
       const { strings, sourceHash } = extractTranslatableStrings(script);

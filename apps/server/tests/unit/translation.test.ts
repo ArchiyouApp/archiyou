@@ -66,7 +66,7 @@ beforeAll(async () => {
   extractTranslatableStrings = (await import('@archiyou/core/src/i18n/extract')).extractTranslatableStrings;
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   responses = [];
   calls = [];
   generateContent.mockClear();
@@ -74,12 +74,12 @@ beforeEach(() => {
 });
 
 /** A published version with Dutch copy. Returns its ids. */
-function publishDutch(name: string, version = '1.0.0') {
-  const fileId = store.create(AUTHOR, {
+async function publishDutch(name: string, version = '1.0.0') {
+  const fileId = (await store.create(AUTHOR, {
     name, code: 'const a = 1;',
-  } as Record<string, unknown>).fileId as string;
+  } as Record<string, unknown>)).fileId as string;
 
-  const stored = store.publish(AUTHOR, fileId, {
+  const stored = await store.publish(AUTHOR, fileId, {
     name,
     code: 'const a = 1;',
     version,
@@ -192,7 +192,7 @@ describe('TranslatorService — translation', () => {
 
 describe('translateJob', () => {
   it('detects Dutch, translates the rest, and stores the source locale', async () => {
-    const { versionId } = publishDutch('boekenkast');
+    const { versionId } = await publishDutch('boekenkast');
     responses = [
       { locale: 'nl', confidence: 'high' },
       ...Array.from({ length: 10 }, () => ({
@@ -204,7 +204,7 @@ describe('translateJob', () => {
     const result = await runTranslateJob({ author: AUTHOR, versionId, fileId: 'unused' });
     expect(result.status).toBe('translated');
 
-    const stored = store.findVersionById(AUTHOR, versionId);
+    const stored = await store.findVersionById(AUTHOR, versionId);
     const translations = stored?.published?.translations;
     expect(translations?.sourceLocale).toBe('nl');
     // The authored Dutch is the source — it must never be round-tripped through a
@@ -215,7 +215,7 @@ describe('translateJob', () => {
   });
 
   it('reuses an existing set for unchanged copy, with ZERO model calls', async () => {
-    const { fileId, versionId } = publishDutch('reuse-me');
+    const { fileId, versionId } = await publishDutch('reuse-me');
     responses = [
       { locale: 'nl', confidence: 'high' },
       ...Array.from({ length: 10 }, () => ({ title: 'Bookshelf' })),
@@ -223,7 +223,7 @@ describe('translateJob', () => {
     await runTranslateJob({ author: AUTHOR, versionId, fileId });
 
     // A new version of the same file with identical copy: republishing must not re-bill.
-    const next = store.publish(AUTHOR, fileId, {
+    const next = await store.publish(AUTHOR, fileId, {
       name: 'reuse-me', code: 'const a = 2;', version: '1.1.0',
       description: 'Een verstelbare boekenkast van berkenmultiplex voor in de woonkamer.',
       params: { BREEDTE: { type: 'number', schema: {}, label: 'Breedte', description: 'Hoe breed de kast wordt' } },
@@ -238,19 +238,19 @@ describe('translateJob', () => {
   });
 
   it('does NOT reuse when the source language differs', async () => {
-    const { fileId, versionId } = publishDutch('lang-change');
+    const { fileId, versionId } = await publishDutch('lang-change');
     responses = [{ locale: 'nl', confidence: 'high' }, ...Array.from({ length: 10 }, () => ({ title: 'X' }))];
     await runTranslateJob({ author: AUTHOR, versionId, fileId });
 
-    const script = store.findVersionById(AUTHOR, versionId)!;
+    const script = (await store.findVersionById(AUTHOR, versionId))!;
     const { sourceHash } = extractTranslatableStrings(script);
     // Same strings, different declared source language ⇒ the old set is the wrong answer.
-    expect(store.findTranslationsByHash(AUTHOR, fileId, sourceHash, 'de')).toBeNull();
-    expect(store.findTranslationsByHash(AUTHOR, fileId, sourceHash, 'nl')).not.toBeNull();
+    expect(await store.findTranslationsByHash(AUTHOR, fileId, sourceHash, 'de')).toBeNull();
+    expect(await store.findTranslationsByHash(AUTHOR, fileId, sourceHash, 'nl')).not.toBeNull();
   });
 
   it('discards its result when the author edited the copy while it ran', async () => {
-    const { fileId, versionId } = publishDutch('raced');
+    const { fileId, versionId } = await publishDutch('raced');
 
     // Detection resolves, then the author renames the configurator mid-flight.
     responses = [{ locale: 'nl', confidence: 'high' }];
@@ -259,8 +259,8 @@ describe('translateJob', () => {
     }
     generateContent.mockImplementationOnce(async (req: unknown) => {
       calls.push(req as GenerateArgs);
-      const before = store.findVersionById(AUTHOR, versionId)!;
-      store.updatePublishedVersion(AUTHOR, versionId, { ...before.published, title: 'Kast XL' });
+      const before = (await store.findVersionById(AUTHOR, versionId))!;
+      await store.updatePublishedVersion(AUTHOR, versionId, { ...before.published, title: 'Kast XL' });
       const next = responses.shift();
       return { text: JSON.stringify(next ?? {}) };
     });
@@ -269,14 +269,14 @@ describe('translateJob', () => {
     expect(result.status).toBe('skipped');
 
     // The edit survives, and no translations describing the OLD title were written.
-    const after = store.findVersionById(AUTHOR, versionId);
+    const after = await store.findVersionById(AUTHOR, versionId);
     expect(after?.published?.title).toBe('Kast XL');
     expect(after?.published?.translations).toBeFalsy();
   });
 
   it('bails quietly when the version was un-published or deleted', async () => {
-    const { fileId, versionId } = publishDutch('gone');
-    store.unpublishVersion(AUTHOR, versionId);
+    const { fileId, versionId } = await publishDutch('gone');
+    await store.unpublishVersion(AUTHOR, versionId);
     expect((await runTranslateJob({ author: AUTHOR, versionId, fileId })).status).toBe('skipped');
 
     expect((await runTranslateJob({ author: AUTHOR, versionId: 'no-such-id', fileId })).status).toBe('skipped');
@@ -284,33 +284,33 @@ describe('translateJob', () => {
   });
 
   it('bails quietly with no API key, leaving the publish untouched', async () => {
-    const { fileId, versionId } = publishDutch('no-key');
+    const { fileId, versionId } = await publishDutch('no-key');
     config.gemini.apiKey = '';
 
     const result = await runTranslateJob({ author: AUTHOR, versionId, fileId });
     expect(result.status).toBe('skipped');
 
-    const stored = store.findVersionById(AUTHOR, versionId);
+    const stored = await store.findVersionById(AUTHOR, versionId);
     expect(stored?.published?.title).toBe('Boekenkast');   // publish intact
     expect(stored?.published?.translations).toBeFalsy();
   });
 
   it('bails quietly when the translator throws for every locale', async () => {
-    const { fileId, versionId } = publishDutch('all-fail');
+    const { fileId, versionId } = await publishDutch('all-fail');
     responses = [{ locale: 'nl', confidence: 'high' }, ...Array.from({ length: 30 }, () => new Error('down'))];
 
     const result = await runTranslateJob({ author: AUTHOR, versionId, fileId });
     expect(result.status).toBe('skipped');
-    expect(store.findVersionById(AUTHOR, versionId)?.published?.translations).toBeFalsy();
+    expect((await store.findVersionById(AUTHOR, versionId))?.published?.translations).toBeFalsy();
   });
 });
 
 describe('publish is never affected by translation', () => {
   it('stores a publish fully even when nothing about translation works', async () => {
     config.gemini.apiKey = '';
-    const { versionId } = publishDutch('unaffected');
+    const { versionId } = await publishDutch('unaffected');
 
-    const stored = store.findVersionById(AUTHOR, versionId) as ScriptData;
+    const stored = (await store.findVersionById(AUTHOR, versionId)) as ScriptData;
     expect(stored.version).toBe('1.0.0');
     expect(stored.published?.public).toBe(true);
     expect(stored.published?.title).toBe('Boekenkast');

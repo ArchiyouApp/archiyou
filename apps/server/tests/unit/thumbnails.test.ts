@@ -214,51 +214,51 @@ describe('thumbnail log', () => {
 });
 
 describe('ScriptStore — thumbnail column', () => {
-  it('round-trips a stamped url and never persists one the client supplied', () => {
-    const fileId = store.create(AUTHOR, payload({ thumbnail: '/thumbnails/evil.png' } as Partial<ScriptData>)).fileId as string;
-    expect(store.getFile(AUTHOR, fileId).thumbnail).toBeNull();
+  it('round-trips a stamped url and never persists one the client supplied', async () => {
+    const fileId = (await store.create(AUTHOR, payload({ thumbnail: '/thumbnails/evil.png' } as Partial<ScriptData>))).fileId as string;
+    expect((await store.getFile(AUTHOR, fileId)).thumbnail).toBeNull();
 
-    const version = store.publish(AUTHOR, fileId, payload({
+    const version = await store.publish(AUTHOR, fileId, payload({
       version: '1.0.0',
       published: { public: true },
       thumbnail: '/thumbnails/evil.png',
     } as Partial<ScriptData>));
     expect(version.thumbnail).toBeNull();
 
-    store.setThumbnail(AUTHOR, version.id as string, '/thumbnails/tester/x/y.png');
-    const reloaded = store.listPublishedVersionsForAuthor(AUTHOR).find((s) => s.id === version.id);
+    await store.setThumbnail(AUTHOR, version.id as string, '/thumbnails/tester/x/y.png');
+    const reloaded = (await store.listPublishedVersionsForAuthor(AUTHOR)).find((s) => s.id === version.id);
     expect(reloaded?.thumbnail).toBe('/thumbnails/tester/x/y.png');
   });
 
-  it('does not let another author stamp your thumbnail', () => {
-    const fileId = store.create(AUTHOR, payload({ name: 'mine' })).fileId as string;
-    const version = store.publish(AUTHOR, fileId, payload({
+  it('does not let another author stamp your thumbnail', async () => {
+    const fileId = (await store.create(AUTHOR, payload({ name: 'mine' }))).fileId as string;
+    const version = await store.publish(AUTHOR, fileId, payload({
       name: 'mine', version: '1.0.0', published: { public: true },
     }));
 
-    store.setThumbnail('someone-else', version.id as string, '/thumbnails/evil.png');
-    expect(() => store.setFileThumbnail('someone-else', fileId, '/thumbnails/evil.png')).toThrow();
+    await store.setThumbnail('someone-else', version.id as string, '/thumbnails/evil.png');
+    await expect(store.setFileThumbnail('someone-else', fileId, '/thumbnails/evil.png')).rejects.toThrow();
 
-    const reloaded = store.listPublishedVersionsForAuthor(AUTHOR).find((s) => s.id === version.id);
+    const reloaded = (await store.listPublishedVersionsForAuthor(AUTHOR)).find((s) => s.id === version.id);
     expect(reloaded?.thumbnail).toBeNull();
-    expect(store.getFile(AUTHOR, fileId).thumbnail).toBeNull();
+    expect((await store.getFile(AUTHOR, fileId)).thumbnail).toBeNull();
   });
 
-  it('stamps the working copy on the latest row and carries it across saves, ignoring the client', () => {
-    const fileId = store.create(AUTHOR, payload({ name: 'wip' })).fileId as string;
+  it('stamps the working copy on the latest row and carries it across saves, ignoring the client', async () => {
+    const fileId = (await store.create(AUTHOR, payload({ name: 'wip' }))).fileId as string;
 
-    const stamped = store.setFileThumbnail(AUTHOR, fileId, '/thumbnails/tester/wip/working-1.png');
+    const stamped = await store.setFileThumbnail(AUTHOR, fileId, '/thumbnails/tester/wip/working-1.png');
     expect(stamped.thumbnail).toBe('/thumbnails/tester/wip/working-1.png');
-    expect(store.getFile(AUTHOR, fileId).thumbnail).toBe('/thumbnails/tester/wip/working-1.png');
+    expect((await store.getFile(AUTHOR, fileId)).thumbnail).toBe('/thumbnails/tester/wip/working-1.png');
 
     // A save appends a new row; the URL follows — and a client's own value is ignored.
-    const saved = store.saveVersion(AUTHOR, fileId, payload({ name: 'wip', code: 'box(1);', thumbnail: '/thumbnails/evil.png' } as Partial<ScriptData>));
+    const saved = await store.saveVersion(AUTHOR, fileId, payload({ name: 'wip', code: 'box(1);', thumbnail: '/thumbnails/evil.png' } as Partial<ScriptData>));
     expect(saved.id).not.toBe(stamped.id);
     expect(saved.thumbnail).toBe('/thumbnails/tester/wip/working-1.png');
-    expect(store.listForUser(AUTHOR).find((s) => s.fileId === fileId)?.thumbnail).toBe('/thumbnails/tester/wip/working-1.png');
+    expect((await store.listForUser(AUTHOR)).find((s) => s.fileId === fileId)?.thumbnail).toBe('/thumbnails/tester/wip/working-1.png');
 
     // A stored version starts without one: its own picture is attached afterwards.
-    const shared = store.share(AUTHOR, fileId, payload({ name: 'wip', version: '0.1.0', shared: { created: new Date().toISOString() } } as Partial<ScriptData>));
+    const shared = await store.share(AUTHOR, fileId, payload({ name: 'wip', version: '0.1.0', shared: { created: new Date().toISOString() } } as Partial<ScriptData>));
     expect(shared.thumbnail).toBeNull();
   });
 });
@@ -281,9 +281,9 @@ describe('upload → serve (HTTP)', () => {
     // publish sits behind requireVerified — give the test author a verified account.
     // The handle is derived from the email local part, so `tester@…` yields AUTHOR.
     await userService.register(`${AUTHOR}@example.com`, 'test1234', 'Tester').catch(() => undefined);
-    const user = userService.findByUsername(AUTHOR);
+    const user = await userService.findByUsername(AUTHOR);
     expect(user, 'test author account').toBeTruthy();
-    userService.markEmailVerified(user!.id);
+    await userService.markEmailVerified(user!.id);
 
     app = Fastify();
     await app.register(import('@fastify/jwt'), { secret: SECRET });
@@ -318,7 +318,7 @@ describe('upload → serve (HTTP)', () => {
     await app.register(registerScriptRoutes);
     await app.ready();
 
-    fileId = store.create(AUTHOR, payload({ name: 'http-thing' })).fileId as string;
+    fileId = (await store.create(AUTHOR, payload({ name: 'http-thing' }))).fileId as string;
   });
 
   const auth = () => ({ authorization: `Bearer ${app.jwt.sign({ sub: AUTHOR, email: 'tester@example.com', name: 'T' })}` });
@@ -367,7 +367,7 @@ describe('upload → serve (HTTP)', () => {
       expect(served.headers['x-content-type-options']).toBe('nosniff');
       expect(served.headers['content-security-policy']).toContain('sandbox');
       expect(served.headers['cache-control']).toContain('immutable');
-      expect(store.findVersionById(AUTHOR, versionId)?.thumbnail).toBe(url);
+      expect((await store.findVersionById(AUTHOR, versionId))?.thumbnail).toBe(url);
 
       // Conditional request → 304, so list views don't re-download every icon.
       const revalidated = await app.inject({
@@ -382,7 +382,7 @@ describe('upload → serve (HTTP)', () => {
       const second = (await attach(fileId, versionId, png(512, 512, 'changed'))).json().thumbnail as string;
 
       expect(second).not.toBe(first);
-      expect(store.findVersionById(AUTHOR, versionId)?.thumbnail).toBe(second);
+      expect((await store.findVersionById(AUTHOR, versionId))?.thumbnail).toBe(second);
       // The superseded picture is gone, so nothing can serve the old one.
       const stale = await app.inject({ method: 'GET', url: first });
       expect(stale.statusCode).toBe(404);
@@ -393,7 +393,7 @@ describe('upload → serve (HTTP)', () => {
       const res = await attach(fileId, versionId, '<svg><script>alert(1)</script></svg>', '?kind=backfill');
       expect(res.statusCode).toBe(422);
       expect(res.json().error).not.toContain('signature');
-      expect(store.findVersionById(AUTHOR, versionId)?.thumbnail).toBeNull();
+      expect((await store.findVersionById(AUTHOR, versionId))?.thumbnail).toBeNull();
 
       const line = (await logLines()).find((l) => l.event === 'rejected' && l.versionId === versionId);
       expect(line).toMatchObject({ kind: 'backfill' });
@@ -402,7 +402,7 @@ describe('upload → serve (HTTP)', () => {
     it('404s a version that is not the caller\'s (or does not exist)', async () => {
       const versionId = (await publish('3.3.0')).json().id as string;
       // Right version, wrong file — the ownership gate is (author, fileId, versionId).
-      const otherFile = store.create(AUTHOR, payload({ name: 'other-thing' })).fileId as string;
+      const otherFile = (await store.create(AUTHOR, payload({ name: 'other-thing' }))).fileId as string;
       expect((await attach(otherFile, versionId, GOOD_PNG)).statusCode).toBe(404);
       expect((await attach(fileId, 'no-such-version', GOOD_PNG)).statusCode).toBe(404);
     });
@@ -410,13 +410,13 @@ describe('upload → serve (HTTP)', () => {
 
   describe('PUT …/:fileId/thumbnail (the working copy)', () => {
     it('stamps the latest row, survives a save, and keeps one file per file', async () => {
-      const wip = store.create(AUTHOR, payload({ name: 'wip-http' })).fileId as string;
+      const wip = (await store.create(AUTHOR, payload({ name: 'wip-http' }))).fileId as string;
 
       const first = await attachWorking(wip, png(512, 512, 'run 1'), '?kind=working');
       expect(first.statusCode).toBe(200);
       const firstUrl = first.json().thumbnail as string;
       expect(firstUrl).toMatch(new RegExp(`^/thumbnails/${AUTHOR}/${wip}/working-[0-9a-f]{8}\\.png$`));
-      expect(store.getFile(AUTHOR, wip).thumbnail).toBe(firstUrl);
+      expect((await store.getFile(AUTHOR, wip)).thumbnail).toBe(firstUrl);
       expect((await app.inject({ method: 'GET', url: firstUrl })).statusCode).toBe(200);
 
       // An ordinary save (a new row) keeps pointing at the picture.
@@ -430,13 +430,13 @@ describe('upload → serve (HTTP)', () => {
       // The next run replaces it: new URL on the (new) latest row, old file gone.
       const secondUrl = (await attachWorking(wip, png(512, 512, 'run 2'))).json().thumbnail as string;
       expect(secondUrl).not.toBe(firstUrl);
-      expect(store.getFile(AUTHOR, wip).thumbnail).toBe(secondUrl);
+      expect((await store.getFile(AUTHOR, wip)).thumbnail).toBe(secondUrl);
       expect(readdirSync(join(THUMB_ROOT, AUTHOR, wip))).toEqual([secondUrl.split('/').pop()]);
       expect((await app.inject({ method: 'GET', url: firstUrl })).statusCode).toBe(404);
     });
 
     it('404s a file that is not the caller\'s, before writing anything', async () => {
-      const foreign = store.create('someone-else', payload({ name: 'theirs' })).fileId as string;
+      const foreign = (await store.create('someone-else', payload({ name: 'theirs' }))).fileId as string;
       expect((await attachWorking(foreign, GOOD_PNG)).statusCode).toBe(404);
       expect(existsSync(join(THUMB_ROOT, AUTHOR, foreign))).toBe(false);
       expect((await attachWorking('no-such-file', GOOD_PNG)).statusCode).toBe(404);
@@ -445,7 +445,7 @@ describe('upload → serve (HTTP)', () => {
     it('422s a body that is not a PNG', async () => {
       const res = await attachWorking(fileId, Buffer.from('definitely not a png'));
       expect(res.statusCode).toBe(422);
-      expect(store.getFile(AUTHOR, fileId).thumbnail).toBeNull();
+      expect((await store.getFile(AUTHOR, fileId)).thumbnail).toBeNull();
     });
   });
 

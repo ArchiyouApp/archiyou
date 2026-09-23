@@ -26,8 +26,6 @@
 
 import 'dotenv/config';
 
-import { db } from '../db/client';
-import { users } from '../db/schema';
 import { userService } from '../services/UserService';
 
 //// ARGS ////
@@ -59,9 +57,9 @@ server-side without a sandbox. See SECURITY.md.
 //// COMMANDS ////
 
 /** Every operator, and the size of the account table for context. */
-function listAll(): void {
-  const total = db.select().from(users).all().length;
-  const admins = userService.listAdmins().sort((a, b) => a.username.localeCompare(b.username));
+async function listAll(): Promise<void> {
+  const total = await userService.countAll();
+  const admins = (await userService.listAdmins()).sort((a, b) => a.username.localeCompare(b.username));
 
   console.log(`\nOperators (${admins.length} of ${total} accounts):`);
   if (admins.length === 0) {
@@ -73,25 +71,25 @@ function listAll(): void {
   console.log('');
 }
 
-function showUser(handle: string): void {
-  const user = userService.findByUsername(handle);
+async function showUser(handle: string): Promise<void> {
+  const user = await userService.findByUsername(handle);
   if (!user) usage(`no account with handle '${handle}'`);
   console.log(`\n${user.username} (${user.email}): ${user.isAdmin ? 'operator' : 'not an operator'}\n`);
 }
 
 //// MAIN ////
 
-function main(): void {
+async function main(): Promise<void> {
   if (hasFlag('--help') || hasFlag('-h')) usage();
 
   if (hasFlag('--list')) {
-    listAll();
+    await listAll();
     return;
   }
 
   const handle = argValue('--user');
   if (!handle) usage('--user <handle> is required (or use --list)');
-  if (!userService.findByUsername(handle)) usage(`no account with handle '${handle}'`);
+  if (!(await userService.findByUsername(handle))) usage(`no account with handle '${handle}'`);
 
   const grant = hasFlag('--grant-admin');
   const revoke = hasFlag('--revoke-admin');
@@ -99,13 +97,13 @@ function main(): void {
   if (grant && revoke) usage('--grant-admin and --revoke-admin are mutually exclusive');
 
   if (!grant && !revoke) {
-    showUser(handle);
+    await showUser(handle);
     return;
   }
 
-  const before = userService.isAdmin(handle);
-  userService.setAdmin(handle, grant);
-  const after = userService.isAdmin(handle);
+  const before = await userService.isAdmin(handle);
+  await userService.setAdmin(handle, grant);
+  const after = await userService.isAdmin(handle);
 
   console.log(`\n${handle}`);
   console.log(`  before: ${before ? 'operator' : 'not an operator'}`);
@@ -119,4 +117,4 @@ function main(): void {
   console.log('\nTakes effect on the next request — the flag is read per request.\n');
 }
 
-main();
+await main();

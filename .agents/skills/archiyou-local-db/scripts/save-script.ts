@@ -74,14 +74,14 @@ process.chdir(serverDir); // config resolves ./data/archiyou.db from here
 
 // Dynamic imports: these must happen AFTER the chdir above. Note they are addressed
 // by absolute path — this file lives outside any package, so a bare specifier like
-// 'drizzle-orm' would not resolve. The raw better-sqlite3 handle that client.ts
-// exports is enough for the one lookup below.
+// 'drizzle-orm' would not resolve. Both services go through Drizzle rather than a
+// raw driver handle, so this script cannot drift from the schema the server writes.
 const { ScriptStore } = await import(pathToFileURL(join(serverDir, 'src/services/ScriptStore.ts')).href);
-const { sqlite }      = await import(pathToFileURL(join(serverDir, 'src/db/client.ts')).href);
+const { userService } = await import(pathToFileURL(join(serverDir, 'src/services/UserService.ts')).href);
 
 // ── guard: the author must be a real account ─────────────────────────────────
 
-const account = sqlite.prepare('SELECT username FROM users WHERE username = ?').get(author);
+const account = await userService.findByUsername(author);
 if (!account)
 {
     console.error(`No user "${author}" in the database. Scripts are owned by a users.username handle.`);
@@ -91,7 +91,7 @@ if (!account)
 // ── write ────────────────────────────────────────────────────────────────────
 
 const store = new ScriptStore();
-const mine  = store.listForUser(author) as Array<{ name?: string | null; fileId: string }>;
+const mine  = await store.listForUser(author) as Array<{ name?: string | null; fileId: string }>;
 const existing = mine.find((s) => s.name === name);
 
 if (existing && !newVersion)
@@ -107,8 +107,8 @@ const payload: Record<string, unknown> = { name, code, tags: [], params: {}, pre
 if (description) payload.description = description;
 
 const saved = (existing && newVersion)
-    ? store.saveVersion(author, existing.fileId, payload)
-    : store.create(author, payload);
+    ? await store.saveVersion(author, existing.fileId, payload)
+    : await store.create(author, payload);
 
 console.log(`${existing && newVersion ? 'new version of' : 'created'} "${name}" for ${author}`);
 console.log(`  id     : ${saved.id}`);

@@ -20,11 +20,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { eq, sql } from 'drizzle-orm';
-
-import { db } from '../db/client';
-import { scriptVersions, users } from '../db/schema';
 import { scriptStore } from '../services/ScriptStore';
+import { userService } from '../services/UserService';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const DEFAULT_DIR = resolve(HERE, '../../../../packages/core/tests/cadscripts/scripts');
@@ -51,25 +48,16 @@ function descriptionFromCode(code: string): string | undefined {
   return text || undefined;
 }
 
-/** Names already taken by this owner (lowercased), so we can skip them. */
-function existingNames(owner: string): Set<string> {
-  const rows = db
-    .select({ name: scriptVersions.name })
-    .from(scriptVersions)
-    .where(eq(scriptVersions.author, owner))
-    .all();
-  return new Set(rows.map((r) => (r.name ?? '').toLowerCase()).filter(Boolean));
-}
-
 //// RUN ////
 
-const owner = db.select().from(users).where(sql`lower(${users.username}) = ${OWNER}`).get();
+const owner = await userService.findByUsername(OWNER);
 if (!owner) {
   console.error(`No user "${OWNER}" — refusing to import scripts for a non-existent owner.`);
   process.exit(1);
 }
 
-const taken = existingNames(OWNER);
+// Names already taken by this owner (lowercased), so we can skip them.
+const taken = await scriptStore.listNamesForAuthor(OWNER);
 const files = readdirSync(DIR).filter((f) => f.endsWith('.js')).sort();
 
 console.log(`Importing ${files.length} cadscripts from ${DIR} as "${OWNER}"${DRY ? ' (dry run)' : ''}\n`);
@@ -91,7 +79,7 @@ for (const file of files) {
   if (DRY) {
     console.log(`  +  ${name} — would import (${code.length} chars)${description ? ` — "${description}"` : ''}`);
   } else {
-    const saved = scriptStore.create(OWNER, { name, description, code, tags: [], params: {}, presets: {} });
+    const saved = await scriptStore.create(OWNER, { name, description, code, tags: [], params: {}, presets: {} });
     console.log(`  ✅ ${name} — imported (fileId ${saved.fileId})`);
   }
   taken.add(name.toLowerCase());

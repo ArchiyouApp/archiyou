@@ -64,7 +64,7 @@ function rowToData(row: FeedbackRow): FeedbackData {
 }
 
 export class FeedbackStore {
-  create(input: NewFeedback): FeedbackData {
+  async create(input: NewFeedback): Promise<FeedbackData> {
     const row = db.insert(feedback).values({
       id: uuid4(),
       message: input.message.trim().slice(0, FEEDBACK_MAX_LENGTH),
@@ -81,8 +81,8 @@ export class FeedbackStore {
     return rowToData(row);
   }
 
-  list(opts: { q?: string; starred?: boolean; sort?: FeedbackSort; limit?: number; offset?: number } = {}):
-    { total: number; items: FeedbackData[] } {
+  async list(opts: { q?: string; starred?: boolean; sort?: FeedbackSort; limit?: number; offset?: number } = {}):
+    Promise<{ total: number; items: FeedbackData[] }> {
     const filters = [];
     if (opts.starred !== undefined) filters.push(eq(feedback.starred, opts.starred));
     if (opts.q) {
@@ -111,13 +111,13 @@ export class FeedbackStore {
     return { total, items };
   }
 
-  setStarred(id: string, starred: boolean): FeedbackData {
+  async setStarred(id: string, starred: boolean): Promise<FeedbackData> {
     const row = db.update(feedback).set({ starred }).where(eq(feedback.id, id)).returning().get();
     if (!row) throw new FeedbackStoreError('not_found', `Feedback ${id} not found`);
     return rowToData(row);
   }
 
-  delete(id: string): void {
+  async delete(id: string): Promise<void> {
     const res = db.delete(feedback).where(eq(feedback.id, id)).run();
     if (res.changes === 0) throw new FeedbackStoreError('not_found', `Feedback ${id} not found`);
   }

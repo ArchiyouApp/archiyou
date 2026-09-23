@@ -51,7 +51,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
    * 0002, so this cannot lock out existing users.
    */
   async function requireVerified(request: FastifyRequest, reply: FastifyReply) {
-    const user = userService.findByUsername(request.user.sub);
+    const user = await userService.findByUsername(request.user.sub);
     if (!user || user.emailVerifiedAt === null) {
       reply.code(403).send({
         success: false,
@@ -64,12 +64,12 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
 
   // The user's scripts (latest version each).
   fastify.get<{ Params: { user: string } }>('/scripts/:user', auth, async (request) => {
-    return scriptStore.listForUser(request.user.sub);
+    return await scriptStore.listForUser(request.user.sub);
   });
 
   // Create a new file (+ first version).
   fastify.post<{ Params: { user: string } }>('/scripts/:user', auth, async (request, reply) => {
-    const stored = scriptStore.create(request.user.sub, request.body);
+    const stored = await scriptStore.create(request.user.sub, request.body);
     reply.code(201);
     return stored;
   });
@@ -80,7 +80,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
   // `/scripts/:user/:fileId` param route; the author comes from the JWT, not the path.
   const authedOnly = { preHandler: [fastify.authenticate] };
   fastify.get('/scripts/configurators', authedOnly, async (request) => {
-    return scriptStore.listPublishedVersionsForAuthor(request.user.sub);
+    return await scriptStore.listPublishedVersionsForAuthor(request.user.sub);
   });
 
   // Edit a published configurator in place: update just this version's `published`
@@ -99,7 +99,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
       if (body.name && body.version) {
         published.url = configuratorUrl(request.user.sub, body.name, body.version);
       }
-      const stored = scriptStore.updatePublishedVersion(request.user.sub, request.params.versionId, published);
+      const stored = await scriptStore.updatePublishedVersion(request.user.sub, request.params.versionId, published);
       // An in-place edit changes the title/description/fulfillments, so the stored
       // translations are now about text that no longer exists — re-translate. The job
       // re-checks the source hash before writing, so a stale result is discarded.
@@ -118,7 +118,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
     '/scripts/configurators/:versionId',
     authedOnly,
     async (request, reply) => {
-      scriptStore.unpublishVersion(request.user.sub, request.params.versionId);
+      await scriptStore.unpublishVersion(request.user.sub, request.params.versionId);
       reply.code(204);
     },
   );
@@ -127,22 +127,22 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
   // $component('./oldname') in the editor (Runner._getRenamedComponentScript). Registered
   // as a static segment, so it wins over `/:user/:fileId/versions`.
   fastify.get<{ Params: { user: string; name: string } }>('/scripts/:user/by-name/:name', auth, async (request) => {
-    return scriptStore.getFileByName(request.user.sub, request.params.name);
+    return await scriptStore.getFileByName(request.user.sub, request.params.name);
   });
 
   // Latest version of one file.
   fastify.get<{ Params: { user: string; fileId: string } }>('/scripts/:user/:fileId', auth, async (request) => {
-    return scriptStore.getFile(request.user.sub, request.params.fileId);
+    return await scriptStore.getFile(request.user.sub, request.params.fileId);
   });
 
   // Append a new version to an existing file.
   fastify.put<{ Params: { user: string; fileId: string } }>('/scripts/:user/:fileId', auth, async (request) => {
-    return scriptStore.saveVersion(request.user.sub, request.params.fileId, request.body);
+    return await scriptStore.saveVersion(request.user.sub, request.params.fileId, request.body);
   });
 
   // Delete a file and all its versions.
   fastify.delete<{ Params: { user: string; fileId: string } }>('/scripts/:user/:fileId', auth, async (request, reply) => {
-    scriptStore.deleteFile(request.user.sub, request.params.fileId);
+    await scriptStore.deleteFile(request.user.sub, request.params.fileId);
     // Every version of the file is gone, so its whole thumbnail directory can go too.
     // (Un-publishing a version deliberately does NOT delete its thumbnail: the row
     // survives and may still be shared, which would leave that listing without an image.)
@@ -152,7 +152,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
 
   // Version history metadata.
   fastify.get<{ Params: { user: string; fileId: string } }>('/scripts/:user/:fileId/versions', auth, async (request) => {
-    return scriptStore.listVersions(request.user.sub, request.params.fileId);
+    return await scriptStore.listVersions(request.user.sub, request.params.fileId);
   });
 
   // A specific historical version.
@@ -160,7 +160,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
     '/scripts/:user/:fileId/versions/:versionId',
     auth,
     async (request) => {
-      return scriptStore.getVersion(request.user.sub, request.params.fileId, request.params.versionId);
+      return await scriptStore.getVersion(request.user.sub, request.params.fileId, request.params.versionId);
     },
   );
 
@@ -186,7 +186,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
       const { fileId, versionId } = request.params;
       // Ownership + existence gate: getVersion 404s for a version that is not this
       // author's, so a late upload can never land on somebody else's row.
-      scriptStore.getVersion(request.user.sub, fileId, versionId);
+      await scriptStore.getVersion(request.user.sub, fileId, versionId);
 
       const url = await thumbnailStore.write(
         request.user.sub, fileId, versionId, request.body, thumbnailKind(request.query),
@@ -195,7 +195,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
         reply.code(422);
         return { success: false, error: 'Thumbnail was not accepted' };
       }
-      scriptStore.setThumbnail(request.user.sub, versionId, url);
+      await scriptStore.setThumbnail(request.user.sub, versionId, url);
       return { success: true, thumbnail: url };
     },
   );
@@ -217,7 +217,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
       const { fileId } = request.params;
       // Ownership + existence gate first (404s a file that is not this author's), so
       // nothing is ever written to disk for a file the caller does not own.
-      scriptStore.getFile(request.user.sub, fileId);
+      await scriptStore.getFile(request.user.sub, fileId);
 
       const url = await thumbnailStore.writeWorking(
         request.user.sub, fileId, request.body, thumbnailKind(request.query),
@@ -226,7 +226,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
         reply.code(422);
         return { success: false, error: 'Thumbnail was not accepted' };
       }
-      scriptStore.setFileThumbnail(request.user.sub, fileId, url);
+      await scriptStore.setFileThumbnail(request.user.sub, fileId, url);
       return { success: true, thumbnail: url };
     },
   );
@@ -240,7 +240,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
       reply.code(201);
       // The preview follows separately (PUT …/versions/:versionId/thumbnail) once the
       // editor has rendered it, so a share never waits on — or fails over — a picture.
-      return scriptStore.share(request.user.sub, request.params.fileId, request.body);
+      return await scriptStore.share(request.user.sub, request.params.fileId, request.body);
     },
   );
 
@@ -257,7 +257,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
       if (body?.published && body.version && body.name) {
         body.published.url = configuratorUrl(request.user.sub, body.name, body.version);
       }
-      const stored = scriptStore.publish(request.user.sub, request.params.fileId, body);
+      const stored = await scriptStore.publish(request.user.sub, request.params.fileId, body);
       reply.code(201);
       // Fire-and-forget: the row is already committed, so translation can never fail the
       // publish. The author is not told this is happening and never waits for it — the
@@ -281,7 +281,7 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
         body && typeof body === 'object' && 'shared' in body
           ? (body.shared ?? null)
           : ((body as ScriptShared | null) ?? null);
-      scriptStore.setShared(request.user.sub, request.params.fileId, shared);
+      await scriptStore.setShared(request.user.sub, request.params.fileId, shared);
       return { fileId: request.params.fileId, shared };
     },
   );

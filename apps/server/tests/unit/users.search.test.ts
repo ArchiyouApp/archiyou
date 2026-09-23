@@ -63,7 +63,7 @@ beforeAll(async () => {
   await userService.register('bob@secret-corp.example', 'password123', 'bob');
   await userService.register('caller@example.com', 'password123', 'caller');
   // Entitlements are not the searcher's business either.
-  userService.setModules('alice', ['example']);
+  await userService.setModules('alice', ['example']);
 
   app = await buildApp();
 });

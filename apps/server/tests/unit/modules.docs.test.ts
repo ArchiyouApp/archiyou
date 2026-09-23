@@ -79,7 +79,7 @@ beforeAll(async () => {
   moduleHost.load(modulesDir);
 
   await userService.register('nobody@example.com', 'password123', 'nobody');
-  userService.setModules('nobody', []);
+  await userService.setModules('nobody', []);
 
   app = await buildApp();
 });
@@ -105,7 +105,7 @@ describe('GET /modules/:id/docs', () => {
     expect((await app.inject({ method: 'GET', url: '/modules/example/docs' })).statusCode).toBe(200);
 
     const locked = await app.inject({ method: 'GET', url: '/modules/example/docs', headers: auth('nobody') });
-    expect(userService.hasModule('nobody', 'example')).toBe(false);
+    expect(await userService.hasModule('nobody', 'example')).toBe(false);
     expect(locked.statusCode).toBe(200);
   });
 

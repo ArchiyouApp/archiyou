@@ -28,8 +28,6 @@
 
 import 'dotenv/config';
 
-import { db } from '../db/client';
-import { users } from '../db/schema';
 import { userService, normalizeModuleIds } from '../services/UserService';
 import { ALL_MODULES, grantsAllModules } from '../modules/entitlements';
 import { moduleHost } from '../modules/ModuleHost';
@@ -77,7 +75,7 @@ const WHY_EMPTY: Record<typeof config.modules.dirSource, string> = {
 };
 
 /** Everyone who has any module, plus what is installed on this instance. */
-function listAll(): void {
+async function listAll(): Promise<void> {
   const installed = moduleHost.list();
   console.log(`\nInstalled modules (${installed.length}):`);
   if (installed.length === 0) {
@@ -89,7 +87,7 @@ function listAll(): void {
     installed.forEach((m) => console.log(`  ${m.id}@${m.version}  [${m.runtime}]  ${m.name}`));
   }
 
-  const rows = db.select().from(users).all();
+  const rows = await userService.listAll();
   const entitled = rows
     .map((u) => ({ username: u.username, modules: normalizeModuleIds(u.modules) }))
     .filter((u) => u.modules.length > 0)
@@ -108,8 +106,8 @@ function describe(moduleIds: string[]): string {
   return moduleIds.length ? moduleIds.join(', ') : '(no modules)';
 }
 
-function showUser(handle: string): void {
-  const user = userService.findByUsername(handle);
+async function showUser(handle: string): Promise<void> {
+  const user = await userService.findByUsername(handle);
   if (!user) usage(`no account with handle '${handle}'`);
   console.log(`\n${user.username} (${user.email}): ${describe(normalizeModuleIds(user.modules))}\n`);
 }
@@ -129,18 +127,18 @@ function warnUnknown(ids: string[]): void {
 
 //// MAIN ////
 
-function main(): void {
+async function main(): Promise<void> {
   if (hasFlag('--help') || hasFlag('-h')) usage();
 
   if (hasFlag('--list')) {
-    listAll();
+    await listAll();
     return;
   }
 
   const handle = argValue('--user');
   if (!handle) usage('--user <handle> is required (or use --list)');
 
-  if (!userService.findByUsername(handle)) usage(`no account with handle '${handle}'`);
+  if (!(await userService.findByUsername(handle))) usage(`no account with handle '${handle}'`);
 
   const grant = hasFlag('--grant') ? idList(argValue('--grant')) : null;
   const revoke = hasFlag('--revoke') ? idList(argValue('--revoke')) : null;
@@ -151,20 +149,20 @@ function main(): void {
   }
 
   if (grant === null && revoke === null && set === null) {
-    showUser(handle);
+    await showUser(handle);
     return;
   }
 
-  const before = userService.getModules(handle);
+  const before = await userService.getModules(handle);
 
   if (set !== null) {
     warnUnknown(set);
-    userService.setModules(handle, set);
+    await userService.setModules(handle, set);
   }
   if (grant !== null) {
     if (grant.length === 0) usage('--grant needs at least one module id');
     warnUnknown(grant);
-    userService.grantModules(handle, grant);
+    await userService.grantModules(handle, grant);
   }
   if (revoke !== null) {
     if (revoke.length === 0) usage('--revoke needs at least one module id');
@@ -177,14 +175,14 @@ function main(): void {
         `  Use --revoke '${ALL_MODULES}' to drop it, or --set <ids> to replace it with an explicit list.`,
       );
     }
-    userService.revokeModules(handle, revoke);
+    await userService.revokeModules(handle, revoke);
   }
 
-  const after = userService.getModules(handle);
+  const after = await userService.getModules(handle);
   console.log(`\n${handle}`);
   console.log(`  before: ${describe(before)}`);
   console.log(`  after:  ${describe(after)}`);
   console.log('\nTakes effect on the next run — entitlements are read per request.\n');
 }
 
-main();
+await main();

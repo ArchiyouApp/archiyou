@@ -21,7 +21,7 @@ async function buildApp(): Promise<FastifyInstance> {
   instance.decorate('requireAdmin', async (request: FastifyRequest, reply: FastifyReply) => {
     try { await request.jwtVerify(); }
     catch { reply.code(401).send({ success: false, error: 'Unauthorized' }); return; }
-    if (!userService.isAdmin(request.user.sub)) {
+    if (!(await userService.isAdmin(request.user.sub))) {
       reply.code(403).send({ success: false, error: 'Admin only', code: 'not_admin' });
     }
   });
@@ -52,7 +52,7 @@ beforeAll(async () => {
   ({ userService } = await import('../../src/services/UserService'));
   await userService.register('root@example.com', 'password123', 'root');
   await userService.register('alice@example.com', 'password123', 'alice');
-  userService.setAdmin('root', true);
+  await userService.setAdmin('root', true);
 
   app = await buildApp();
 });

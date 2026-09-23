@@ -86,15 +86,15 @@ beforeAll(async () => {
 
   await userService.register('owner@example.com', 'password123', 'owner');
   await userService.register('nobody@example.com', 'password123', 'nobody');
-  userService.setModules('owner', ['example', 'heavy', 'hybrid']);
+  await userService.setModules('owner', ['example', 'heavy', 'hybrid']);
 
   app = await buildApp();
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   // Each test starts from the same entitlements, so ordering cannot leak.
-  userService.setModules('owner', ['example', 'heavy', 'hybrid']);
-  userService.setModules('nobody', []);
+  await userService.setModules('owner', ['example', 'heavy', 'hybrid']);
+  await userService.setModules('nobody', []);
 });
 
 afterAll(async () => { await app.close(); });
@@ -130,14 +130,14 @@ describe('GET /modules — the catalog', () => {
 
 describe('the "*" wildcard entitlement', () => {
   it('entitles every installed module', async () => {
-    userService.setModules('nobody', ['*']);
+    await userService.setModules('nobody', ['*']);
 
     const res = await app.inject({ method: 'GET', url: '/modules', headers: auth('nobody') });
     expect(res.json().modules.every((m: any) => m.entitled === true)).toBe(true);
   });
 
   it('entitles a module installed AFTER the grant was made', async () => {
-    userService.setModules('nobody', ['*']);
+    await userService.setModules('nobody', ['*']);
     installModule('late');
     moduleHost.load(modulesDir);
 
@@ -158,7 +158,7 @@ describe('the "*" wildcard entitlement', () => {
   });
 
   it('serves a client bundle and allows a server call', async () => {
-    userService.setModules('nobody', ['*']);
+    await userService.setModules('nobody', ['*']);
 
     expect((await app.inject({
       method: 'GET', url: '/modules/example/1.0.0/bundle.js', headers: auth('nobody'),
@@ -171,22 +171,22 @@ describe('the "*" wildcard entitlement', () => {
     expect(call.statusCode).toBe(200);
   });
 
-  it('collapses to exactly ["*"], so no named id looks revocable', () => {
+  it('collapses to exactly ["*"], so no named id looks revocable', async () => {
     // A stored ['*','example'] would invite `--revoke example` and then quietly
     // grant it anyway. Only one shape can mean "everything".
-    expect(userService.setModules('nobody', ['example', '*', 'heavy'])).toEqual(['*']);
+    expect(await userService.setModules('nobody', ['example', '*', 'heavy'])).toEqual(['*']);
   });
 
-  it('is dropped by revoking "*" itself, and only that', () => {
-    userService.setModules('nobody', ['*']);
+  it('is dropped by revoking "*" itself, and only that', async () => {
+    await userService.setModules('nobody', ['*']);
 
     // A named revoke has nothing to remove from ['*'] — asserted so the no-op
     // stays deliberate rather than becoming a surprise.
-    expect(userService.revokeModules('nobody', ['example'])).toEqual(['*']);
-    expect(userService.hasModule('nobody', 'example')).toBe(true);
+    expect(await userService.revokeModules('nobody', ['example'])).toEqual(['*']);
+    expect(await userService.hasModule('nobody', 'example')).toBe(true);
 
-    expect(userService.revokeModules('nobody', ['*'])).toEqual([]);
-    expect(userService.hasModule('nobody', 'example')).toBe(false);
+    expect(await userService.revokeModules('nobody', ['*'])).toEqual([]);
+    expect(await userService.hasModule('nobody', 'example')).toBe(false);
   });
 
   it('cannot be granted by a module id, because "*" is not a legal id', async () => {
@@ -233,7 +233,7 @@ describe('GET /modules/:id/:version/bundle.js — client bundles', () => {
     // claim would have kept working until the token expired, days later.
     expect((await app.inject({ method: 'GET', url: URL_OK, headers: auth('owner') })).statusCode).toBe(200);
 
-    userService.revokeModules('owner', ['example']);
+    await userService.revokeModules('owner', ['example']);
 
     expect((await app.inject({ method: 'GET', url: URL_OK, headers: auth('owner') })).statusCode).toBe(403);
   });
