@@ -14,7 +14,7 @@
  *
  *  It only ever SELECTs — this never writes to your library. Which library it reads is
  *  whatever SERVER_DATABASE_URL points at: your own PGlite copy by default, or the central
- *  instance through an ssh tunnel (see scripts/db-download.mjs tunnel).
+ *  instance through an ssh tunnel (see scripts/db-remote.mjs — `pnpm db tunnel`).
  */
 import { describe, it, expect, beforeAll } from 'vitest'
 

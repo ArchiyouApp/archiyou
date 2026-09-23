@@ -7,10 +7,12 @@
  *
  * Two things here are worth understanding before changing anything:
  *
- *  1. A `sqlite` target is NEVER copied as a file. The database runs in WAL mode,
- *     so at any moment a large share of the committed state lives in `-wal` rather
- *     than the `.db`. We take a consistent snapshot with SQLite's online backup
- *     API, which yields a fully checkpointed standalone file with no sidecars.
+ *  1. The `postgres` target is a `pg_dump -Fc` stream, never a copy of anything on
+ *     disk. Copying $PGDATA out from under a running server gives you a torn
+ *     cluster; pg_dump reads inside one repeatable-read snapshot, so what lands in
+ *     the archive is a point-in-time image of a database that is still being
+ *     written to. The custom format (-Fc) is what makes a partial restore — one
+ *     table, or into a scratch database — possible at all.
  *
  *  2. `selectPrunable()` is the only destructive code in the server. It is pure so
  *     that every one of its safety rules is exhaustively unit-testable, and it is
@@ -20,14 +22,20 @@
  * The CLI wrapper is src/admin/backup.ts; this module never reads argv, never
  * reads `config`, and never calls process.exit. Errors are typed so the CLI can
  * map them to meaningful exit codes.
+ *
+ * The three external commands (pg_dump, pg_restore, psql) go through the injectable
+ * `PostgresTools` below rather than being called inline, so the unit tests can drive
+ * every path without a server. CI runs the real ones against a postgres service.
  */
 
 import { createWriteStream, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { PassThrough, Readable } from 'node:stream';
 
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
+
 import archiver from 'archiver';
-import Database from 'better-sqlite3';
 
 import type { BackupTarget, BackupTargetKind } from '../config';
 import { BACKUP_DEFAULT_EXCLUDES } from '../config';
@@ -158,6 +166,23 @@ export function resolveTargets(input: ResolveTargetsInput): ResolveTargetsResult
 
   const resolved: ResolvedTarget[] = [];
   for (const t of selected) {
+    // The database target's `path` is a connection URL, not a filesystem path: there
+    // is nothing to resolve or stat, and pg_dump is what discovers whether it is
+    // reachable. What IS checked here is that it names a server at all — pg_dump
+    // cannot read PGlite, so a dev checkout must be told that plainly rather than
+    // shipping an archive with no database in it.
+    if (t.kind === 'postgres') {
+      if (!/^postgres(ql)?:\/\//i.test(t.path)) {
+        throw new BackupConfigError(
+          `Backup target "${t.name}" needs a PostgreSQL server, but SERVER_DATABASE_URL is "${t.path}". `
+          + 'pg_dump cannot read an in-process PGlite database — point at a postgres:// URL, '
+          + `or add "${t.name}" to SERVER_BACKUP_SKIP if this instance genuinely has nothing to back up.`,
+        );
+      }
+      resolved.push({ ...targetDefaults(t), path: t.path, exclude: [], present: true });
+      continue;
+    }
+
     const abs = isAbsolute(t.path) ? resolve(t.path) : resolve(baseDir, t.path);
     const { exists, isDirectory } = probe(abs);
 
@@ -413,93 +438,199 @@ export function selectPrunable(input: PruneInput): PruneDecision {
   return { prune: candidates, keep, ignored, reason: notes.join(', ') };
 }
 
-//// SQLITE SNAPSHOT ////
+//// POSTGRES SNAPSHOT ////
 
-export interface SqliteStats {
-  integrityCheck: string;
+export interface PostgresStats {
+  /** `SHOW server_version` of the database that was dumped. */
+  serverVersion: string;
+  /** How many archive entries `pg_restore --list` reports — the proof the dump file
+   *  can actually be read back, which is the whole point of inspecting it. */
+  dumpEntries: number;
+  /** Which schema this dump matches, from drizzle.__drizzle_migrations. */
   migrations: { count: number; latestCreatedAt: number | null };
   rowCounts: Record<string, number>;
   bytes: number;
 }
 
 /**
- * A consistent copy of a live SQLite database, via the online backup API.
+ * The three PostgreSQL command-line tools this needs, behind an interface.
  *
- * Not a file copy and not `PRAGMA wal_checkpoint` + copy: the API process is writing
- * concurrently, and in WAL mode a large share of committed state sits in `-wal` at
- * any moment. sqlite3_backup_step copies pages under SQLite's own locking, treats
- * SQLITE_BUSY as "retry" and restarts if a writer intervenes, so the result is a
- * point-in-time image rather than a torn one. better-sqlite3 drives it 100 pages per
- * event-loop tick, so this never blocks the process for long.
- *
- * The connection is opened read-only and separately from db/client.ts — importing
- * that module would open a second WRITABLE handle on the live database as a side
- * effect of the import.
- *
- * The output is fully checkpointed and standalone: no `-wal`, no `-shm` beside it.
- * The backup API already leaves it that way, but the copy inherits the source's
- * journal_mode, so merely OPENING it — to verify it, or by a careless restore —
- * would recreate the sidecars. We flip the snapshot to `journal_mode = delete` so
- * the archived artifact is unambiguously one self-contained file. db/client.ts sets
- * WAL again on boot, so a restored database is back in WAL mode immediately.
+ * Injected rather than called inline so the unit tests can exercise every branch —
+ * a failed dump, an unreadable archive, a database with no drizzle schema — without
+ * a server. The real implementation is `postgresTools` below; CI runs it against a
+ * postgres service so the argument lists cannot rot.
  */
-export async function snapshotDatabase(sourcePath: string, destPath: string): Promise<void> {
-  let source: Database.Database | undefined;
-  try {
-    source = new Database(sourcePath, { readonly: true, fileMustExist: true });
-    source.pragma('busy_timeout = 5000');
-    await source.backup(destPath);
+export interface PostgresTools {
+  /** `pg_dump -Fc <url> -f <destPath>`. */
+  dump(url: string, destPath: string): Promise<void>;
+  /** `pg_restore --list <path>` → its lines. Throws if the file is not a valid archive. */
+  list(path: string): Promise<string[]>;
+  /** Server version, per-table row counts and migration state, read from the LIVE
+   *  database in one read-only repeatable-read transaction. */
+  stats(url: string): Promise<Omit<PostgresStats, 'dumpEntries' | 'bytes'>>;
+}
 
-    const snapshot = new Database(destPath);
-    try {
-      snapshot.pragma('journal_mode = delete');
-    } finally {
-      snapshot.close();
+const run = promisify(execFile);
+
+/** One field separator that cannot occur in a table name or a number. */
+const FS = '\u0001';
+
+/**
+ * Exact row counts for every table in `public`, plus the migration state.
+ *
+ * `query_to_xml` is the standard way to get a real `count(*)` per table in one
+ * statement — pg_class.reltuples is a planner estimate and would report numbers that
+ * are merely close, which is useless in a backup manifest you are going to compare
+ * against after a restore.
+ *
+ * READ ONLY REPEATABLE READ so every count comes from one snapshot: without it a
+ * manifest could claim a users/script_versions pair that never existed together.
+ */
+const STATS_SQL = `
+\\set ON_ERROR_STOP on
+BEGIN TRANSACTION READ ONLY ISOLATION LEVEL REPEATABLE READ;
+SELECT 'version' || '${FS}' || setting FROM pg_settings WHERE name = 'server_version';
+SELECT 'table' || '${FS}' || table_name || '${FS}'
+       || (xpath('/row/cnt/text()',
+                 query_to_xml(format('select count(*) as cnt from %I.%I', table_schema, table_name),
+                              false, true, '')))[1]::text
+  FROM information_schema.tables
+ WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+ ORDER BY table_name;
+SELECT 'migrations' || '${FS}' || count(*) || '${FS}' || coalesce(max(created_at)::text, '')
+  FROM drizzle."__drizzle_migrations";
+COMMIT;
+`;
+
+/** The same query without the migrations line, for a database that has never been
+ *  migrated by drizzle — asking for a table that is not there aborts the whole
+ *  transaction under ON_ERROR_STOP, so it is a second attempt rather than a guard. */
+const STATS_SQL_NO_MIGRATIONS = STATS_SQL.replace(
+  /SELECT 'migrations'[\s\S]*?FROM drizzle\."__drizzle_migrations";\n/,
+  '',
+);
+
+function parseStats(stdout: string): Omit<PostgresStats, 'dumpEntries' | 'bytes'> {
+  const out = {
+    serverVersion: 'unknown',
+    migrations: { count: 0, latestCreatedAt: null as number | null },
+    rowCounts: {} as Record<string, number>,
+  };
+  stdout.split('\n').map((l) => l.trim()).filter(Boolean).forEach((line) => {
+    const [tag, a, b] = line.split(FS);
+    if (tag === 'version') out.serverVersion = a;
+    else if (tag === 'table') out.rowCounts[a] = Number(b);
+    else if (tag === 'migrations') {
+      out.migrations = { count: Number(a), latestCreatedAt: b ? Number(b) : null };
     }
+  });
+  return out;
+}
+
+/** The real tools. `pg_dump` must be at least the server's major version, which is
+ *  why the Dockerfile installs postgresql-client-17 from PGDG rather than Debian's. */
+export const postgresTools: PostgresTools = {
+  async dump(url, destPath) {
+    // -Fc: the custom format. Compressed, and restorable table by table or into a
+    // scratch database, which a plain SQL dump is not.
+    // --no-owner/--no-acl: a restore must not depend on the role names of the box it
+    // came from; the roles are created by the runbook, not by the dump.
+    await run('pg_dump', ['-Fc', '--no-owner', '--no-acl', '-f', destPath, url], {
+      maxBuffer: 16 * 1024 * 1024,
+    });
+  },
+
+  async list(path) {
+    const { stdout } = await run('pg_restore', ['--list', path], { maxBuffer: 64 * 1024 * 1024 });
+    return stdout.split('\n').filter((l) => l.trim() && !l.startsWith(';'));
+  },
+
+  async stats(url) {
+    // -X no .psqlrc, -A unaligned, -t tuples only, -q quiet: machine-readable output.
+    // The script goes in on stdin (`-f -`) rather than as -c, because it is several
+    // statements that must share one transaction.
+    const psql = (script: string): Promise<string> => new Promise((ok, fail) => {
+      const child = spawn('psql', ['-X', '-A', '-t', '-q', '-f', '-', url]);
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
+      child.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+      child.on('error', fail);
+      child.on('close', (code) => (code === 0 ? ok(stdout) : fail(new Error(stderr.trim() || `psql exited ${code}`))));
+      child.stdin.end(script);
+    });
+    try {
+      return parseStats(await psql(STATS_SQL));
+    } catch {
+      return parseStats(await psql(STATS_SQL_NO_MIGRATIONS));
+    }
+  },
+};
+
+/**
+ * A consistent dump of a live PostgreSQL database.
+ *
+ * pg_dump takes its own repeatable-read snapshot, so the API can keep serving while
+ * this runs and the result is still internally consistent — no locking, no downtime,
+ * no "stop the server to back it up".
+ */
+export async function snapshotDatabase(url: string, destPath: string, tools: PostgresTools = postgresTools): Promise<void> {
+  try {
+    await tools.dump(url, destPath);
   } catch (err) {
-    // better-sqlite3 unlinks its own partial destination when the copy does not
-    // reach SQLITE_DONE, so there is nothing to clean up here — only to report.
-    throw new BackupFailure(`SQLite snapshot of ${sourcePath} failed: ${(err as Error).message}`, { cause: err });
-  } finally {
-    source?.close();
+    throw new BackupFailure(
+      `pg_dump of ${redactUrl(url)} failed: ${(err as Error).message}`,
+      { cause: err },
+    );
   }
 }
 
 /**
- * Read the snapshot back and prove it is usable before it is shipped anywhere.
+ * Read the dump back and prove it is usable before it is shipped anywhere.
  * A backup that has never been opened is a hope, not a backup.
+ *
+ * `pg_restore --list` is the cheap equivalent of SQLite's integrity_check: it parses
+ * the archive's table of contents, so a truncated or corrupt file fails here rather
+ * than at 3am six months from now. The row counts come from the live database (the
+ * dump format does not carry them) and are what you compare against after a restore.
  */
-export function inspectSnapshot(snapshotPath: string): SqliteStats {
-  const db = new Database(snapshotPath, { readonly: true, fileMustExist: true });
+export async function inspectSnapshot(
+  snapshotPath: string,
+  url: string,
+  tools: PostgresTools = postgresTools,
+): Promise<PostgresStats> {
+  let entries: string[];
   try {
-    const integrity = db.pragma('integrity_check', { simple: true }) as string;
-    if (integrity !== 'ok') {
-      throw new BackupFailure(`snapshot failed integrity_check: ${integrity}`);
-    }
+    entries = await tools.list(snapshotPath);
+  } catch (err) {
+    throw new BackupFailure(`pg_restore could not read the dump: ${(err as Error).message}`, { cause: err });
+  }
+  if (entries.length === 0) {
+    throw new BackupFailure('pg_restore listed no entries — the dump is empty.');
+  }
 
-    const tables = db
-      .prepare(`select name from sqlite_master where type = 'table' and name not like 'sqlite_%'`)
-      .all() as Array<{ name: string }>;
+  const stats = await tools.stats(url);
+  return { ...stats, dumpEntries: entries.length, bytes: statSync(snapshotPath).size };
+}
 
-    const rowCounts: Record<string, number> = {};
-    for (const { name } of tables) {
-      // Table names come from sqlite_master, not user input; quoted anyway.
-      const row = db.prepare(`select count(*) as n from "${name.replace(/"/g, '""')}"`).get() as { n: number };
-      rowCounts[name] = row.n;
-    }
+/** The database name out of a connection URL — the dump's filename inside the
+ *  archive, so a restore reads `db/archiyou.dump` rather than `db/dump`. */
+export function databaseNameOf(url: string): string {
+  try {
+    return decodeURIComponent(new URL(url).pathname.replace(/^\//, '')) || 'database';
+  } catch {
+    return 'database';
+  }
+}
 
-    // Which schema this file matches — the field you actually need on restore.
-    let migrations = { count: 0, latestCreatedAt: null as number | null };
-    if (tables.some((t) => t.name === '__drizzle_migrations')) {
-      const row = db
-        .prepare('select count(*) as n, max(created_at) as latest from __drizzle_migrations')
-        .get() as { n: number; latest: number | null };
-      migrations = { count: row.n, latestCreatedAt: row.latest ?? null };
-    }
-
-    return { integrityCheck: integrity, migrations, rowCounts, bytes: statSync(snapshotPath).size };
-  } finally {
-    db.close();
+/** A database URL with the password removed, for logs and error messages. */
+export function redactUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.password) u.password = '***';
+    return u.toString();
+  } catch {
+    return '(unparseable database URL)';
   }
 }
 
@@ -517,8 +648,8 @@ export interface CollectedTarget {
   target: ResolvedTarget;
   files: CollectedFile[];
   bytes: number;
-  /** Present for `sqlite` targets only. */
-  sqlite?: SqliteStats;
+  /** Present for the `postgres` target only. */
+  postgres?: PostgresStats;
   skipped: boolean;
 }
 
@@ -554,23 +685,29 @@ function walk(root: string, exclude: string[]): CollectedFile[] {
 }
 
 /**
- * Gather one target's files. `sqlite` targets are snapshotted into `tmpDir` first,
- * so what lands in the archive is the checkpointed copy, never the live file.
+ * Gather one target's files. The `postgres` target is dumped into `tmpDir` first, so
+ * what lands in the archive is a pg_dump stream and never anything read off $PGDATA.
  */
-export async function collectTarget(target: ResolvedTarget, tmpDir: string): Promise<CollectedTarget> {
+export async function collectTarget(
+  target: ResolvedTarget,
+  tmpDir: string,
+  tools: PostgresTools = postgresTools,
+): Promise<CollectedTarget> {
   if (!target.present) {
     return { target, files: [], bytes: 0, skipped: true };
   }
 
-  if (target.kind === 'sqlite') {
-    const dest = join(tmpDir, `${target.name}-${basename(target.path)}`);
-    await snapshotDatabase(target.path, dest);
-    const sqlite = inspectSnapshot(dest);
+  if (target.kind === 'postgres') {
+    // `path` is the database URL for this kind, not a filesystem path.
+    const name = `${databaseNameOf(target.path)}.dump`;
+    const dest = join(tmpDir, `${target.name}-${name}`);
+    await snapshotDatabase(target.path, dest, tools);
+    const postgres = await inspectSnapshot(dest, target.path, tools);
     return {
       target,
-      files: [{ from: dest, to: basename(target.path), bytes: sqlite.bytes }],
-      bytes: sqlite.bytes,
-      sqlite,
+      files: [{ from: dest, to: name, bytes: postgres.bytes }],
+      bytes: postgres.bytes,
+      postgres,
       skipped: false,
     };
   }
@@ -590,7 +727,9 @@ export interface Manifest {
   createdAt: string;
   stem: string;
   tool: string;
-  sqliteVersion: string;
+  /** The PostgreSQL server the `db` target was dumped from — the version a restore
+   *  needs to be at least. Empty when no database target was included. */
+  serverVersion: string;
   targets: Array<{
     name: string;
     kind: BackupTargetKind;
@@ -598,7 +737,7 @@ export interface Manifest {
     files: number;
     bytes: number;
     skipped: boolean;
-    integrityCheck?: string;
+    dumpEntries?: number;
     migrations?: { count: number; latestCreatedAt: number | null };
     rowCounts?: Record<string, number>;
   }>;
@@ -611,21 +750,23 @@ export interface Manifest {
  * directories as a 2027 one, and on restore you need to know which schema the
  * database file matches before you put it anywhere near production.
  */
-export function buildManifest(collected: CollectedTarget[], now: Date, sqliteVersion: string): Manifest {
+export function buildManifest(collected: CollectedTarget[], now: Date): Manifest {
   return {
     createdAt: now.toISOString(),
     stem: backupStem(now),
     tool: '@archiyou/server admin:backup',
-    sqliteVersion,
+    serverVersion: collected.find((c) => c.postgres)?.postgres?.serverVersion ?? '',
     targets: collected.map((c) => ({
       name: c.target.name,
       kind: c.target.kind,
-      sourcePath: c.target.path,
+      // Redacted: a manifest travels off-box, and for the database target this is a
+      // connection URL with a password in it.
+      sourcePath: c.target.kind === 'postgres' ? redactUrl(c.target.path) : c.target.path,
       files: c.files.length,
       bytes: c.bytes,
       skipped: c.skipped,
-      ...(c.sqlite
-        ? { integrityCheck: c.sqlite.integrityCheck, migrations: c.sqlite.migrations, rowCounts: c.sqlite.rowCounts }
+      ...(c.postgres
+        ? { dumpEntries: c.postgres.dumpEntries, migrations: c.postgres.migrations, rowCounts: c.postgres.rowCounts }
         : {}),
     })),
     totalBytes: collected.reduce((n, c) => n + c.bytes, 0),
@@ -676,6 +817,8 @@ export interface RunBackupOptions {
   out?: string;
   now: Date;
   log?: (message: string) => void;
+  /** Injected in tests; the real pg_dump/pg_restore/psql otherwise. */
+  tools?: PostgresTools;
 }
 
 export interface RunBackupResult {
@@ -699,12 +842,12 @@ export async function runBackup(opts: RunBackupOptions): Promise<RunBackupResult
     //// collect ////
     const collected: CollectedTarget[] = [];
     for (const target of opts.targets) {
-      const c = await collectTarget(target, tmp);
+      const c = await collectTarget(target, tmp, opts.tools);
       collected.push(c);
       log(
         c.skipped
           ? `   ⏭  ${target.name} — source missing, skipped`
-          : `   ✅ ${target.name} — ${c.files.length} file(s), ${formatBytes(c.bytes)}${c.sqlite ? ` (integrity_check: ${c.sqlite.integrityCheck}, ${c.sqlite.migrations.count} migrations)` : ''}`,
+          : `   ✅ ${target.name} — ${c.files.length} file(s), ${formatBytes(c.bytes)}${c.postgres ? ` (pg ${c.postgres.serverVersion}, ${c.postgres.dumpEntries} dump entries, ${c.postgres.migrations.count} migrations)` : ''}`,
       );
     }
 
@@ -717,7 +860,7 @@ export async function runBackup(opts: RunBackupOptions): Promise<RunBackupResult
       );
     }
 
-    const manifest = buildManifest(collected, opts.now, sqliteVersion());
+    const manifest = buildManifest(collected, opts.now);
     const key = objectKeyFor(opts.now, opts.prefix);
 
     //// write ////
@@ -775,15 +918,6 @@ export async function runBackup(opts: RunBackupOptions): Promise<RunBackupResult
 }
 
 //// HELPERS ////
-
-function sqliteVersion(): string {
-  const probe = new Database(':memory:');
-  try {
-    return (probe.prepare('select sqlite_version() as v').get() as { v: string }).v;
-  } finally {
-    probe.close();
-  }
-}
 
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
