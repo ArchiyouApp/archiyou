@@ -5,7 +5,7 @@
 | Dates | 2026-09-21 (review + plan) → 2026-09-23 |
 | Model | Claude Opus 5 (claude-opus-5[1m]), 1M context, Claude Code agent — the review and plan two days earlier were Claude Fable 5.1 in plan mode |
 | Tool | Claude Code in plan mode (review + plan), then as agent |
-| Human | Mark van der Net: asked for the review, approved the plan, decided that dev points at the containerised Postgres and that PGlite stays the zero-config fallback, reviewed the code |
+| Human | Mark van der Net: asked for the review, approved the plan, decided that dev points at the containerised Postgres and that PGlite stays the zero-config fallback, wrote the commit summaries. **Code review outstanding — see TODO below.** |
 | Branch | `pg` |
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
@@ -13,6 +13,41 @@ Moves the script database from one embedded SQLite file per checkout to a single
 PostgreSQL instance that dev and prod share, with PGlite (in-process Postgres, WASM) as the
 zero-config fallback and the test driver — so `git clone && pnpm dev` keeps working with no
 container and no `.env`.
+
+## TODO
+
+- [ ] **Code review needed.** Everything below was written by the agent and verified by
+      running it (see "What was actually verified"), but no human has read the diff.
+      Seven commits, `a7fa654..028c4b9` on `pg`.
+
+Where the risk is concentrated, in the order worth reading:
+
+1. **`ScriptStore.ts` / `UserService.ts` / `FeedbackStore.ts`** — ~40 methods changed
+   shape twice (sync → async, then SQLite → Postgres). The mechanical parts are covered
+   by the suite; the ones that are not purely mechanical are `listForUser`
+   (`DISTINCT ON`), `resolveFileIdByName` (one query instead of one per candidate),
+   `latestRow` (now `LIMIT 1`, so it no longer loads a file's whole history) and
+   `isUniqueViolation` (reads SQLSTATE off `e.cause`; get it wrong and a duplicate
+   publish becomes a 500).
+2. **`db/schema.ts`** — `json` vs `jsonb` on `params`/`presets` is load-bearing (key
+   order is the editor's parameter order), and the partial indexes replaced indexes over
+   the JSON blob, which Postgres cannot have.
+3. **`db/migrate.ts`** — the boot guard. It decides when a process may change a shared
+   database's schema; the failure mode of getting it wrong is a dev branch migrating
+   production.
+4. **`BackupService.ts`** — the `pg_dump`/`pg_restore`/`psql` argument lists and the
+   `STATS_SQL` parsing. Exercised end to end here and in CI, but it is the code you find
+   out about during an incident.
+5. **`migrate-sqlite-to-pg.ts`** — read before the production cutover, not after. It is
+   the one script that writes 7 000+ rows in one go.
+
+Also outstanding, and deliberately not in this branch:
+
+- [ ] **Production cutover** (plan step 7). Dev is switched over and running on the
+      migrated data; production is untouched and still on SQLite.
+- [ ] **Remove `better-sqlite3` and `migrate-sqlite-to-pg.ts`** once the cutover has
+      settled, along with the `python3 make g++` layer in the Dockerfile and the
+      `allowBuilds` entry in `pnpm-workspace.yaml`.
 
 ## Prompts (verbatim, local time)
 
