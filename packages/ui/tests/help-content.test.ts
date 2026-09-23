@@ -96,6 +96,44 @@ describe('parseHelpDoc', () =>
     expect(inner.steps[0].blocks[0]).toMatchObject({ kind: 'code', code: '## not a step' });
   });
 
+  it('drops docs-only sections, headings and code included', () =>
+  {
+    const docs = parseHelpDoc([
+      '## One', 'Both.', '',
+      '<!-- docs-only -->', 'Site only.', '## Not a step', '```js run', 'y = 2', '```', '<!-- /docs-only -->',
+      '', 'Also both.',
+      '```js run', 'x = 1', '```',
+    ].join('\n'));
+    expect(docs.steps.map(s => s.title)).toEqual(['One']);
+    expect(docs.steps[0].blocks).toEqual([
+      { kind: 'markdown', text: 'Both.\n\n\nAlso both.' },
+      { kind: 'code', lang: 'js', action: 'run', code: 'x = 1' },
+    ]);
+  });
+
+  it('keeps a docs-only marker inside a code block as code', () =>
+  {
+    const inner = parseHelpDoc('## Step\n```md\n<!-- docs-only -->\n```\nAfter.');
+    expect(inner.steps[0].blocks).toEqual([
+      { kind: 'code', lang: 'md', action: null, code: '<!-- docs-only -->' },
+      { kind: 'markdown', text: 'After.' },
+    ]);
+  });
+
+  it('keeps an aside one markdown block, its code, ::: and ## included', () =>
+  {
+    const aside = [
+      ':::tip[More]', 'Try:', '```', 'top.move(10);', ':::', '```',
+      ':::note', 'Nested', ':::', '## Not a step', ':::',
+    ].join('\n');
+    const doc = parseHelpDoc(`## Step\nBefore.\n${aside}\nAfter.\n\`\`\`js run\nx = 1\n\`\`\``);
+    expect(doc.steps.map(s => s.title)).toEqual(['Step']);
+    expect(doc.steps[0].blocks).toEqual([
+      { kind: 'markdown', text: `Before.\n${aside}\nAfter.` },
+      { kind: 'code', lang: 'js', action: 'run', code: 'x = 1' },
+    ]);
+  });
+
   it('works without frontmatter and with CRLF line ends', () =>
   {
     const crlf = parseHelpDoc('## One\r\n```js run\r\nx = 1\r\n```\r\n');
@@ -162,9 +200,10 @@ describe('tags and paths', () =>
 describe('help content files', () =>
 {
   // help/<section>/<locale>/<rest>.md: every section is on the docs site; the editor
-  // plays onboarding and tutorials, so only those follow the step format
+  // plays onboarding and tutorials, so only those follow the step format. An `index`
+  // is a section's landing page on the site, not played (see loadHelpTutorials)
   const files = listMarkdown(HELP_DIR);
-  const played = files.filter(f => /^(onboarding|tutorials)\//.test(f));
+  const played = files.filter(f => /^(onboarding|tutorials)\//.test(f) && !/(^|\/)index\.md$/.test(f));
   const localeOf = (file: string) => file.split('/')[1];
   const inEnglish = (file: string) => file.replace(/^([^/]+)\/[^/]+\//, '$1/en/');
 

@@ -15,6 +15,10 @@
  *        ```js         display only
  *      and an HTML comment `<!-- highlight: viewer -->` spotlights a UI element
  *      (ids in HELP_TARGETS) while the step is shown.
+ *   4. Lines between `<!-- docs-only -->` and `<!-- /docs-only -->` (each on its own line)
+ *      are for the docs site only: the editor drops them, headings and code included.
+ *   5. An aside (`:::tip` … `:::`, see utils/markdown.ts) stays one markdown block, code
+ *      fences and all, so it renders as one box. Its code is display only (no Run).
  *
  * Pure and DOM-free: the editor, the unit tests and the Runner test that executes
  * every tutorial step all use it.
@@ -125,6 +129,17 @@ const FENCE = /^(\s*)(`{3,}|~{3,})\s*([^`\s]*)\s*(.*)$/;
 const STEP = /^##\s+(.+?)\s*#*\s*$/;
 const HIGHLIGHT = /<!--\s*highlight:\s*([^>]*?)\s*-->/g;
 const COMMENT = /<!--[\s\S]*?-->/g;
+const DOCS_ONLY_START = /^\s*<!--\s*docs-only\s*-->\s*$/;
+const DOCS_ONLY_END = /^\s*<!--\s*\/docs-only\s*-->\s*$/;
+const ASIDE_OPEN = /^\s*:::(?:note|tip|caution|danger)(?:\[.*\])?\s*$/;
+const ASIDE_CLOSE = /^\s*:::\s*$/;
+
+/** Where the parser is inside an aside: how deep (asides nest) and in which code fence */
+interface AsideState
+{
+  depth: number;
+  fence: string | null;
+}
 
 /** Parse one help markdown file. Never throws: malformed input yields fewer steps, not an error. */
 export function parseHelpDoc(source: string): HelpDoc
@@ -135,6 +150,8 @@ export function parseHelpDoc(source: string): HelpDoc
   let blocks = doc.intro;
   let prose: string[] = [];
   let fence: { marker: string, lang: string, action: HelpFenceAction | null, lines: string[] } | null = null;
+  let docsOnly = false;
+  let aside: AsideState | null = null;
 
   const flushProse = () =>
   {
@@ -145,9 +162,35 @@ export function parseHelpDoc(source: string): HelpDoc
 
   body.split('\n').forEach(line =>
   {
+    // Docs site only: skip to the closing marker (an unclosed one runs to the end)
+    if (docsOnly)
+    {
+      if (DOCS_ONLY_END.test(line)) docsOnly = false;
+      return;
+    }
+    if (!fence && DOCS_ONLY_START.test(line))
+    {
+      docsOnly = true;
+      return;
+    }
+
+    // An aside is prose to its closing :::, whatever it holds
+    if (aside)
+    {
+      prose.push(line);
+      aside = followAside(aside, line);
+      return;
+    }
+    if (!fence && ASIDE_OPEN.test(line))
+    {
+      prose.push(line);
+      aside = { depth: 1, fence: null };
+      return;
+    }
+
     if (fence)
     {
-      if (line.trim().startsWith(fence.marker) && line.trim().replace(/[`~]/g, '') === '')
+      if (closesFence(line, fence.marker))
       {
         blocks.push({ kind: 'code', lang: fence.lang, action: fence.action, code: fence.lines.join('\n') });
         fence = null;
@@ -199,6 +242,25 @@ export function parseHelpDoc(source: string): HelpDoc
   flushProse();
 
   return doc;
+}
+
+/** True when the line is the closing fence of a block opened with `marker` */
+function closesFence(line: string, marker: string): boolean
+{
+  return line.trim().startsWith(marker) && line.trim().replace(/[`~]/g, '') === '';
+}
+
+/** Follow one line through an aside. A ::: inside one of its code fences is code;
+ *  a nested aside closes at its own depth. Null once the aside itself closes. */
+function followAside(aside: AsideState, line: string): AsideState | null
+{
+  if (aside.fence) return closesFence(line, aside.fence) ? { ...aside, fence: null } : aside;
+
+  const open = line.match(FENCE);
+  if (open) return { ...aside, fence: open[2] };
+  if (ASIDE_OPEN.test(line)) return { ...aside, depth: aside.depth + 1 };
+  if (ASIDE_CLOSE.test(line)) return aside.depth > 1 ? { ...aside, depth: aside.depth - 1 } : null;
+  return aside;
 }
 
 /** The tutorial's code after applying every run/append block up to and including
