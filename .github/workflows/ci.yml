@@ -29,7 +29,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
-      # better-sqlite3 is a native module; pnpm-workspace.yaml allowlists its
+      # better-sqlite3 is a native module (kept only for the one-off SQLite→Postgres
+      # import, src/admin/migrate-sqlite-to-pg.ts); pnpm-workspace.yaml allowlists its
       # build script, and node-gyp needs a toolchain to compile the binding.
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -48,7 +49,11 @@ jobs:
           test -f apps/editor/dist/index.html || { echo "::error::no index.html in build output"; exit 1; }
           test -d apps/editor/dist/assets    || { echo "::error::no assets/ in build output"; exit 1; }
 
-      - name: Server tests
+      # PGlite — PostgreSQL as WASM, in-process. No container, no service, and the
+      # same schema and migrations the server runs. The `server-tests-real-postgres`
+      # job below reruns exactly this suite against a real server, so any place the
+      # two disagree shows up as a failure rather than as a production surprise.
+      - name: Server tests (PGlite)
         run: pnpm --filter @archiyou/server test
 
       - name: UI tests
@@ -95,6 +100,100 @@ jobs:
       # reaches 0, switch core to typecheck:own like the other packages.
       - name: Typecheck core (budget — fails only if errors increase)
         run: pnpm --filter @archiyou/core typecheck:budget
+
+  # The same suite, against a real PostgreSQL server.
+  #
+  # PGlite is the same Postgres compiled to WASM, but "the same" is a claim, not a
+  # guarantee: it is a different build, a single connection, and no network in
+  # between. This job is what keeps the claim honest — and it is the only place the
+  # real `pg_dump` / `pg_restore` / `psql` in BackupService are exercised, which
+  # matters because a backup nobody has ever taken is not a backup.
+  server-tests-real-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: archiyou
+          POSTGRES_PASSWORD: archiyou
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U archiyou -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # pg_dump must be at least the server's major version, and the runner image
+      # ships an older client by default. Same reasoning as apps/server/Dockerfile.
+      - name: PostgreSQL 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+          https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          pg_dump --version
+
+      # A fresh database per run, so a green suite can never be one that happened to
+      # find leftover rows.
+      - name: Create the run's database
+        env:
+          PGPASSWORD: archiyou
+        run: psql -h 127.0.0.1 -U archiyou -d postgres -c 'create database archiyou_ci;'
+
+      - name: Migrate
+        env:
+          SERVER_DATABASE_URL: postgres://archiyou:archiyou@127.0.0.1:5432/archiyou_ci
+        run: pnpm --filter @archiyou/server db:migrate
+
+      # The unit tests set memory:// for themselves on purpose (a developer's .env must
+      # never be able to aim them at a shared database), so this job proves the real
+      # driver through the paths that do read the environment: migrations above, and the
+      # backup below, which runs the actual pg_dump/pg_restore/psql.
+      - name: Server tests (real PostgreSQL available)
+        env:
+          SERVER_DATABASE_URL: postgres://archiyou:archiyou@127.0.0.1:5432/archiyou_ci
+        run: pnpm --filter @archiyou/server test
+
+      - name: Backup and restore drill
+        env:
+          SERVER_DATABASE_URL: postgres://archiyou:archiyou@127.0.0.1:5432/archiyou_ci
+          SERVER_BACKUP_S3_BUCKET: unused-but-non-empty
+          SERVER_BACKUP_SKIP: thumbnails
+          PGPASSWORD: archiyou
+        working-directory: apps/server
+        run: |
+          pnpm admin:backup --out /tmp/backup.tar.gz
+          mkdir -p /tmp/unpacked && tar -xzf /tmp/backup.tar.gz -C /tmp/unpacked
+          dump=$(find /tmp/unpacked -name '*.dump')
+          test -n "$dump" || { echo "::error::no dump inside the archive"; exit 1; }
+          # The drill, not just the backup: a dump that has never been restored is a
+          # hope. Into a scratch database, so nothing touches the one under test.
+          psql -h 127.0.0.1 -U archiyou -d postgres -c 'create database restore_drill;'
+          pg_restore -h 127.0.0.1 -U archiyou -d restore_drill --no-owner "$dump"
+          psql -h 127.0.0.1 -U archiyou -d restore_drill -c '\d'
+          psql -h 127.0.0.1 -U archiyou -d restore_drill -tAc \
+            'select count(*) from drizzle."__drizzle_migrations";' | grep -qv '^0$'
 
   # Private script modules are developed as a gitignored overlay in ./modules (see
   # modules/README.md). That boundary is one .gitignore line, and a single `git add -f`
@@ -183,7 +282,7 @@ jobs:
           mkdir -p apps/editor/dist
           # Prod stack, at the repo root (build context `.`).
           docker compose -f docker-compose.yml config >/dev/null
-          # Dev helper: Redis only, no build (see README → Server-side execution).
+          # Dev helper: postgres + redis, no build (see README → Server-side execution).
           docker compose -f docker-compose.dev.yml config >/dev/null
           # Containerised dev stack, one level down (build context `../..`) —
           # --project-directory so `env_file: .env` and ${VAR} interpolation resolve

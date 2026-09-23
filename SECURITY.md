@@ -130,12 +130,19 @@ arbitrary hosts.
 - [ ] `FRONTEND_URL` set to your real origin; it drives the CORS allowlist and the
       links in outgoing email.
 - [ ] `SERVER_PROXY_ALLOWLIST` considered.
+- [ ] `POSTGRES_PASW` set **in the repo-root `.env`**, like `REDIS_PASW` above — the
+      `postgres` container refuses to initialise without a password, and the api's
+      `SERVER_DATABASE_URL` is built from it.
+- [ ] **5432 is not published to the internet.** The shipped compose binds it to
+      `127.0.0.1` only; developers reach it through `pnpm db tunnel` (ssh). Changing
+      that line to `"5432:5432"` puts the whole script library on the public internet
+      behind one password.
 - [ ] Off-box backups configured (`SERVER_BACKUP_S3_*`) and the cron line from
-      [apps/server/README → Backups](apps/server/README.md#backups) installed. `pnpm admin:backup` takes a
-      consistent snapshot with SQLite's online backup API, so no manual WAL
-      checkpoint is needed — but do **not** roll your own by copying `archiyou.db`
-      while a `-wal` sits next to it: that silently loses every write still in the
-      WAL, which is routinely megabytes.
+      [apps/server/README → Backups](apps/server/README.md#backups) installed.
+      `pnpm admin:backup` takes a `pg_dump -Fc` inside PostgreSQL's own snapshot, so it
+      is safe against a live server and needs no downtime — but do **not** roll your own
+      by copying the `pg_data` volume out from under a running server: that is a torn
+      cluster, and it will not be obvious until you try to restore it.
 - [ ] Everything durable is actually on the list. `backupTargets` in
       `apps/server/src/config.ts` decides what is archived; anything absent is
       treated as regenerable and will be lost with the host.

@@ -710,10 +710,10 @@ export class ScriptStore {
 
   /**
    * Stamp a version's thumbnail URL (ownership-checked). Separate from publish()/share()
-   * because the URL embeds the version id, which those generate internally — and because
-   * writing the file is async while this store is synchronous (better-sqlite3). The route
-   * inserts first, writes the file, then calls this; a failure to write simply leaves the
-   * column null and the publish itself is already committed.
+   * because the URL embeds the version id, which those generate internally, and because a
+   * picture must never be able to fail a publish. The route inserts first, writes the file,
+   * then calls this; a failure to write simply leaves the column null and the publish
+   * itself is already committed.
    *
    * Deliberately does NOT touch `updated`: stamping a thumbnail is not a content edit and
    * must not reshuffle "newest first" list ordering.
