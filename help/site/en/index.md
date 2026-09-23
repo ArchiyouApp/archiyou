@@ -10,8 +10,8 @@ hero:
     - text: Tour the editor
       link: /onboarding/tour
       icon: right-arrow
-    - text: Start a tutorial
-      link: /tutorials/simple-table/
+    - text: Checks the tutorials
+      link: /tutorials/
       icon: rocket
       variant: secondary
     - text: Open the editor

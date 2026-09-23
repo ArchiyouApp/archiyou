@@ -51,7 +51,7 @@ export class PageEditor extends SignalWatcher(LitElement)
 {
   //// SETTINGS ////
   CONST_AUTORUN_DELAY = 1000;    // ms to wait after code changes before auto-running
-  CONST_AUTORUN_MIN_SIZE = 20;   // minimum code length to trigger auto-run
+  CONST_AUTORUN_MIN_SIZE = 5;   // minimum code length to trigger auto-run
 
   /** Toolbar order, top to bottom. */
   readonly TOOLS: ToolDef[] = [
@@ -60,7 +60,7 @@ export class PageEditor extends SignalWatcher(LitElement)
     { id: 'scene',   icon: 'network',    name: 'Scene',     exclusive: false, component: 'editor-scene-tool',    width: 30, height: 50 },
     { id: 'data',    icon: 'table',      name: 'Data',      exclusive: false, component: 'editor-data-tool',     width: 30, height: 50 },
     { id: 'metrics', icon: 'chart-bar',  name: 'Metrics',   exclusive: false, component: 'editor-metrics-tool',  width: 30, height: 50,  outputs: ['default/metrics/*/json'] },
-    { id: 'docs',    icon: 'file-text',  name: 'Documents', exclusive: true,  component: 'editor-document-tool', width: 40, height: 100, outputs: ['default/docs/*/svg', 'default/docs/*/svg-pages'] },
+    { id: 'docs',    icon: 'file-text',  name: 'Documents', exclusive: false, component: 'editor-document-tool', width: 40, height: 60, outputs: ['default/docs/*/svg', 'default/docs/*/svg-pages'] },
     { id: 'instruct', icon: 'list-ordered', name: 'Instructions', exclusive: false, component: 'editor-instruct-tool', width: 30, height: 50 },
     { id: 'profiling', icon: 'timer',    name: 'Profiling', exclusive: false, component: 'editor-profiling-tool', width: 30, height: 50 },
   ];
@@ -97,7 +97,7 @@ export class PageEditor extends SignalWatcher(LitElement)
           </button>
         </div>` : ''}
       <wa-split-panel
-            position="50"
+            position=${this._wideHelp ? 100 / 3 : 50}
             snap="25% 50% 75%"
         >
         <wa-icon class="split-grip"
@@ -119,7 +119,7 @@ export class PageEditor extends SignalWatcher(LitElement)
         <wa-split-panel
           slot="end"
           class="viewer-tools-split"
-          position=${this._activeTools.length > 0 ? 100 - this._activeTools.reduce((max, t) => Math.max(max, t.width), 0) : 100}
+          position=${this._wideHelp ? 50 : this._activeTools.length > 0 ? 100 - this._activeTools.reduce((max, t) => Math.max(max, t.width), 0) : 100}
         >
           ${this._activeTools.length > 0 ? html`<wa-icon slot="divider" class="split-grip" library="lucide" name="grip-vertical"></wa-icon>` : ''}
           <model-viewer slot="start" data-help="viewer"></model-viewer>
@@ -193,6 +193,10 @@ export class PageEditor extends SignalWatcher(LitElement)
 
   @state() private _activeSection: 'info' | 'code' | 'history' | 'files' | 'templates' | 'help' | 'settings' | null = 'code';
   @state() private _activeTools: ToolDef[] = [];
+  /** Opened from a tutorial link: code, viewer and help panel share the width in thirds
+   *  (while help is open), so the tutorial has room next to a still usable viewer. */
+  @state() private _tutorialLayout = false;
+  private _linkedTutorial: string | null = null;
   @state() private _showScriptManager = false;
   @state() private _showScriptImporter = false;
   @state() private _showShareMenu = false;
@@ -218,14 +222,9 @@ export class PageEditor extends SignalWatcher(LitElement)
     registerScheduleExecution(() => this._scheduleParamExecute());
     // The help panel's tutorials put code in the editor and run it through here
     registerHelpRunner(code => void this._runHelpCode(code));
-    // Default: open scene tool
-    const sceneTool = this.TOOLS.find(t => t.id === 'scene');
-    if (sceneTool) this._activeTools = [sceneTool];
-
     this._consumeNewQueryParam();
     void this._consumeScriptLink();
-    // A tutorial link wins over the first-visit tour. Either way the help panel gets
-    // the tool area to itself, instead of half of it under the scene tool.
+    // A tutorial link wins over the first-visit tour. Either way the help panel opens.
     const tutorial = this._consumeTutorialQueryParam();
     const tour = !tutorial && claimOnboarding();
     if (tour) void openHelpDoc(ONBOARDING_PATH);
@@ -400,8 +399,9 @@ export class PageEditor extends SignalWatcher(LitElement)
   }
 
   /** `/editor?tutorial=<name>` opens the help panel on that tutorial (in a new script),
-   *  then cleans the URL so a refresh doesn't start it again. Returns true when the
-   *  param was there. */
+   *  code, viewer and help a third of the width each. The param stays in the URL while
+   *  the tutorial is open (state/help.ts), so the link can be copied. Returns true when
+   *  the param was there. */
   private _consumeTutorialQueryParam(): boolean
   {
     try
@@ -409,10 +409,12 @@ export class PageEditor extends SignalWatcher(LitElement)
       const url = new URL(window.location.href);
       const name = url.searchParams.get('tutorial');
       if (name === null) return false;
+      // Kept in the URL, so seen again on the next location change: open it once
+      if (name === this._linkedTutorial) return true;
+      this._linkedTutorial = name;
 
-      url.searchParams.delete('tutorial');
-      history.replaceState(null, '', `${url.pathname}${url.search}`);
       this._openTool('help');
+      this._tutorialLayout = true;
       void openHelpDoc(`tutorials/${name}`).then(found =>
       {
         if (!found) this._showNotice(`There is no tutorial called “${name}”.`);
@@ -939,6 +941,11 @@ export class PageEditor extends SignalWatcher(LitElement)
   }
 
 
+  private get _wideHelp(): boolean
+  {
+    return this._tutorialLayout && this._activeTools.some(t => t.id === 'help');
+  }
+
   private _handleToolToggle(e: CustomEvent<string>)
   {
     const id = e.detail;
@@ -949,7 +956,7 @@ export class PageEditor extends SignalWatcher(LitElement)
 
     if (isActive)
     {
-      this._activeTools = this._activeTools.filter(t => t.id !== id);
+      this._closeTool(id);
     }
     else
     {
@@ -964,7 +971,8 @@ export class PageEditor extends SignalWatcher(LitElement)
     if (!tool || this._activeTools.some(t => t.id === id)) return;
 
     const base = tool.exclusive ? [] : this._activeTools.filter(t => !t.exclusive);
-    this._activeTools = [...base, tool];
+    // Help always stacks on top, so a tutorial stays in view beside the tool it explains
+    this._activeTools = [...base, tool].sort((a, b) => Number(b.id === 'help') - Number(a.id === 'help'));
     // If the newly active tool declares outputs and we already have a result,
     // run a lean extra execute immediately to populate its data.
     if (tool.outputs?.length && executionResult.get())
@@ -975,7 +983,14 @@ export class PageEditor extends SignalWatcher(LitElement)
 
   private _handleToolClose(e: CustomEvent<string>)
   {
-    this._activeTools = this._activeTools.filter(t => t.id !== e.detail);
+    this._closeTool(e.detail);
+  }
+
+  private _closeTool(id: string)
+  {
+    this._activeTools = this._activeTools.filter(t => t.id !== id);
+    // The tutorial link's wide help panel ends with the panel
+    if (id === 'help') this._tutorialLayout = false;
   }
 
   private async _handleExecute()

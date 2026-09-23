@@ -44,6 +44,9 @@ export default defineConfig({
         // the '../..' resolves back to the repository root.
         baseUrl: 'https://github.com/ArchiyouApp/archiyou/edit/main/apps/docs/',
       },
+      // Starlight's markdown extras (asides like :::tip, heading links) only run on
+      // src/content/docs/ by default; the pages live in help/
+      markdown: { processedDirs: [HELP_DIR] },
       locales: starlightLocales(HELP_DIR),
       customCss: ['./src/styles/archiyou.css'],
       // Built from help/ (Starlight's autogenerate only reads src/content/docs/), then the
