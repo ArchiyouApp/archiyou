@@ -17,6 +17,7 @@
     "admin:library": "tsx src/admin/library.admin.ts",
     "admin:import-cadscripts": "tsx src/admin/import-cadscripts.ts",
     "admin:backup": "tsx src/admin/backup.ts",
+    "admin:migrate-sqlite": "tsx src/admin/migrate-sqlite-to-pg.ts",
     "admin:modules": "tsx src/admin/modules.admin.ts",
     "admin:users": "tsx src/admin/users.admin.ts",
     "docker:dev": "docker compose -f docker-compose.yml up --force-recreate",
