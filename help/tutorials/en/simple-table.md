@@ -145,7 +145,7 @@ Here are some challenges:
 * How to change the size of the legs in the code?
 * Can you make the legs cylinders instead of boxes?
 
-But there is more! Check [More Simple Table: Interaction and documentation](./)
+But there is more! Check [More Simple Table: Interaction and documentation](./simple-table-more)
 
 :::tip[Coding: What to type?]
 Archiyou helps developers during typing:

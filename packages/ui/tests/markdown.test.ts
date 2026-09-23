@@ -141,3 +141,55 @@ describe('markdownToHtml — resolveImage (help content)', () => {
     expect(asked).toEqual([]);
   });
 });
+
+describe('markdownToHtml — resolveLink (help content)', () => {
+  const resolveLink = (href: string) =>
+    (/simple-table-more/.test(href) ? 'tutorials/simple-table-more' : null);
+
+  it('turns a link to another document into a data-help-doc anchor', () => {
+    const out = markdownToHtml('[More](./simple-table-more)', { resolveLink });
+    expect(out).toContain('data-help-doc="tutorials/simple-table-more"');
+    // The editor opens it; the href must not navigate anywhere by itself
+    expect(out).toContain('href="#"');
+    expect(out).toContain('More');
+  });
+
+  it('keeps the text but drops the link it cannot resolve', () => {
+    const out = markdownToHtml('[Guide](../guide/sketching)', { resolveLink });
+    expect(out).not.toContain('<a');
+    expect(out).toContain('Guide');
+  });
+
+  it('unlinks a relative link when there is no resolver at all', () => {
+    const out = markdownToHtml('[More](./simple-table-more)');
+    expect(out).not.toContain('<a');
+    expect(out).toContain('More');
+  });
+
+  it('never asks about an external link or an anchor, and leaves them be', () => {
+    const asked: string[] = [];
+    const out = markdownToHtml('[a](https://archiyou.com) [b](#step)', { resolveLink: href => { asked.push(href); return null; } });
+    expect(asked).toEqual([]);
+    expect(out).toContain('href="https://archiyou.com"');
+    expect(out).toContain('href="#step"');
+  });
+});
+
+describe('markdownToHtml — Starlight asides (help content)', () => {
+  it('renders :::tip as an aside with a default title', () => {
+    const out = markdownToHtml('Intro\n:::tip\nBody **bold**\n:::\nafter');
+    expect(out).toContain('<aside class="aside aside-tip">\n<p class="aside-title">Tip</p>\n<p>Body <strong>bold</strong></p>\n</aside>');
+    expect(out).toContain('<p>after</p>');
+  });
+
+  it('uses a [custom title] and closes nested asides at their own depth', () => {
+    const out = markdownToHtml(':::caution[Watch *out*]\nA\n\n:::note\nnested\n:::\nB\n:::');
+    expect(out).toContain('<p class="aside-title">Watch <em>out</em></p>');
+    expect(out).toMatch(/nested<\/p>\n<\/aside>\n<p>B<\/p>\n<\/aside>/);
+  });
+
+  it('leaves unknown types and fenced code alone', () => {
+    expect(markdownToHtml(':::bogus\nx\n:::')).not.toContain('<aside');
+    expect(markdownToHtml('```\n:::tip\n```')).not.toContain('<aside');
+  });
+});

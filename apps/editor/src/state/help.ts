@@ -24,6 +24,8 @@ import { scriptParams, deleteParam } from './editor';
 //// SETTINGS ////
 
 const DEFAULT_LOCALE = 'en';
+/** Help paths of tutorials start with this; the rest is the name in `?tutorial=` */
+const TUTORIALS_PREFIX = 'tutorials/';
 /** Set once the tour has been shown automatically, so it appears on a first visit only. */
 const ONBOARDED_KEY = 'archiyou:help:onboarded';
 /** The reference's "follow the cursor" switch, remembered per browser */
@@ -96,12 +98,13 @@ export async function loadHelpDoc(path: string): Promise<HelpEntry | null>
   return { path, locale, doc: parseHelpDoc(source) };
 }
 
-/** Load the tutorial list: every `tutorials/*` of the locale (or English), by `order`. */
+/** Load the tutorial list: every `tutorials/*` of the locale (or English), by `order`.
+ *  An `index` file is the docs site's landing page of the section, not a tutorial. */
 export async function loadHelpTutorials(): Promise<void>
 {
   const paths = [...new Set([...FILES.keys()]
     .map(key => key.slice(key.indexOf('/') + 1))
-    .filter(path => path.startsWith('tutorials/')))];
+    .filter(path => path.startsWith(TUTORIALS_PREFIX) && !/(^|\/)index$/.test(path)))];
 
   const entries = (await Promise.all(paths.map(loadHelpDoc))).filter((e): e is HelpEntry => !!e);
   const order = (e: HelpEntry) => Number(e.doc.meta.order ?? Infinity);
@@ -124,6 +127,38 @@ export function helpImageUrl(entry: HelpEntry, src: string): string | null
     .find((url): url is string => !!url) ?? null;
 }
 
+/** The document a link in a help file points to, or null when the editor has no such
+ *  document (a `guide/` page, which only the docs site has, or a typo). Both forms the
+ *  docs site accepts work: relative to the file it is written in ('./simple-table-more',
+ *  with or without `.md`) and a site path ('/tutorials/simple-table-more/', which may
+ *  start with a locale). The path returned is the one openHelpDoc() takes. */
+export function helpDocPath(entry: HelpEntry, href: string): string | null
+{
+  if (/^([a-z]+:|\/\/)/i.test(href)) return null;
+
+  const clean = href.split(/[?#]/)[0].replace(/\.mdx?$/, '').replace(/\/$/, '');
+  if (!clean) return null;
+
+  let path: string | null;
+  if (clean.startsWith('/'))
+  {
+    // A site path is section-first, after an optional locale ('/nl/tutorials/…')
+    const parts = clean.slice(1).split('/');
+    if (helpLocales.includes(parts[0]) && parts.length > 1) parts.shift();
+    path = parts.join('/');
+  }
+  else
+  {
+    // Relative: resolve against the file's own place in help/, then drop the locale
+    const [section, ...rest] = entry.path.split('/');
+    const resolved = resolveHelpPath(`${section}/${entry.locale}/${rest.join('/')}`, clean);
+    path = resolved ? resolved.replace(`/${entry.locale}/`, '/') : null;
+  }
+
+  if (!path) return null;
+  return [helpLocale.get(), entry.locale, DEFAULT_LOCALE].some(l => FILES.has(`${l}/${path}`)) ? path : null;
+}
+
 /** Open a help document in the player at its first step. A tutorial (a document
  *  with code) gets a new script of its own, so the user's work is never overwritten.
  *  Returns false when the document does not exist. */
@@ -142,9 +177,24 @@ export async function openHelpDoc(path: string): Promise<boolean>
 
   helpEntry.set(entry);
   helpTab.set(path === ONBOARDING_PATH ? 'tour' : 'tutorials');
+  reflectTutorialUrl(path);
   _lastStepCode = null;
   goToHelpStep(0);
   return true;
+}
+
+/** Keep `?tutorial=<name>` in the address bar while a tutorial is open, so the URL
+ *  links to it; any other document (the tour) or none removes it. `replaceState`, as
+ *  the editor does for the script path. */
+function reflectTutorialUrl(path: string | null): void
+{
+  const url = new URL(window.location.href);
+  const name = path?.startsWith(TUTORIALS_PREFIX) ? path.slice(TUTORIALS_PREFIX.length) : null;
+  if (url.searchParams.get('tutorial') === name) return;
+
+  if (name === null) url.searchParams.delete('tutorial');
+  else url.searchParams.set('tutorial', name);
+  history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
 /** Show a step; for a tutorial, put the tutorial's code up to that step in the editor
@@ -167,6 +217,7 @@ export function goToHelpStep(index: number): void
 export function closeHelpDoc(): void
 {
   helpEntry.set(null);
+  reflectTutorialUrl(null);
   helpStep.set(0);
   helpTab.set('tutorials');
 }

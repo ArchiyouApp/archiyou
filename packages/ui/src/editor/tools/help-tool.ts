@@ -12,7 +12,7 @@ import {
   helpTab, helpEntry, helpStep, helpTutorials, helpTutorialTag, helpCurrentStep, helpLocale, helpLocales,
   helpApi, helpApiQuery, helpApiEntry, helpApiLookup, helpFollowCursor, helpPanelOpen,
   ONBOARDING_PATH, openHelpDoc, goToHelpStep, closeHelpDoc, loadHelpTutorials, setHelpLocale, runHelpCode, helpImageUrl,
-  loadHelpApi, showApiEntry, setHelpFollowCursor,
+  loadHelpApi, showApiEntry, setHelpFollowCursor, helpDocPath,
   type HelpEntry,
 } from '@archiyou/editor/src/state/help';
 import { codeAt, helpTags, HELP_TAGS, type HelpBlock, type HelpTag } from '../help/help-content.js';
@@ -311,7 +311,10 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
     return blocks.map((block, i) => block.kind === 'markdown'
       // Safe by construction: see utils/markdown.ts (raw HTML in the source is escaped;
       // relative images resolve only to files bundled next to the help markdown)
-      ? html`<div class="markdown">${unsafeHTML(renderMarkdown(block.text, { resolveImage: src => helpImageUrl(entry, src) }))}</div>`
+      ? html`<div class="markdown" @click=${this._handleMarkdownClick}>${unsafeHTML(renderMarkdown(block.text, {
+          resolveImage: src => helpImageUrl(entry, src),
+          resolveLink: href => helpDocPath(entry, href),
+        }))}</div>`
       : html`
         <div class="code">
           ${block.action ? html`
@@ -324,6 +327,18 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
             </div>` : nothing}
           <pre><code>${block.code}</code></pre>
         </div>`);
+  }
+
+  /** A link to another help document (`data-help-doc`, see utils/markdown.ts) opens it
+   *  in the player instead of navigating the editor away. Every other link is external
+   *  and opens in its own tab, which needs nothing from us. */
+  private _handleMarkdownClick(e: MouseEvent)
+  {
+    const link = (e.composedPath()[0] as HTMLElement)?.closest?.('a[data-help-doc]');
+    if (!link) return;
+
+    e.preventDefault();
+    void openHelpDoc(link.getAttribute('data-help-doc')!);
   }
 
   // ── 2. State & Signals ──
@@ -438,6 +453,9 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
       container-type: inline-size;
       overflow: hidden;
       font-family: var(--font-sans);
+      /* --color-bg-code is near-white on the white panel in light mode, too faint to
+         frame code; a tint of the text colour shows in both themes */
+      --help-code-bg: color-mix(in srgb, var(--color-text) 7%, var(--color-bg-elevated, #fff));
       font-size: var(--text-sm);
       color: var(--color-text);
     }
@@ -579,6 +597,7 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
       display: flex;
       justify-content: space-between;
       gap: var(--space-sm);
+      margin-bottom: var(--space-md);
       font-size: var(--text-xs);
       text-transform: uppercase;
       letter-spacing: 0.04em;
@@ -592,43 +611,107 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
     }
 
     .markdown {
+      /* Images size against this width (cqi) */
+      container-type: inline-size;
       line-height: 1.6;
       overflow-wrap: break-word;
     }
     .markdown > :first-child { margin-top: 0; }
     .markdown p, .markdown ul, .markdown ol { margin: 0.6rem 0; }
     .markdown ul, .markdown ol { padding-left: 1.4rem; }
-    .markdown a { color: var(--color-primary); }
-    /* Images (screenshots, animations) sit in a 16:9 box the width of the panel.
-       A portrait image is centred with space left and right instead of growing tall
-       and pushing the text out of view. */
+    .markdown a { color: var(--color-primary); text-decoration: none; }
+    .markdown a:hover { text-decoration: underline; }
+    /* Images (screenshots, animations) are the width of the panel and at most 16:9
+       tall; wider images keep their own ratio. A portrait image is centred with space
+       left and right instead of growing tall and pushing the text out of view. */
     .markdown img {
       display: block;
       width: 100%;
-      aspect-ratio: 16 / 9;
+      height: auto;
+      max-height: calc(100cqi * 9 / 16);
       object-fit: contain;
       background: var(--color-bg-code, rgba(0, 0, 0, 0.04));
       border-radius: var(--radius-md);
       border: 1px solid var(--color-border);
     }
+    /* Asides (:::note/tip/caution/danger, see utils/markdown.ts), coloured as on the docs site */
+    .markdown .aside {
+      --aside-color: var(--color-primary);
+      --aside-icon: url(https://cdn.jsdelivr.net/npm/lucide-static@1.16.0/icons/notebook-pen.svg);
+      margin: 0.75rem 0;
+      padding: var(--space-sm) var(--space-md);
+      border-left: 3px solid var(--aside-color);
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--aside-color) 8%, var(--color-bg-elevated, #fff));
+    }
+    /* Icons are lucide's, from where the app's lucide library (apps/editor/src/icons.ts)
+       loads them; a mask so they take the title's colour */
+    .markdown .aside-tip {
+      --aside-color: var(--color-success);
+      --aside-icon: url(https://cdn.jsdelivr.net/npm/lucide-static@1.16.0/icons/rocket.svg);
+    }
+    .markdown .aside-caution {
+      --aside-color: var(--color-warning);
+      --aside-icon: url(https://cdn.jsdelivr.net/npm/lucide-static@1.16.0/icons/shield-alert.svg);
+    }
+    .markdown .aside-danger {
+      --aside-color: var(--color-danger);
+      --aside-icon: url(https://cdn.jsdelivr.net/npm/lucide-static@1.16.0/icons/triangle-alert.svg);
+    }
+    .markdown .aside > :first-child { margin-top: 0; }
+    .markdown .aside > :last-child { margin-bottom: 0; }
+    .markdown .aside-title {
+      margin-bottom: var(--space-xs);
+      font-weight: 600;
+      color: var(--aside-color);
+    }
+    .markdown .aside-title::before {
+      content: '';
+      display: inline-block;
+      width: 1.1em;
+      height: 1.1em;
+      margin-right: var(--space-xs);
+      vertical-align: -0.2em;
+      background: currentColor;
+      mask: var(--aside-icon) center / contain no-repeat;
+    }
+
+    /* The panel is narrow and often narrower still; a long line wraps (with its
+       continuation indented) rather than putting a scrollbar under the text. */
+    .markdown pre,
+    .code pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      text-indent: -1.5ch;
+    }
+
     .markdown code,
     .code pre {
       font-family: var(--font-mono, monospace);
-      background: var(--color-bg-code, rgba(0, 0, 0, 0.06));
+      background: var(--help-code-bg);
       border-radius: var(--radius-sm);
     }
     .markdown code { font-size: 0.9em; padding: 0.1rem 0.35rem; }
+    /* Code rendered by the markdown itself (inside an aside): as a code block, no Run */
+    .markdown pre {
+      margin: 0.6rem 0;
+      /* Room on the left for the hanging indent of a wrapped line */
+      padding: var(--space-sm) var(--space-md) var(--space-sm) calc(var(--space-md) + 1.5ch);
+      background: var(--help-code-bg);
+      border-radius: var(--radius-sm);
+      font-size: var(--text-xs);
+      line-height: 1.5;
+    }
+    .markdown pre code { padding: 0; font-size: inherit; background: none; }
 
     .code {
       margin: 0.75rem 0;
     }
     .code pre {
       margin: 0;
-      padding: var(--space-sm) var(--space-md);
+      padding: var(--space-sm) var(--space-md) var(--space-sm) calc(var(--space-md) + 1.5ch);
       font-size: var(--text-xs);
       line-height: 1.5;
-      /* Code must not wrap; it scrolls instead */
-      overflow-x: auto;
     }
     .code-bar {
       display: flex;
@@ -641,7 +724,7 @@ export class EditorHelpTool extends SignalWatcher(LitElement)
       padding: 1px var(--space-sm);
       border: none;
       border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-      background: var(--color-bg-code, rgba(0, 0, 0, 0.06));
+      background: var(--help-code-bg);
       color: var(--color-primary);
       font: inherit;
       font-size: var(--text-xs);
