@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-23 → (open) |
-| Model | Claude Opus 5 (claude-opus-5[1m]), 1M context, Claude Code agent |
+| Dates | 2026-09-21 (review + plan) → 2026-09-23 |
+| Model | Claude Opus 5 (claude-opus-5[1m]), 1M context, Claude Code agent — the review and plan two days earlier were Claude Fable 5.1 in plan mode |
 | Tool | Claude Code in plan mode (review + plan), then as agent |
 | Human | Mark van der Net: asked for the review, approved the plan, decided that dev points at the containerised Postgres and that PGlite stays the zero-config fallback, reviewed the code |
 | Branch | `pg` |
@@ -15,7 +15,20 @@ zero-config fallback and the test driver — so `git clone && pnpm dev` keeps wo
 container and no `.env`.
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+
+Two sessions. The first produced the review and the plan (plan mode, Fable 5.1); the
+second implemented it. The design decisions inside the plan — Postgres as a container in
+the existing compose, and the server becoming Postgres-only — were answers to questions
+asked during that first session.
+
+```
+2026-09-21 19:28 +0200  Can you do a indepth review on what it would take to switch to a POSTGRESQL database (from SQLite) - it is easy to have all scripts centralized.
+
+2026-09-23 15:34 +0200  Ok i switched to pg branch. I want you to execute the ./plans/POSTGRES plan. Add the postgres to the docker-compose (both superproject and server app), add the reference to it in the .env file so the apps/editor can pick it up. PGlite is a nice idea so keep that in.
+```
+
+Two further choices were made by answering questions during the second session, and are
+recorded under "Review and decisions" below.
 
 ## Plan (agent output, reviewed by the human before implementation)
 
@@ -149,6 +162,8 @@ Rollback = revert env/branch and restart; the `.db` file is left untouched. Remo
 
 ## Review and decisions by the human
 
+- **The plan was approved in full** (steps 1–8 in one pass, rather than deferring the
+  backup rewrite and the data migration).
 - **Dev points at the containerised Postgres.** `apps/server/.env` (gitignored) carries
   `SERVER_DATABASE_URL=postgres://…@localhost:5432/archiyou` and `docker-compose.dev.yml`
   gained the `postgres` service next to redis, so `pnpm docker:dev` brings both up. The
@@ -156,6 +171,51 @@ Rollback = revert env/branch and restart; the `.db` file is left untouched. Remo
   at all, and what the tests always use.
 - **Postgres in both compose files**, superproject and `apps/server`, as asked.
 
+### Departures from the plan, and why
+
+- **`better-sqlite3` stays for now.** The plan's step 4 removes it from
+  `pnpm-workspace.yaml`, but step 3's one-off importer needs it to read the old file and
+  step 7 removes both together after the cutover. Keeping it is what step 7 actually
+  says; the `allowBuilds` entry and the Dockerfile toolchain carry a comment saying so.
+- **`scripts/db-download.mjs` was renamed to `scripts/db-remote.mjs`** (`pnpm dbdownload`
+  → `pnpm db`). The plan kept the filename; neither the name nor the verb fits a tool
+  whose commands are `tunnel` and `dump`, and there is no file to download any more. It
+  is still one file, which is what the plan was guarding against.
+- **`docker-compose.dev.yml` gained Postgres**, which the plan explicitly left alone —
+  see the decision above.
+- **`apps/server/vitest.config.ts` is new.** Not in the plan: each test file now boots
+  its own PGlite, and vitest's 10s default `hookTimeout` is not enough for a WASM
+  Postgres per worker on a loaded machine.
+
+### What was actually verified
+
+Against `postgres:17` in docker, not only on PGlite:
+
+- login, save, publish, share, both libraries, rename-aware lookup by name
+- a duplicate publish returns **422, not 500** (SQLSTATE 23505 read off `e.cause`)
+- `/users/search?q=ALI` matches `Alice Smith` (`ilike`, where SQLite's `LIKE` had been
+  case-insensitive for free)
+- `/admin/configurators` `total` is a **number**, and the `validated=false` filter
+  includes rows that predate the feature
+- **param key order is unchanged** after a save/reload round trip, and again after a
+  backup + restore — the reason `params` and `presets` are `json` and not `jsonb`
+- the boot guard **refuses to start** against a database whose migrations do not match
+  the checkout, and does not seed the test user there
+- the one-off import moved the real 230 / 7 226 / 1 rows in 1.7s with `md5(code)` matching
+  for every version and timestamps identical to the millisecond
+- `pnpm admin:backup` produced a 4.95 MB archive whose manifest recorded pg 17.11, 25
+  dump entries and the exact row counts; `pg_restore` into a scratch database reproduced
+  all three counts
+
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| `a7fa654` | Postgres: make the store API async, still on SQLite | plan step 1 |
+| `7b9887a` | Postgres: swap the dialect, with PGlite as the zero-config driver | plan step 2 |
+| `0ee2b4a` | Postgres: add the container to all three compose files | plan step 4 |
+| `8867908` | Postgres: one-off import of the SQLite database | plan step 3 |
+| `300379c` | Postgres: back up with pg_dump, and reach the server with `pnpm db` | plan step 5 |
+| `992313b` | Postgres: a CI job on a real server, and the docs | plan steps 6 and 8 |
+
+Step 7 (the production cutover) and the follow-up removal of `better-sqlite3` are not in
+this branch — they are the deploy, not the code.
