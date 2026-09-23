@@ -1,36 +1,72 @@
-# Redis only — the one piece of the execution stack you cannot just run from source.
+# The two pieces of the stack you cannot just run from source: the script database
+# and the queue backend.
 #
 # Everything else runs straight out of your working directory with tsx: no image is
 # built, no code is copied, and an edit to apps/server or packages/core is picked up
 # on the next run (or immediately, in `worker:dev` watch mode).
 #
-#     pnpm docker:dev         # start it
+#     pnpm docker:dev         # start postgres + redis
+#     pnpm dev                # editor + server, from source
 #     pnpm dev:worker         # the worker, from source, in watch mode
-#     pnpm docker:dev:down    # stop and remove it
+#     pnpm docker:dev:down    # stop and remove them
 #
 # The split is deliberate: `docker:*` scripts run containers, `dev:*` scripts run code
 # from your working tree. Nothing here is built into an image, so an edit to
 # apps/server or packages/core is live on the next run.
 #
 # The other two files build images and are for rehearsing a deployment rather than for
-# working: apps/server/docker-compose.yml runs api + redis + worker in containers, and
-# docker-compose.yml is the production stack.
+# working: apps/server/docker-compose.yml runs api + redis + postgres + worker in
+# containers, and docker-compose.yml is the production stack.
 #
-# Published on the standard 6379 so nothing needs configuring — the server defaults to
-# localhost:6379. If you already run Redis locally you do not need this file at all.
-# Appendonly is off: a dev queue is scratch, and losing it on restart is a feature.
+# ⚠️  Postgres here is OPTIONAL. With no `SERVER_DATABASE_URL` the server runs PGlite —
+# Postgres compiled to WASM, in-process, same schema and migrations — so a fresh clone
+# needs none of this. Start this file and point apps/server/.env at it when you want a
+# real server: psql, pg_dump, several processes sharing one database.
+#
+#     SERVER_DATABASE_URL=postgres://archiyou:archiyou@localhost:5432/archiyou
+#
+# Both services are published on the loopback interface only. The credentials below are
+# deliberately trivial and deliberately local: this database holds your scratch library,
+# and nothing outside your machine can reach it.
 
 name: archiyou-dev
 
 services:
+  postgres:
+    image: postgres:17
+    container_name: archiyou-dev-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-archiyou}
+      - POSTGRES_PASSWORD=${POSTGRES_PASW:-archiyou}
+      - POSTGRES_DB=${POSTGRES_DB:-archiyou}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-archiyou} -d ${POSTGRES_DB:-archiyou}"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # Published on the standard 6379 so nothing needs configuring — the server defaults to
+  # localhost:6379. If you already run Redis locally you do not need this service at all.
+  # Appendonly is off: a dev queue is scratch, and losing it on restart is a feature.
   redis:
     image: redis:7-alpine
     container_name: archiyou-dev-redis
     ports:
-      - "${SERVER_REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${SERVER_REDIS_PORT:-6379}:6379"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
       timeout: 3s
       retries: 10
+
+volumes:
+  # Survives `docker compose down`; remove it with `docker compose -f docker-compose.dev.yml down -v`
+  # when you want an empty library back.
+  pg_data:
+    driver: local
