@@ -63,7 +63,10 @@ function png(width = 512, height = 512, salt = ''): Buffer {
 const GOOD_PNG = png();
 
 beforeAll(async () => {
-  process.env.SERVER_DATABASE_FILE = join(mkdtempSync(join(tmpdir(), 'ay-thumbs-db-')), 'test.db');
+  // A fresh, empty PGlite database in this process — Postgres, same schema and
+  // migrations as the server, nothing to install. Set explicitly (never left to a
+  // developer's .env) so the suite can never reach a shared database.
+  process.env.SERVER_DATABASE_URL = 'memory://';
   THUMB_ROOT = mkdtempSync(join(tmpdir(), 'ay-thumbs-'));
   process.env.SERVER_THUMBNAIL_PATH = THUMB_ROOT;
   // Keep the diagnostic log out of the repo's data/ directory during tests.
@@ -71,7 +74,7 @@ beforeAll(async () => {
   process.env.SERVER_THUMBNAIL_LOG = LOG_PATH;
 
   const { runMigrations } = await import('../../src/db/migrate');
-  runMigrations();
+  await runMigrations();
   store = (await import('../../src/services/ScriptStore')).scriptStore;
   const storeModule = await import('../../src/services/ThumbnailStore');
   thumbnails = storeModule.thumbnailStore;

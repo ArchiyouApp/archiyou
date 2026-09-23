@@ -7,13 +7,9 @@
  * released version, or the share menu prefills a version that already exists and
  * the next share is rejected by the unique (fileId, version) index.
  *
- * Runs against a throwaway SQLite file (SERVER_DATABASE_FILE is set before the
- * db client module is imported).
+ * Runs against a throwaway in-process PGlite database (SERVER_DATABASE_URL is set
+ * to memory:// before the db client module is imported).
  */
-
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 import { describe, it, expect, beforeAll } from 'vitest';
 
@@ -42,9 +38,12 @@ async function newFile(name = 'thing'): Promise<string> {
 }
 
 beforeAll(async () => {
-  process.env.SERVER_DATABASE_FILE = join(mkdtempSync(join(tmpdir(), 'ay-scriptstore-')), 'test.db');
+  // A fresh, empty PGlite database in this process — Postgres, same schema and
+  // migrations as the server, nothing to install. Set explicitly (never left to a
+  // developer's .env) so the suite can never reach a shared database.
+  process.env.SERVER_DATABASE_URL = 'memory://';
   const { runMigrations } = await import('../../src/db/migrate');
-  runMigrations();
+  await runMigrations();
   const mod = await import('../../src/services/ScriptStore');
   store = mod.scriptStore;
   ScriptStoreError = mod.ScriptStoreError;
@@ -341,8 +340,8 @@ describe('ScriptStore.listPublishedConfigurators', () => {
     const { db } = await import('../../src/db/client');
     const { scriptVersions } = await import('../../src/db/schema');
     const { eq } = await import('drizzle-orm');
-    db.update(scriptVersions).set({ updated: new Date(Date.now() - 60_000) })
-      .where(eq(scriptVersions.fileId, older)).run();
+    await db.update(scriptVersions).set({ updated: new Date(Date.now() - 60_000) })
+      .where(eq(scriptVersions.fileId, older));
 
     const grouped = await newFile('admin-group');
     const v1 = await store.publish(AUTHOR, grouped, payload({ name: 'admin-group', version: '0.9', published: PUBLIC }));
@@ -360,8 +359,8 @@ describe('ScriptStore.listPublishedConfigurators', () => {
     const { db } = await import('../../src/db/client');
     const { scriptVersions } = await import('../../src/db/schema');
     const { eq } = await import('drizzle-orm');
-    db.update(scriptVersions).set({ published: PUBLIC as ScriptData['published'] })
-      .where(eq(scriptVersions.fileId, fileId)).run();
+    await db.update(scriptVersions).set({ published: PUBLIC as ScriptData['published'] })
+      .where(eq(scriptVersions.fileId, fileId));
 
     const { configurators } = await store.listPublishedConfigurators({ q: 'admin-unversioned' });
     expect(configurators).toEqual([]);

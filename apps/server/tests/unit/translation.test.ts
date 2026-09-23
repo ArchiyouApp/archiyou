@@ -54,11 +54,14 @@ let extractTranslatableStrings: typeof import('@archiyou/core/src/i18n/extract')
 const AUTHOR = 'translator-tester';
 
 beforeAll(async () => {
-  process.env.SERVER_DATABASE_FILE = join(mkdtempSync(join(tmpdir(), 'ay-translate-')), 'test.db');
+  // A fresh, empty PGlite database in this process — Postgres, same schema and
+  // migrations as the server, nothing to install. Set explicitly (never left to a
+  // developer's .env) so the suite can never reach a shared database.
+  process.env.SERVER_DATABASE_URL = 'memory://';
   process.env.SERVER_THUMBNAIL_PATH = mkdtempSync(join(tmpdir(), 'ay-translate-thumbs-'));
 
   const { runMigrations } = await import('../../src/db/migrate');
-  runMigrations();
+  await runMigrations();
   store = (await import('../../src/services/ScriptStore')).scriptStore;
   translator = (await import('../../src/services/Translator')).translatorService;
   runTranslateJob = (await import('../../src/translation/translateJob')).runTranslateJob;

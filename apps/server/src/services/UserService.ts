@@ -6,7 +6,7 @@
  */
 
 import bcrypt from 'bcryptjs';
-import { and, eq, like, ne, or, sql } from 'drizzle-orm';
+import { and, eq, ilike, ne, or, sql } from 'drizzle-orm';
 
 import { uuid4 } from '@archiyou/core/src/utils';
 import type { PublicUser } from '@archiyou/types';
@@ -17,6 +17,11 @@ import { config } from '../config';
 import { ALL_MODULES, grantsAllModules } from '../modules/entitlements';
 
 const BCRYPT_ROUNDS = 10;
+
+/** The one row of a `.limit(1)` query, or undefined. Postgres has no `.get()`. */
+async function first<T>(query: PromiseLike<T[]>): Promise<T | undefined> {
+  return (await query)[0];
+}
 
 export class UserError extends Error {
   constructor(
@@ -77,15 +82,15 @@ export { ALL_MODULES, grantsAllModules };
 
 export class UserService {
   async findByEmail(email: string): Promise<UserRow | undefined> {
-    return db.select().from(users).where(eq(users.email, email.trim().toLowerCase())).get();
+    return first(db.select().from(users).where(eq(users.email, email.trim().toLowerCase())).limit(1));
   }
 
   async findByUsername(username: string): Promise<UserRow | undefined> {
-    return db.select().from(users).where(eq(users.username, username.toLowerCase())).get();
+    return first(db.select().from(users).where(eq(users.username, username.toLowerCase())).limit(1));
   }
 
   async findById(id: string): Promise<UserRow | undefined> {
-    return db.select().from(users).where(eq(users.id, id)).get();
+    return first(db.select().from(users).where(eq(users.id, id)).limit(1));
   }
 
   /**
@@ -107,21 +112,23 @@ export class UserService {
     const raw = query.trim().toLowerCase();
     if (raw.length === 0) return [];
     const substring = `%${raw}%`;
-    const rows = db
+    const rows = await db
       .select()
       .from(users)
       .where(
         and(
           ne(users.username, excludeUsername.toLowerCase()),
           or(
-            like(users.username, substring),
-            like(sql`lower(${users.name})`, substring),
+            // ilike, not like: Postgres LIKE is case-sensitive and SQLite's was not, so a
+            // plain `like` here would quietly stop matching "Alice" for a query of "ali".
+            // `username` is stored lowercase; `name` is not, hence the lower() on it.
+            ilike(users.username, substring),
+            ilike(sql`lower(${users.name})`, substring),
             eq(sql`lower(${users.email})`, raw),
           ),
         ),
       )
-      .limit(limit)
-      .all();
+      .limit(limit);
     return rows.map(toDirectoryUser);
   }
 
@@ -162,7 +169,7 @@ export class UserService {
       // which needs a shell on the box.
       isAdmin: false,
     };
-    db.insert(users).values(row).run();
+    await db.insert(users).values(row);
     return row;
   }
 
@@ -182,16 +189,15 @@ export class UserService {
    *  the hash also invalidates any outstanding reset links (see routes/auth.ts). */
   async setPassword(userId: string, newPassword: string): Promise<void> {
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-    db.update(users).set({ passwordHash }).where(eq(users.id, userId)).run();
+    await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
   }
 
   /** Mark an address confirmed. Idempotent: following a verification link twice
    *  is harmless, and the first timestamp is kept. */
   async markEmailVerified(userId: string): Promise<void> {
-    db.update(users)
+    await db.update(users)
       .set({ emailVerifiedAt: new Date() })
-      .where(and(eq(users.id, userId), sql`${users.emailVerifiedAt} IS NULL`))
-      .run();
+      .where(and(eq(users.id, userId), sql`${users.emailVerifiedAt} IS NULL`));
   }
 
   /** Module ids this account may use. Returns [] for an unknown handle, so a
@@ -221,7 +227,7 @@ export class UserService {
     if (!user) return null;
     const ids = normalizeModuleIds(moduleIds);
     const next = grantsAllModules(ids) ? [ALL_MODULES] : [...new Set(ids)].sort();
-    db.update(users).set({ modules: next }).where(eq(users.id, user.id)).run();
+    await db.update(users).set({ modules: next }).where(eq(users.id, user.id));
     return next;
   }
 
@@ -261,7 +267,7 @@ export class UserService {
   async setAdmin(username: string, isAdmin: boolean): Promise<boolean | null> {
     const user = await this.findByUsername(username);
     if (!user) return null;
-    db.update(users).set({ isAdmin }).where(eq(users.id, user.id)).run();
+    await db.update(users).set({ isAdmin }).where(eq(users.id, user.id));
     return isAdmin;
   }
 
@@ -269,17 +275,19 @@ export class UserService {
    *  not reachable over HTTP — /users/search is the only route that reads other
    *  people's rows, and it narrows what it returns (see toDirectoryUser). */
   async listAll(): Promise<UserRow[]> {
-    return db.select().from(users).all();
+    return db.select().from(users);
   }
 
   /** How many accounts exist — the context line on `pnpm admin:users --list`. */
   async countAll(): Promise<number> {
-    return db.select({ n: sql<number>`count(*)` }).from(users).get()?.n ?? 0;
+    // .mapWith(Number): count() is bigint, which the driver returns as a string.
+    const rows = await db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(users);
+    return rows[0]?.n ?? 0;
   }
 
   /** Every operator account, for `pnpm admin:users --list`. */
   async listAdmins(): Promise<UserRow[]> {
-    return db.select().from(users).where(eq(users.isAdmin, true)).all();
+    return db.select().from(users).where(eq(users.isAdmin, true));
   }
 
   /** Ensure the .env test user exists (idempotent — runs on boot). */
@@ -287,16 +295,14 @@ export class UserService {
     const t = config.testUser;
     if ((await this.findByEmail(t.email)) || (await this.findByUsername(t.username))) return;
     const passwordHash = await bcrypt.hash(t.password, BCRYPT_ROUNDS);
-    db.insert(users)
-      .values({
-        id: uuid4(),
-        username: t.username,
-        email: t.email.toLowerCase(),
-        passwordHash,
-        name: t.name,
-        createdAt: new Date(),
-      })
-      .run();
+    await db.insert(users).values({
+      id: uuid4(),
+      username: t.username,
+      email: t.email.toLowerCase(),
+      passwordHash,
+      name: t.name,
+      createdAt: new Date(),
+    });
     console.log(`👤 Seeded test user "${t.email}" (handle: ${t.username})`);
   }
 }

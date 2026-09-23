@@ -28,6 +28,7 @@
 
 import 'dotenv/config';
 
+import { closeDb } from '../db/client';
 import { userService, normalizeModuleIds } from '../services/UserService';
 import { ALL_MODULES, grantsAllModules } from '../modules/entitlements';
 import { moduleHost } from '../modules/ModuleHost';
@@ -186,3 +187,5 @@ async function main(): Promise<void> {
 }
 
 await main();
+// Without this the pg pool keeps the process alive until its idle timeout.
+await closeDb();

@@ -1,1 +1,0 @@
-ALTER TABLE `script_versions` ADD `thumbnail` text;

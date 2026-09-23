@@ -20,6 +20,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { closeDb } from '../db/client';
 import { scriptStore } from '../services/ScriptStore';
 import { userService } from '../services/UserService';
 
@@ -87,3 +88,6 @@ for (const file of files) {
 }
 
 console.log(`\n${DRY ? 'Would import' : 'Imported'} ${imported}, skipped ${skipped}.`);
+
+// Without this the pg pool keeps the process alive until its idle timeout.
+await closeDb();

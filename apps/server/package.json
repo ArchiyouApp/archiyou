@@ -30,6 +30,7 @@
     "@archiyou/types": "workspace:*",
     "@aws-sdk/client-s3": "^3.1104.0",
     "@aws-sdk/lib-storage": "^3.1104.0",
+    "@electric-sql/pglite": "^0.5.8",
     "@fastify/cors": "^9.0.1",
     "@fastify/helmet": "^11.1.1",
     "@fastify/jwt": "^8.0.1",
@@ -46,6 +47,7 @@
     "form-data": "^4.0.5",
     "ioredis": "^5.10.0",
     "node-fetch": "^3.3.2",
+    "pg": "^8.23.0",
     "semver": "^7.7.4",
     "typebox": "^1.1.21"
   },
@@ -56,6 +58,7 @@
     "@types/ioredis": "^5.0.0",
     "@types/json-schema": "^7.0.15",
     "@types/node": "^25.5.0",
+    "@types/pg": "^8.23.1",
     "@types/semver": "^7.7.0",
     "ajv": "^8.18.0",
     "drizzle-kit": "^0.31.10",

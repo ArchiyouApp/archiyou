@@ -46,6 +46,19 @@ export interface VersionMeta {
   updated: number;
 }
 
+/**
+ * A PostgreSQL unique-constraint violation, SQLSTATE 23505.
+ *
+ * Read off `cause` as well as the error itself: Drizzle 0.45 wraps driver errors in a
+ * DrizzleQueryError whose own `code` is not the SQLSTATE. Miss that and a duplicate
+ * (fileId, version) — the ordinary "you already published 1.2.0" — stops being a 400
+ * and becomes a 500.
+ */
+function isUniqueViolation(e: unknown): boolean {
+  const code = (err: unknown) => (err as { code?: unknown } | null)?.code;
+  return code(e) === '23505' || code((e as { cause?: unknown } | null)?.cause) === '23505';
+}
+
 /** `published` with `validated` forced off, whatever the caller sent. */
 function unvalidated(published: ScriptData['published']): ScriptData['published'] {
   return published ? { ...published, validated: false } : null;
@@ -138,49 +151,51 @@ export class ScriptStore {
       .select()
       .from(scriptVersions)
       .where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)))
-      .orderBy(desc(scriptVersions.updated))
-      .all();
+      .orderBy(desc(scriptVersions.updated));
   }
 
   private async latestRow(author: string, fileId: string): Promise<ScriptVersionRow> {
-    const rows = await this.fileRows(author, fileId);
+    // Deliberately NOT fileRows(): this is the ownership gate on every write path and
+    // only ever reads rows[0]. Over a network that difference is a whole file's `code`
+    // columns on every save.
+    const rows = await db
+      .select()
+      .from(scriptVersions)
+      .where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)))
+      .orderBy(desc(scriptVersions.updated))
+      .limit(1);
     if (rows.length === 0) throw new ScriptStoreError('not_found', `Script ${fileId} not found`);
     return rows[0];
-  }
-
-  /** Reduce rows (newest first) to the latest per fileId. */
-  private latestPerFile(rows: ScriptVersionRow[]): ScriptVersionRow[] {
-    const seen = new Set<string>();
-    const out: ScriptVersionRow[] = [];
-    for (const r of rows) {
-      if (seen.has(r.fileId)) continue;
-      seen.add(r.fileId);
-      out.push(r);
-    }
-    return out;
   }
 
   /** The distinct script names this author has ever used, lowercased — the skip
    *  list for `pnpm admin:import-cadscripts`. Names live on each version row, so
    *  this deliberately spans the whole history and not just the latest rows. */
   async listNamesForAuthor(author: string): Promise<Set<string>> {
-    const rows = db
-      .select({ name: scriptVersions.name })
+    const rows = await db
+      .selectDistinct({ name: scriptVersions.name })
       .from(scriptVersions)
-      .where(eq(scriptVersions.author, author.toLowerCase()))
-      .all();
+      .where(eq(scriptVersions.author, author.toLowerCase()));
     return new Set(rows.map((r) => (r.name ?? '').toLowerCase()).filter(Boolean));
   }
 
-  /** All of a user's scripts, latest version each, as ScriptData[]. */
+  /** All of a user's scripts, latest version each, as ScriptData[].
+   *
+   *  DISTINCT ON does the per-file reduction in the database. This used to load EVERY
+   *  version row — `code` included — and dedupe in JS, which for the largest author here
+   *  is ~14 MB over the wire to return well under one. Invisible against an embedded
+   *  file; not against a server. */
   async listForUser(author: string): Promise<ScriptData[]> {
-    const rows = db
-      .select()
+    const rows = await db
+      .selectDistinctOn([scriptVersions.fileId])
       .from(scriptVersions)
       .where(eq(scriptVersions.author, author))
-      .orderBy(desc(scriptVersions.updated))
-      .all();
-    return this.latestPerFile(rows).map((r) => this.rowToData(r));
+      // DISTINCT ON needs its expression to lead the ORDER BY; `updated` within the group
+      // is what picks the latest row of each file. The list order is restored below.
+      .orderBy(scriptVersions.fileId, desc(scriptVersions.updated));
+    return rows
+      .sort((a, b) => b.updated.getTime() - a.updated.getTime())
+      .map((r) => this.rowToData(r));
   }
 
   //// PUBLISHED + SHARED LIBRARY ////
@@ -222,7 +237,7 @@ export class ScriptStore {
     const cond = author
       ? and(eq(scriptVersions.author, author.toLowerCase()), isNotNull(col))
       : isNotNull(col);
-    const rows = db.select().from(scriptVersions).where(cond).orderBy(desc(scriptVersions.updated)).all();
+    const rows = await db.select().from(scriptVersions).where(cond).orderBy(desc(scriptVersions.updated));
     return this.latestReleasePerFile(rows).map((r) => this.rowToData(r));
   }
 
@@ -238,12 +253,11 @@ export class ScriptStore {
    *  like library URLs. */
   async resolveFileIdByName(author: string, name: string, col?: AnyColumn): Promise<string | null> {
     const a = author.toLowerCase();
-    const named = db
+    const named = await db
       .select({ fileId: scriptVersions.fileId })
       .from(scriptVersions)
       .where(and(eq(scriptVersions.author, a), sql`lower(${scriptVersions.name}) = ${name.toLowerCase()}`))
-      .orderBy(desc(scriptVersions.updated))
-      .all();
+      .orderBy(desc(scriptVersions.updated));
 
     const files = [...new Set(named.map((r) => r.fileId))]; // most recently named first
     if (files.length === 0) return null;
@@ -254,12 +268,11 @@ export class ScriptStore {
     const inLibrary = !col
       ? null
       : new Set(
-          db
-            .select({ fileId: scriptVersions.fileId })
+          (await db
+            .selectDistinct({ fileId: scriptVersions.fileId })
             .from(scriptVersions)
             .where(and(eq(scriptVersions.author, a), inArray(scriptVersions.fileId, files), isNotNull(col)))
-            .all()
-            .map((r) => r.fileId),
+          ).map((r) => r.fileId),
         );
     const candidates = inLibrary ? files.filter((fileId) => inLibrary.has(fileId)) : files;
     if (candidates.length === 0) return null;
@@ -280,8 +293,7 @@ export class ScriptStore {
       .select()
       .from(scriptVersions)
       .where(and(eq(scriptVersions.author, a), eq(scriptVersions.fileId, fileId), isNotNull(col)))
-      .orderBy(desc(scriptVersions.updated))
-      .all();
+      .orderBy(desc(scriptVersions.updated));
   }
 
   /** Version strings for a library author/name, latest (semver) first. */
@@ -318,11 +330,10 @@ export class ScriptStore {
   /** Every published version owned by `author` (NOT deduped per file — powers the
    *  "manage configurators" list), newest semver first (tiebreak newest updated). */
   async listPublishedVersionsForAuthor(author: string): Promise<ScriptData[]> {
-    const rows = db
+    const rows = await db
       .select()
       .from(scriptVersions)
-      .where(and(eq(scriptVersions.author, author.toLowerCase()), isNotNull(scriptVersions.published)))
-      .all();
+      .where(and(eq(scriptVersions.author, author.toLowerCase()), isNotNull(scriptVersions.published)));
     return rows
       .map((r) => this.rowToData(r))
       .sort((a, b) => this.compareNewestVersionFirst(a, b));
@@ -348,9 +359,9 @@ export class ScriptStore {
    *
    *  The filters apply per version, so a file shows only its matching versions.
    *  `validated` filtering is done in SQL against the JSON blob so the LIMIT is applied by
-   *  SQLite: json_extract returns 1 for a JSON `true`, and `IS NOT 1` is what also catches
-   *  rows predating the feature, where the key is simply absent. `q` matches the script
-   *  name or the author handle. */
+   *  the database. `IS NOT TRUE` rather than `= false` is what also catches rows predating
+   *  the feature, where the key is simply absent and `->>` yields NULL. `q` matches the
+   *  script name or the author handle. */
   async listPublishedConfigurators(opts: {
     author?: string;
     validated?: boolean;
@@ -361,9 +372,9 @@ export class ScriptStore {
     const filters = [isNotNull(scriptVersions.published), isNotNull(scriptVersions.version)];
     if (opts.author) filters.push(eq(scriptVersions.author, opts.author.toLowerCase()));
     if (opts.validated === true) {
-      filters.push(sql`json_extract(${scriptVersions.published}, '$.validated') = 1`);
+      filters.push(sql`(${scriptVersions.published}->>'validated')::boolean IS TRUE`);
     } else if (opts.validated === false) {
-      filters.push(sql`json_extract(${scriptVersions.published}, '$.validated') IS NOT 1`);
+      filters.push(sql`(${scriptVersions.published}->>'validated')::boolean IS NOT TRUE`);
     }
     if (opts.q) {
       const like = `%${opts.q.toLowerCase()}%`;
@@ -371,14 +382,16 @@ export class ScriptStore {
     }
     const where = and(...filters);
 
-    const total = db
-      .select({ n: sql<number>`count(distinct ${scriptVersions.fileId})` })
+    // .mapWith(Number): Postgres counts are bigint, which the driver hands back as a
+    // string. `total` is a number on the wire and must stay one.
+    const totalRows = await db
+      .select({ n: sql<number>`count(distinct ${scriptVersions.fileId})`.mapWith(Number) })
       .from(scriptVersions)
-      .where(where)
-      .get()?.n ?? 0;
+      .where(where);
+    const total = totalRows[0]?.n ?? 0;
 
-    const latest = sql<number>`max(${scriptVersions.updated})`;
-    const page = db
+    const latest = sql`max(${scriptVersions.updated})`;
+    const page = (await db
       .select({ fileId: scriptVersions.fileId })
       .from(scriptVersions)
       .where(where)
@@ -386,16 +399,15 @@ export class ScriptStore {
       .orderBy(desc(latest), scriptVersions.fileId)
       .limit(opts.limit ?? 50)
       .offset(opts.offset ?? 0)
-      .all()
-      .map((r) => r.fileId);
+    ).map((r) => r.fileId);
     if (page.length === 0) return { total, configurators: [] };
 
     const byFile = new Map<string, ScriptData[]>(page.map((fileId) => [fileId, []]));
-    db.select()
+    (await db
+      .select()
       .from(scriptVersions)
       .where(and(where, inArray(scriptVersions.fileId, page)))
-      .all()
-      .forEach((r) => byFile.get(r.fileId)?.push(this.rowToData(r)));
+    ).forEach((r) => byFile.get(r.fileId)?.push(this.rowToData(r)));
 
     const configurators = page.map((fileId) => {
       const versions = (byFile.get(fileId) ?? []).sort((a, b) => this.compareNewestVersionFirst(a, b));
@@ -416,19 +428,18 @@ export class ScriptStore {
    *  owner editing their own title must not knock their configurator off server-side
    *  execution — nor be able to grant it. */
   async updatePublishedVersion(author: string, versionId: string, published: ScriptData['published']): Promise<ScriptData> {
-    const row = db
+    const [row] = await db
       .select()
       .from(scriptVersions)
       .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
-      .get();
+      .limit(1);
     if (!row) throw new ScriptStoreError('not_found', `Version ${versionId} not found`);
     const stored = (row.published ?? null) as ScriptData['published'];
     const next = published ? { ...published, validated: stored?.validated === true } : null;
     const now = new Date();
-    db.update(scriptVersions)
+    await db.update(scriptVersions)
       .set({ published: next, updated: now })
-      .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
-      .run();
+      .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())));
     return this.rowToData({ ...row, published: next as ScriptVersionRow['published'], updated: now });
   }
 
@@ -440,15 +451,14 @@ export class ScriptStore {
    *  Like stampThumbnail() this does NOT touch `updated`: validating is not a content edit
    *  and must not reshuffle the "newest first" ordering of any list. */
   async setValidated(versionId: string, validated: boolean): Promise<ScriptData> {
-    const row = db.select().from(scriptVersions).where(eq(scriptVersions.id, versionId)).get();
+    const [row] = await db.select().from(scriptVersions).where(eq(scriptVersions.id, versionId)).limit(1);
     if (!row) throw new ScriptStoreError('not_found', `Version ${versionId} not found`);
     const stored = (row.published ?? null) as ScriptData['published'];
     if (!stored) throw new ScriptStoreError('invalid', `Version ${versionId} is not published`);
     const next = { ...stored, validated };
-    db.update(scriptVersions)
+    await db.update(scriptVersions)
       .set({ published: next })
-      .where(eq(scriptVersions.id, versionId))
-      .run();
+      .where(eq(scriptVersions.id, versionId));
     return this.rowToData({ ...row, published: next as ScriptVersionRow['published'] });
   }
 
@@ -457,7 +467,7 @@ export class ScriptStore {
    *  scoped to its owner, so this stays separate rather than making `author`
    *  optional on findVersionById and inviting an accidental unscoped read. */
   async findAnyVersionById(versionId: string): Promise<ScriptData | null> {
-    const row = db.select().from(scriptVersions).where(eq(scriptVersions.id, versionId)).get();
+    const [row] = await db.select().from(scriptVersions).where(eq(scriptVersions.id, versionId)).limit(1);
     return row ? this.rowToData(row) : null;
   }
 
@@ -465,11 +475,11 @@ export class ScriptStore {
    *  throws — the translation job looks up a row that may have been deleted or
    *  un-published while it was running. */
   async findVersionById(author: string, versionId: string): Promise<ScriptData | null> {
-    const row = db
+    const [row] = await db
       .select()
       .from(scriptVersions)
       .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
-      .get();
+      .limit(1);
     return row ? this.rowToData(row) : null;
   }
 
@@ -488,15 +498,14 @@ export class ScriptStore {
     sourceHash: string,
     sourceLocale?: string,
   ): Promise<NonNullable<ScriptData['published']>['translations'] | null> {
-    const rows = db
-      .select()
+    const rows = await db
+      .select({ published: scriptVersions.published })
       .from(scriptVersions)
       .where(and(
         eq(scriptVersions.fileId, fileId),
         eq(scriptVersions.author, author.toLowerCase()),
         isNotNull(scriptVersions.published),
-      ))
-      .all();
+      ));
 
     for (const row of rows) {
       const translations = (row.published as ScriptData['published'])?.translations;
@@ -512,16 +521,15 @@ export class ScriptStore {
   /** Un-publish a single version: clear its `published` metadata (the version row
    *  and any working/shared state are kept). Ownership-checked by row id + author. */
   async unpublishVersion(author: string, versionId: string): Promise<void> {
-    const row = db
-      .select()
+    const [row] = await db
+      .select({ id: scriptVersions.id })
       .from(scriptVersions)
       .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
-      .get();
+      .limit(1);
     if (!row) throw new ScriptStoreError('not_found', `Version ${versionId} not found`);
-    db.update(scriptVersions)
+    await db.update(scriptVersions)
       .set({ published: null })
-      .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
-      .run();
+      .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())));
   }
 
   // Shared library
@@ -543,12 +551,11 @@ export class ScriptStore {
 
   /** All shared files (latest released version each) whose shared metadata carries the row. */
   private async sharedLatestPerFile(): Promise<ScriptVersionRow[]> {
-    const rows = db
+    const rows = await db
       .select()
       .from(scriptVersions)
       .where(isNotNull(scriptVersions.shared))
-      .orderBy(desc(scriptVersions.updated))
-      .all();
+      .orderBy(desc(scriptVersions.updated));
     return this.latestReleasePerFile(rows);
   }
 
@@ -608,27 +615,32 @@ export class ScriptStore {
   }
 
   async getVersion(author: string, fileId: string, versionId: string): Promise<ScriptData> {
-    const row = db
+    const [row] = await db
       .select()
       .from(scriptVersions)
       .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)))
-      .get();
+      .limit(1);
     if (!row) throw new ScriptStoreError('not_found', `Version ${versionId} not found`);
     return this.rowToData(row);
   }
 
   /** The file's current shared metadata (from its latest row), or null. */
   private async currentShared(author: string, fileId: string): Promise<ScriptShared | null> {
-    const rows = await this.fileRows(author, fileId);
-    return rows.length > 0 ? (rows[0].shared ?? null) : null;
+    const [row] = await db
+      .select({ shared: scriptVersions.shared })
+      .from(scriptVersions)
+      .where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)))
+      .orderBy(desc(scriptVersions.updated))
+      .limit(1);
+    return row?.shared ?? null;
   }
 
   /** Insert a row, translating a unique-constraint hit (fileId, version) into an 'invalid' error. */
   private async insertRow(row: NewScriptVersionRow): Promise<void> {
     try {
-      db.insert(scriptVersions).values(row).run();
+      await db.insert(scriptVersions).values(row);
     } catch (e) {
-      if (e instanceof Error && /UNIQUE constraint failed/i.test(e.message)) {
+      if (isUniqueViolation(e)) {
         throw new ScriptStoreError('invalid', `Version "${row.version}" already exists for this file`);
       }
       throw e;
@@ -707,10 +719,9 @@ export class ScriptStore {
    * must not reshuffle "newest first" list ordering.
    */
   async setThumbnail(author: string, versionId: string, thumbnail: string | null): Promise<void> {
-    db.update(scriptVersions)
+    await db.update(scriptVersions)
       .set({ thumbnail })
-      .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
-      .run();
+      .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())));
   }
 
   /** Stamp the WORKING copy's thumbnail: the file's latest row, whichever that is by now
@@ -726,16 +737,15 @@ export class ScriptStore {
   /** Set/clear sharing metadata on all versions of a file (ownership-checked). */
   async setShared(author: string, fileId: string, shared: ScriptShared | null): Promise<void> {
     await this.latestRow(author, fileId); // ownership gate
-    db.update(scriptVersions)
+    await db.update(scriptVersions)
       .set({ shared })
-      .where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)))
-      .run();
+      .where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)));
   }
 
   /** Delete a file and all its versions (ownership-checked). */
   async deleteFile(author: string, fileId: string): Promise<void> {
     await this.latestRow(author, fileId); // ownership gate
-    db.delete(scriptVersions).where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author))).run();
+    await db.delete(scriptVersions).where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)));
   }
 }
 

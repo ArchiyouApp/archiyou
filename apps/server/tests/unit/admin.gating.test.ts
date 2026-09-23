@@ -13,9 +13,6 @@
  * is exactly wrong for a review queue, so acting on somebody else's script has to
  * keep working.
  */
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
@@ -64,9 +61,12 @@ const auth = (sub: string) => ({ authorization: `Bearer ${tokenFor(sub)}` });
 let aliceScript: string;
 
 beforeAll(async () => {
-  process.env.SERVER_DATABASE_FILE = join(mkdtempSync(join(tmpdir(), 'ay-admin-')), 'test.db');
+  // A fresh, empty PGlite database in this process — Postgres, same schema and
+  // migrations as the server, nothing to install. Set explicitly (never left to a
+  // developer's .env) so the suite can never reach a shared database.
+  process.env.SERVER_DATABASE_URL = 'memory://';
   const { runMigrations } = await import('../../src/db/migrate');
-  runMigrations();
+  await runMigrations();
 
   ({ userService } = await import('../../src/services/UserService'));
   ({ scriptStore } = await import('../../src/services/ScriptStore'));

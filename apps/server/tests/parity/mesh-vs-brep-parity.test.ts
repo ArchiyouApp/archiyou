@@ -12,29 +12,30 @@
  *
  *      pnpm --filter @archiyou/server test:parity
  *
- *  The database is opened READ-ONLY — this never writes to your library.
+ *  It only ever SELECTs — this never writes to your library. Which library it reads is
+ *  whatever SERVER_DATABASE_URL points at: your own PGlite copy by default, or the central
+ *  instance through an ssh tunnel (see scripts/db-download.mjs tunnel).
  */
 import { describe, it, expect, beforeAll } from 'vitest'
-import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
 
-import Database from 'better-sqlite3'
+import { desc, isNotNull, sql } from 'drizzle-orm'
 import { Runner } from '@archiyou/core/src/runner/Runner'
 import type { RunnerScriptExecutionRequest, RunnerScriptExecutionResult } from '@archiyou/core/src/runner/types'
 
-const DB_FILE = resolve(process.env.SERVER_DATABASE_FILE ?? './data/archiyou.db')
+import { db } from '../../src/db/client'
+import { scriptVersions } from '../../src/db/schema'
 
 /** Per-script wall-clock ceiling. A hung kernel must not take the whole sweep down. */
 const SCRIPT_TIMEOUT_MS = 60_000
 
 type ScriptRow = {
     id: string
-    file_id: string
+    fileId: string
     author: string | null
     name: string | null
     version: string | null
     code: string
-    params: string | null
+    params: unknown
 }
 
 type Outcome = {
@@ -47,25 +48,43 @@ type Outcome = {
     brepMs?: number
 }
 
-/** The newest stored version of every script in the library. */
-function loadLatestScripts(): ScriptRow[]
+/** The newest stored version of every script in the library.
+ *
+ *  DISTINCT ON is Postgres's form of the old ROW_NUMBER() window: one row per file_id,
+ *  the newest by `updated`. Tie-break on `id` rather than SQLite's `rowid`, which has no
+ *  equivalent here — two versions of one file written in the same instant are equally
+ *  valid choices, and this only needs a stable one. */
+async function loadLatestScripts(): Promise<ScriptRow[]>
 {
-    const db = new Database(DB_FILE, { readonly: true })
+    const rows = await db
+        .selectDistinctOn([scriptVersions.fileId], {
+            id: scriptVersions.id,
+            fileId: scriptVersions.fileId,
+            author: scriptVersions.author,
+            name: scriptVersions.name,
+            version: scriptVersions.version,
+            code: scriptVersions.code,
+            params: scriptVersions.params,
+        })
+        .from(scriptVersions)
+        .where(isNotNull(scriptVersions.code))
+        .orderBy(scriptVersions.fileId, desc(scriptVersions.updated), desc(scriptVersions.id))
+
+    return rows
+        .filter(r => r.code.trim() !== '')
+        .sort((a, b) => `${a.author}/${a.name}`.localeCompare(`${b.author}/${b.name}`)) as ScriptRow[]
+}
+
+/** Is there anything to sweep? An empty (or absent) library skips the suite rather than
+ *  reporting a pass over nothing. */
+async function libraryHasScripts(): Promise<boolean>
+{
     try
     {
-        return db.prepare(`
-            SELECT id, file_id, author, name, version, code, params
-            FROM (
-                SELECT *, ROW_NUMBER() OVER (
-                    PARTITION BY file_id ORDER BY updated DESC, rowid DESC
-                ) AS rn
-                FROM script_versions
-            )
-            WHERE rn = 1 AND code IS NOT NULL AND TRIM(code) != ''
-            ORDER BY author, name
-        `).all() as ScriptRow[]
+        const rows = await db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(scriptVersions)
+        return (rows[0]?.n ?? 0) > 0
     }
-    finally { db.close() }
+    catch { return false }  // no schema here yet
 }
 
 /** First error of a result, reduced to one readable line.
@@ -92,11 +111,11 @@ async function runScript(runner: Runner, row: ScriptRow, kernel: 'mesh' | 'brep'
         kernel,
         script: {
             id: row.id,
-            fileId: row.file_id,
+            fileId: row.fileId,
             author: row.author ?? undefined,
             name: row.name ?? undefined,
             code: row.code,
-            params: row.params ? JSON.parse(row.params) : undefined,
+            params: row.params ?? undefined,
         },
         outputs: ['default/model/glb'],
         messages: ['error'],
@@ -123,24 +142,26 @@ async function runScript(runner: Runner, row: ScriptRow, kernel: 'mesh' | 'brep'
     }
 }
 
-describe.skipIf(!existsSync(DB_FILE))('mesh ⇆ brep parity over the local script library', () =>
+describe('mesh ⇆ brep parity over the local script library', () =>
 {
     let scripts: ScriptRow[] = []
     let runner: Runner
 
     beforeAll(async () =>
     {
-        scripts = loadLatestScripts()
+        if (!await libraryHasScripts()) return
+        scripts = await loadLatestScripts()
         runner = await new Runner().load()
     }, 120_000)
 
-    it('every script that runs on mesh also runs on brep', async () =>
+    it('every script that runs on mesh also runs on brep', async (ctx) =>
     {
+        if (scripts.length === 0) ctx.skip('no scripts in this database')
         const outcomes: Outcome[] = []
 
         for (const row of scripts)
         {
-            const label = `${row.author ?? '?'}/${row.name ?? row.file_id}${row.version ? `:${row.version}` : ''}`
+            const label = `${row.author ?? '?'}/${row.name ?? row.fileId}${row.version ? `:${row.version}` : ''}`
 
             const mesh = await runScript(runner, row, 'mesh')
             if (!mesh.ok)

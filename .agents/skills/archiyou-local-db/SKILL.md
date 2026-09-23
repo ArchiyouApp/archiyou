@@ -1,14 +1,24 @@
 ---
 name: archiyou-local-db
-description: Write, list, update or delete Archiyou scripts in the local SQLite database (apps/server/data/archiyou.db). Use when asked to save a script to the local database, put a demo/test script under a user, add a script version, or inspect what scripts a user owns.
+description: Write, list, update or delete Archiyou scripts in the script database (PostgreSQL, or in-process PGlite). Use when asked to save a script to the database, put a demo/test script under a user, add a script version, or inspect what scripts a user owns.
 ---
 
-# Writing scripts to the local Archiyou database
+# Writing scripts to the Archiyou database
 
-The local database is one SQLite file, `apps/server/data/archiyou.db` (WAL mode).
-Path comes from `SERVER_DATABASE_FILE`, defaulting to `./data/archiyou.db` resolved
-against **the server package's cwd** — so anything that touches it must run from
-`apps/server`, or set that env var.
+PostgreSQL. `SERVER_DATABASE_URL` says which one, and the default resolves against
+**the server package's cwd** — so anything that touches it must run from `apps/server`,
+or set that variable:
+
+| `SERVER_DATABASE_URL` | what you get |
+|---|---|
+| unset | PGlite under `./data/pgdata` — Postgres in-process, this checkout's own |
+| `postgres://…` | a real server: the dev container, **or the shared instance** |
+| `memory://` | PGlite in RAM, gone when the process exits |
+
+> ⚠️  **Check which one before writing.** It is no longer one file per checkout. If
+> `apps/server/.env` points at a `postgres://` URL, "save a demo script" can mean
+> saving it into a database other people — possibly production — read. `save-script.ts`
+> prints the target first; read the line rather than scrolling past it.
 
 ## The data model in one paragraph
 
@@ -44,7 +54,7 @@ npx tsx .claude/skills/archiyou-local-db/scripts/save-script.ts \
 | `--code-file <path>` | required; the `.js` file to store as the code |
 | `--description <text>` | optional |
 | `--new-version` | append a version to the existing file of that name instead of creating a new one |
-| `--db <path>` | override the database file |
+| `--db <url>` | override the database (a `postgres://` or `pglite://` URL) |
 
 It refuses to overwrite: saving a name that already exists errors and tells you to
 pass `--new-version`. It also checks the author exists first, because nothing else
@@ -72,28 +82,48 @@ normalization and validation accept the row, which is what the editor will do:
 ```bash
 cd apps/server && npx tsx -e "
 import { ScriptStore } from './src/services/ScriptStore';
+import { closeDb, describeDatabase } from './src/db/client';
+console.log('database:', describeDatabase());
 const store = new ScriptStore();
-const mine = store.listForUser('archiyou');
+const mine = await store.listForUser('archiyou');
 const row = mine.find(s => s.name === 'object_test');
-console.log(row ? store.getFile('archiyou', row.fileId).code.length + ' bytes' : 'NOT FOUND');
+console.log(row ? (await store.getFile('archiyou', row.fileId)).code.length + ' bytes' : 'NOT FOUND');
+await closeDb();
 "
 ```
+
+Every store method is `async` — forget an `await` and you get a `Promise`, not a row.
 
 `listForUser(author)` is what the editor's script manager fetches, so appearing
 there is the real "it worked" signal.
 
 ## Inspecting and undoing
 
-No `sqlite3` CLI on this machine — use better-sqlite3 from `apps/server`:
+Against a `postgres://` URL, `psql` is the shortest path — from the dev container:
 
 ```bash
-cd apps/server && node -e "
-const db = require('better-sqlite3')('./data/archiyou.db', { readonly: true });
-console.log(db.prepare(\"SELECT id, file_id, name, version, length(code) len, datetime(updated/1000,'unixepoch') upd FROM script_versions WHERE author='archiyou' ORDER BY updated DESC LIMIT 10\").all());
+docker exec -it archiyou-dev-postgres psql -U archiyou -d archiyou -c \
+  "SELECT id, file_id, name, version, length(code) AS len, updated
+     FROM script_versions WHERE author='archiyou' ORDER BY updated DESC LIMIT 10;"
+```
+
+Against PGlite there is no server to connect to, so go through Drizzle:
+
+```bash
+cd apps/server && npx tsx -e "
+import { desc, eq } from 'drizzle-orm';
+import { db, closeDb } from './src/db/client';
+import { scriptVersions } from './src/db/schema';
+console.table(await db.select({ id: scriptVersions.id, fileId: scriptVersions.fileId,
+    name: scriptVersions.name, version: scriptVersions.version, updated: scriptVersions.updated })
+  .from(scriptVersions).where(eq(scriptVersions.author, 'archiyou'))
+  .orderBy(desc(scriptVersions.updated)).limit(10));
+await closeDb();
 "
 ```
 
-Delete a script and all its versions (drop `readonly`):
+Delete a script and all its versions — prefer `scriptStore.deleteFile(author, fileId)`,
+which is ownership-checked. Raw, if you must:
 
 ```sql
 DELETE FROM script_versions WHERE author = 'archiyou' AND name = 'object_test';
@@ -108,44 +138,39 @@ DELETE FROM script_versions WHERE author = 'archiyou' AND name = 'object_test';
   holds *UI-authored* param definitions. A script using `$PARAMS.define(...)` /
   `$PARAMS.defineObject(...)` needs none — they arrive via `managedParams` at run
   time.
-- **Timestamps are epoch milliseconds**, not seconds — divide by 1000 for
-  `datetime(...)`.
-- **JSON columns** (`tags`, `params`, `presets`, `published`, `shared`) are stored
-  as JSON text. Writing raw SQL means `JSON.stringify` on every one of them.
-- **No restart needed.** The server opens the file per query; a new row shows up on
-  the next request.
-- **`.db-wal` / `.db-shm` next to the file are normal** — WAL mode. Don't delete
-  them or copy the `.db` alone while the server is running.
+- **Timestamps are `timestamptz`**, so psql shows real dates and Drizzle hands you a
+  `Date`. They were epoch-millisecond integers under SQLite; old snippets that divide
+  by 1000 are now wrong.
+- **`params` and `presets` are `json`, everything else jsonb.** Deliberate: jsonb
+  reorders object keys, and `params` key order *is* the parameter order the editor
+  renders. Do not "tidy" those two columns to jsonb.
+- **No restart needed.** A new row shows up on the next request.
+- **Close the connection in a one-off script.** `await closeDb()` — otherwise a pg
+  pool keeps the process alive for its idle timeout.
 - Owner-only lists need auth, so `curl` against the API returns 401 for
   `/scripts/<author>`. Verify through `ScriptStore` instead.
 
 ## Raw SQL fallback
 
-Only when TypeScript can't run. This skips core validation, so the row can be
-subtly wrong in ways the editor only reveals later.
+Only when TypeScript can't run. This skips core validation, so the row can be subtly
+wrong in ways the editor only reveals later. Requires a `postgres://` target — there is
+no CLI for PGlite.
 
-```js
-const crypto = require('node:crypto');
-const db = require('better-sqlite3')('./data/archiyou.db');
-const now = Date.now();
-db.prepare(`INSERT INTO script_versions
+```sql
+INSERT INTO script_versions
   (id, file_id, author, name, description, details, version, tags, code,
    params, presets, published, shared, thumbnail, created, updated)
-  VALUES (@id, @file_id, @author, @name, @description, NULL, NULL, @tags, @code,
-          @params, @presets, NULL, NULL, NULL, @created, @updated)`)
-  .run({
-    id: crypto.randomUUID(),
-    file_id: crypto.randomUUID(),   // reuse an existing file_id to add a version
-    author: 'archiyou',
-    name: 'object_test',
-    description: '…',
-    tags: JSON.stringify([]),
-    code: require('node:fs').readFileSync('./demo.js', 'utf8'),
-    params: JSON.stringify({}),
-    presets: JSON.stringify({}),
-    created: now, updated: now,
-  });
+VALUES (gen_random_uuid()::text,
+        gen_random_uuid()::text,   -- reuse an existing file_id to add a version
+        'archiyou', 'object_test', '…', NULL, NULL,
+        '[]'::jsonb,
+        pg_read_file('/path/to/demo.js'),   -- or paste the code as a literal
+        '{}'::json, '{}'::json,
+        NULL, NULL, NULL, now(), now());
 ```
+
+`pg_read_file` is superuser-only and reads the *server's* filesystem, so from psql on
+your own machine paste the code as a dollar-quoted literal (`$code$ … $code$`) instead.
 
 ## Where this skill lives
 
@@ -164,5 +189,6 @@ ln -s ../../.agents/skills/archiyou-local-db .claude/skills/archiyou-local-db
 - `apps/server/src/db/schema.ts` — the table, column by column, with the reasoning.
 - `apps/server/src/services/ScriptStore.ts` — `create()`, `saveVersion()`,
   `listForUser()`, `getFile()`, `share()`, `publish()`.
-- `apps/server/src/db/client.ts` — the shared handle; exports both `db` (Drizzle)
-  and `sqlite` (raw better-sqlite3).
+- `apps/server/src/db/client.ts` — the shared Drizzle handle `db`, plus `closeDb()`,
+  `describeDatabase()` and `isRemoteDatabase`.
+- `plans/POSTGRES.md` — why the database moved off SQLite, and what PGlite is doing here.

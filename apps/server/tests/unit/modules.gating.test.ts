@@ -71,9 +71,12 @@ const tokenFor = (sub: string): string => app.jwt.sign({ sub, email: `${sub}@exa
 const auth = (sub: string) => ({ authorization: `Bearer ${tokenFor(sub)}` });
 
 beforeAll(async () => {
-  process.env.SERVER_DATABASE_FILE = join(mkdtempSync(join(tmpdir(), 'ay-modules-')), 'test.db');
+  // A fresh, empty PGlite database in this process — Postgres, same schema and
+  // migrations as the server, nothing to install. Set explicitly (never left to a
+  // developer's .env) so the suite can never reach a shared database.
+  process.env.SERVER_DATABASE_URL = 'memory://';
   const { runMigrations } = await import('../../src/db/migrate');
-  runMigrations();
+  await runMigrations();
 
   ({ userService } = await import('../../src/services/UserService'));
   ({ moduleHost } = await import('../../src/modules/ModuleHost'));

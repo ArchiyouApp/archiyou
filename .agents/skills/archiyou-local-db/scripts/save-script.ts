@@ -1,5 +1,5 @@
 /**
- * save-script.ts — write an Archiyou script into the local SQLite database.
+ * save-script.ts — write an Archiyou script into the Archiyou script database.
  *
  * Goes through ScriptStore, so the payload is validated by the core Script model
  * and the row is shaped exactly like one the server would have written. Prefer
@@ -15,8 +15,12 @@
  *   --description <text>  optional
  *   --new-version         append a version to the existing file of that name
  *                         instead of creating a new file
- *   --db <path>           override the database file (else SERVER_DATABASE_FILE,
- *                         else apps/server/data/archiyou.db)
+ *   --db <url>            override the database (else SERVER_DATABASE_URL, else the
+ *                         PGlite directory apps/server/data/pgdata)
+ *
+ * ⚠️  It PRINTS THE TARGET DATABASE before writing. The database is no longer one file
+ * per checkout: a postgres:// URL may well be the shared instance, where "save a demo
+ * script" means production. Read the line.
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -50,8 +54,8 @@ if (!existsSync(codePath)) { console.error(`No such code file: ${codePath}`); pr
 const code = readFileSync(codePath, 'utf8');
 
 // ── locate the repo, then the server package ─────────────────────────────────
-// ScriptStore reads config.databaseFile, which is resolved against cwd — so the
-// process has to be running inside apps/server before that module is imported.
+// ScriptStore reads config.databaseUrl, whose PGlite default is resolved against cwd —
+// so the process has to be running inside apps/server before that module is imported.
 
 function repoRoot(from: string): string
 {
@@ -68,9 +72,9 @@ const root      = repoRoot(dirname(new URL(import.meta.url).pathname));
 const serverDir = join(root, 'apps', 'server');
 
 const dbOverride = flag('db');
-if (dbOverride) process.env.SERVER_DATABASE_FILE = resolve(dbOverride);
+if (dbOverride) process.env.SERVER_DATABASE_URL = dbOverride;
 
-process.chdir(serverDir); // config resolves ./data/archiyou.db from here
+process.chdir(serverDir); // config resolves ./data/pgdata from here
 
 // Dynamic imports: these must happen AFTER the chdir above. Note they are addressed
 // by absolute path — this file lives outside any package, so a bare specifier like
@@ -78,6 +82,13 @@ process.chdir(serverDir); // config resolves ./data/archiyou.db from here
 // raw driver handle, so this script cannot drift from the schema the server writes.
 const { ScriptStore } = await import(pathToFileURL(join(serverDir, 'src/services/ScriptStore.ts')).href);
 const { userService } = await import(pathToFileURL(join(serverDir, 'src/services/UserService.ts')).href);
+const { closeDb, describeDatabase, isRemoteDatabase } =
+    await import(pathToFileURL(join(serverDir, 'src/db/client.ts')).href);
+
+// ── say where this is going, before it goes there ────────────────────────────
+
+console.log(`database: ${describeDatabase()}`);
+if (isRemoteDatabase) console.log('          ⚠️  a PostgreSQL server — this may be the shared/production one');
 
 // ── guard: the author must be a real account ─────────────────────────────────
 
@@ -114,3 +125,5 @@ console.log(`${existing && newVersion ? 'new version of' : 'created'} "${name}" 
 console.log(`  id     : ${saved.id}`);
 console.log(`  fileId : ${saved.fileId}`);
 console.log(`  code   : ${saved.code.length} bytes`);
+
+await closeDb();
