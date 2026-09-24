@@ -565,18 +565,19 @@ export class PageEditor extends SignalWatcher(LitElement)
     } as RunnerScriptExecutionRequest;
   }
 
-  /** Execute the current script: produces model + tables.
-   *  Then triggers a separate lean run for any active tool-specific outputs. */
+  /** Execute the current script: produces model + tables, and the outputs of any open tools
+   *  (metrics, docs) in the same run. A separate run for the tools would execute the whole
+   *  script a second time. */
   async execute()
   {
+    const toolOutputs = this._activeTools.flatMap(t => t.outputs ?? []);
     const result = await runScript(
-      this._buildRequest(['default/model/glb', 'default/tables/*/json'])
+      this._buildRequest([...new Set(['default/model/glb', 'default/tables/*/json', ...toolOutputs])])
     );
 
     if (result)
     {
       setExecutionResult(result);
-      await this._executeToolOutputs();
       // Have the model's picture taken for the browser page, later and in the background:
       // the service debounces, renders from this run's GLB off screen, and skips scripts
       // that are not ours. Visibility comes from the reconciled scenegraph, so the picture
@@ -592,8 +593,9 @@ export class PageEditor extends SignalWatcher(LitElement)
     }
   }
 
-  /** Run a lean extra execute for any active tools that declare outputs (e.g. metrics, docs).
-   *  The results are merged into the current editorState result, avoiding a second heavy model export. */
+  /** Run a lean extra execute for the outputs of the open tools (e.g. metrics, docs), when a
+   *  tool is opened on a result that does not have them yet. The outputs are merged into the
+   *  current result, avoiding a second heavy model export. */
   private async _executeToolOutputs()
   {
     const toolOutputs = this._activeTools.flatMap(t => t.outputs ?? []);
@@ -631,7 +633,8 @@ export class PageEditor extends SignalWatcher(LitElement)
         ...current,
         status: extraResult.status === 'error' ? 'error' : current.status,
         created: extraResult.created ?? current.created,
-        duration: (current.duration ?? 0) + (extraResult.duration ?? 0),
+        // The model run's time: adding this lean run to it reported one run as two
+        duration: current.duration,
         request: extraResult.request ?? current.request,
         errors: extraResult.status === 'error'
           ? (extraResult.errors ?? current.errors)
