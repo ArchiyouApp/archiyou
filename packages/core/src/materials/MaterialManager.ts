@@ -25,6 +25,11 @@ import materialsDb from './materials.json';
 /** Pounds per kilogram, for imperial mass read-out. */
 const LB_PER_KG = 2.2046226218;
 
+/** The bundled database is checked against MaterialSchema once per load of this module. Every
+ *  run builds a new MaterialManager, and checking it each time cost ~4.5 ms per run: half of a
+ *  small script's run, and again for every component activation. */
+let materialsDbChecked = false;
+
 /** Resolve a bundled texture file to a fetchable URL (Vite emits ./textures/* as assets). */
 function textureUrl(filename: string): string | null
 {
@@ -345,18 +350,25 @@ export class MaterialManager
     {
         this._index.clear();
         const materials = ((materialsDb as any)?.materials ?? []) as Material[];
-        for (const m of materials)
+        if (!materialsDbChecked)
         {
-            // Warn, never throw: one malformed entry must not break a user's script.
-            if (!Check(MaterialSchema, m))
+            materials.forEach(m =>
             {
-                const first = [...Errors(MaterialSchema, m)][0] as any;
-                console.warn(`MaterialManager: material '${(m as any)?.name ?? '?'}' fails schema`
-                    + `${first ? ` at ${first.path ?? '?'}: ${first.message}` : ''}`);
-            }
-            this._index.set(m.name.toLowerCase(), m);
-            for (const a of m.aliases ?? []) this._index.set(a.toLowerCase(), m);
+                // Warn, never throw: one malformed entry must not break a user's script.
+                if (!Check(MaterialSchema, m))
+                {
+                    const first = [...Errors(MaterialSchema, m)][0] as any;
+                    console.warn(`MaterialManager: material '${(m as any)?.name ?? '?'}' fails schema`
+                        + `${first ? ` at ${first.path ?? '?'}: ${first.message}` : ''}`);
+                }
+            });
+            materialsDbChecked = true;
         }
+        materials.forEach(m =>
+        {
+            this._index.set(m.name.toLowerCase(), m);
+            (m.aliases ?? []).forEach(a => this._index.set(a.toLowerCase(), m));
+        });
     }
 
     /** All materials in the database. */

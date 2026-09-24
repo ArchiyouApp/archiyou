@@ -293,6 +293,38 @@ describe('GLTFBuilder.addAnimations', () =>
     })
 })
 
+/*  addData() without animations writes the extras straight into the source GLB's JSON chunk
+    instead of reading the GLB into a Document and writing it out again. */
+describe('GLTFBuilder.addData', () =>
+{
+    test('only data: merged into the root extras, the model itself untouched', async () =>
+    {
+        const { scene } = createSceneFixture()
+        const source = await scene.toGLB()
+        const builder = await new GLTFBuilder(source).addData({ state: { a: 1 } })
+        const glb = await builder.addData({ annotations: [1, 2] }).then(b => b.toGLB())
+
+        expect(glb.byteLength % 4).toBe(0)
+        const [doc, sourceDoc] = await Promise.all([glb, source].map(g => meshup.createNodeIO().readBinary(g)))
+        expect(doc.getRoot().getExtras()).toEqual({ state: { a: 1 }, annotations: [1, 2] })
+        expect(doc.getRoot().listNodes().map(n => n.getName())).toEqual(sourceDoc.getRoot().listNodes().map(n => n.getName()))
+        expect(doc.getRoot().listAccessors().map(a => Array.from(a.getArray()!)))
+            .toEqual(sourceDoc.getRoot().listAccessors().map(a => Array.from(a.getArray()!)))
+    })
+
+    test('data added before an animation survives it', async () =>
+    {
+        const { scene } = createSceneFixture()
+        const layout = new Layouter(scene).exploded({ distance: 2.5 })
+        const builder = await new GLTFBuilder(await scene.toGLB()).addData({ state: { a: 1 } })
+        const glb = await builder.addAnimations([{ result: layout.result(), options: {} }]).then(b => b.toGLB())
+
+        const doc = await meshup.createNodeIO().readBinary(glb)
+        expect(doc.getRoot().getExtras()).toEqual({ state: { a: 1 } })
+        expect(doc.getRoot().listAnimations().map(a => a.getName())).toEqual(['exploded'])
+    })
+})
+
 function createSceneFixture(): { scene: meshup.SceneNode<any>; entries: SceneEntry[] }
 {
     const scene = meshup.SceneNode.root('root')

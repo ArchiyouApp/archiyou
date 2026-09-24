@@ -72,6 +72,38 @@ function siblingDisplayNames(names: Array<string>): Array<string>
 /** Identity rotation, [x, y, z, w]. */
 const IDENTITY_QUATERNION: [number, number, number, number] = [0, 0, 0, 1]
 
+const GLB_MAGIC = 0x46546C67       // 'glTF'
+const GLB_CHUNK_JSON = 0x4E4F534A  // 'JSON'
+
+/** The GLB with `extras` merged into its root extras, or null when it is not a GLB we can
+ *  read. Only the JSON chunk is rewritten; the binary chunk is copied as it is. Reading the
+ *  whole GLB into a Document and writing it out again, only to add the Archiyou state, took
+ *  about as long as building the GLB in the first place. */
+function glbWithRootExtras(glb: Uint8Array, extras: Record<string, unknown>): Uint8Array | null
+{
+    const view = new DataView(glb.buffer, glb.byteOffset, glb.byteLength)
+    if (glb.byteLength < 20 || view.getUint32(0, true) !== GLB_MAGIC || view.getUint32(16, true) !== GLB_CHUNK_JSON) return null
+
+    const jsonLength = view.getUint32(12, true)
+    const json = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLength)))
+    json.extras = { ...(json.extras ?? {}), ...extras }
+
+    const jsonBytes = new TextEncoder().encode(JSON.stringify(json))
+    const paddedLength = Math.ceil(jsonBytes.byteLength / 4) * 4 // chunks are 4-byte aligned
+    const rest = glb.subarray(20 + jsonLength) // the binary chunk, with its own header
+
+    const out = new Uint8Array(20 + paddedLength + rest.byteLength)
+    const outView = new DataView(out.buffer)
+    out.set(glb.subarray(0, 8)) // magic and version
+    outView.setUint32(8, out.byteLength, true)
+    outView.setUint32(12, paddedLength, true)
+    outView.setUint32(16, GLB_CHUNK_JSON, true)
+    out.set(jsonBytes, 20)
+    out.fill(0x20, 20 + jsonBytes.byteLength, 20 + paddedLength) // the JSON chunk pads with spaces
+    out.set(rest, 20 + paddedLength)
+    return out
+}
+
 /** Where one part is during one step of an instructable, as a node's own transform. */
 interface InstructPose
 {
@@ -91,6 +123,8 @@ export class GLTFBuilder
     private _initialGlb: Uint8Array | null = null;
     private _modified = false;
     private _docLoaded = false;
+    /** Root extras from addData() while the source GLB is not read into a Document (see toGLB()) */
+    private _pendingExtras: Record<string, unknown> | null = null;
 
     constructor(glb?: ArrayBuffer | Uint8Array)
     {
@@ -109,6 +143,13 @@ export class GLTFBuilder
         if (!this._modified && this._initialGlb)
         {
             return this._initialGlb;
+        }
+        // Only data was added: put it into the source GLB as it is
+        if (!this._docLoaded && this._pendingExtras && this._initialGlb)
+        {
+            const glb = glbWithRootExtras(this._initialGlb, this._pendingExtras);
+            if (glb) return glb;
+            await this._ensureDoc(); // not a GLB we can patch: take the long way
         }
         return createNodeIO().writeBinary(this.doc);
     }
@@ -187,13 +228,27 @@ export class GLTFBuilder
             if (!this._initialGlb) { throw new Error('GLTFBuilder._ensureDoc(): no GLB source provided — pass a GLB to the constructor.') }
             this.doc = await createNodeIO().readBinary(this._initialGlb)
             this._docLoaded = true
+            if (this._pendingExtras)
+            {
+                const existing = (this.doc.getRoot().getExtras() ?? {}) as Record<string, unknown>
+                this.doc.getRoot().setExtras({ ...existing, ...this._pendingExtras })
+                this._pendingExtras = null
+            }
         }
         return this.doc
     }
 
-    /** Put arbitrary data into the root extras of the GLB. Merges with any existing extras. */
+    /** Put arbitrary data into the root extras of the GLB. Merges with any existing extras.
+     *  Held back while nothing else needs the GLB read into a Document: toGLB() then writes it
+     *  into the source GLB directly. */
     async addData(data: Record<string, unknown>): Promise<this>
     {
+        if (!this._docLoaded && this._initialGlb)
+        {
+            this._pendingExtras = { ...(this._pendingExtras ?? {}), ...data }
+            this._modified = true
+            return this
+        }
         await this._ensureDoc()
         const existing = (this.doc.getRoot().getExtras() ?? {}) as Record<string, unknown>
         this.doc.getRoot().setExtras({ ...existing, ...data })

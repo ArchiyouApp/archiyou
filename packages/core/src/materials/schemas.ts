@@ -5,8 +5,9 @@
  *  validated with Check()/Errors() from 'typebox/value' — the same pattern as
  *  ScriptSchema and calc/schemas.ts.
  *
- *  MaterialManager.load() validates the bundled database against this and warns on
- *  failure rather than throwing: a malformed entry must never break a user's script.
+ *  MaterialManager.load() validates the bundled database against this, the first time it
+ *  runs, and warns on failure rather than throwing: a malformed entry must never break a
+ *  user's script.
  *  The generator (tools/materials-generator) emits materials.schema.json from this
  *  so the `$schema` pointer in materials.json actually resolves.
  */
