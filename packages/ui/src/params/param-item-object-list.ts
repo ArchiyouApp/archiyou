@@ -1,5 +1,5 @@
 import { LitElement, html, css, nothing } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { SignalWatcher } from '@lit-labs/signals';
 
@@ -23,6 +23,9 @@ import type { TranslatorFn } from '@archiyou/core/src/i18n/resolve';
  *  Which entry is open lives in the shared `activeParamEntry` signal rather than in local
  *  state, so clicking a $handle().param('OPENINGS[i]') handle in the 3D view and clicking a
  *  row here are the same act.
+ *
+ *  In the editor (compact) the Add button sits on the param row's name line, rendered by
+ *  param-menu and calling add(); only the configurator (presentation) shows it under the list.
  */
 @customElement('param-item-object-list')
 export class ParamItemObjectList extends SignalWatcher(LitElement)
@@ -47,10 +50,13 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
                     </div>`
                 }
 
-                <button class="add-btn" title=${`Add ${typeName}`} @click=${this._add}>
-                    <wa-icon library="lucide" name="plus"></wa-icon>
-                    <span>Add ${typeName.toLowerCase()}</span>
-                </button>
+                ${this.mode === 'presentation'
+                    ? html`<button class="add-btn" title=${`Add ${typeName}`} @click=${this.add}>
+                            <wa-icon library="lucide" name="plus"></wa-icon>
+                            <span>Add ${typeName.toLowerCase()}</span>
+                        </button>`
+                    : nothing
+                }
             </div>
         `;
     }
@@ -58,6 +64,7 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
     private _renderEntry(entry: Record<string, any>, index: number, itemSchema: Record<string, any>)
     {
         const isOpen = this._selectedIndex() === index;
+        const isConfirming = this._confirmingDelete === index;
 
         return html`
             <div class="entry ${isOpen ? 'open' : ''}">
@@ -66,14 +73,27 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
                         name=${isOpen ? 'chevron-down' : 'chevron-right'}></wa-icon>
                     <span class="entry-label">${objectEntryLabel(itemSchema, entry, index)}</span>
                     <span class="entry-spacer"></span>
-                    <button class="entry-btn" title="Duplicate"
-                        @click=${(e: Event) => { e.stopPropagation(); this._duplicate(index); }}>
-                        <wa-icon library="lucide" name="copy"></wa-icon>
-                    </button>
-                    <button class="entry-btn danger" title="Remove"
-                        @click=${(e: Event) => { e.stopPropagation(); this._removeAt(index); }}>
-                        <wa-icon library="lucide" name="trash-2"></wa-icon>
-                    </button>
+                    ${isConfirming
+                        ? html`
+                            <span class="confirm-label">Delete?</span>
+                            <button class="entry-btn confirm danger" title="Confirm delete"
+                                @click=${(e: Event) => { e.stopPropagation(); this._removeAt(index); }}>
+                                <wa-icon library="lucide" name="check"></wa-icon>
+                            </button>
+                            <button class="entry-btn confirm" title="Cancel"
+                                @click=${(e: Event) => { e.stopPropagation(); this._confirmingDelete = null; }}>
+                                <wa-icon library="lucide" name="x"></wa-icon>
+                            </button>`
+                        : html`
+                            <button class="entry-btn" title="Duplicate"
+                                @click=${(e: Event) => { e.stopPropagation(); this._duplicate(index); }}>
+                                <wa-icon library="lucide" name="copy"></wa-icon>
+                            </button>
+                            <button class="entry-btn danger" title="Remove"
+                                @click=${(e: Event) => { e.stopPropagation(); this._confirmingDelete = index; }}>
+                                <wa-icon library="lucide" name="trash-2"></wa-icon>
+                            </button>`
+                    }
                 </div>
 
                 ${isOpen
@@ -101,6 +121,9 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
     @property({ attribute: false }) value: Array<Record<string, any>> | undefined = undefined;
     /** Content translator, supplied by the configurator. Identity by default. */
     @property({ attribute: false }) t: TranslatorFn = (_key, fallback) => fallback;
+
+    /** Entry whose Remove button was clicked and waits for its confirm, or null */
+    @state() private _confirmingDelete: number | null = null;
 
     /** The array we last emitted, held only until the next render — see _entries(). */
     private _pending: Array<Record<string, any>> | null = null;
@@ -158,12 +181,14 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
         this._select(this._selectedIndex() === index ? null : index);
     }
 
-    private _add()
+    /** Add an entry with the type's defaults and open it. Public: in the editor the Add
+     *  button is on the param row's name line, outside this component. */
+    add = () =>
     {
         const entries = this._entries();
         this._dispatch([...entries, objectDefaults(paramItemSchema(this.param))]);
         this._select(entries.length); // open the one just added
-    }
+    };
 
     private _duplicate(index: number)
     {
@@ -175,6 +200,7 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
 
     private _removeAt(index: number)
     {
+        this._confirmingDelete = null;
         const entries = this._entries();
         this._dispatch(entries.filter((_e, i) => i !== index));
 
@@ -200,6 +226,8 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
             bubbles:  true,
             composed: true,
         }));
+        // Show the change now, whether or not the owner hands a new `value` back
+        this.requestUpdate();
     }
 
     // ── 5. Styles ──
@@ -218,6 +246,9 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
             gap:            var(--space-xs, 4px);
             width:          100%;
         }
+
+        /* In the editor the entries sit indented under the param's name line */
+        :host([mode="compact"]) .wrap { padding-left: calc(2 * var(--space-lg, 16px)); }
 
         /* No max-height here: an expanded entry's form would be cut off with no way to
            reach the rest of it. The param menu is the one scroll container (.param-list),
@@ -296,9 +327,17 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
             transition:      opacity 0.1s;
         }
 
-        .entry-head:hover .entry-btn { opacity: 0.7; }
+        .entry-head:hover .entry-btn,
+        .entry-btn.confirm { opacity: 0.7; }
         .entry-btn:hover { opacity: 1; background: color-mix(in srgb, var(--color-border) 40%, transparent); }
         .entry-btn.danger:hover { color: var(--color-alert); }
+
+        .confirm-label
+        {
+            font-family: var(--font-sans);
+            font-size:   var(--text-xs);
+            color:       var(--color-alert);
+        }
 
         /* The form brings its own padding; the extra inset here existed to hold it off its
            old border, which is gone. */

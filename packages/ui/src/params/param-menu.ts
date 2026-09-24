@@ -26,11 +26,14 @@ import {
   deleteParam,
   reorderParams,
   renameParamGroup,
-  swapParamGroups,
+  moveParamGroup,
+  paramGroups,
   saveAsPreset,
   paramVisible,
   paramEnabled,
   isObjectListParam,
+  paramItemSchema,
+  paramValue,
   activeParamEntry,
 } from '@archiyou/editor/src/state/workspace';
 
@@ -184,10 +187,10 @@ export class ParamMenu extends SignalWatcher(LitElement)
 
   // ── Helpers ──
 
+  /** The tabs: the groups in their order, then groups made here that hold no params yet */
   private _groups(): string[]
   {
-    const set = new Set(['main', ...scriptParams.get().map(p => p.group ?? 'main'), ...this._pendingGroups]);
-    return [...set];
+    return [...new Set([...paramGroups.get(), ...this._pendingGroups])];
   }
 
   private _paramsForGroup(group: string): ScriptParam[]
@@ -269,13 +272,33 @@ export class ParamMenu extends SignalWatcher(LitElement)
         class=${isDragOver ? 'drag-over' : ''}
         data-name=${ifDefined(p.name)}
       >
+        ${isObjectListParam(p)
+          ? html`
+              <button slot="head-end" class="list-add-btn"
+                  title=${`Add ${String(paramItemSchema(p)?.title ?? 'entry').toLowerCase()}`}
+                  @click=${this._addListEntry}>
+                <wa-icon library="lucide" name="plus"></wa-icon>
+                Add
+              </button>`
+          : nothing}
         ${this._renderParamControl(p)}
       </param-item>
     `;
   }
 
+  /** The Add button on an object list's name line: the list next to it adds the entry */
+  private _addListEntry(e: Event)
+  {
+    (e.currentTarget as HTMLElement).parentElement
+      ?.querySelector('param-item-object-list')
+      ?.add();
+  }
+
   private _renderParamControl(p: ScriptParam)
   {
+    // The object controls get the value handed in: the editor writes a new value into the
+    // SAME param object (a menu edit, a set() from the script, a handle drag), so without it
+    // their `param` property never changes and they keep showing the old entries
     switch (p.type)
     {
       case 'number':  return html`<param-item-number  .param=${p} context="editor"></param-item-number>`;
@@ -283,9 +306,9 @@ export class ParamMenu extends SignalWatcher(LitElement)
       case 'text':    return html`<param-item-text    .param=${p}></param-item-text>`;
       case 'options': return html`<param-item-options .param=${p}></param-item-options>`;
       case 'list':    return isObjectListParam(p)
-                        ? html`<param-item-object-list .param=${p}></param-item-object-list>`
+                        ? html`<param-item-object-list .param=${p} .value=${paramValue(p)}></param-item-object-list>`
                         : html`<param-item-list        .param=${p}></param-item-list>`;
-      case 'object':  return html`<param-item-object  .param=${p}></param-item-object>`;
+      case 'object':  return html`<param-item-object  .param=${p} .value=${paramValue(p)}></param-item-object>`;
       default:        return nothing;
     }
   }
@@ -390,17 +413,8 @@ export class ParamMenu extends SignalWatcher(LitElement)
       const sourceGroup = data.slice('__tab__:'.length);
       if (!sourceGroup || sourceGroup === targetGroup) return;
 
-      swapParamGroups(sourceGroup, targetGroup);
-      if (this._activeTab === sourceGroup) this._activeTab = targetGroup;
-      else if (this._activeTab === targetGroup) this._activeTab = sourceGroup;
-
-      if (this._pendingGroups.has(sourceGroup))
-      {
-        const next = new Set(this._pendingGroups);
-        next.delete(sourceGroup);
-        next.add(targetGroup);
-        this._pendingGroups = next;
-      }
+      // Every param stays in its group, so the open tab keeps showing what it showed
+      moveParamGroup(sourceGroup, targetGroup);
     }
     else
     {
@@ -678,7 +692,7 @@ export class ParamMenu extends SignalWatcher(LitElement)
     }
 
     .title {
-      font-weight: 600;
+      font-weight: 400;
       color: var(--color-text);
       font-size: var(--text-sm);
     }
@@ -895,6 +909,27 @@ export class ParamMenu extends SignalWatcher(LitElement)
     .add-btn:hover {
       background: var(--color-primary-dark);
       border-color: var(--color-primary-dark);
+    }
+
+    /* Add on an object list's name line (slotted into param-item's head) */
+    .list-add-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+      padding: 2px 8px;
+      font-family: var(--font-sans);
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+      background: transparent;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm, 4px);
+      cursor: pointer;
+    }
+
+    .list-add-btn:hover {
+      border-color: var(--color-primary);
+      color: var(--color-text);
     }
 
     /* ── Save as preset ── */

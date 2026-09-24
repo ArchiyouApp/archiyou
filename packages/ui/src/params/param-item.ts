@@ -103,6 +103,10 @@ export class ParamItem extends LitElement
             </span>`
       }
 
+      <!-- Extra controls on the name line, right-aligned in a block row (the Add button of an
+           object list) -->
+      <slot name="head-end"></slot>
+
       <span class="actions">
         ${programmatic
           ? html`
@@ -305,6 +309,7 @@ export class ParamItem extends LitElement
     /* Disabled by a dynamic enableIf() behaviour: dim the row and block the control. */
     :host([disabled]) .label { opacity: 0.5; }
     :host([disabled]) .param-slot { opacity: 0.45; pointer-events: none; }
+    :host([disabled]) ::slotted([slot="head-end"]) { opacity: 0.45; pointer-events: none; }
 
     .grip {
       flex-shrink: 0;

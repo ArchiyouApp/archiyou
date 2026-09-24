@@ -659,15 +659,32 @@ export function renameParamGroup(oldName: string, newName: string): void
   saveCore();
 }
 
-export function swapParamGroups(groupA: string, groupB: string): void
+/** The param groups in tab order: 'main' first, as in the configurator, then the others where
+ *  their first param is (scriptParams is sorted by `order`). */
+export const paramGroups = computed<string[]>(() =>
+  [...new Set(['main', ...scriptParams.get().map(p => p.group ?? 'main')])]);
+
+/** Move group `source` to the place of group `target` in the tab order. Every param stays in
+ *  its own group: the tab order follows the params' `order`, so this renumbers `order` over
+ *  all params, group by group in the new order, each keeping its order within the group.
+ *  'main' stays the first tab whatever its params' numbers. A script re-run keeps these
+ *  numbers (applyManagedParamsAndPresets preserves `order`). */
+export function moveParamGroup(source: string, target: string): void
 {
   const s = editorScript.get();
-  if (!s) return;
-  for (const p of Object.values(s.params))
-  {
-    if (p.group === groupA) p.group = groupB;
-    else if (p.group === groupB) p.group = groupA;
-  }
+  const groups = paramGroups.get();
+  const from = groups.indexOf(source);
+  const to   = groups.indexOf(target);
+  if (!s || from < 0 || to < 0 || from === to) return;
+
+  const ordered = [...groups];
+  ordered.splice(from, 1);
+  ordered.splice(to, 0, source);
+
+  const params = scriptParams.get();
+  ordered
+    .flatMap(g => params.filter(p => (p.group ?? 'main') === g))
+    .forEach((p, i) => { p.order = i; });
   bumpScript();
   saveCore();
 }

@@ -219,6 +219,11 @@ export class ParamObjectForm extends LitElement
     static override styles = css`
         :host { display: block; width: 100%; }
 
+        /* The editor's param menu keeps everything in an entry at xs. The nested controls size
+           their text with --text-sm; custom properties pass into their shadow roots, so
+           redefining it here reaches all of them. */
+        :host([mode="compact"]) { --text-sm: var(--text-xs); }
+
         *,
         *::before,
         *::after { box-sizing: border-box; }
