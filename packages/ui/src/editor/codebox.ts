@@ -21,7 +21,7 @@ import '@awesome.me/webawesome/dist/components/checkbox/checkbox.js';
 // CodeMirror imports
 import { EditorView, basicSetup } from 'codemirror';
 import { keymap, Decoration, DecorationSet } from '@codemirror/view';
-import { EditorState, Compartment, StateEffect, StateField } from '@codemirror/state';
+import { EditorState, EditorSelection, Compartment, StateEffect, StateField } from '@codemirror/state';
 import { javascript } from '@codemirror/lang-javascript';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
@@ -33,7 +33,7 @@ import { authService } from '@archiyou/editor/src/services/auth-service';
 import { fetchPublicShared, fetchSharedWithMe } from '@archiyou/editor/src/services/sharing';
 
 import { SignalWatcher } from '@lit-labs/signals';
-import { executing, executionResult, perStatement, autoRun, kernel, scripts, editorScript } from '@archiyou/editor/src/state/workspace';
+import { executing, executionResult, perStatement, autoRun, kernel, scripts, editorScript, selectedPath, selectedStatement } from '@archiyou/editor/src/state/workspace';
 
 // ── Shared components for $component() completions ───────────────────────────
 /** How long a fetched list of shared components is used before fetching it again. */
@@ -142,6 +142,27 @@ const errorLineField = StateField.define<DecorationSet>({
       return Decoration.set([errorLineMark.range(line.from)]);
     }
     return deco.map(tr.changes);
+  },
+  provide: f => EditorView.decorations.from(f),
+});
+
+// ── Statement highlight ───────────────────────────────────────────────────────
+/** Effect: highlight the 1-indexed lines `from`..`to`, the statement that made the shape
+ *  selected in the scene, or null to clear. */
+const setStatementLines = StateEffect.define<{ from: number; to: number } | null>();
+const statementLineMark = Decoration.line({ class: 'cm-statement-line' });
+
+const statementLinesField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(deco, tr)
+  {
+    const effect = tr.effects.find(e => e.is(setStatementLines));
+    if (!effect) return deco.map(tr.changes);
+    const lines = effect.value as { from: number; to: number } | null;
+    const to = Math.min(lines?.to ?? 0, tr.state.doc.lines);
+    if (!lines || lines.from < 1 || lines.from > to) return Decoration.none;
+    return Decoration.set(Array.from({ length: to - lines.from + 1 },
+      (_, i) => statementLineMark.range(tr.state.doc.line(lines.from + i).from)));
   },
   provide: f => EditorView.decorations.from(f),
 });
@@ -267,6 +288,7 @@ export class CodeBox extends SignalWatcher(LitElement)
         extensions: [
           basicSetup,
           errorLineField,
+          statementLinesField,
           javascript({ typescript: true }),
           autocompletion({ override: [archiyouCompletions] }),
           keymap.of([
@@ -392,6 +414,7 @@ export class CodeBox extends SignalWatcher(LitElement)
       {
         this._view.dispatch({
           changes: { from: 0, to: current.length, insert: this.code },
+          effects: setStatementLines.of(null), // other code: the lines no longer belong to the scene
         });
       }
     }
@@ -416,6 +439,16 @@ export class CodeBox extends SignalWatcher(LitElement)
       this._lastAppliedResult = result;
       this._applyErrorHighlight(result);
     }
+
+    // Highlight the statement that made the shape selected in the scene or the viewer
+    const statement = selectedStatement.get();
+    const path = selectedPath.get();
+    if (statement !== this._lastAppliedStatement || path !== this._lastSelectedPath)
+    {
+      this._applyStatementHighlight(statement, path !== this._lastSelectedPath);
+      this._lastAppliedStatement = statement;
+      this._lastSelectedPath = path;
+    }
   }
 
   override disconnectedCallback()
@@ -435,6 +468,8 @@ export class CodeBox extends SignalWatcher(LitElement)
   /** Last catalog registered for autocomplete, compared by reference. */
   private _registeredModules: unknown = null;
   private _lastAppliedResult: ReturnType<typeof executionResult.get> | undefined = undefined;
+  private _lastAppliedStatement: ReturnType<typeof selectedStatement.get> = null;
+  private _lastSelectedPath: string | null = null;
   private _darkMQ = window.matchMedia('(prefers-color-scheme: dark)');
 
   /** Editability extensions derived from the `readonly` property. */
@@ -581,6 +616,36 @@ export class CodeBox extends SignalWatcher(LitElement)
       ? lineStart
       : 'all';
     this._view.dispatch({ effects: setErrorLine.of(value) });
+  }
+
+  /** Highlight the lines of the statement that made the selected shape, and scroll them into
+   *  view when the selection changed. Not on a re-run with the same selection: that would pull
+   *  the editor away from where the user is typing. The focus stays where it is.
+   *
+   *  Statement lines belong to the code that ran. Once the code is edited they are not
+   *  trusted: a new selection clears the highlight, while an existing one stays put and
+   *  follows the edit until the next run. */
+  private _applyStatementHighlight(statement: ReturnType<typeof selectedStatement.get>, selectionChanged: boolean)
+  {
+    if (!this._view) return;
+    const doc = this._view.state.doc;
+    const ranCode = executionResult.get()?.request?.script?.code;
+    const lineStart = statement?.lineStart;
+    if (typeof lineStart !== 'number' || ranCode !== doc.toString())
+    {
+      if (!statement || selectionChanged) this._view.dispatch({ effects: setStatementLines.of(null) });
+      return;
+    }
+
+    const lineEnd = Math.max(lineStart, statement?.lineEnd ?? lineStart);
+    const effects: StateEffect<unknown>[] = [setStatementLines.of({ from: lineStart, to: lineEnd })];
+    if (selectionChanged && lineEnd <= doc.lines)
+    {
+      // The whole statement when it fits, else its first line (the head of the range)
+      const range = EditorSelection.range(doc.line(lineEnd).to, doc.line(lineStart).from);
+      effects.push(EditorView.scrollIntoView(range, { yMargin: 24 }));
+    }
+    this._view.dispatch({ effects });
   }
 
   /** Extract just the useful error message for the header, without execution banners. */
@@ -953,6 +1018,13 @@ export class CodeBox extends SignalWatcher(LitElement)
       background: var(--color-surface-subtle);
       border: 1px solid var(--color-divider);
       color: var(--color-text-gray);
+    }
+
+    /* Statement that made the selected shape (applied via CodeMirror StateField).
+       Before the error line, so an error on the same line keeps its colour. */
+    .cm-statement-line {
+      background: color-mix(in srgb, var(--color-primary) 12%, transparent) !important;
+      box-shadow: inset 2px 0 0 var(--color-primary);
     }
 
     /* Error line highlight (applied via CodeMirror StateField) */

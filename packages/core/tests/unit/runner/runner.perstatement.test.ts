@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest'
 import type { RunnerScriptExecutionRequest, RunnerScriptExecutionResult }
         from '../../../src/runner/types'
 import { Runner } from '../../../src/runner/Runner'
+import type { SceneNodeData } from '../../../src/modeler/types'
 
 const TIMEOUT = 30000; // WASM kernel load
 
@@ -131,5 +132,43 @@ describe('Runner per-statement mode', () =>
         const totalPerc = (result.statements ?? []).reduce((sum, s) => sum + (s.durationPerc ?? 0), 0);
         expect(totalPerc).toBeGreaterThanOrEqual(98);
         expect(totalPerc).toBeLessThanOrEqual(102);
+    }, TIMEOUT)
+
+    it('records which serial ids each statement added to the scene', async () =>
+    {
+        const code = `
+            a = box(10,10,10);
+            n = 3;
+            for(let i = 0; i < n; i++)
+            {
+                sphere(4).move(20*i, 40);
+            }
+            b = a.copy().move(0, -40);
+            c = [box(5), notDefined()];
+        `;
+        const runner = await new Runner().load();
+        const result = await runner.execute(req(code));
+
+        // The last statement fails halfway, after its box entered the scene
+        expect(result.status).toBe('error');
+        const ranges = (result.statements ?? []).map(s => [s.lineStart, s.sidFirst, s.sidLast]);
+        expect(ranges).toEqual([
+            [2, 1, 1],                  // a
+            [3, undefined, undefined],  // n: no shapes
+            [4, 2, 4],                  // the loop, lines 4-7
+            [8, 5, 5],                  // b
+            [9, 6, 6],                  // c: the box made before the error
+        ]);
+
+        // Every shape in the scenegraph falls in the range of exactly one statement
+        const sids = (node: SceneNodeData): Array<number> =>
+            [...(node.sid ? [node.sid] : []), ...node.children.flatMap(sids)];
+        const sceneSids = sids(result.state.scenegraph as SceneNodeData);
+        expect(sceneSids.sort((x, y) => x - y)).toEqual([1, 2, 3, 4, 5, 6]);
+        sceneSids.forEach(sid =>
+        {
+            const owners = (result.statements ?? []).filter(s => s.sidFirst !== undefined && s.sidFirst <= sid && sid <= s.sidLast!);
+            expect(owners.length).toBe(1);
+        });
     }, TIMEOUT)
 })

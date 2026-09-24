@@ -42,6 +42,11 @@ export interface ScriptStatementResult extends ScriptStatement
     message?: string,
     duration?: number
     durationPerc?:number // share of total statement time; set by Runner in per-statement mode
+    /** Serial ids (see Shape `_sid`) of the shapes that entered the scene during this statement:
+     *  an inclusive range, absent when it added none. Set by Runner in per-statement mode, so the
+     *  app can go from a shape in the scenegraph (`SceneNodeData.sid`) to the statement that made it. */
+    sidFirst?:number
+    sidLast?:number
 }
 
 /** After execution of the script (on client or server) we fill in some metadata */

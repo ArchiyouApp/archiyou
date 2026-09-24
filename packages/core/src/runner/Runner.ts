@@ -1313,12 +1313,13 @@ ${description === '***** CODE ****\nUnexpected end of input' ? code : ''}
         {
             const stmt = statements[s];
             const stmtStartTime = performance.now();
+            const sidBefore = scope._archiyou.modeler.lastSid(); // shapes this statement adds come after
             try
             {
                 // Keep sub-millisecond precision: fast geometry ops round to 0ms, which would
                 // make every durationPerc zero. Display code rounds when it renders.
                 await this._runStatementInScope(scope, stmt.code, AsyncFunction);
-                statementResults.push({ ...stmt, status: 'success', duration: performance.now() - stmtStartTime });
+                statementResults.push({ ...stmt, ...this._statementSids(scope, sidBefore), status: 'success', duration: performance.now() - stmtStartTime });
             }
             catch(e)
             {
@@ -1328,13 +1329,13 @@ ${description === '***** CODE ****\nUnexpected end of input' ? code : ''}
                 // the statement itself counts as executed and no error is attached.
                 if(isScriptExitSignal(e))
                 {
-                    statementResults.push({ ...stmt, status: 'success', duration });
+                    statementResults.push({ ...stmt, ...this._statementSids(scope, sidBefore), status: 'success', duration });
                     console.warn(`Runner::_executeLocalInScriptStatements(): ${SCRIPT_EXIT_WARNING} at line ${stmt.lineStart}`);
                     break;
                 }
 
                 const message = this._formatStatementError(stmt, request, e as Error);
-                failed = { ...stmt, status: 'error', message, duration };
+                failed = { ...stmt, ...this._statementSids(scope, sidBefore), status: 'error', message, duration };
                 statementResults.push(failed);
                 // Mirror into the Archiyou console buffer so UI consoles surface it.
                 scope?._archiyou?.console?.error(message);
@@ -1383,6 +1384,15 @@ ${description === '***** CODE ****\nUnexpected end of input' ? code : ''}
     {
         const fn = new AsyncFunction('scope', `with (scope) { 'use strict'; ${code} }`);
         return await fn.call(scope, scope);
+    }
+
+    /** The serial ids of the shapes that entered the scene since `sidBefore`, as the
+     *  sidFirst/sidLast range of a statement result. Serial ids count up per run, so the shapes
+     *  a statement added are exactly the ones numbered after the count before it ran. */
+    _statementSids(scope:RunnerScriptScope, sidBefore:number):Pick<ScriptStatementResult, 'sidFirst'|'sidLast'>
+    {
+        const sidAfter = scope._archiyou.modeler.lastSid();
+        return (sidAfter > sidBefore) ? { sidFirst: sidBefore + 1, sidLast: sidAfter } : {};
     }
 
     /** Build an error message for a failing statement, anchored to its original source line.

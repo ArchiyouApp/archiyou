@@ -12,11 +12,11 @@
 import { signal, computed } from '@lit-labs/signals';
 
 import { ScriptParam } from '@archiyou/core/src/execution/ScriptParam';
-import type { ScriptParamType, ScriptParamData, ParamOperation } from '@archiyou/core/src/execution/types';
+import type { ScriptParamType, ScriptParamData, ParamOperation, ScriptStatementResult } from '@archiyou/core/src/execution/types';
 import type { SceneNodeData } from '@archiyou/core/src/modeler/types';
 import { deepEqual } from '@archiyou/core/src/utils';
 
-import { editorScript, bumpScript, saveCore } from './core';
+import { editorScript, bumpScript, saveCore, executionResult } from './core';
 import { evaluateParamBehaviours } from './param-behaviours';
 import type { ParamEntryRef, ScriptMetadata, ScriptPreset } from './types';
 
@@ -36,6 +36,26 @@ export const scenegraph        = signal<SceneNodeData | null>(null, { equals: ()
  *  the next execution request so shape.onClick()/shape.selected() can react. */
 export const selectedPath = signal<string | null>(null);
 export function setSelectedPath(path: string | null): void { selectedPath.set(path); }
+
+/** The statement that made the selected shape, which the code editor highlights. Resolved
+ *  through serial ids: a per-statement run records the range each statement added to the
+ *  scene (sidFirst/sidLast), and every scenegraph node carries its shape's sid. A layer
+ *  resolves when all the shapes under it came from one statement, such as a $component()
+ *  call. Null without a selection, outside per-statement mode, or when nothing matches. */
+export const selectedStatement = computed<ScriptStatementResult | null>(() =>
+{
+  const path = selectedPath.get();
+  const root = scenegraph.get();
+  const statements = executionResult.get()?.statements;
+  if (!path || !root || !statements?.length) return null;
+
+  const node = findNodeByPath(root, path);
+  const span = node ? _sidSpan(node) : null;
+  if (!span) return null;
+  const [first, last] = span;
+  return statements.find(s => s.sidFirst !== undefined && s.sidLast !== undefined
+    && s.sidFirst <= first && last <= s.sidLast) ?? null;
+});
 
 /** Scene paths of shapes that declared onClick() in the last run (from
  *  result.state.interactiveShapes). The viewer only triggers a re-run when a
@@ -144,12 +164,26 @@ export function findNodeByPath(
   return cur;
 }
 
+/** Lowest and highest shape serial id at or below `node`, or null when it holds no shapes.
+ *  A shape node answers its own sid. */
+function _sidSpan(node: SceneNodeData): [number, number] | null
+{
+  if (node.sid) return [node.sid, node.sid];
+  return node.children.reduce<[number, number] | null>((span, child) =>
+  {
+    const c = _sidSpan(child);
+    if (!c) return span;
+    return span ? [Math.min(span[0], c[0]), Math.max(span[1], c[1])] : c;
+  }, null);
+}
+
 /** Deep-clone a SceneNodeData tree (plain structured data, safe). */
 function _cloneNode(n: SceneNodeData): SceneNodeData
 {
   return {
     name: n.name,
     shape: n.shape ?? null,
+    sid: n.sid, // links the node to the statement that made it (selectedStatement)
     style: { ...n.style },
     children: n.children.map(_cloneNode),
   };
