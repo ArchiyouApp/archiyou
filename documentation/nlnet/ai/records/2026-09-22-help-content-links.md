@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-22 → 2026-09-23 |
+| Dates | 2026-09-22 → 2026-09-24 |
 | Model | Claude Opus 5 (claude-opus-5[1m]), 1M context, Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: two small changes agreed in the session) |
 | Human | Mark van der Net: wrote the prompts, chose the conventions, wrote the tutorial content and the asides support, reviewed the code |
-| Branch | `develop` |
+| Branch | `develop`, and a third change on `pg` |
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
 Two additions to the help markdown that `help/` and the editor share, both asked for
@@ -37,7 +37,13 @@ The session also began with a question about the editor's automatic execute and 
 2026-09-22 20:49 +0200  commit the docs-only and link work with the AI disclosure
 2026-09-23 15:23 +0200  I git added some of the content md files. Can you commit this. Manual mode, so no AI NLNet disclosure needed
 2026-09-23 15:24 +0200  yes go ahead
+2026-09-23 15:27 +0200  Can you check those uncommited things. What was it?
+2026-09-23 23:17 +0200  I noticed a lot of saved tutorial files in my workspace. Have ideas how to avoid that? At least we should save it under one file.
+2026-09-23 23:22 +0200  why not one single script file name under tutorial name ie tutorial-simple-table - just don't create copies - I think its OK that any alterations to a previous tutorial script are overwritten (this will be eventually fixed when we implement versions history).
 ```
+
+The last two reopened the unit a day later: playing a tutorial had been creating a new
+script every time, filling the workspace with copies.
 
 ## Plan
 
@@ -75,6 +81,10 @@ rough size, and Mark approved it before implementation:
 |---|---|---|
 | c52fa75 | Help: docs-only sections in help markdown | "Implement the docs-only comment" |
 | e9208a7 | Help: links between help documents | "Is there a way for links to other tutorials to work inside the help tool? … ok build it" |
+| 0000000 | Help: one script per tutorial, reused instead of copied | "why not one single script file name under tutorial name … just don't create copies" |
+
+The third commit is on `pg` rather than `develop`: it was written on 2026-09-23 while
+that branch was checked out, left uncommitted, and committed the next day.
 
 Both commits also carry Mark's own aside support (`:::tip` … `:::`) in the same files,
 which is not generated code. The content commits 56d0175 and 793db78 are his, plain.
