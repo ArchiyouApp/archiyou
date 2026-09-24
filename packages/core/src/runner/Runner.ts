@@ -2352,12 +2352,18 @@ ${contextLines.join('\n')}
         const managedBehaviours = scope._main
             ? (scope._paramManager?.getManagedBehaviours?.() ?? undefined)
             : undefined;
+        // Values written with $PARAMS.NAME.set()/push(): again their own channel, since a
+        // value is not a definition
+        const managedValues = scope._main
+            ? (scope._paramManager?.getManagedValues?.() ?? undefined)
+            : undefined;
 
         const state = scope.modeler?.toArchiyouState?.(annotations, managedHandles, interactiveShapes)
             ?? { scenegraph: undefined, annotations, managedHandles, interactiveShapes };
         state.managedParams = managedParams;
         state.managedPresets = managedPresets;
         state.managedBehaviours = managedBehaviours;
+        state.managedValues = managedValues;
 
         /*  Instructables, resolved. Only the main scope: a component's manual is its own
             business and would otherwise be merged into the host's step list. Wrapped so one

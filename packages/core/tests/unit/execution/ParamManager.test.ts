@@ -263,3 +263,53 @@ describe('ParamManager.defineObject()', () =>
         expect(pm.getParamsMap()['OPENINGS']._value).toEqual(edited)
     })
 })
+
+// ── diffManagedValues() — what the app takes from managedValues ──────────────
+
+describe('ParamManager.diffManagedValues()', () =>
+{
+    const width = () => ScriptParam.fromData({
+        name: 'WIDTH', type: 'number',
+        schema: { type: 'number', minimum: 0, maximum: 200, multipleOf: 1, default: 100 },
+    } as unknown as ScriptParamData)
+
+    it('returns a changed value with its rerun flag', () =>
+    {
+        expect(ParamManager.diffManagedValues([width()], { WIDTH: { value: 150, rerun: true } }))
+            .toEqual({ changes: [{ name: 'WIDTH', value: 150 }], rerun: true })
+    })
+
+    it('compares with the value in effect, the default when nothing was set', () =>
+    {
+        expect(ParamManager.diffManagedValues([width()], { WIDTH: { value: 100, rerun: false } }).changes).toHaveLength(0)
+
+        const edited = width()
+        edited._value = 150
+        expect(ParamManager.diffManagedValues([edited], { WIDTH: { value: 150, rerun: false } }).changes).toHaveLength(0)
+    })
+
+    it('still re-runs for a value the app already has', () =>
+    {
+        // A param defined in the same run arrives with its set value in the definition, but
+        // the model was built with the value before the set()
+        const defined = width()
+        defined._value = 150
+        expect(ParamManager.diffManagedValues([defined], { WIDTH: { value: 150, rerun: true } }))
+            .toEqual({ changes: [], rerun: true })
+    })
+
+    it('does not ask for a re-run when no change asked for one', () =>
+    {
+        expect(ParamManager.diffManagedValues([width()], { WIDTH: { value: 150, rerun: false } }))
+            .toEqual({ changes: [{ name: 'WIDTH', value: 150 }], rerun: false })
+    })
+
+    it('skips unknown params and values that do not fit', () =>
+    {
+        const diff = ParamManager.diffManagedValues([width()], {
+            HEIGHT: { value: 10, rerun: true },
+            WIDTH:  { value: 999, rerun: true },
+        })
+        expect(diff).toEqual({ changes: [], rerun: false })
+    })
+})

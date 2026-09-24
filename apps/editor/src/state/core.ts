@@ -21,7 +21,7 @@ import { uuid4 } from '@archiyou/core/src/utils';
 
 import { EDITOR_START_SCRIPT } from '../settings';
 import type { UserState, WorkspaceCoreState } from './types';
-import { scenegraph, reconcileScenegraph, setInteractiveShapes, applyManagedParamsAndPresets } from './editor';
+import { scenegraph, reconcileScenegraph, setInteractiveShapes, applyManagedParamsAndPresets, applyManagedValues } from './editor';
 import { applyManagedBehaviours, evaluateParamBehaviours } from './param-behaviours';
 import { currentUser } from '../services/auth-service.js';
 import { syncCreate, syncSaveActive, syncDelete } from '../services/scripts-sync.js';
@@ -510,6 +510,9 @@ export function setExecutionResult(result: RunnerScriptExecutionResult): void
   // into the active script so the param menu reflects them. Diff-gated + deterministic
   // so it cannot trigger a re-run loop. (Code is the source of truth.)
   applyManagedParamsAndPresets(result.state?.managedParams, result.state?.managedPresets);
+  // Values the script wrote with $PARAMS.NAME.set()/push(): kept as the params' values, may
+  // schedule a re-run. After the definitions, so a param defined and set in one run exists.
+  applyManagedValues(result.state?.managedValues);
   // Apply + evaluate dynamic param behaviours (enableIf/visibleIf/...) declared this run.
   // Separate from managedParams: behaviours never change a param's definition. Behaviours
   // are not persisted, so evaluation here only refreshes the UI (no save).

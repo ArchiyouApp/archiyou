@@ -12,12 +12,15 @@
 import { signal, computed } from '@lit-labs/signals';
 
 import { ScriptParam } from '@archiyou/core/src/execution/ScriptParam';
-import type { ScriptParamType, ScriptParamData, ParamOperation, ScriptStatementResult } from '@archiyou/core/src/execution/types';
+import { ParamManager } from '@archiyou/core/src/execution/ParamManager';
+import type { ScriptParamType, ScriptParamData, ParamOperation, ScriptStatementResult,
+              ManagedValuesData } from '@archiyou/core/src/execution/types';
 import type { SceneNodeData } from '@archiyou/core/src/modeler/types';
 import { deepEqual } from '@archiyou/core/src/utils';
 
 import { editorScript, bumpScript, saveCore, executionResult } from './core';
 import { evaluateParamBehaviours } from './param-behaviours';
+import { scheduleExecution } from './viewer';
 import type { ParamEntryRef, ScriptMetadata, ScriptPreset } from './types';
 
 //// EDITOR UI SIGNALS ////
@@ -587,6 +590,51 @@ export function applyManagedParamsAndPresets(
     bumpScript();
     saveCore();
   }
+}
+
+/** Re-runs in a row that set() or push() may cause before the editor stops following them */
+const MAX_VALUE_RERUNS = 3;
+let _valueReruns = 0;
+let _valueRerunPending = false;
+
+/** Keep the values the script wrote with $PARAMS.NAME.set()/push() as the params' values,
+ *  and re-run when one of them asked for it. Call for every execution result, also one without
+ *  managedValues: that is how a run the user started resets the re-run count.
+ *
+ *  Values only: a param's definition and its `_definedProgrammatically` flag stay as they are,
+ *  so a param made in the menu stays editable. Saves only when a value changed. Re-runs on what
+ *  the script reported (values that differ from the ones its run started with), also when the
+ *  app already had the value through a definition from the same run. A script whose
+ *  value never settles (`set($N + 1)`, unseeded randomness) is followed MAX_VALUE_RERUNS times,
+ *  then left with a warning. Call after applyManagedParamsAndPresets(): a param defined and set
+ *  in the same run has to exist first. */
+export function applyManagedValues(managedValues?: ManagedValuesData): void
+{
+  const fromValueRerun = _valueRerunPending;
+  _valueRerunPending = false;
+  if (!fromValueRerun) _valueReruns = 0;
+
+  const s = editorScript.get();
+  if (!s || !managedValues) return;
+
+  const { changes, rerun } = ParamManager.diffManagedValues(Object.values(s.params), managedValues);
+  if (changes.length > 0)
+  {
+    changes.forEach(({ name, value }) => { s.params[name]._value = value; });
+    bumpScript();
+    saveCore();
+  }
+
+  if (!rerun) return;
+  if (_valueReruns >= MAX_VALUE_RERUNS)
+  {
+    console.warn(`set()/push() keeps changing ${Object.keys(managedValues).join(', ')}: not re-running `
+      + `after ${MAX_VALUE_RERUNS} re-runs in a row. Does the value depend on itself?`);
+    return;
+  }
+  _valueReruns++;
+  _valueRerunPending = true;
+  scheduleExecution();
 }
 
 /** Re-order params within a group according to the supplied ordered name list. */

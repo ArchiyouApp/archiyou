@@ -221,6 +221,26 @@ export type ParamBehaviourFn = (params: Record<string, any>) => any
  *  (structured-clone- and GLB-JSON-safe) and re-hydrated + evaluated app-side.
  *  Shape: paramName → target → fn source string. */
 export type ManagedBehavioursData = Record<string, Partial<Record<ParamBehaviourTarget, string>>>
+
+/** Options of $PARAMS.NAME.set() and push() */
+export interface ParamSetOptions
+{
+    /** Re-run the script when the value changed (default true). Code before the set() used the
+     *  old value, so model and menu disagree until the next run. Pass false when the script
+     *  builds the model from the value it sets. */
+    rerun?: boolean
+}
+
+/** A value the script wrote with set() or push() this run, for the app to keep */
+export interface ManagedValueData
+{
+    value: any
+    rerun: boolean
+}
+
+/** Values written this run, sent to the app through their own channel: a value is not a
+ *  definition, so applying one never sets _definedProgrammatically. Shape: paramName → value. */
+export type ManagedValuesData = Record<string, ManagedValueData>
 export type PublishLicense = 'unknown' | 'copyright' | 'trademarked' | 'CC BY' | 'CC BY-SA' | 'CC BY-ND' | 'CC BY-NC' | 'CC BY-NC-SA' | 'CC BY-NC-ND' | 'CC0'
 
 

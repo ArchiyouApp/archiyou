@@ -15,6 +15,8 @@
  *      - [Worker scope] During script execution ParamManager is used to define or edit params
  *      - [Worker scope] At end of script execution, params that are managed are added to RunnerScriptExecutionResult at managedParams and send to app. 
  *                       The managedParams are stateless, so every run, with same param values they emit the same managedParams
+ *      - [Worker scope] Values the script wrote with $PARAMS.NAME.set()/push() go back separately as managedValues:
+ *                       a value is not a definition. The app keeps them as the params' values and may re-run.
  *      - [App scope: editor or configurator] managedParams are put in store and picked up by ParamMenu to change menu params. 
  *                      It is the responsibility of receiver to compare existing params with incoming ManagedParams. 
  *                      There is a helper method on ParamManager.updateParamsWithManaged()
@@ -24,7 +26,8 @@ import { Type } from 'typebox'
 import { Check } from 'typebox/value'
 
 import type { ScriptParamData, ParamOperation, ScriptParamType, ScriptParamDefineOptions,
-              ScriptObjectPropDef, ScriptObjectDefineOptions, ManagedBehavioursData } from './types'
+              ScriptObjectPropDef, ScriptObjectDefineOptions, ManagedBehavioursData,
+              ManagedValuesData } from './types'
 import { ScriptParam, PARAM_TYPE_SCHEMAS } from './ScriptParam'
 import { ParamManagerOperator } from './ParamManagerOperator'
 
@@ -59,6 +62,10 @@ export class ParamManager
      *  into each param's own schema (see _resolveObjectSchema). */
     _objectSchemas:Record<string, Record<string,any>> = {};
 
+    /** Param values this run started with (name → value). getManagedValues() only reports a
+     *  set() or push() that ends on a different value, so the app does not re-run for nothing. */
+    _startValues:Record<string, any> = {};
+
     /** Set up ParamManager with current params */
     constructor(params?:Array<ScriptParam|ScriptParamData>)
     {
@@ -73,6 +80,7 @@ export class ParamManager
                                             return new ParamManagerOperator(this, paramDef); // always make sure we use Param internally
                                         });
             this.paramOperators.forEach( p => this[p.name] = p) // set param access
+            this.paramOperators.forEach( p => this._startValues[p.name] = p.targetParam._value ?? p.targetParam.default)
         }
     }
 
@@ -128,6 +136,36 @@ export class ParamManager
         return paramsToChange
     }
 
+    /** What the app takes from managedValues: `changes` are the values of known params that
+     *  match their definition and differ from the current value (`_value ?? default`).
+     *  `rerun` is true when one of the valid values asked for it, also when the app already has
+     *  that value: a param defined in the same run arrives with its set value in its
+     *  definition, while the model was built with the value before the set(). The script only
+     *  reports values that differ from the ones its run started with, so this cannot loop on a
+     *  value that settled.
+     *  @internal */
+    static diffManagedValues(currentParams:Array<ScriptParam>, managedValues:ManagedValuesData = {}):{ changes:Array<{ name:string, value:any }>, rerun:boolean }
+    {
+        return Object.entries(managedValues).reduce((diff, [name, { value, rerun }]) =>
+        {
+            const param = currentParams.find(p => p.name === name.toUpperCase());
+            if(!param)
+            {
+                console.warn(`ParamManager::diffManagedValues(): No param "${name}" to set a value on`);
+                return diff;
+            }
+            if(!param.validateValue(value))
+            {
+                console.warn(`ParamManager::diffManagedValues(): Value for "${name}" does not match its definition`);
+                return diff;
+            }
+            const changes = deepEqual(param._value ?? param.default, value)
+                ? diff.changes
+                : [...diff.changes, { name: param.name, value }];
+            return { changes, rerun: diff.rerun || rerun };
+        }, { changes: [], rerun: false } as { changes:Array<{ name:string, value:any }>, rerun:boolean });
+    }
+
     //// MANAGING PARAMS ////
 
     /** Add or update Param and return what was done (update, new, null)  */
@@ -175,6 +213,8 @@ export class ParamManager
                 p.name = p.name.toUpperCase(); // names are always uppercase
                 const index = this.paramOperators.indexOf(existingParamController);
                 this.paramOperators[index] =  new ParamManagerOperator(this, p);
+                // A set() before this re-definition still has to be reported
+                this.paramOperators[index]._setValue = existingParamController?._setValue;
                 this[p.name] = this.paramOperators[index]; // keep param access ($PARAMS.NAME) pointing at the new operator
                 return true;
             }
@@ -557,10 +597,7 @@ export class ParamManager
         // Set the scope global ($NAME) immediately so the SAME run can use the
         // value right after defining it — this is what lets a script spawn and
         // use its own params with no external data.
-        if (this.parent)
-        {
-            this.parent[this.PARAM_SIGNIFIER + upper] = param._value ?? param.default;
-        }
+        this.setParamGlobal(upper, param._value ?? param.default);
 
         return this;
     }
@@ -723,6 +760,16 @@ export class ParamManager
         return changedParamsByOperation
     }
 
+    /** Values written this run with set() or push() that differ from the value the run
+     *  started with. Setting the same value, or setting and setting back, reports nothing.
+     *  @internal */
+    getManagedValues():ManagedValuesData
+    {
+        return this.paramOperators
+            .filter((po) => po._setValue && !deepEqual(po._setValue.value, this._startValues[po.name]))
+            .reduce<ManagedValuesData>((values, po) => ({ ...values, [po.name]: { ...po._setValue! } }), {});
+    }
+
     /** Managed params to send back to the app after a run.
      *  Extends getOperatedParamsByOperation() with full-sync deletions:
      *  any param that was previously script-defined (_definedProgrammatically)
@@ -776,6 +823,16 @@ export class ParamManager
             console.info(`ParamManager::setParamGlobalsInScope(): Setting global param "${this.PARAM_SIGNIFIER + p.name}" with value "${p._value ?? p.default}"`);
             scope[this.PARAM_SIGNIFIER + p.name] = p._value ?? p.default;
         })
+    }
+
+    /** Set the scope global of one param ($NAME), when there is a scope
+     *  @internal */
+    setParamGlobal(name:string, value:any):void
+    {
+        if(this.parent)
+        {
+            this.parent[this.PARAM_SIGNIFIER + name.toUpperCase()] = value;
+        }
     }
 
     /** Compare two params (either Param or ScriptParam) */

@@ -23,7 +23,8 @@ import { Type } from 'typebox'
 import { Check } from 'typebox/value'
 
 import { ParamManager } from "./ParamManager";
-import type { ParamOperation, ScriptParamData, ParamBehaviourTarget, ParamBehaviourFn } from "./types";
+import type { ParamOperation, ScriptParamData, ParamBehaviourTarget, ParamBehaviourFn,
+              ParamSetOptions, ManagedValueData } from "./types";
 import { ScriptParam } from "./ScriptParam";
 
 import { deepEqual } from '../utils'
@@ -36,6 +37,8 @@ export class ParamManagerOperator
     value:any // reference to targetParam.value
     manager: ParamManager
     operation:ParamOperation // undefined (none), new, update, delete
+    /** Value written this run by set() or push(), reported through managedValues */
+    _setValue?:ManagedValueData
 
     constructor(manager:ParamManager, p?:ScriptParam)
     {
@@ -63,19 +66,40 @@ export class ParamManagerOperator
 
     //// OPERATORS ON PARAM ////
 
-    /** Set value of Parameter */
-    set(v:any):any
+    /** Set the value of this param. The app keeps it as the param's value, and by default
+     *  re-runs the script when it changed: code before the set() used the old value.
+     *  Also updates `$NAME`, so code after the set() sees the new value.
+     *  Throws when the value does not match the param's definition.
+     *  @param options.rerun Re-run when the value changed (default true). Pass false when the
+     *      script builds the model from the value it sets.
+     *  @example
+     *  $PARAMS.define('COUNT', 'number', { min: 0, max: 100, default: 1 });
+     *  $PARAMS.COUNT.set(3, { rerun: false });
+     *  print($COUNT); // 3
+     */
+    set(v:any, options:ParamSetOptions = {}):any
     {
         if(!this.targetParam.validateValue(v))
         {
             throw new Error(`ParamManager: value does not match the schema for param "${this.targetParam.name}"!`);
         }
-        this.targetParam._value = v;
-        return v;
+        return this._writeValue(v, options);
     }
 
-    /** Insert a value into an array-type Param */
-    push(v:any):any
+    /** Add an entry to a list param: its value becomes the current list plus this entry,
+     *  handled like set(). The script runs again on every re-run, so an unconditional push()
+     *  adds its entry every time: guard it, for example on an empty list.
+     *  An entry equal to the last one is not added again.
+     *  @param options.rerun Re-run when the list changed (default true)
+     *  @example
+     *  $PARAMS.defineObject('Hole', { size: { type: 'number', min: 1, max: 100, default: 10 } });
+     *  $PARAMS.define('HOLES', 'list', { of: 'Hole' });
+     *  if ($HOLES.length === 0)
+     *  {
+     *      $PARAMS.HOLES.push({ size: 20 });
+     *  }
+     */
+    push(v:any, options:ParamSetOptions = {}):any
     {
         const s = this.targetParam.schema as any
         if (s?.type !== 'array')
@@ -88,21 +112,26 @@ export class ParamManagerOperator
             throw new Error(`ParamManager: value does not match the array items schema for param "${this.targetParam.name}"!`)
         }
 
-        // Normalize BEFORE the duplicate check: that check indexes _value, so the very
-        // first push onto an untouched param used to throw.
-        if (!Array.isArray(this.targetParam._value)) { this.targetParam._value = [] }
-
-        if (!this._checkIfListElemExistsLast(v))
+        // Onto the value in effect: an untouched list param has only its default
+        const current = this.targetParam._value ?? this.targetParam.default;
+        const list = Array.isArray(current) ? current : [];
+        if (!this._checkIfListElemExistsLast(list, v))
         {
-            this.targetParam._value = [...this.targetParam._value, v]
-            // Without this the param is never reported back: paramOperated() stays false
-            // and getOperatedParamsByOperation() skips it entirely.
-            // NOTE: deliberately NOT done in set(). 'updated' makes the app stamp
-            // _definedProgrammatically, which permanently locks a UI-authored param's
-            // definition in the menu.
-            this.setOperation('updated')
+            this._writeValue([...list, v], options);
         }
 
+        return v;
+    }
+
+    /** The one write path of set() and push(). Deliberately no setOperation('updated'):
+     *  everything in managedParams gets _definedProgrammatically in the app, which would
+     *  permanently lock a param the user made in the menu. Values go through managedValues. */
+    _writeValue(v:any, options:ParamSetOptions):any
+    {
+        this.targetParam._value = v;
+        this.value = v;
+        this._setValue = { value: v, rerun: options?.rerun !== false };
+        this.manager.setParamGlobal(this.name, v);
         return v;
     }
 
@@ -283,9 +312,9 @@ export class ParamManagerOperator
      *  We check if the last element is the same
      *  TODO: Make a better solution
     */
-    _checkIfListElemExistsLast(v:Record<string,any>):boolean
+    _checkIfListElemExistsLast(list:Array<any>, v:Record<string,any>):boolean
     {
-        const exists = deepEqual(this.targetParam._value[this.targetParam._value.length-1], v)
+        const exists = list.length > 0 && deepEqual(list[list.length-1], v)
         if (exists)
         {
             console.warn(`ParamManager::_checkIfListElemExistsLast(): We blocked an element that already exists in the list!`)

@@ -68,6 +68,61 @@ describe('ParamManagerOperator.set()', () =>
 
         expect(controller.originalParam._value).toBeUndefined()
     })
+
+    it('reports the value back through managedValues, re-running by default', () =>
+    {
+        const pm = managerWith(NUMBER_PARAM)
+        pm.getParamController('WIDTH').set(150)
+
+        expect(pm.getManagedValues()).toEqual({ WIDTH: { value: 150, rerun: true } })
+    })
+
+    it('carries rerun: false', () =>
+    {
+        const pm = managerWith(NUMBER_PARAM)
+        pm.getParamController('WIDTH').set(150, { rerun: false })
+
+        expect(pm.getManagedValues()['WIDTH'].rerun).toBe(false)
+    })
+
+    it('reports nothing when the value ends where the run started', () =>
+    {
+        // The default (100) is the value in effect when nothing was set yet
+        const pm = managerWith(NUMBER_PARAM)
+        const c = pm.getParamController('WIDTH')
+        c.set(100)
+        expect(pm.getManagedValues()).toEqual({})
+
+        c.set(150)
+        c.set(100) // and back
+        expect(pm.getManagedValues()).toEqual({})
+    })
+
+    it('updates $NAME in the scope, so code after the set() sees the new value', () =>
+    {
+        const scope: Record<string, any> = {}
+        const pm = managerWith(NUMBER_PARAM).setParent(scope)
+        expect(scope['$WIDTH']).toBe(100)
+
+        pm.getParamController('WIDTH').set(150)
+        expect(scope['$WIDTH']).toBe(150)
+    })
+
+    it('does not report a rejected value', () =>
+    {
+        const pm = managerWith(NUMBER_PARAM)
+        expect(() => pm.getParamController('WIDTH').set(999)).toThrow()
+        expect(pm.getManagedValues()).toEqual({})
+    })
+
+    it('survives a re-definition later in the same run', () =>
+    {
+        const pm = managerWith({ ...NUMBER_PARAM, _definedProgrammatically: true })
+        pm.getParamController('WIDTH').set(150)
+        pm.define('WIDTH', 'number' as any, { min: 0, max: 300, default: 100 }) // a changed definition
+
+        expect(pm.getManagedValues()['WIDTH'].value).toBe(150)
+    })
 })
 
 // ── push() ───────────────────────────────────────────────────────────────────
@@ -84,14 +139,41 @@ describe('ParamManagerOperator.push()', () =>
         expect(pm.getParamsMap()['OPENINGS']._value).toEqual([{ width: 900, name: 'door' }])
     })
 
-    it('reports the param back to the app', () =>
+    it('reports the list back through managedValues, not as a definition', () =>
     {
+        // Through managedParams it would get _definedProgrammatically in the app, which
+        // locks a param the user made in the menu
         const pm = managerWith(OPENING_LIST)
         pm.getParamController('OPENINGS').push({ width: 900, name: 'door' })
 
-        const updated = pm.getManagedParams().updated
-        expect(updated.map(p => p.name)).toContain('OPENINGS')
-        expect(updated.find(p => p.name === 'OPENINGS')!._value).toHaveLength(1)
+        expect(pm.getManagedValues()['OPENINGS']).toEqual({ value: [{ width: 900, name: 'door' }], rerun: true })
+        expect(pm.getManagedParams().updated).toHaveLength(0)
+    })
+
+    it('carries rerun: false', () =>
+    {
+        const pm = managerWith(OPENING_LIST)
+        pm.getParamController('OPENINGS').push({ width: 900 }, { rerun: false })
+
+        expect(pm.getManagedValues()['OPENINGS'].rerun).toBe(false)
+    })
+
+    it('pushes onto a value set earlier in the same run', () =>
+    {
+        const pm = managerWith(OPENING_LIST)
+        const c = pm.getParamController('OPENINGS')
+        c.set([{ width: 900, name: 'door' }])
+        c.push({ width: 1200 })
+
+        expect(pm.getManagedValues()['OPENINGS'].value).toEqual([{ width: 900, name: 'door' }, { width: 1200 }])
+    })
+
+    it('pushes onto the default of an untouched list', () =>
+    {
+        const pm = managerWith({ ...OPENING_LIST, schema: { ...OPENING_LIST.schema, default: [{ width: 600 }] } })
+        pm.getParamController('OPENINGS').push({ width: 900 })
+
+        expect(pm.getParamsMap()['OPENINGS']._value).toEqual([{ width: 600 }, { width: 900 }])
     })
 
     it('appends in order and accepts a partial entry', () =>

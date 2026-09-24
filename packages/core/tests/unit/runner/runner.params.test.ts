@@ -212,9 +212,39 @@ describe('Runner — object list params ($PARAMS.defineObject)', () =>
         // Pre-fix this threw: the duplicate check indexed an undefined _value.
         expect(result.status).toBe('success')
 
-        const holes = [...result.state.managedParams!.new, ...result.state.managedParams!.updated]
-                        .find(p => p.name === 'HOLES')
-        expect(holes).toBeDefined()
-        expect(holes!._value).toEqual([{ size: 20 }, { size: 30 }])
+        expect(result.state.managedValues?.['HOLES']?.value).toEqual([{ size: 20 }, { size: 30 }])
+    })
+
+    it('reports a set() value through managedValues until the app has it', async () =>
+    {
+        const code = `
+            $PARAMS.define('COUNT', 'number', { min: 0, max: 100, default: 1 });
+            box(10,10,10);
+            $PARAMS.COUNT.set(3, { rerun: false });
+            box($COUNT); // after the set(): the new value
+        `;
+        const runner = await new Runner().load()
+        const first = await runner.execute({
+            kernel:  'mesh',
+            script:  { code },
+            outputs: ['default/model/gltf'],
+        } as RunnerScriptExecutionRequest)
+        expect(first.status).toBe('success')
+        expect(first.state.managedValues).toEqual({ COUNT: { value: 3, rerun: false } })
+
+        // The app keeps the value (as it would after applying managedValues). The next run sets
+        // the same value, so it reports nothing: no second re-run.
+        const params: Record<string, ScriptParamData> = {}
+        for (const p of first.state.managedParams!.new) params[p.name] = p
+
+        const second = await runner.execute({
+            kernel:  'mesh',
+            script:  { code, params },
+            params:  { COUNT: 3 },
+            outputs: ['default/model/gltf'],
+        } as RunnerScriptExecutionRequest)
+
+        expect(second.status).toBe('success')
+        expect(second.state.managedValues).toEqual({})
     })
 })

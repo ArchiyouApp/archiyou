@@ -12,7 +12,7 @@ import type { Docs } from "./docs/Docs";
 import type { Annotator } from "./annotator/Annotator";
 import type { Interactor } from "./interaction/Interactor";
 import type { ManagedHandlesData } from "./interaction/types";
-import type { ParamOperation, ScriptParamData, ManagedBehavioursData } from "./execution/types";
+import type { ParamOperation, ScriptParamData, ManagedBehavioursData, ManagedValuesData } from "./execution/types";
 import type { Console } from "./console/Console";
 import type { Runner } from "./runner/Runner";
 import type { MaterialManager } from "./materials/MaterialManager";
@@ -70,6 +70,9 @@ export interface ArchiyouStateData
      *  Serialized fn sources, evaluated app-side on every value change. NOT a definition
      *  change: applying these never sets _definedProgrammatically. Shape: paramName → target → src. */
     managedBehaviours?:ManagedBehavioursData
+    /** Values the script wrote this run (via $PARAMS.NAME.set()/push()) that differ from the
+     *  ones it started with. The app keeps them as the params' values, and re-runs when asked. */
+    managedValues?:ManagedValuesData
     /** Instructables declared this run (via docs.instruct()), as resolved step data.
      *
      *  Carried on the state rather than only in GLB extras so the viewer can step through a
