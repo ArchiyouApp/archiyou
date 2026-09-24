@@ -81,7 +81,7 @@ rough size, and Mark approved it before implementation:
 |---|---|---|
 | c52fa75 | Help: docs-only sections in help markdown | "Implement the docs-only comment" |
 | e9208a7 | Help: links between help documents | "Is there a way for links to other tutorials to work inside the help tool? … ok build it" |
-| 0000000 | Help: one script per tutorial, reused instead of copied | "why not one single script file name under tutorial name … just don't create copies" |
+| 35bf552 | Help: one script per tutorial, reused instead of copied | "why not one single script file name under tutorial name … just don't create copies" |
 
 The third commit is on `pg` rather than `develop`: it was written on 2026-09-23 while
 that branch was checked out, left uncommitted, and committed the next day.
