@@ -89,7 +89,7 @@ export class Edge extends Shape
 
     //// CREATION METHODS ////
 
-    _fromOcEdge(ocEdge:any):this
+    _fromOcEdge(ocEdge:any, round:boolean=true):this
     {
         if (ocEdge && (ocEdge instanceof this._oc.TopoDS_Edge || ocEdge instanceof this._oc.TopoDS_Shape) && !ocEdge.IsNull() )
         {
@@ -100,7 +100,7 @@ export class Edge extends Shape
             ocEdge = this._makeSpecificOcShape(ocEdge, 'Edge');
             this._ocShape = ocEdge;
             this._ocId = this._hashcode();
-            this.round(); // round to tolerance - !!!! look like not really working
+            if (round){ this.round(); } // round to tolerance - !!!! look like not really working
 
             targetOcForGarbageCollection(this, this._ocShape);
 

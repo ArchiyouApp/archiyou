@@ -200,13 +200,13 @@ export class Face extends Shape
     }
 
     /** Create a Face from a OC Face instance */
-    _fromOcFace(ocFace:any):Face
+    _fromOcFace(ocFace:any, round:boolean=true):Face
     {
         if(ocFace && (ocFace instanceof this._oc.TopoDS_Face || ocFace instanceof this._oc.TopoDS_Shape) && !ocFace.IsNull())
         {
             this._ocShape = ocFace;
             this._ocId = this._hashcode();
-            this.round(); // round to tolerance
+            if (round){ this.round(); } // round to tolerance
 
             targetOcForGarbageCollection(this, this._ocShape);
 
@@ -1138,8 +1138,11 @@ export class Face extends Shape
             return false; // curved surfaces cannot be orthogonal
         }
 
-        const normal = this.normal();
-        return AXIS.find( axisNormal => normal.round().equals(new Vector(axisNormal))) != undefined;
+        // A planar Face has the same normal everywhere: take it at the centre of the UV bounds.
+        // normal() finds it through the first Vertex, which costs an intersection and a projection.
+        const [u, v] = this.uvCenter();
+        const normal = this.normalAtUv(u, v);
+        return normal != null && AXIS.find( axisNormal => normal.round().equals(new Vector(axisNormal))) != undefined;
     }
 
     //// SHAPE ANNOTATIONS API ////

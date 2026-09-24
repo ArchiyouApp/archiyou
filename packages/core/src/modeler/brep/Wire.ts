@@ -79,7 +79,7 @@ export class Wire extends Shape
         return this;
     }
 
-    _fromOcWire(ocWire:any, fix:boolean=true):Wire // !!!! TODO: Determine if check is needed !!!!
+    _fromOcWire(ocWire:any, fix:boolean=true, round:boolean=true):Wire // !!!! TODO: Determine if check is needed !!!!
     {
         if(ocWire && (ocWire instanceof this._oc.TopoDS_Wire || ocWire instanceof this._oc.TopoDS_Shape) && !ocWire.IsNull())
         {
@@ -90,7 +90,7 @@ export class Wire extends Shape
             ocWire = this._makeSpecificOcShape(ocWire, 'Wire');
             this._ocShape = ocWire;
             this._ocId = this._hashcode();            
-            this.round(); // round to tolerance
+            if (round){ this.round(); } // round to tolerance
 
             if (fix) // needed to avoid loop from checkAndFix
             {

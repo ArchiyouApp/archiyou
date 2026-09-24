@@ -12,7 +12,7 @@
  */
 
 // constants
-import { USE_GARBAGE_COLLECTION, MESHING_MAX_DEVIATION, MESHING_ANGULAR_DEFLECTION, MESHING_MINIMUM_POINTS, MESHING_TOLERANCE, MESHING_EDGE_MIN_LENGTH,
+import { USE_GARBAGE_COLLECTION, MESHING_RELATIVE_DEFLECTION, MESHING_ANGULAR_DEFLECTION, MESHING_MINIMUM_POINTS, MESHING_TOLERANCE, MESHING_EDGE_MIN_LENGTH,
             DEFAULT_WORKPLANE, SHAPE_ARRAY_DEFAULT_OFFSET, SHAPE_EXTRUDE_DEFAULT_AMOUNT, SHAPE_SWEEP_DEFAULT_SOLID,
             SHAPE_SWEEP_DEFAULT_AUTOROTATE, SHAPE_SCALE_DEFAULT_FACTOR, SHAPE_ALIGNMENT_DEFAULT, SHAPE_SHELL_AMOUNT,
             SIDES, SIDE_TO_AXIS, SIDE_SELECTOR_TOLERANCE,
@@ -118,6 +118,7 @@ export class Shape
 
     _parent:AnyShapeOrCollection; // With selecting subshapes we keep the reference to parent
     _ocShape:any = null; // instance of OC Shape subclass: Vertex, Edge, Wire etc. - NOTE: we have to set a value here: otherwise it will not be set
+    _subtypeCache:{ ocShape:any, subtype:string|null }|null = null; // see subtype()
     _ocId:string = null;
     _isTmp:boolean = false; // Flag to signify if a Shape is temporary (for example for construction)
     _cloned:ShapeClone|null = null;
@@ -157,11 +158,15 @@ export class Shape
         return this._ocShape;
     }
 
-     /** Make Shape from OC Shape */
+     /** Make Shape from OC Shape
+     *  @param round - round and fix the new Shape to tolerance. Off for sub-shapes of an existing
+     *      Shape (see _getEntities): they are valid already, and fixing makes a copy that is no longer
+     *      the same OC Shape as the one in the parent, which selections and operations like fillet rely on.
+     */
     /* !!!! IMPORTANT: This method is not consistent with _fromOcWire, _fromOcSolid etc because it does not affect original 
         So: this does NOT update current Shape with an Oc Shape. For now we do that manually in every operator
     */
-    _fromOcShape(ocShape?:any):AnyShapeOrCollection
+    _fromOcShape(ocShape?:any, round:boolean=true):AnyShapeOrCollection
     {
         if (ocShape === null || ocShape?.IsNull())
         {
@@ -180,19 +185,19 @@ export class Shape
                 newShape = new Vertex()._fromOcVertex(this._makeSpecificOcShape(ocShape, shapeType));
                 break;
             case 'Edge':
-                newShape = new Edge()._fromOcEdge(this._makeSpecificOcShape(ocShape, shapeType));
+                newShape = new Edge()._fromOcEdge(this._makeSpecificOcShape(ocShape, shapeType), round);
                 break;
             case 'Wire':
-                newShape = new Wire()._fromOcWire(this._makeSpecificOcShape(ocShape, shapeType));
+                newShape = new Wire()._fromOcWire(this._makeSpecificOcShape(ocShape, shapeType), round, round);
                 break;
             case 'Face':
-                newShape = new Face()._fromOcFace(this._makeSpecificOcShape(ocShape, shapeType));
+                newShape = new Face()._fromOcFace(this._makeSpecificOcShape(ocShape, shapeType), round);
                 break;
             case 'Shell':
-                newShape = new Shell()._fromOcShell(this._makeSpecificOcShape(ocShape, shapeType));
+                newShape = new Shell()._fromOcShell(this._makeSpecificOcShape(ocShape, shapeType), round);
                 break;
             case 'Solid':
-                newShape = new Solid()._fromOcSolid(this._makeSpecificOcShape(ocShape, shapeType));
+                newShape = new Solid()._fromOcSolid(this._makeSpecificOcShape(ocShape, shapeType), round);
                 break;
             case 'Compound':
             case 'CompSolid':
@@ -675,9 +680,13 @@ export class Shape
         return shapeType;
     }
 
-    /** Returns subType of current Shape: For example Edge::Line */
+    /** Returns subType of current Shape: For example Edge::Line
+     *  Cached against the OC Shape it was determined for: every operation that changes the
+     *  geometry assigns a new _ocShape, which makes the cache stale by itself. Worth it because
+     *  the scene asks for it to label every Shape it adopts, and working it out (solidType())
+     *  inspects all Faces and Edges. */
     subtype(): string
-    {        
+    {
         const SUBTYPE_METHOD_BY_TYPE = {
             'Edge' : 'edgeType', // methods of specific children of Shape, like Edges, Faces etc.
             'Wire' : 'wireType',
@@ -692,13 +701,23 @@ export class Shape
             return null;
         }
         else {
-            const subTypeFunc = this[SUBTYPE_METHOD_BY_TYPE[shapeType]];
-            if (subTypeFunc)
+            if (this._subtypeCache && this._subtypeCache.ocShape === this._ocShape)
             {
-                return this[SUBTYPE_METHOD_BY_TYPE[shapeType]](); // needs to be bounded on Shape
+                return this._subtypeCache.subtype;
             }
-            return null;   
+            const subTypeFunc = this[SUBTYPE_METHOD_BY_TYPE[shapeType]];
+            const subtype = (subTypeFunc) ? this[SUBTYPE_METHOD_BY_TYPE[shapeType]]() ?? null : null; // needs to be bounded on Shape
+            this._setSubtype(subtype);
+            return subtype;
         }
+    }
+
+    /** Set the subtype of the current OC Shape, when it is known without working it out:
+     *  a primitive knows what it just made */
+    _setSubtype(subtype:string|null):this
+    {
+        this._subtypeCache = { ocShape: this._ocShape, subtype };
+        return this;
     }
 
     //// SPECIAL TYPES ////
@@ -933,7 +952,7 @@ export class Shape
             // useTriangulation = false: measure the exact geometry. With `true` OC reads a
             // triangulation when one exists and pads the box by its deflection, so the same
             // line answered [0,100] before an export and [-0.1,100.1] after it (the GLB export
-            // meshes every shape at MESHING_MAX_DEVIATION). The Recipe adapter and OBbox already
+            // meshes every shape). The Recipe adapter and OBbox already
             // measure exactly; this keeps bbox() consistent with them and with the mesh kernel.
             this._oc.BRepBndLib.AddOptimal(this._ocShape, newBbox._ocBbox, false, false); // useTriangulation, useShapeTolerance
             newBbox.updateFromOcBbox();
@@ -1311,6 +1330,7 @@ export class Shape
         let ocRotation = new this._oc.TopLoc_Location_2(ocTransformation);
 
         this._ocShape.Move(ocRotation, true);
+        this._subtypeCache = null; // rotated in place: a Box is only one when axis-aligned
         this._updateFromOcShape(); // needed for certain classes like Vertex to update class properties
         
         this._updateAnnotations(); // bring annotation along
@@ -1375,6 +1395,7 @@ export class Shape
 
         const ocRotation = new this._oc.TopLoc_Location_2(ocTransformation);
         this._ocShape.Move(ocRotation, true);
+        this._subtypeCache = null; // rotated in place, see subtype()
 
         this.move(pivotVec);
         this._updateFromOcShape();
@@ -1745,6 +1766,7 @@ export class Shape
         // Then rotate
         let ocRotation = new this._oc.TopLoc_Location_2(ocTransformation); 
         this._ocShape.Move(ocRotation, true); // Apply the Quaternion rotation around origin
+        this._subtypeCache = null; // rotated in place, see subtype()
         // and move back
         this.move(pivotVec);
 
@@ -3558,7 +3580,8 @@ export class Shape
         let shapes:Array<Shape> = [];
 
         ocShapes.forEach( ocShape => {
-            let specifiedShape = this._fromOcShape(ocShape) as any;  // NOTE: avoid TS errors
+            // round=false: keep the sub-shape as it is in this Shape (see _fromOcShape)
+            let specifiedShape = this._fromOcShape(ocShape, false) as any;  // NOTE: avoid TS errors
             // NOTE: we keep track of main Shape in _parent
             specifiedShape._parent = this;
             // and of the host, so `box().faces().first().edges().select('E||left').dim()` still
@@ -5172,6 +5195,18 @@ export class Shape
         return meshVertices;
     }
 
+    /** Deviations to mesh with. Without an explicit linearDeflection that is the default:
+     *  relative to the size of each Face and Edge (MESHING_RELATIVE_DEFLECTION) */
+    _meshingDeflection(quality?:MeshingQualitySettings):{ linear:number, relative:boolean, angular:number }
+    {
+        const explicit = quality?.linearDeflection > 0;
+        return {
+            linear: (explicit) ? quality.linearDeflection : MESHING_RELATIVE_DEFLECTION,
+            relative: (explicit) ? quality.relative === true : true,
+            angular: quality?.angularDeflection || MESHING_ANGULAR_DEFLECTION,
+        };
+    }
+
     toMeshEdges(quality:MeshingQualitySettings):Array<EdgeMesh>
     {
         const startMeshEdges = performance.now();
@@ -5183,6 +5218,8 @@ export class Shape
         {
             return this._meshCache.edges;
         }
+
+        const deflection = this._meshingDeflection(quality);
 
         // TODO: introduce caching of results for speedup
         edges.forEach( (curEdge, curEdgeIndex) => 
@@ -5204,9 +5241,13 @@ export class Shape
             else 
             {   
                 const ocAdaptorCurve = new this._oc.BRepAdaptor_Curve_2(curEdge._ocShape);
+                // Relative: to the size of this Edge, as BRepMesh does for the Faces (see toMeshFaces)
+                const edgeDeflection = (deflection.relative) 
+                    ? deflection.linear * curEdge.bbox().maxSize() || MESHING_TOLERANCE // degenerate Edge (cone apex): size 0
+                    : deflection.linear;
                 const ocTangDef = new this._oc.GCPnts_TangentialDeflection_2(ocAdaptorCurve, 
-                    quality?.linearDeflection || MESHING_MAX_DEVIATION, 
-                    quality?.angularDeflection || MESHING_ANGULAR_DEFLECTION, 
+                    edgeDeflection, 
+                    deflection.angular, 
                     quality?.edgeMinimalPoints || MESHING_MINIMUM_POINTS, 
                     quality?.tolerance || MESHING_TOLERANCE, 
                     quality?.edgeMinimalLength || MESHING_EDGE_MIN_LENGTH ); // see OC docs: https://dev.opencascade.org/doc/occt-7.4.0/refman/html/class_g_c_pnts___tangential_deflection.html
@@ -5284,11 +5325,12 @@ export class Shape
             meshedShape = this._cloned.from;
         }
         else {
+            const deflection = this._meshingDeflection(quality);
             ocMesher = new this._oc.BRepMesh_IncrementalMesh_2(
                 this._ocShape, 
-                quality?.linearDeflection || MESHING_MAX_DEVIATION, 
-                false, 
-                quality?.angularDeflection || MESHING_ANGULAR_DEFLECTION,
+                deflection.linear, 
+                deflection.relative, // relative to the size of each Edge and Face
+                deflection.angular,
                 false);  // NOTE: this is needed to start triangulation
         }
 

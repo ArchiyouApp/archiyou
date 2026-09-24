@@ -884,7 +884,11 @@ export interface MeshShapeBuffer {
 
 export interface MeshingQualitySettings 
 {
+    /** Maximum distance between the mesh and the real surface: in model units, or as a
+     *  fraction of the size of each Face and Edge when `relative` is set */
     linearDeflection: number,
+    /** linearDeflection is a fraction of the size of each Face and Edge, see MESHING_RELATIVE_DEFLECTION */
+    relative?: boolean,
     angularDeflection: number,
     tolerance: number,
     edgeMinimalPoints: number,

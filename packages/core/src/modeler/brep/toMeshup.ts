@@ -25,12 +25,13 @@
 import * as meshup from '@archiyou/meshup'
 
 import type { AnyShape, MeshingQualitySettings, FaceMesh, EdgeMesh } from './types'
-import { MESHING_MAX_DEVIATION, MESHING_ANGULAR_DEFLECTION, MESHING_MINIMUM_POINTS,
+import { MESHING_RELATIVE_DEFLECTION, MESHING_ANGULAR_DEFLECTION, MESHING_MINIMUM_POINTS,
     MESHING_TOLERANCE, MESHING_EDGE_MIN_LENGTH } from './constants'
 
 /** The meshing quality the exporters use when the caller does not ask for something else. */
 export const DEFAULT_MESHING_QUALITY: MeshingQualitySettings = {
-    linearDeflection: MESHING_MAX_DEVIATION,
+    linearDeflection: MESHING_RELATIVE_DEFLECTION,
+    relative: true,
     angularDeflection: MESHING_ANGULAR_DEFLECTION,
     tolerance: MESHING_TOLERANCE,
     edgeMinimalPoints: MESHING_MINIMUM_POINTS,

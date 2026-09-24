@@ -183,7 +183,7 @@ export class Solid extends Shape
             this.move( (position as Point).toVector().subtracted(centerVec));
         }
 
-        return this;
+        return this._setSubtype('Box'); // known, saves solidType() inspecting every Face
     }
 
     /** Creates a Box by giving two extreme points ( not the same, and not on the same axis ) */
@@ -203,7 +203,7 @@ export class Solid extends Shape
         const ocBox = new this._oc.BRepPrimAPI_MakeBox_4( fromP._toOcPoint(), toP._toOcPoint() ).Shape();
         this._fromOcSolid(ocBox);
 
-        return this;
+        return this._setSubtype('Box');
     }  
 
     /** Creates a Sphere Solid */
@@ -261,14 +261,19 @@ export class Solid extends Shape
     /** Determine if Solid is a primitive type */
     solidType():string
     {   
+        // Faces and Edges are gathered once: each call wraps every sub-shape again
+        const faces = this.faces();
         // Box
-        if ( this.faces().length == 6 && this.faces().every(f => (f as Face).orthogonal())){ return 'Box' }
+        if ( faces.length == 6 && faces.every(f => (f as Face).orthogonal())){ return 'Box' }
+
+        const edges = this.edges();
+        const numCircles = edges.filter( e => e.edgeType() == 'Circle').length;
         // Sphere
-        else if ( this.edges().length == 3 && this.edges().find( e => e.edgeType() == 'Circle')){ return 'Sphere' } // Sphere has actually 3 Edges with one of them a Circle
+        if ( edges.length == 3 && numCircles > 0){ return 'Sphere' } // Sphere has actually 3 Edges with one of them a Circle
         // Cylinder
-        else if ( this.edges().filter( e => e.edgeType() == 'Circle').length == 2 && this.faces().length == 3 ){ return 'Cylinder' }
+        else if ( numCircles == 2 && faces.length == 3 ){ return 'Cylinder' }
         // Cone
-        else if ( this.edges().filter( e => e.edgeType() == 'Circle').length == 1 && this.faces().length == 2 ){ return 'Cone' }
+        else if ( numCircles == 1 && faces.length == 2 ){ return 'Cone' }
         // TODO: more
     }
 
