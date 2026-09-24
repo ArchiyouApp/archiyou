@@ -20,6 +20,10 @@ const AXIS_VAXIS: Record<string, [number, number, number]> = {
     z: [1, 0, 0],
 };
 
+// Defaults for Handle.minimized() — a small plain dot instead of the full icon button.
+const HANDLE_MINIMIZED_DEFAULT_COLOR: string = '#000';
+const HANDLE_MINIMIZED_DEFAULT_OPACITY: number = 0.1;
+
 export class Handle
 {
     id: string = '';
@@ -199,10 +203,10 @@ export class Handle
      *  Defaults to black at 30% opacity: `minimized({ color: '#FFF', opacity: 0.8 })`. */
     minimized(options: Partial<HandleMinimized> = {}): this
     {
-        const opacity = Number(options.opacity ?? 0.3);
+        const opacity = Number(options.opacity ?? HANDLE_MINIMIZED_DEFAULT_OPACITY);
         this._minimized = {
-            color:   options.color ?? '#000',
-            opacity: Number.isFinite(opacity) ? Math.min(1, Math.max(0, opacity)) : 0.3,
+            color:   options.color ?? HANDLE_MINIMIZED_DEFAULT_COLOR,
+            opacity: Number.isFinite(opacity) ? Math.min(1, Math.max(0, opacity)) : HANDLE_MINIMIZED_DEFAULT_OPACITY,
         };
         return this;
     }
