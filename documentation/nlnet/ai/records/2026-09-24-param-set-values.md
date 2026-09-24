@@ -2,25 +2,124 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-24 → (open) |
+| Dates | 2026-09-24 → 2026-09-24 |
 | Model | Claude Opus 5.5 (claude-opus-5-5[1m]), 1M context, Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: options discussed in the session, plan written to `plans/OPENINGS_HANDLES.md` and approved before implementation) |
-| Human | Mark van der Net: wrote the prompts, chose the design (manual-mode switch, `set()` over param defaults, rerun option, `push()` included; `u`/`du`/`tu` handle values, the `(param, handle)` mapping function, dropping the map object), reviewed plan and code |
+| Human | Mark van der Net: wrote the prompts, chose the design (manual-mode switch, `set()` over param defaults, rerun option, `push()` included; `u`/`du`/`tu` handle values, the `(param, handle)` mapping function, dropping the map object; passing values to mapping functions with a check at definition; handle defaults in Handle.ts), found the bugs by running the urhousesketch script in the editor, reviewed plan and code |
 | Branch | `develop` |
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
 Values that a script writes with `$PARAMS.X.set()` or `push()` reach the editor and are kept
 there, with an optional re-run. Needed for per-window handles in the urhousesketch script, where
 an automatic opening layout is written into the `OPENINGS` list so that it can be edited by hand
-once a manual-mode switch is on. The script changes themselves are Mark's.
+once a manual-mode switch is on. The script is Mark's; on request the agent fixed parts of it
+(the handle mapping per wall, the frame orientation, the document pipeline), see below.
 
-Working on that script led to two more parts in the same session, asked for one by one rather
-than planned up front (see "Handles" and "Param menu" below): clearer handle mapping, and fixes
-to how list params and groups behave in the param menu.
+Working on that script led to more parts in the same session, asked for one by one rather than
+planned up front (see the sections after the plan): clearer handle mapping, fixes to list params
+and groups in the param menu, values from the script for mapping functions, the script sync
+between browser and server, clearer error messages, and running the script on the brep kernel.
 
 ## Prompts (verbatim, local time)
 
-(filled when the unit closes)
+One session (the context was compacted once, at 22:09). Left out: the texts of the two skills
+the session loaded (ai-disclosure, archiyou-local-db) and the compaction summary, which are not
+prompts. Every pasted copy of the urhousesketch script, Mark's own script, is replaced by a
+line with its length and first line; the versions are in the local database and the last one is
+`packages/core/tests/cadscripts/scripts/ur_house_sketch.js`.
+
+```
+2026-09-24 10:39 +0200  I want to implement handles for this script: "
+
+                        [pasted: 1003 lines, starting "// urhousesketch"]
+
+                        " - see example of roomwithopeningsbox in archiyou workspace. But the windows in the scripts are generated randomly - so after each handle update (and rerun) the windows are reset. Dont code yet, but what solutions might there be here?
+2026-09-24 10:45 +0200  I want to change the positions per-window with the handles. I think option 4 might work.
+2026-09-24 10:52 +0200  Let's say .set does report back to the editor (I think it should) - so in the script we check the "MANUAL_MODE", if so skip the auto-laying and generate the handles on the existing OPENINGS. This should work right?
+2026-09-24 10:56 +0200  More simple: We would introduce a new bool parameter OPENINGS_MANUAL_MODE (default is false) - When the user flips to true, the auto-generating windows is skipped and the handles are generated. Then the user can simple use them to position the windows individually. What do you think?
+2026-09-24 10:58 +0200  No, we won't use the .set() stuff. The windows are generated and placed into the OPENINGS parameter list. When the user switches to manual mode, these openings are still in and can be changed manually.
+2026-09-24 10:58 +0200  [Request interrupted by user]
+2026-09-24 10:59 +0200  The default is only used when there are no existing parameter values right?
+2026-09-24 11:06 +0200  Well going through the defaults is ugly. The right way is .set(). So the auto layout does a $PARAMS.OPENINGS.set({{ array of new opening objects}}) - in auto mode this is nice, because on every run the opening layout is generated and working. When the user switches $OPENINGS_MANUAL_MODE then the openings are "fixed" and open for manual change, either in the menu of with the handles
+2026-09-24 11:14 +0200  Well it think we should a bit on $PARAMS.{param name}.set({{val}}) - I think a user would expect a rerun if the value would be different than that of the previous run (we can do this easily by cancelling any set with a value which is the same as current). In our example a new value for $OPENINGS will be entering a hidden/disabled param, so this is enough reason to not trigger another run. But still, we might add a argument to the set() method to force that no run will be done: set({val},triggerRun=t|f with true as default, in our case (when the $OPENINGS param is not hidden for some reason) we can do $PARAMS.OPENINGS([...], false); -- What do you think?
+2026-09-24 11:20 +0200  Yes write the plan please
+2026-09-24 11:27 +0200  Leave out part C, Ill do that myself.
+2026-09-24 11:28 +0200  Please add push() in this plan for consistency
+2026-09-24 11:40 +0200  First commit the scene-statement-work (nlnet AI disclosure) than start implementing the OPENING_HANDLES plan
+2026-09-24 11:46 +0200  make the commit
+2026-09-24 12:35 +0200  Can you add $handle to the suggestions?
+2026-09-24 12:50 +0200  Can you check the ur_sketch_sketch in the db? $PARAMS.OPENINGS.set(openings, { rerun: false }); does not work (i dont see any values added in the param mneu)
+2026-09-24 12:51 +0200  Here is the script:
+
+                        [pasted: 923 lines, starting "// urhousesketch"]
+2026-09-24 13:11 +0200  Some small DX improvements around $handle: Please allow .at(x,y,z]) instead of only at([x,y,z]). Also throw a error if .range() has NaN/null values because it makes the handle disappear on drag which is weird. Also UI wise: The list param are rather ugly in the param-menu. Please make the entry cards all have a margin to the left (so indent), the button should have the same indent (so basically entire content). I noticed that deleting a entry has no confirm, also it does not update immediately. Make the text within the entrie (and ie "Add Opening") button all xs text size. Add the "Add button" not underneath but next to the param name to the right (so for example "OPENINGS ......... <add>" - omit the name. Another thing: Moving around parameter groups does not work. It does move, but when you click it, is shows the previous group parameters.
+2026-09-24 13:26 +0200  In script "
+
+                        [pasted: 932 lines, starting "// urhousesketch"]
+
+                        " === Can you see why my handle is jumping (sill height is increasing) every time i grab/move the handle?
+2026-09-24 13:37 +0200  I remember i also created a more advanced mapping function. I also wonder if the mapping function should be more clear. .param(`OPENINGS[{$i}]`, (param, u, v) => param.left = u; For simple params this would work too: .params('SOMEBOOL', (param,u,v) => u < 100)); So then returning a value, this value is directly plugged into the param, otherwise for object/list  params you will change in place, and that change is detected and passed as new param value. What do you think?
+2026-09-24 13:43 +0200  For the relative/absolute distinction. Why not u = absolute, du is relative? (v, dv) ?
+2026-09-24 13:48 +0200  Maybe make the mapping more concrete by not flattening objects, so .param('<<param name>>', (param, handle) => param.left = handle.u ---- and why not add handle.position()
+2026-09-24 13:53 +0200  Well i wonder if the distinction is clear: handle position "u" (within range) is always [0,range max], "du" is relative to the last position. position() gives absolute world coords. But maybe add uAbs and uAbs to access the local uv coordinates (the user does not know along which axis the handle moves maybe) ?
+2026-09-24 13:56 +0200  Yes good point.  build it with tu/tv
+2026-09-24 14:08 +0200  is saw the automap in the Handle.param() - can we bring that back? It's pretty nice. Also can you remove the object map - I think its too niche and not great to read.
+2026-09-24 14:25 +0200  yes do the migrations pleae
+2026-09-24 14:38 +0200  I dont see the new scripts in my editor. Can you check. Its in the sqllite db right?
+2026-09-24 14:41 +0200  Can you print out the ur house sketch script i pasted in here? I lost it
+2026-09-24 14:41 +0200  [Request interrupted by user]
+2026-09-24 14:42 +0200  Can you put it in the local sqlite database?
+2026-09-24 14:45 +0200  Can you write the script inside a tmp file in root folder ur_house_sketch.js please
+2026-09-24 14:46 +0200  Can you test how scripts saved on the local storage in browser and ones of the server are resolved? I notice often that local storage scripts are not updated by the ones in the database
+2026-09-24 14:53 +0200  Please commit the work on the handle/param mapping first
+2026-09-24 15:10 +0200  commit it
+2026-09-24 15:10 +0200  yes
+2026-09-24 15:12 +0200  I ran this script and I made a mistake that probably happens more. Using a variable in the param mapping function (dragDir). See this code:
+
+                        [pasted: 925 lines, starting "// urhousesketch"]
+
+                         - how could we fix this? Can we make this work by prefilling the var variables (besides param and handle of course) ?
+2026-09-24 15:16 +0200  For now 3 and 4 are nice. Do it for handles and dimensions please.
+2026-09-24 15:31 +0200  I ran it with the dragDir but still doesn work:
+
+                        [pasted: 925 lines, starting "// urhousesketch"]
+2026-09-24 15:48 +0200  Can you see why I get wallDir.scale() is not a function ?
+2026-09-24 15:48 +0200  Can you see why I get wallDir.scale() is not a function ?
+
+                        [pasted: 933 lines, starting "// urhousesketch"]
+2026-09-24 15:49 +0200  [Request interrupted by user]
+2026-09-24 15:52 +0200  Can you fix this script so the handles of the two handles are right?
+
+                        [pasted: 935 lines, starting "// urhousesketch"]
+
+                         Finish the wall orientation mapping
+2026-09-24 15:54 +0200  put it in the local sqlite database
+2026-09-24 15:55 +0200  write it to the script. It does not load in my editor => please debug that
+2026-09-24 20:29 +0200  In this script "
+
+                        [pasted: 789 lines, starting "// urhousesketch"]
+
+                        " ==> ERROR at line 492: "ParamManager: value does not match the schema for param "OPENINGS"!" -- can you make the error more descriptive?
+2026-09-24 20:32 +0200  [Request interrupted by user]
+2026-09-24 21:06 +0200  In script "
+
+                        [pasted: 793 lines, starting "// urhousesketch"]
+
+                        " ===> How to fix the frame orientation? (no commented out)
+2026-09-24 21:08 +0200  Write this in ur_house_sketch.js please
+2026-09-24 21:10 +0200  When I run it and open document tool i get this error: "RROR: "View::resolveShapeNameToSVG(): Variable "floorplanWithDrawings" resolved to undefined for view "floorplanWithDrawings". The pipeline function returned it but the value is empty.""
+2026-09-24 21:29 +0200  In the same script "
+
+                        [pasted: 794 lines, starting "// urhousesketch"]
+
+                        " -- I get this ERROR at line 500: "- error: '$PARAMS.OPENINGS.set(): the value does not fit its definition (a list of "Opening"):" - Can you make this error more verbose. Its an entry of the list, but which and what value is at fault?
+2026-09-24 21:35 +0200  Where is the MINIMIZED HANLDE OPACITY SETTING?
+2026-09-24 21:37 +0200  Can you place the default settings in editor/src/settings.ts please. Underneath the other HANDLE settings
+2026-09-24 21:39 +0200  Yes, remove these settings in settings.ts if they dont do anything. Place them in Handler
+2026-09-24 21:43 +0200  Can you take the last version of ur_house_sketch in the db and copy it to the tests/cadscripts folder - there is a old version - urhousesketch - please remove that.
+2026-09-24 22:01 +0200  I tried running the ur_house_sketch in brep mode, but got the "ERROR at line 498: "Make: the make module (walls, boarding, part lists, sheet packing) is only available in mesh mode — it builds mesh geometry. Run this script with kernel: 'mesh' (the default)." --- Is this really so? Can we make this work in brep mode too?
+2026-09-24 22:45 +0200  Ok fix the document changes in the db and in the cadscripts. Then commit this work
+```
 
 ## Plan (agent output, reviewed by the human before implementation)
 
@@ -222,6 +321,66 @@ those lines.
 - Moving a group tab swapped the group NAMES of the params instead of the order, so a moved tab
   showed the other group's params; it now renumbers `order` and every param stays in its group.
 
+## Values from the script for mapping functions (asked for during the work)
+
+A handle's mapping function and a dimension line's remap run in the viewer, rebuilt from their
+source text, so a variable of the script (`dragDir`) was not there and a drag silently did
+nothing. Of the options discussed, Mark chose two: pass the values along
+(`param(ref, fn, { dragDir })`, `params(fn, vars)`, `bindParam(name, remap, vars)`), and check
+the function when it is defined (`CodeParser.detachFunction()` lists its free names with
+acorn-globals; a name that is neither passed nor a JavaScript built-in throws, also in the script
+console). Passed values must be plain data, which is why a Vector (`wallDir.scale()`) failed
+in the viewer; the script now passes plain arrays.
+
+## Script sync between browser and server (asked for during the work)
+
+Mark saw local copies that were not replaced by newer versions from the database. Tested with
+`apps/editor/tests/scripts-sync.test.ts` (the real state and sync modules against an in-memory
+server): the load-time pull did not wait for the signed-in user and did nothing, so the editor
+also sent every save as a create, which the server refused with a 500. The pull now waits for
+`authReady` and drops a queued save of the local copy it replaces; the server answers a create
+of an existing script with 409 and the editor saves a new version instead. Two known gaps are
+pinned in the test (a stale open tab puts its copy back on a save; a run that changes nothing
+still makes a version).
+
+## Error messages (asked for during the work)
+
+- `set()`/`push()` with a value that does not fit names every problem in one line: the list
+  entry, the field, the value and the rule (`ScriptParam.describeSchemaErrors()`). One line,
+  because the editor's error header showed only the first line of a message; the code box now
+  also shows a multi-line quoted error in full.
+- A document pipeline that throws reports the error in the script console, and a view whose
+  variable is empty names that error.
+- The defaults of `Handle.minimized()` (color, opacity 0.1) are constants in `Handle.ts`.
+  Settings for them in the editor's `settings.ts` were tried and removed at Mark's request, as
+  nothing read them.
+
+## ur_house_sketch on the brep kernel (asked for during the work)
+
+The script stopped on brep at the make module's mesh-only error. `make.frame()` only needs the
+Modeler API both kernels have and now builds on brep; the other make builders stay mesh-only.
+Running it then showed three divergences, fixed in core and meshup:
+
+- brep `Wire.normal()` of a closed outline followed the corner order, while `extrude()` goes
+  toward the positive axis (meshup's `Curve.normal()` does too): the wall cutters of the right
+  and back walls, centred with `normal()`, landed outside the walls. Now turned toward the
+  positive axis (kernel-divergences item 37).
+- meshup `ShapeCollection.flatten()` could not take a brep Shell, which flattens to a
+  collection of Faces, and `getAnnotations()` called `annotations()` on brep shapes, which
+  hold them as an array.
+- The Annotator kept the edges it had dimensioned in a collection of the script's kernel, which
+  refused the edges of a mesh-kernel rect (the bbox rect of a collection) in a brep script.
+
+The model and the document now run on brep; in the parity table ur_house_sketch matches except
+the volume of `wallsCombined` (open item 36, the ring of walls brep cannot fuse in one piece).
+Still open: brep drawings are nearly empty (the floor plan view shows only its bbox rect and the
+dimensions, the isometry view is missing).
+
+The cadscript `urhousesketch.js` was replaced by the latest `ur_house_sketch` from the local
+database, with the two document fixes the agent made at Mark's request (each wall cut
+separately before the merge, which the mesh kernel trapped on; `openingsGroundFloor`
+defined); the same version is saved in the database.
+
 ## Review and decisions by the human
 
 - Rejected a random-seed-only fix and override ids; chose a manual-mode switch with the generated
@@ -229,8 +388,30 @@ those lines.
 - Rejected going through param defaults ("ugly"); `set()` is the right way.
 - `set()` re-runs by default when the value changed, with an option to turn that off.
 - Left the script (part C) out of the plan; added `push()` for consistency.
+- Handles: chose `u`/`du`/`tu` and the `(param, handle)` function form, asked for autoMap
+  back and the map object removed.
+- Param menu: specified the list layout (indent, xs text, Add button on the name line, delete
+  confirm) and reported the group-move bug.
+- Mapping functions: chose passing values plus a check at definition (options 3 and 4), for
+  handles and dimension lines; tested with the `dragDir` script in the editor.
+- Reported the stale local copies, the unclear `set()` error and the empty document view from
+  the editor.
+- Decided the minimized-handle defaults live in `Handle.ts`, not the editor settings, and set
+  the opacity to 0.1.
+- Asked for the brep run and for the document fixes in the database and the cadscript; approved
+  the split into commits and every commit message.
 
 ## Commits
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| cf90939 | Editor: regenerate the completions data (ordinary commit, generated data) | Can you add $handle to the suggestions? |
+| b742672 | Handles: (param, handle) mapping with u/du/tu, DX fixes | 12:35, 13:11, 13:56, 14:08 |
+| 0fda10c | Params: $PARAMS.X.set()/push() with optional re-run | 11:40 (plan parts A and B) |
+| 9f77c45 | Param menu: list entries, Add button on the name line, group moves | 13:11 |
+| c5567d7 | Handles, dimensions: pass script values to mapping functions | 15:16 |
+| 0b43b24 | Handles: minimized() defaults as constants in Handle.ts | 21:39 |
+| 9dfbf1f | Scripts: push saves after sign-in, 409 for an existing script | 14:46 |
+| 2272af9 | Errors: name the list entry and rule, report doc pipeline errors | 20:29, 21:10, 21:29 |
+| meshup c222040 | Kernel parity: flatten() and getAnnotations() with brep shapes | 22:01 |
+| 08c399d | Kernel parity: ur_house_sketch runs on brep, frame() on both kernels | 22:01, 22:45 |
