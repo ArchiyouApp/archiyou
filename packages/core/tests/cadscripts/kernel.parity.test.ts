@@ -111,7 +111,7 @@ function errorLine(raw: unknown): string
 }
 
 /** A small seeded PRNG (mulberry32), so a script that places things with Math.random()
- *  (urhousesketch's windows) draws the same numbers on both kernels — and on every run, so
+ *  (ur_house_sketch's windows) draws the same numbers on both kernels — and on every run, so
  *  the table stays a snapshot. Installed for the duration of one script run. */
 function seededRandom(seed: number): () => number
 {
@@ -314,10 +314,10 @@ describe('mesh ↔ brep parity of the cadscripts', () =>
 
     /*  The floor: what parity already holds today, so a kernel change cannot take it away
         unnoticed. Widen these lists as the divergences in kernel-divergences.test.ts get fixed. */
-    const RUNS_ON_BREP = ['artcrate', 'boxpubtest', 'gardenchair', 'kakpinchedstool', 'programmaticparams', 'sedia', 'slidercabinet', 'strawwall', 'timberfloor', 'tomy', 'urhousesketch', 'workbench']
+    const RUNS_ON_BREP = ['artcrate', 'boxpubtest', 'gardenchair', 'kakpinchedstool', 'programmaticparams', 'sedia', 'slidercabinet', 'strawwall', 'timberfloor', 'tomy', 'ur_house_sketch', 'workbench']
     const CLEAN_ON_BREP = ['artcrate', 'boxpubtest', 'gardenchair', 'kakpinchedstool', 'programmaticparams', 'sedia', 'workbench', 'slidercabinet', 'strawwall', 'timberfloor']
     /*  Scripts that use the make module stop at its mesh-only error on brep — by design until
-        Make builds through the Modeler API. */
+        Make builds through the Modeler API. (make.frame() already does, so ur_house_sketch runs.) */
     const MESH_ONLY_BY_DESIGN = ['timberwall', 'timberwallopenings', 'maritavolo', 'simplestep']
 
     it('stops make-module scripts on brep with the mesh-only message', () =>

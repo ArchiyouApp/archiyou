@@ -170,11 +170,7 @@ export class Make
      */
     get modeler(): MeshModeler
     {
-        const m = this._modules ? this._modules.modeler : this._modeler;
-        if (!m)
-            throw new Error(
-                'Make: Modeler module not set. Use constructor(modeler) or setArchiyou() to set it.'
-            );
+        const m = this._anyKernelModeler;
         // Fail at the first make.*() call rather than half-way through a wall: on brep the
         // meshup-typed code below builds partial structures and dies somewhere downstream.
         if ((m as any).mode?.() === 'brep')
@@ -183,6 +179,19 @@ export class Make
                 'in mesh mode — it builds mesh geometry. Run this script with kernel: \'mesh\' (the default).'
             );
         return m as unknown as MeshModeler;
+    }
+
+    /** The Modeler for the make.*() builders that only use its kernel-neutral API (point,
+     *  boxBetween, copy, move, group), so they work in brep mode too, like frame(). Everything
+     *  else goes through `modeler`, which refuses brep. */
+    private get _anyKernelModeler(): Modeler
+    {
+        const m = this._modules ? this._modules.modeler : this._modeler;
+        if (!m)
+            throw new Error(
+                'Make: Modeler module not set. Use constructor(modeler) or setArchiyou() to set it.'
+            );
+        return m;
     }
 
     /** Resolves once the BinPacker WASM module is loaded and `pack()` can be called. */
@@ -195,7 +204,7 @@ export class Make
 
     /** Make simple rectangular frame of width, height, depth and thickness at origin position
      *  prio sets what members have priority (default: horizontal)
-     *  Frame is parallel to the front side
+     *  Frame is parallel to the front side. Works on both kernels (mesh and brep).
      */
     public frame(width: number, height: number, depth: number, thickness: number, prio: 'horizontal' | 'vertical' = 'horizontal'): ShapeCollection
     {
@@ -220,21 +229,24 @@ export class Make
         const horMemOffset = (prio === 'horizontal') ? [[0, 0, 0], [0, 0, 0]] : [[thickness, 0, 0], [-thickness, 0, 0]]; // [start,end], [start,end]
         const vertMemOffset = (prio === 'horizontal') ? [[0, 0, thickness], [0, 0, -thickness]] : [[0, 0, 0], [0, 0, 0]];
 
-        const bottomMem = this.modeler.boxBetween(
-                                    this.modeler.point(0, 0, 0).move(horMemOffset[0]),
-                                    this.modeler.point(0, 0, 0).move(width, depth, thickness).move(horMemOffset[1]))
+        // Only the kernel-neutral Modeler API: this builder runs in brep mode too
+        const modeler = this._anyKernelModeler;
+
+        const bottomMem = modeler.boxBetween(
+                                    modeler.point(0, 0, 0).move(horMemOffset[0]),
+                                    modeler.point(0, 0, 0).move(width, depth, thickness).move(horMemOffset[1]))
                                     .name('frameBottom');
 
         const topMem = bottomMem.copy().move(0, 0, height - thickness).name('frameTop');
-        const leftMem = this.modeler.boxBetween(
-                            this.modeler.point(0, 0, 0).move(vertMemOffset[0]),
-                            this.modeler.point(0, 0, 0).move(thickness, depth, height).move(vertMemOffset[1])
+        const leftMem = modeler.boxBetween(
+                            modeler.point(0, 0, 0).move(vertMemOffset[0]),
+                            modeler.point(0, 0, 0).move(thickness, depth, height).move(vertMemOffset[1])
                         ).name('frameLeft');
 
         const rightMem = leftMem.copy().move(width - thickness, 0, 0).name('frameRight');
 
         // group(): a frame is handed back as one unit, so it gets its own layer in the scene
-        return this.modeler.group(bottomMem, topMem, leftMem, rightMem).name('Frame');
+        return modeler.group(bottomMem, topMem, leftMem, rightMem).name('Frame');
     }
 
     /** Make an advanced wood frame for a wall

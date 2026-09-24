@@ -322,6 +322,19 @@ describe('Modeler — brep mode', () =>
             expect(solid.bbox().max().z).toBeCloseTo(50, 3)
         })
 
+        it('a closed outline answers normal() toward the positive axis, the way extrude() goes', () =>
+        {
+            /*  ur_house_sketch centres its wall cutters with extrude(1000).move(normal().reverse()
+                .scale(500)): a rect drawn from +y to −y answered −x, the cutter went +x, and the
+                holes in two of the four walls landed a metre outside them */
+            const [right, back] = [[[4000, 1000, 0], [4000, 2000, 1000]], [[3000, 5000, 0], [2000, 5000, 1000]]]
+                .map(([from, to]) => m.rectBetween(from, to) as any)
+            const axis = (v: any) => v.toArray().map((c: number) => Math.round(c) + 0)
+            expect(axis(right.normal())).toEqual([1, 0, 0])
+            expect(axis(back.normal())).toEqual([0, 1, 0])
+            expect(right.copy().extrude(1000).bbox().min().x).toBeCloseTo(4000, 3)
+        })
+
         it('Vector.rotationBetween() and Bbox.containsBbox() answer like the mesh kernel', () =>
         {
             const q = (m.vector(1, 0, 0) as any).rotationBetween([0, 1, 0])

@@ -18,7 +18,7 @@ timberfloor             10 parts  Manifold  10 match  CGAL  10 match
 timberwall              13 parts  Manifold  13 match  CGAL  13 match
 timberwallopenings      40 parts  Manifold  40 match  CGAL  40 match
 tomy                     4 parts  Manifold   4 match  CGAL   4 match
-urhousesketch            7 parts  Manifold   7 match  CGAL   7 match
+ur_house_sketch         26 parts  Manifold  26 match  CGAL  26 match
 workbench               23 parts  Manifold  23 match  CGAL  23 match
 
-corpus                 318 parts  Manifold 318 match  CGAL 318 match
+corpus                 337 parts  Manifold 337 match  CGAL 337 match

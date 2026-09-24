@@ -371,7 +371,9 @@ export class Annotator
         // NOTE: cache the part's edges — both kernels hand out fresh Shape instances per
         // edges() call, and sideEdgesUsed.has() below matches on identity.
         const partEdges = (part as any).edges() as AnyShapeCollection;
-        const sideEdgesUsed = new this.classes.ShapeCollection();
+        // A collection of the PART's kernel, not the script's: a bbox rect in a brep script is a
+        // meshup Curve, whose edges brep's has() refuses (and brep's has() matches OC-same edges)
+        const sideEdgesUsed = new ((partEdges as any).constructor)() as AnyShapeCollection;
 
         bboxSideEdges.forEach((sideEdge,i) => 
         {

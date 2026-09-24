@@ -58,6 +58,9 @@
  *       face as a full cut; cutoff() no longer asks for a zero-width cutting plane
  *   30  gardenchair drift — it was 34's planeBetween() normal (longBeamBack extruded the other
  *       way) and the coplanar line cut that brep did not perform; gardenchair is clean now
+ *   37  brep Wire.normal() of a closed outline followed its corner order, so a rect drawn
+ *       toward −x or −y answered the negative axis while extrude() went positive — now turned
+ *       toward the positive axis like meshup Curve.normal() (ur_house_sketch's wall cutters)
  *
  *    6  a severing subtract() — brep keeps the pieces as one compound Shape, so volume() sums
  *       them like a Mesh does
@@ -68,7 +71,7 @@
  *  Still OPEN:
  *   36  fusing a RING of touching solids (four walls meeting at the corners): brep's pairwise
  *       union() fails to sew the last pair ("Union resulted in multiple Shapes") and keeps the
- *       pieces, so urhousesketch's wallsCombined is 3.8 % larger on brep than the mesh fuse.
+ *       pieces, so ur_house_sketch's wallsCombined is 3.8 % larger on brep than the mesh fuse.
  *       (The "unreachable" trap that used to end that script was meshup's massProperties() on
  *       the EMPTY mesh its merge() made of brep walls — merge() now fuses through the other
  *       kernel, and an empty Mesh answers volume 0.)

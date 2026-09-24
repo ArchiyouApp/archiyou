@@ -196,6 +196,21 @@ describe('autoDim (brep kernel)', () =>
         expect(() => circle.dim()).not.toThrow()
         expect(annotator.getAnnotations().map((a: any) => a.value)).toEqual([100, 100]) // diameter both ways
     })
+
+    it('dimensions a mesh-kernel rect in a brep script, like the bbox rect of a collection', () =>
+    {
+        annotator.reset()
+
+        // Modeler.collection() is a meshup collection on both kernels, so the bbox().rect() of
+        // one is a meshup Curve. Regression: the edges already dimensioned went into a BREP
+        // collection, whose has() refused the meshup edges ("wrong input for argument: s")
+        const face = (modeler as any).polygon(...L_SHAPE)
+        const rect = (modeler as any).collection(face).bbox().rect()
+        expect(rect.type).not.toBe('Wire')
+
+        expect(() => annotator.autoDim((modeler as any).collection(rect), {})).not.toThrow()
+        expect(annotator.getAnnotations().map((a: any) => a.value)).toEqual([100, 100])
+    })
 })
 
 describe('dim (brep kernel)', () =>

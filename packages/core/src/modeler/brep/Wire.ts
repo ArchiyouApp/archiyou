@@ -727,13 +727,22 @@ export class Wire extends Shape
         return atEdge.normalAt(point);
     }
 
-    /** Get normal of Face bounded by Wire 
+    /** Get normal of Face bounded by Wire
      *  NOTE: NormalAt gives on point on the Wire, normal that of the workplane
+     *  A closed Wire along a coordinate plane answers the normal toward the positive axis,
+     *  whatever its corner order: like meshup's Curve.normal(), and the direction a default
+     *  extrude() takes (kernel-divergences item 37)
     */
     normal():Vector
     {
         console.info(`Wire::normal: normal() gives the normal of the workplane of the Wire. Use normalAt of the normal at a Point on the Line`)
-        return this.workPlaneNormal();
+        const normal = this.workPlaneNormal();
+        if (!normal || !this.closed()){ return normal; }
+
+        const components = [normal.x, normal.y, normal.z];
+        const dominant = components.reduce((best, c, i) => (Math.abs(c) > Math.abs(components[best]) ? i : best), 0);
+        const nearCardinal = Math.abs(components[dominant]) > 1 - 1e-6;
+        return (nearCardinal && components[dominant] < 0) ? normal.reversed() : normal;
     }
 
     @checkInput('PointLike', Vertex)
