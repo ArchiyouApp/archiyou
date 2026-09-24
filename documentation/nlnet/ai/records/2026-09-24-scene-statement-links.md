@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-24 → (open) |
+| Dates | 2026-09-24 → 2026-09-24 |
 | Model | Claude Opus 5.5 (claude-opus-5-5[1m]), 1M context, Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: analysis in the session, approved before implementation) |
 | Human | Mark van der Net: wrote the prompts, reviewed the analysis, chose automatic highlighting |
@@ -14,7 +14,16 @@ the code editor that created it, when the script ran per statement.
 
 ## Prompts (verbatim, local time)
 
-(filled when the unit closes)
+The work was done in one session; the commit was made from a later session that went on to
+other work (the `$PARAMS.set()` plan), from which only the two prompts about this commit
+are listed.
+
+```
+2026-09-24 10:24 +0200  Most of the time we are executing (see execution options) statement-for-statement. It would be pretty nice if we can log which shapes are created by what statement. So in the scene navigitor, when clicking on a shape would go to the statement in the editor. Can you analyse if that is possible and easy to do?
+2026-09-24 10:29 +0200  yes implement it. Highlighing automatically is ok
+2026-09-24 11:40 +0200  First commit the scene-statement-work (nlnet AI disclosure) than start implementing the OPENING_HANDLES plan
+2026-09-24 11:46 +0200  make the commit
+```
 
 ## Plan (agent output, reviewed by the human before implementation)
 
@@ -58,8 +67,11 @@ statement.
 ## Review and decisions by the human
 
 - Chose automatic highlighting on selection over an explicit "go to code" button.
+- Tried it in the editor before the commit.
+- Chose the commit summary and asked for the record to be closed with it.
 
 ## Commits
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| c89ffb4 | Scene: highlight the statement that made the selected shape | "yes implement it. Highlighing automatically is ok" |
