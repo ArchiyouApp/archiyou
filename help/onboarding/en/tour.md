@@ -65,7 +65,7 @@ errors, the scene tree, data tables, drawings and more.
 ## Where to go next
 <!-- highlight: tool-help -->
 
-In the editor the help tool is always to the right top. If you want step-by-step introduction into practical things Archiyou can do for you, check out the **Tutorials** section in the help tool.  
+In the editor the help tool is always to the right top. If you want step-by-step introduction into practical things Archiyou can do for you, check out the **Tutorials** section in the help tool or [here in the general docs](/tutorials)  
 
 If you want to see what's possible: Look at the shared scripts. 
 
