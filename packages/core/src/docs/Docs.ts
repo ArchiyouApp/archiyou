@@ -236,11 +236,18 @@ export class Docs
                             }
                             console.info(`Docs:executePipelines(): Pipeline of document "${docName}" executed in ${Date.now() - startTime}ms`);
 
+                            doc._pipelineError = null;
                             pipeline.done = true; // set done
                         }
                         catch(e)
                         {
-                            console.error(`Docs:executePipelines(): Cannot execute a pipeline in worker scope: Error: "${e}"`);
+                            // The document can still be made, but whatever the pipeline should have
+                            // returned is missing: say what went wrong where the author looks, and
+                            // keep it so a view that misses a variable can name the cause
+                            doc._pipelineError = e as Error;
+                            const message = `The pipeline of document "${docName}" failed: ${(e as Error)?.name ?? 'Error'}: ${(e as Error)?.message ?? e}`;
+                            console.error(`Docs:executePipelines(): ${message}`);
+                            this._archiyou?.console?.error?.(message);
                         }
                     }
                 });

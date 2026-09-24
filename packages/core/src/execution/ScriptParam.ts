@@ -340,6 +340,45 @@ export class ScriptParam
         return Errors(schema, value).map(error => error.message)
     }
 
+    /** Why a value does not fit a schema, one readable line per problem, naming where it is
+     *  and what it holds: `entry 3 ("windowleft1"): sill is 3500 — must be <= 3000`. A list
+     *  entry is named by its `name` (or the schema's labelProp) when it has one.
+     *  @param max  lines to return at most; the rest is summed up in a last line */
+    static describeSchemaErrors(schema: TSchema, value: unknown, max: number = 5): Array<string>
+    {
+        const labelProp = (schema as any)?.items?.labelProp ?? 'name';
+        const at = (path: string): Array<string> => path.split('/').filter(p => p !== '');
+        const valueAt = (parts: Array<string>): unknown => parts.reduce((v: any, key) => v?.[key], value);
+        const show = (v: unknown): string => (typeof v === 'string') ? `"${v}"` : JSON.stringify(v) ?? String(v);
+
+        // @ts-ignore TS2589: TypeBox Errors can trigger excessively deep type instantiation
+        const lines = [...new Set((Errors(schema, value) as Array<any>).map((error) =>
+        {
+            const parts = at(error.instancePath ?? '');
+            // Where: a list entry by its number (and name), then the property path inside it
+            const isEntry = Array.isArray(value) && parts.length > 0 && /^\d+$/.test(parts[0]);
+            const entry = isEntry ? (value as Array<any>)[Number(parts[0])] : undefined;
+            const entryName = (entry && typeof entry[labelProp] === 'string' && entry[labelProp]) ? ` (${show(entry[labelProp])})` : '';
+            const where = isEntry ? `entry ${parts[0]}${entryName}: ` : '';
+            const property = (isEntry ? parts.slice(1) : parts).join('.');
+
+            const rule =
+                (error.keyword === 'multipleOf') ? `must be a multiple of ${error.params?.multipleOf}` :
+                (error.keyword === 'enum') ? `must be one of ${(error.params?.allowedValues ?? []).map(show).join(', ')}` :
+                (error.keyword === 'required') ? `misses ${(error.params?.requiredProperties ?? []).join(', ')}` :
+                (error.keyword === 'additionalProperties') ? `has no property ${(error.params?.additionalProperties ?? []).join(', ')}` :
+                error.message;
+
+            return (error.keyword === 'required' || error.keyword === 'additionalProperties')
+                ? `${where}${property || 'the value'} ${rule}`
+                : `${where}${property || 'the value'} is ${show(valueAt(parts))} — ${rule}`;
+        }))];
+
+        return (lines.length > max)
+            ? [...lines.slice(0, max), `…and ${lines.length - max} more`]
+            : lines;
+    }
+
     static _assertSchema(schema: TSchema, value: unknown, context: string): void
     {
         if (!Check(schema, value))

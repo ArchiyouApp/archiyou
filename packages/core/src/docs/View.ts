@@ -369,7 +369,11 @@ export class View extends Container
 
         if(realShapes === undefined || realShapes === null)
         {
-            throw new Error(`View::resolveShapeNameToSVG(): Variable "${shapesRef}" resolved to ${realShapes} for view "${this.name}". The pipeline function returned it but the value is empty.`);
+            // Most often because the document's pipeline threw before it got to set the variable
+            const pipelineError = this._page?._doc?._pipelineError;
+            throw new Error(pipelineError
+                ? `View::resolveShapeNameToSVG(): Variable "${shapesRef}" for view "${this.name}" is empty because the pipeline of document "${this._page?._doc?._name}" failed: ${pipelineError.name}: ${pipelineError.message}`
+                : `View::resolveShapeNameToSVG(): Variable "${shapesRef}" resolved to ${realShapes} for view "${this.name}". The pipeline function returned it but the value is empty.`);
         }
 
         if(!isKernelShapeOrCollection(realShapes))

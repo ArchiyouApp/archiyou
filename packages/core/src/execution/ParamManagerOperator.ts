@@ -79,9 +79,9 @@ export class ParamManagerOperator
      */
     set(v:any, options:ParamSetOptions = {}):any
     {
-        if(!this.targetParam.validateValue(v))
+        if(!Check(this.targetParam.schema, v))
         {
-            throw new Error(`ParamManager: value does not match the schema for param "${this.targetParam.name}"!`);
+            throw new Error(this._describeMismatch('set', this.targetParam.schema, v));
         }
         return this._writeValue(v, options);
     }
@@ -109,7 +109,7 @@ export class ParamManagerOperator
 
         if (s.items && !Check(Type.Unsafe(s.items), v))
         {
-            throw new Error(`ParamManager: value does not match the array items schema for param "${this.targetParam.name}"!`)
+            throw new Error(this._describeMismatch('push', Type.Unsafe(s.items), v))
         }
 
         // Onto the value in effect: an untouched list param has only its default
@@ -121,6 +121,19 @@ export class ParamManagerOperator
         }
 
         return v;
+    }
+
+    /** The error of a set() or push() whose value does not fit: which call, which param, and
+     *  every problem (see ScriptParam.describeSchemaErrors). One line, problems separated by
+     *  "; ": error displays that show a single line (the editor's error header) keep them all. */
+    _describeMismatch(call: 'set'|'push', schema: any, value: any): string
+    {
+        const typeName = schema?.title ?? schema?.items?.title;
+        const what = (call === 'push')
+            ? `the entry does not fit${typeName ? ` the "${typeName}" type` : ''}`
+            : `the value does not fit its definition${typeName ? ` (a list of "${typeName}")` : ''}`;
+        const problems = ScriptParam.describeSchemaErrors(schema, value);
+        return `$PARAMS.${this.targetParam.name}.${call}(): ${what}: ${problems.join('; ')}`;
     }
 
     /** The one write path of set() and push(). Deliberately no setOperation('updated'):

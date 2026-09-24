@@ -210,3 +210,67 @@ describe('ParamManagerOperator.push()', () =>
         expect(pm.getParamsMap()['OPENINGS']._value).toHaveLength(1)
     })
 })
+
+// ── error messages ───────────────────────────────────────────────────────────
+
+describe('ParamManagerOperator — what a rejected value says', () =>
+{
+    const OPENINGS_TYPED: Partial<ScriptParamData> = {
+        name: 'OPENINGS', type: 'list' as any,
+        schema: {
+            type: 'array',
+            items: ParamManager.buildObjectSchema('Opening', {
+                name:  'text',
+                wall:  ['front', 'right', 'back', 'left'],
+                left:  { type: 'number', min: 0, max: 12000, step: 10, default: 1000 },
+                sill:  { type: 'number', min: 0, max: 3000,  step: 10, default: 900 },
+                width: { type: 'number', min: 300, max: 3000, step: 10, default: 1200 },
+            }),
+            default: [],
+        },
+    }
+
+    it('names every entry, property and value that does not fit, and the rule it breaks', () =>
+    {
+        const pm = managerWith(OPENINGS_TYPED)
+        const value = [
+            { name: 'door', wall: 'front', left: 1500, sill: 0, width: 1000 },
+            { name: 'windowleft1', wall: 'left', left: -200, sill: 3500, width: 800 },
+            { name: 'odd', wall: 'up', left: 1234.5, sill: 0, width: 800 },
+        ]
+        let message = ''
+        try { pm.getParamController('OPENINGS').set(value) } catch (e) { message = (e as Error).message }
+
+        expect(message).toContain('$PARAMS.OPENINGS.set(): the value does not fit its definition (a list of "Opening")')
+        expect(message).toContain('entry 1 ("windowleft1"): left is -200 — must be >= 0')
+        expect(message).toContain('entry 1 ("windowleft1"): sill is 3500 — must be <= 3000')
+        expect(message).toContain('entry 2 ("odd"): wall is "up" — must be one of "front", "right", "back", "left"')
+        expect(message).toContain('entry 2 ("odd"): left is 1234.5 — must be a multiple of 10')
+        expect(message).not.toContain('entry 0')
+    })
+
+    it('says what is wrong with a plain value', () =>
+    {
+        const pm = managerWith(NUMBER_PARAM)
+        expect(() => pm.getParamController('WIDTH').set(999)).toThrow(/\$PARAMS\.WIDTH\.set\(\):[\s\S]*the value is 999 — must be <= 200/)
+    })
+
+    it('says what is wrong with a pushed entry', () =>
+    {
+        const pm = managerWith(OPENINGS_TYPED)
+        expect(() => pm.getParamController('OPENINGS').push({ name: 'tiny', width: 10 }))
+            .toThrow(/\$PARAMS\.OPENINGS\.push\(\): the entry does not fit the "Opening" type:[\s\S]*width is 10 — must be >= 300/)
+    })
+
+    it('keeps a long list of problems short', () =>
+    {
+        const pm = managerWith(OPENINGS_TYPED)
+        const value = Array.from({ length: 8 }, (_, i) => ({ name: `w${i}`, wall: 'left', left: -10, sill: 0, width: 800 }))
+        let message = ''
+        try { pm.getParamController('OPENINGS').set(value) } catch (e) { message = (e as Error).message }
+        expect(message.split('; ').length).toBe(6)
+        expect(message).toContain('…and 3 more')
+        expect(message).not.toContain('\n') // one line: the editor's error header shows a single line
+    })
+})
+

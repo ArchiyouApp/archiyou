@@ -665,9 +665,13 @@ export class CodeBox extends SignalWatcher(LitElement)
       return 'Execution error';
     }
 
-    const quotedMessage = lines
-      .map(line => line.match(/^- error:\s*'(.*)'$/)?.[1])
-      .find((line): line is string => Boolean(line && line.trim().length > 0));
+    // The runner quotes the message: `- error: '...'`. A message may run over several lines;
+    // take everything up to the closing quote, not just its first line.
+    const quoteStart = lines.findIndex(line => /^- error:\s*'/.test(line));
+    const quoteEnd = (quoteStart < 0) ? -1 : lines.findIndex((line, i) => i >= quoteStart && line.endsWith("'"));
+    const quotedMessage = (quoteStart >= 0 && quoteEnd >= 0)
+      ? lines.slice(quoteStart, quoteEnd + 1).join(' ').replace(/^- error:\s*'/, '').replace(/'$/, '')
+      : undefined;
 
     if (quotedMessage)
     {

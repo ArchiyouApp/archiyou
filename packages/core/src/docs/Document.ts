@@ -83,6 +83,8 @@ export class Document
     _docs:Docs; // reference to Docs module
     _pages:Array<Page> = []; // pages in this document
     _pipelines:Array<DocPipeline> = []; // pipelines for this document, see DocPipeline
+    /** The error the last run of this document's pipeline threw, if it did (see Docs.executePipelines) */
+    _pipelineError:Error|null = null;
     _activePage?:Page; // active page in this document
     _activeContainer:AnyPageContainer; // active container in this document
     _lastBlock:ContainerBlock; // keep track of latest created block
