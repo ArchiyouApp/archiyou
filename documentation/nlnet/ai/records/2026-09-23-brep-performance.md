@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-23 → (open) |
+| Dates | 2026-09-23 → 2026-09-24 |
 | Model | Claude Opus 5.5 (claude-opus-5-5[1m]), 1M context, Claude Code agent |
 | Tool | Claude Code as agent: analysis without code changes first (benchmarks and CPU profiles), then the fixes |
 | Human | Mark van der Net: reported the regression (a brep box used to take ~40 ms, now ~120 ms), asked for an analysis without code changes first, chose which solutions to implement, reviewed the code |
@@ -10,7 +10,17 @@
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+
+```
+2026-09-23 21:12 +0200  I was looking at the performance of the brep kernel. I remember it used to be 40ms to generate a simple box (lets say box(100,200,300)) - now it is 120ms. Ok there is some lazy loading, but even after it is loaded. Without changing any code can you analyse this? Then give some solutions.
+2026-09-23 21:22 +0200  First can you fix cause 2? This will also improve mesh performance right?
+2026-09-23 21:24 +0200  ok now do all the points of the brep kernel
+2026-09-23 21:58 +0200  While you at it can you do a performance analysis of the mesh kernel? See any quick easy wins?
+2026-09-23 22:27 +0200  yes implement 1 and 2
+```
+
+The work was left uncommitted at the end of that session and committed the next day
+from another one, which is why the commits carry a later date than the prompts.
 
 ## Analysis (agent output, reviewed by the human before implementation)
 
@@ -106,4 +116,15 @@ before and after.
 
 ## Commits
 | Commit | Subject | Prompt it answers |
+|---|---|---|
+| `d98c712` | Editor: run the open tools' outputs in the main run | "First can you fix cause 2?" |
+| `4302bfa` | brep: cache subtype, cheaper solidType, unwrapped sub-shapes | "ok now do all the points of the brep kernel" |
+| `2a4d051` | Check the material database once, and stop round-tripping every GLB | "yes implement 1 and 2" |
+
+The second subject is the human's line minus its trailing ", relative meshing":
+`pnpm commit:ai` caps a subject at 72 characters. The dropped clause is the fourth
+bullet of that commit's body.
+
+Verified before committing, on branch `pg`: core unit 1617 passed / 1 expected fail /
+14 skipped, cadscripts 31/31, server 307/307.
 |---|---|---|

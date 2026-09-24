@@ -89,3 +89,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-09-21 | [Core test fixes: stale ScriptParam fixtures and a misaimed wall diagram assertion](./records/2026-09-21-core-test-fixes.md) | Claude Opus 5 | develop | 1 |
 | 2026-09-22 | [Help content: docs-only sections and links between documents](./records/2026-09-22-help-content-links.md) | Claude Opus 5 | develop | 2 |
 | 2026-09-21 | [SQLite → PostgreSQL for apps/server](./records/2026-09-23-sqlite-to-postgres.md) | Claude Fable 5.1 (plan), Claude Opus 5 (implementation) | pg | 6 |
+| 2026-09-23 | [Kernel performance: brep naming and meshing, per-run overhead, editor double run](./records/2026-09-23-brep-performance.md) | Claude Opus 5.5 | pg | 3 |
