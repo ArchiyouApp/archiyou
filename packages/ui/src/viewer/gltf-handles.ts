@@ -1,7 +1,7 @@
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as THREE from 'three';
 
-import type { HandleMinimized, HandleParamMap } from '@archiyou/core/src/interaction/types';
+import type { HandleMinimized } from '@archiyou/core/src/interaction/types';
 
 /** A serialized Handle as stored in GLB extras / execution result state. */
 export interface HandleRawData
@@ -24,7 +24,6 @@ export interface HandleRawData
   param: string | null;
   paramFnSrc: string | null;
   paramsFnSrc: string | null;
-  paramMap: HandleParamMap | null;
 }
 
 /** The viewer-internal representation of a Handle, with Three.js vectors. */
@@ -47,8 +46,6 @@ export interface HandleDef
   param: string | null;
   paramFnSrc: string | null;
   paramsFnSrc: string | null;
-  /** Declarative drag-axis → property map. Plain data — no THREE conversion. */
-  paramMap: HandleParamMap | null;
 }
 
 /**
@@ -76,7 +73,6 @@ export function handleDefFromData(h: HandleRawData): HandleDef
     param:        h.param ?? null,
     paramFnSrc:   h.paramFnSrc ?? null,
     paramsFnSrc:  h.paramsFnSrc ?? null,
-    paramMap:     h.paramMap ?? null,
   };
 }
 

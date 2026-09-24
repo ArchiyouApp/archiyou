@@ -67,6 +67,8 @@ export const FACTORY_RETURN_TYPES: Record<string, string> = {
     layerShapes:  'ShapeCollection',
     text:         'ShapeCollection',
     layer:        'SceneNode',
+    // Script globals that return a class of their own
+    $handle:      'Handle',
 };
 
 

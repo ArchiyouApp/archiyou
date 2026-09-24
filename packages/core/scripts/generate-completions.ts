@@ -30,6 +30,7 @@
  *   ../meshup/src/Vertex.ts           → Vertex members
  *   ../meshup/src/Bbox.ts             → Bbox members
  *   ../meshup/src/OBbox.ts            → OBbox members
+ *   src/interaction/Handle.ts         → Handle members (what $handle() returns)
  *
  * The brep classes (Solid/Edge/Wire/Face) are deliberately NOT emitted: brep mode is not
  * wired after the SmartShape removal — Modeler._brepNotWired() throws for every brep-only
@@ -407,6 +408,11 @@ const shapeClasses: ShapeClassInfo[] = [
         detail: 'oriented bounding box',
         statics: obboxStatics,
         members: obboxMethods,
+    },
+    {
+        label: 'Handle',
+        detail: 'a point in the viewer that users drag to change a parameter',
+        members: extractPublicMethods(getClass('src/interaction/Handle.ts', 'Handle'), new Set(['setArchiyou', 'toData'])),
     },
 ]
 

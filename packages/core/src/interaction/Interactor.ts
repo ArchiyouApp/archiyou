@@ -43,7 +43,7 @@
 import type { ArchiyouModules } from '../types';
 import { Handle } from './Handle';
 import { HandleRegistry } from './HandleRegistry';
-import type { HandleData, HandleMinimized, HandleParamMap, ManagedHandleOp, ManagedHandlesData } from './types';
+import type { HandleData, HandleMinimized, ManagedHandleOp, ManagedHandlesData } from './types';
 
 // Shallow equality for number tuples (position, uAxis, vAxis, …)
 const _eqArr = (a: readonly number[], b: readonly number[]): boolean =>
@@ -53,16 +53,9 @@ const _eqArr = (a: readonly number[], b: readonly number[]): boolean =>
 const _eq = (a: number | readonly number[], b: number | readonly number[]): boolean =>
     Array.isArray(a) && Array.isArray(b) ? _eqArr(a as number[], b as number[]) : a === b;
 
-// Param maps are small flat records of primitives — JSON is an honest comparison here.
-const _eqMap = (a: HandleParamMap | null, b: HandleParamMap | null): boolean =>
-    JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-
 const _eqMinimized = (a: HandleMinimized | null | undefined, b: HandleMinimized | null | undefined): boolean =>
     (a?.color ?? null) === (b?.color ?? null) && (a?.opacity ?? null) === (b?.opacity ?? null);
 
-/** World-position axes. Under a RELATIVE range the viewer adds the axis value to the
- *  property as a delta, and a world position is not a delta — so only 'u'/'v' are valid. */
-const _WORLD_AXES = ['x', 'y', 'z'];
 
 export class Interactor
 {
@@ -180,8 +173,6 @@ export class Interactor
             if (!data.id) data.id = String(i);
             touched.add(data.id);
 
-            this._checkParamMapAxes(data);
-
             if (this._scriptChanged || !this._registry.has(data.id))
             {
                 // First definition (or script changed → re-add everything)
@@ -271,40 +262,11 @@ export class Interactor
         if (stored.icon !== current.icon)                       return true;
         if (!_eqMinimized(stored.minimized, current.minimized)) return true;
 
-        // Declarative drag-axis → property map
-        if (!_eqMap(stored.paramMap, current.paramMap))         return true;
-
         // Start position: only a definition change when start() was explicitly
         // called this run (at()/position() are mutators, not definition changes).
         if (h._startCalled && !_eqArr(stored.position, current.position)) return true;
 
         return false;
-    }
-
-    /** Drop world axes from a relative param map, with an explanation.
-     *
-     *  range() may be called after param(), so this cannot be validated at the param()
-     *  call site — it is checked here, once, while the run's handles are being serialized.
-     *  Dropping the offending axis is better than shipping it: the viewer would add a world
-     *  coordinate to the property as if it were a drag delta, sending the value off to
-     *  somewhere absurd on the first nudge. */
-    private _checkParamMapAxes(data: HandleData): void
-    {
-        const map = data.paramMap;
-        if (!map || !data.rangeRelative) return;
-
-        // Capture the pairs BEFORE dropping them — the message names what was discarded.
-        const bad = Object.entries(map).filter(([axis]) => _WORLD_AXES.includes(axis));
-        if (bad.length === 0) return;
-
-        bad.forEach(([axis]) => delete map[axis as keyof HandleParamMap]);
-        this._archiyou?.console?.error(
-            `$handle().param(): handle "${data.id}" has a relative range, so ` +
-            `${bad.map(([axis, prop]) => `"${axis}: '${prop}'"`).join(', ')} ` +
-            `cannot be applied — 'x'/'y'/'z' are world positions, not drag deltas. ` +
-            `Use 'u'/'v' with a relative range, or give range() numbers instead of strings ` +
-            `to write world coordinates directly.`,
-        );
     }
 
     /** @deprecated — use getManagedHandlesData() instead. */

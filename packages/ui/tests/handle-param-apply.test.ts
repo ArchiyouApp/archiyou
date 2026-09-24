@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
-import { applyParamMap, parseParamRef, snapClampChanged, snapClampToSchema } from '../src/viewer/handle-param';
-import type { HandleParamMap } from '@archiyou/core/src/interaction/types';
+import { mapFunctionResult, parseParamRef, snapClampChanged, snapClampToSchema } from '../src/viewer/handle-param';
+import type { HandleDrag } from '@archiyou/core/src/interaction/types';
 
 /** The Opening type from roomwithopeningsbox, as ParamManager.buildObjectSchema emits it. */
 const SCHEMA = {
@@ -17,9 +17,11 @@ const SCHEMA = {
 };
 
 const ENTRY = { name: 'kitchen window', left: 600, sill: 900, width: 1000, height: 1300 };
-const MAP: HandleParamMap = { u: 'left', v: 'sill' };
-const drag = (over: Partial<Record<'x'|'y'|'z'|'u'|'v', number>> = {}) =>
-  ({ x: 0, y: 0, z: 0, u: 0, v: 0, ...over });
+const drag = (over: Partial<Record<'x'|'y'|'z'|'u'|'v'|'du'|'dv'|'tu'|'tv', number>> = {}): HandleDrag =>
+{
+  const { x = 0, y = 0, z = 0, ...rest } = over;
+  return { u: 0, v: 0, du: 0, dv: 0, tu: 0, tv: 0, range: [0, 1], position: () => [x, y, z], ...rest };
+};
 
 describe('parseParamRef', () =>
 {
@@ -64,70 +66,42 @@ describe('snapClampToSchema', () =>
   });
 });
 
-describe('applyParamMap — relative range (delta mode)', () =>
+describe('mapFunctionResult — what a map function means', () =>
 {
-  it('adds the drag delta to the current property value', () =>
+  const run = (value: any, fn: (param: any, handle: HandleDrag) => any, handle = drag({ u: 50, du: 7 })) =>
   {
-    expect(applyParamMap(drag({ u: 300, v: -200 }), ENTRY, MAP, true, SCHEMA))
-      .toMatchObject({ left: 900, sill: 700 });
+    const copy = structuredClone(value);
+    return mapFunctionResult(copy, fn(copy, handle));
+  };
+
+  it('takes an object changed in place, also when a concise arrow returns the assigned number', () =>
+  {
+    expect(run(ENTRY, (param, handle) => param.left = handle.u)).toMatchObject({ left: 50, sill: 900 });
+    expect(run(ENTRY, (param, handle) => { param.left += handle.du; })).toMatchObject({ left: 607 });
   });
 
-  it('snaps the result to the property step', () =>
+  it('takes a returned object', () =>
   {
-    expect(applyParamMap(drag({ u: 137 }), ENTRY, { u: 'left' }, true, SCHEMA)!['left']).toBe(740);
+    expect(run(ENTRY, (param, handle) => ({ ...param, sill: handle.u }))).toMatchObject({ sill: 50, left: 600 });
   });
 
-  it('clamps at the property bounds rather than letting validation reject the write', () =>
+  it('changes a list in place too', () =>
   {
-    expect(applyParamMap(drag({ u: -5000, v: -5000 }), ENTRY, MAP, true, SCHEMA))
-      .toMatchObject({ left: 0, sill: 0 });
+    expect(run([1, 2], (param) => param.push(3))).toEqual([1, 2, 3]);
   });
 
-  it('leaves unmapped properties exactly as they were', () =>
+  it('moves an entry by the drag distance, snapped and clamped to each property', () =>
   {
-    expect(applyParamMap(drag({ u: 300 }), ENTRY, { u: 'left' }, true, SCHEMA))
-      .toMatchObject({ name: 'kitchen window', sill: 900, width: 1000, height: 1300 });
+    // What the viewer does for OPENINGS[i]: run the function, then hold what it changed to the schema
+    const moved = run(ENTRY, (param, handle) => { param.left += handle.du; param.sill += handle.dv; }, drag({ du: 137, dv: -5000 }));
+    expect(snapClampChanged(ENTRY, moved, SCHEMA)).toMatchObject({ left: 740, sill: 0, width: 1000 });
   });
 
-  it('never mutates the value it was given', () =>
+  it('takes the returned value of a plain param, and keeps it without one', () =>
   {
-    const entry = { ...ENTRY };
-    applyParamMap(drag({ u: 300 }), entry, MAP, true, SCHEMA);
-    expect(entry).toEqual(ENTRY);
-  });
-});
-
-describe('applyParamMap — absolute range (world coordinate mode)', () =>
-{
-  it('writes the world coordinate straight into the property', () =>
-  {
-    expect(applyParamMap(drag({ x: 2400, z: 1500 }), ENTRY, { x: 'left', z: 'sill' }, false, SCHEMA))
-      .toMatchObject({ left: 2400, sill: 1500 });
-  });
-
-  it('still snaps and clamps', () =>
-  {
-    expect(applyParamMap(drag({ x: 99123 }), ENTRY, { x: 'left' }, false, SCHEMA)!['left']).toBe(12000);
-  });
-});
-
-describe('applyParamMap — refusals', () =>
-{
-  it('returns null when there is no object to write into', () =>
-  {
-    expect(applyParamMap(drag({ u: 10 }), undefined as any, MAP, true, SCHEMA)).toBeNull();
-    expect(applyParamMap(drag({ u: 10 }), [] as any, MAP, true, SCHEMA)).toBeNull();
-  });
-
-  it('skips a property the schema does not declare, and says so', () =>
-  {
-    const warnings: string[] = [];
-    const next = applyParamMap(drag({ u: 137 }), ENTRY, { u: 'depth' }, true, SCHEMA, m => warnings.push(m));
-    // Writing a stray key can fail validation outright under additionalProperties:false —
-    // a typo'd property name must not silently become part of the value.
-    expect(next).not.toHaveProperty('depth');
-    expect(next).toEqual(ENTRY);
-    expect(warnings.join()).toMatch(/no property "depth".*left/);
+    expect(run(false, (_param, handle) => handle.u > 10)).toBe(true);
+    expect(run(100, (param, handle) => param + handle.du)).toBe(107);
+    expect(run(100, () => undefined)).toBe(100);
   });
 });
 

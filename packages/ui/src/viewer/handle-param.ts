@@ -1,15 +1,13 @@
-import type { HandleAxis, HandleParamMap } from '@archiyou/core/src/interaction/types';
-
-/** The drag scalars model-viewer hands to script map functions at drag end.
- *  `x`/`y`/`z` are the handle's world position; `u`/`v` its projection onto the drag axes,
- *  which under a relative range is the drag delta (see _resolveHandleScalars). */
-export interface HandleDragScalars
+/** What a map FUNCTION's result means. An object or list value may be changed in place,
+ *  so for one a returned value only counts when it is an object or list too: a concise
+ *  `(param, handle) => param.left = handle.u` returns the number it assigned, and taking
+ *  that would replace the whole object with it. A plain value cannot be changed in place,
+ *  so its returned value is the new value (none: unchanged). */
+export function mapFunctionResult(copy: any, returned: any): any
 {
-  x: number;
-  y: number;
-  z: number;
-  u: number;
-  v: number;
+  const isObject = (v: any) => v !== null && typeof v === 'object';
+  if (isObject(copy)) return isObject(returned) ? returned : copy;
+  return (returned !== undefined) ? returned : copy;
 }
 
 /** Split a param reference into its name and, for `NAME[index]`, its element index.
@@ -46,65 +44,9 @@ export function snapClampToSchema(value: any, propSchema: Record<string, any> | 
   return v;
 }
 
-/**
- * Apply one finished drag to an object-valued param via its declarative axis → property
- * map, returning a NEW object.
- *
- * Two modes, chosen by the script through range() rather than by a separate flag:
- *
- *   absolute (`.range(0, 4000)`)          prop  = handle[axis]
- *   relative (`.range('-4000','+4000')`)  prop += handle[axis]     (a delta)
- *
- * Relative is the robust one: it needs no correspondence between a property value and a
- * world coordinate, so it survives geometry that is offset, rotated or nested.
- *
- * Kept pure — no signals, THREE or DOM — because this is where the schema constraints are
- * actually enforced, and that is the part worth testing.
- *
- * @param objectSchema  the JSON Schema of the object being written (an `object` param's own
- *                      schema, or `schema.items` for one entry of an object list).
- * @param onWarn        called once per property the schema does not declare.
- * @returns the new object, or null when the map cannot be applied at all.
- */
-export function applyParamMap(
-  handle: HandleDragScalars,
-  value: Record<string, any>,
-  map: HandleParamMap,
-  relative: boolean,
-  objectSchema: Record<string, any>,
-  onWarn?: (message: string) => void,
-): Record<string, any> | null
-{
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-
-  const properties = (objectSchema?.['properties'] ?? {}) as Record<string, Record<string, any>>;
-  const next: Record<string, any> = { ...value };
-
-  Object.entries(map).forEach(([axis, prop]) =>
-  {
-    if (!prop) return;
-    const scalar = handle[axis as HandleAxis];
-    if (typeof scalar !== 'number') return;
-
-    // An undeclared property is a typo far more often than an intent. Writing it would add
-    // a stray key that can fail validation outright under additionalProperties:false.
-    if (!properties[prop])
-    {
-      onWarn?.(`no property "${prop}" on this value — known: ${Object.keys(properties).join(', ') || '(none)'}`);
-      return;
-    }
-
-    const current = next[prop];
-    next[prop] = relative ? (typeof current === 'number' ? current + scalar : scalar) : scalar;
-    next[prop] = snapClampToSchema(next[prop], properties[prop]);
-  });
-
-  return next;
-}
-
 /** Snap and clamp whatever a map FUNCTION changed. The function is free-form, so the
- *  properties it touched are found by diffing — which keeps the escape hatch subject to
- *  the same schema constraints as the declarative map. */
+ *  properties it touched are found by diffing, and each one is held to its own schema: a
+ *  step:10 `left` of 1234 becomes 1230 instead of failing the whole write. */
 export function snapClampChanged(
   before: Record<string, any>,
   after: Record<string, any>,

@@ -1,5 +1,5 @@
 import type { ArchiyouModules } from '../types';
-import type { HandleData, HandleMinimized, HandleParamMap, HandlePlane, HandleRangeType } from './types';
+import type { HandleData, HandleDrag, HandleMinimized, HandlePlane, HandleRangeType } from './types';
 
 const AXIS_VECTORS: Record<string, [number, number, number]> = {
     x: [1, 0, 0],
@@ -41,7 +41,6 @@ export class Handle
     _param: string | null = null;
     paramFnSrc: string | null = null;
     paramsFnSrc: string | null = null;
-    paramMap: HandleParamMap | null = null;
 
     // Per-run call-tracking flags — read by Interactor.getManagedHandlesData()
     // to decide which ops to emit. Reset implicitly because Handles are recreated each run.
@@ -64,9 +63,13 @@ export class Handle
         return this._archiyou?.modeler?.classes;
     }
 
-    /** Resolve any PointLike / Shape target to a [x, y, z] triple. */
-    private _resolvePosition(target: any): [number, number, number]
+    /** Resolve any PointLike / Shape target, or flat coordinates (x, y, z), to a [x, y, z] triple. */
+    private _resolvePosition(target: any, y?: number, z?: number): [number, number, number]
     {
+        if (typeof target === 'number')
+        {
+            return [target, y ?? 0, z ?? 0];
+        }
         if (Array.isArray(target))
         {
             return [target[0] ?? 0, target[1] ?? 0, target[2] ?? 0];
@@ -94,10 +97,11 @@ export class Handle
 
     /** Define-once initial placement. The viewer owns the handle position after the first run;
      *  use at() or position() if the script needs to push a position on subsequent runs.
-     *  Accepts a PointLike [x,y,z] array, a {x,y,z} object, or a Shape-like with center()/bbox(). */
-    start(target: any): this
+     *  Accepts flat coordinates `start(x, y, z)`, a PointLike [x,y,z] array, a {x,y,z} object,
+     *  or a Shape-like with center()/bbox(). */
+    start(target: any, y?: number, z?: number): this
     {
-        this._pos = this._resolvePosition(target);
+        this._pos = this._resolvePosition(target, y, z);
         this.plane.origin = [...this._pos];
         this._startCalled = true;
         return this;
@@ -105,20 +109,27 @@ export class Handle
 
     /** Every-run position push — script continuously owns the handle position.
      *  Use when the position must track geometry that changes with params.
-     *  For initial placement prefer start(); for a one-shot push use position(). */
-    at(target: any): this
+     *  For initial placement prefer start(); for a one-shot push use position().
+     *  Takes the same targets as start(): `at(x, y, z)`, `at([x, y, z])`, a point or a shape.
+     *  @example
+     *  $PARAMS.define('WIDTH', 'number', { min: 10, max: 200, default: 100 });
+     *  box($WIDTH, 50, 20);
+     *  $handle().param('WIDTH').at($WIDTH/2, 0, 10).along('x').range(10, 200);
+     */
+    at(target: any, y?: number, z?: number): this
     {
-        this._pos = this._resolvePosition(target);
+        this._pos = this._resolvePosition(target, y, z);
         this.plane.origin = [...this._pos];
         this._atCalled = true;
         return this;
     }
 
     /** Imperative one-shot position push this run only.
-     *  Useful for conditionally repositioning the handle from script logic. */
-    position(target: any): this
+     *  Useful for conditionally repositioning the handle from script logic.
+     *  Takes the same targets as start(). */
+    position(target: any, y?: number, z?: number): this
     {
-        this._pos = this._resolvePosition(target);
+        this._pos = this._resolvePosition(target, y, z);
         this.plane.origin = [...this._pos];
         this._positionCalled = true;
         return this;
@@ -246,6 +257,23 @@ export class Handle
             this.rangeMin = parseFloat(String(min));
             this.rangeMax = parseFloat(String(max));
         }
+
+        // A bound that is not a number (NaN, null, undefined, `'-' + undefined`) would pass
+        // silently and make the handle vanish from the viewer on its first drag
+        const bounds = [this.rangeMin, this.rangeMax].flat();
+        if (!bounds.every(Number.isFinite))
+        {
+            // As written, so NaN and undefined show as themselves (JSON would print null)
+            const show = (v: any): string => Array.isArray(v)
+                ? `[${v.map(show).join(', ')}]`
+                : (typeof v === 'string' ? `'${v}'` : String(v));
+            const detail =
+                `$handle()${this._param ? `.param('${this._param}')` : ''}.range(): every bound must be a number, ` +
+                `or a string like '+100' / '-100' for a relative range. ` +
+                `Got min ${show(min)}, max ${show(max)}.`;
+            this._archiyou?.console?.error(detail);
+            throw new Error(detail);
+        }
         return this;
     }
 
@@ -254,41 +282,47 @@ export class Handle
      *  @param ref  Either a param name (`'WIDTH'`) or an indexed reference into a list
      *              param (`'OPENINGS[2]'`) — the usual array syntax, so one handle can
      *              stand for one entry of a `$PARAMS.defineObject()` list.
-     *  @param map  How the drag reaches the value. Three forms:
+     *  @param map  How the drag reaches the value:
      *
-     *  **Omitted** — autoMap: the handle range is linearly remapped onto the param's
-     *  schema min/max. 1D number params only.
+     *  **Omitted** — autoMap: where the handle is in its range sets where the value is in the
+     *  param's min to max: halfway along `range(0, 1000)` gives the middle of the param's
+     *  range. For a number param on a 1D handle with a range of numbers.
      *
-     *  **A map object** `{ u: 'left', v: 'sill' }` — drag axis → property, for a value
-     *  that is an object (an `object` param, or one entry of an object list). Axes are
-     *  `x`/`y`/`z` (world position) and `u`/`v` (projection onto the drag axes). How they
-     *  are applied follows range(), so the script picks the mode:
+     *  **A function** `(param, handle) => …` — `param` is a copy of the current value,
+     *  `handle` tells where the drag ended:
      *
-     *      .range(0, 4000)          absolute → prop  = handle[axis]
-     *      .range('-4000', '+4000') relative → prop += handle[axis]   (a delta)
+     *      handle.u,  handle.v    where the handle is along its drag axes
+     *      handle.du, handle.dv   how far this drag moved it
+     *      handle.tu, handle.tv   how far through the range, 0 to 1
+     *      handle.position()      where it is in the model, [x, y, z]
      *
-     *  Relative is the robust default: it needs no correspondence between a property value
-     *  and a world coordinate, so it survives geometry that is offset or rotated. Under a
-     *  relative range only 'u'/'v' make sense — 'x'/'y'/'z' are world positions and adding
-     *  one as a delta is meaningless. That is checked at end of run, because range() may
-     *  be called after param().
+     *  These are the same whatever range() gets. `du`/`dv` are the robust choice for moving
+     *  something (`param.left += handle.du`): the handle can then sit anywhere on it, while
+     *  `u`/`v` only fit when the handle sits exactly where the property points.
      *
-     *  Because the map names the PROPERTY, the viewer can snap each value to that
-     *  property's own step and clamp it to its own min/max before writing. Prefer it over
-     *  a function for anything a function is not actually needed for.
-     *
-     *  **A function** `(handle, value) => …` — the escape hatch, for anything the map
-     *  cannot say (a sign flip, a computed property, two properties from one axis). It
-     *  receives a copy of the current value and may either mutate it or return a new one.
-     *  `handle` exposes `{x, y, z, u, v, value, range}`.
+     *  Return the new value; an object or list param may instead be changed in place — a
+     *  returned value only counts for it when it is an object or list too, so
+     *  `(param, handle) => param.left = handle.u` works as written. Every property the
+     *  function changes is snapped to its step and clamped to its min/max. The function runs
+     *  in the viewer, from its source text: variables of the script are not available in it.
      *
      *  For an indexed ref prefer at() over start(): the viewer keeps a dragged handle
      *  where the user put it across a re-definition, but a handle standing for a list entry
      *  must follow the value the script actually got — a step:10 property snaps to 1230
-     *  where the drag ended at 1234. */
+     *  where the drag ended at 1234.
+     *
+     *  @example
+     *  $PARAMS.define('HEIGHT', 'number', { min: 100, max: 300, default: 200 });
+     *  $PARAMS.define('BIG', 'boolean', { default: false });
+     *  box(100, 100, $HEIGHT);
+     *  // autoMap: dragging from z 0 to 400 sets HEIGHT from 100 to 300
+     *  $handle().param('HEIGHT').at(0, 0, ($HEIGHT - 100) * 2).along('z').range(0, 400);
+     *  // a function, here switching a boolean halfway
+     *  $handle().param('BIG', (param, handle) => handle.tu > 0.5).at(200, 0, 0).along('x').range(0, 400);
+     */
     param(
         ref: string,
-        map?: HandleParamMap | ((handle: any, value: any) => any) | null,
+        map?: ((param: any, handle: HandleDrag) => any) | null,
     ): this
     {
         // Validate against the param's own name; the [index] is a reference INTO it.
@@ -304,9 +338,17 @@ export class Handle
             throw new Error(detail);
         }
 
+        if (map !== undefined && map !== null && typeof map !== 'function')
+        {
+            const detail =
+                `$handle().param('${ref}'): the second argument must be a function, like ` +
+                `(param, handle) => { param.left += handle.du }. Got ${JSON.stringify(map)}.`;
+            this._archiyou?.console?.error(detail);
+            throw new Error(detail);
+        }
+
         this._param      = ref;
         this.paramFnSrc  = (typeof map === 'function') ? map.toString() : null;
-        this.paramMap    = (map && typeof map === 'object') ? { ...map } : null;
         if (!this.id) this.id = ref;
         return this;
     }
@@ -319,32 +361,16 @@ export class Handle
         return m ? { name: m[1], index: Number(m[2]) } : { name: (ref ?? '').trim(), index: null };
     }
 
-    /** Bind this handle to multiple script parameters via a mutation function.
-     *  @param fn  Function `(handle, params) => void`.
-     *             `params` is a plain object pre-populated with all current param
-     *             values keyed by param name. Mutate the keys you want to update:
-     *             `(h, p) => { p.X = h.x; p.Y = h.y }`.
-     *             The viewer detects which keys changed and applies each one.
-     *  Use this for 2D handles or any case where one drag updates several params. */
-    params(fn: (handle: any, params: Record<string, any>) => void): this
+    /** Bind this handle to multiple script parameters via a function.
+     *  @param fn  Function `(params, handle) => void`. `params` holds the current value of
+     *             every param by name; change the ones this drag should update:
+     *             `(params, handle) => { params.X += handle.du; params.Y += handle.dv }`.
+     *             `handle` is the same as for param(). The viewer detects which params
+     *             changed and applies each one; a returned value is ignored.
+     *  Use this when one drag updates several params. */
+    params(fn: (params: Record<string, any>, handle: HandleDrag) => void): this
     {
         const src = fn.toString();
-
-        // Detect concise arrow functions (no block body after =>).
-        // Concise arrows like `(h, p) => h.x` can't reliably mutate params —
-        // they return a value instead of modifying the object in-place.
-        // Require a block body: `(h, p) => { p.X = h.x; p.Y = h.y }`.
-        const isArrow = src.includes('=>');
-        const hasBlockBody = /=>\s*\{/.test(src);
-        if (isArrow && !hasBlockBody)
-        {
-            const detail =
-                `$handle().params(): function must have a block body — use (h, p) => { p.X = h.x; ... }. ` +
-                `Got: ${src}. ` +
-                `Concise arrows return a value instead of mutating params.`;
-            this._archiyou?.console?.error(detail);
-            throw new Error(detail);
-        }
 
         // Validate keys against known param names immediately (at call time).
         const knownParamNames = this._archiyou?.interactor?.knownParamNames ?? [];
@@ -360,7 +386,7 @@ export class Handle
             });
             try
             {
-                fn({ x: 0, y: 0, z: 0, u: 0, v: 0, value: 0, range: [0, 1] }, proxy);
+                fn(proxy, { u: 0, v: 0, du: 0, dv: 0, tu: 0, tv: 0, range: [0, 1], position: () => [0, 0, 0] });
             }
             catch { /* runtime errors in the fn itself — ignore for now */ }
 
@@ -403,7 +429,6 @@ export class Handle
             param:        this._param,
             paramFnSrc:   this.paramFnSrc,
             paramsFnSrc:  this.paramsFnSrc,
-            paramMap:     this.paramMap ? { ...this.paramMap } : null,
         };
     }
 }

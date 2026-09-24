@@ -26,7 +26,7 @@ const SCRIPT_CODE = `
 
     $OPENINGS.forEach((o, i) =>
         $handle()
-            .param(\`OPENINGS[\${i}]\`, { u: 'left', v: 'sill' })
+            .param(\`OPENINGS[\${i}]\`, (param, handle) => { param.left += handle.du; param.sill += handle.dv })
             .at([o.left, 0, o.sill])
             .along('xz')
             .range(['-4000', '-2500'], ['+4000', '+2500'])
@@ -60,8 +60,7 @@ describe('Runner — $handle().param("NAME[i]") over an object-list param', () =
 
         const first = opById(ops, 'OPENINGS[0]')!.data!
         expect(first.param).toBe('OPENINGS[0]')
-        expect(first.paramMap).toEqual({ u: 'left', v: 'sill' })
-        expect(first.paramFnSrc).toBeNull()
+        expect(first.paramFnSrc).toContain('param.left += handle.du')
         expect(first.position).toEqual([600, 0, 900])
         expect(first.rangeRelative).toBe(true)
         // The wall lies in XZ, so the drag plane spans world X and Z.
@@ -121,7 +120,7 @@ describe('Runner — $handle().param("NAME[i]") over an object-list param', () =
             box(100, 100, 100);
             $OPENINGS.forEach((o, i) =>
                 $handle()
-                    .param(\`OPENINGS[\${i}]\`, { u: 'left' })
+                    .param(\`OPENINGS[\${i}]\`, (param, handle) => { param.left += handle.du })
                     .at([o.left + o.width/2, 0, 0])
                     .along('x')
                     .range(\`-\${o.left}\`, \`+\${4600 - o.width - o.left}\`)
@@ -180,7 +179,7 @@ describe('Runner — $handle().param("NAME[i]") over an object-list param', () =
             script:  { code: `
                 $PARAMS.define('OPENINGS', 'list', { listItemType: 'string', default: [] });
                 box(10,10,10);
-                $handle().param('OPENINGZ[0]', { u: 'left' });
+                $handle().param('OPENINGZ[0]', (param, handle) => { param.left += handle.du });
             ` },
             outputs: ['default/model/gltf'],
         } as RunnerScriptExecutionRequest)

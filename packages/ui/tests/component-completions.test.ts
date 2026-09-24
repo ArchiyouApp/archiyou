@@ -82,3 +82,29 @@ describe('fab completions', () =>
     expect(labels(`fa`)).toContain('fab');
   });
 });
+
+describe('$handle completions', () =>
+{
+  it('offers $handle for a word starting with $, without doubling the $', () =>
+  {
+    expect(applied(`$ha`)).toContain(`$handle`);
+    expect(applied(`h = $`)).toContain(`h = $handle`);
+  });
+
+  it('offers the Handle methods after $handle() and on a variable holding one', () =>
+  {
+    const labels = (doc: string) => complete(doc)!.options.map(o => o.label);
+    for (const doc of [`$handle().`, `$handle().param('WIDTH').at([0,0,0]).`, `h = $handle();\nh.`])
+    {
+      expect(labels(doc)).toEqual(expect.arrayContaining(['param', 'at', 'along', 'range', 'minimized']));
+      expect(labels(doc)).not.toContain('extrude');
+    }
+  });
+
+  it('keeps Handle out of shape completions', () =>
+  {
+    const labels = (doc: string) => complete(doc)!.options.map(o => o.label);
+    expect(labels(`unknown.`)).not.toContain('minimized'); // the fallback for an unknown type
+    expect(labels(`new `)).not.toContain('Handle');
+  });
+});

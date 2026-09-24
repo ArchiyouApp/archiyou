@@ -12,10 +12,11 @@ function modulesFor(interactor: Interactor, errors: string[] = [])
 
 const opById = (ops: ManagedHandleOp[], id: string) => ops.find(o => o.id === id)
 
-describe('Handle.param() — indexed refs and axis maps', () =>
+describe('Handle.param() — indexed refs and map functions', () =>
 {
     let interactor: Interactor
     let errors: string[]
+    const moveLeft = (param: any, handle: any) => { param.left += handle.du }
 
     beforeEach(() =>
     {
@@ -34,109 +35,56 @@ describe('Handle.param() — indexed refs and axis maps', () =>
 
     it('defaults the handle id to the whole ref', () =>
     {
-        const h = interactor.addHandle().param('OPENINGS[2]', { u: 'left' })
+        const h = interactor.addHandle().param('OPENINGS[2]', moveLeft)
         expect(h.toData().id).toBe('OPENINGS[2]')
     })
 
     it('keeps an explicit name() over the default id', () =>
     {
-        const h = interactor.addHandle().name('door').param('OPENINGS[2]', { u: 'left' })
+        const h = interactor.addHandle().name('door').param('OPENINGS[2]', moveLeft)
         expect(h.toData().id).toBe('door')
     })
 
-    it('serializes the ref and the map into toData()', () =>
-    {
-        const data = interactor.addHandle().param('OPENINGS[1]', { u: 'left', v: 'sill' }).toData()
-        expect(data.param).toBe('OPENINGS[1]')
-        expect(data.paramMap).toEqual({ u: 'left', v: 'sill' })
-        expect(data.paramFnSrc).toBeNull()
-    })
-
-    it('carries a map function as source, with no map', () =>
+    it('carries the ref and the map function as source', () =>
     {
         const data = interactor.addHandle()
-            .param('OPENINGS[0]', (h: any, e: any) => { e.left = h.u })
+            .param('OPENINGS[1]', (param: any, handle: any) => { param.left += handle.du; param.sill += handle.dv })
             .toData()
-        expect(data.paramMap).toBeNull()
-        expect(data.paramFnSrc).toContain('e.left = h.u')
+        expect(data.param).toBe('OPENINGS[1]')
+        expect(data.paramFnSrc).toContain('param.left += handle.du')
     })
 
     it('accepts a concise arrow, which the viewer applies by its return value', () =>
     {
         const data = interactor.addHandle()
-            .param('OPENINGS[0]', (h: any, e: any) => ({ ...e, left: h.u }))
+            .param('OPENINGS[0]', (param: any, handle: any) => ({ ...param, left: handle.u }))
             .toData()
-        expect(data.paramFnSrc).toContain('left: h.u')
+        expect(data.paramFnSrc).toContain('left: handle.u')
     })
 
-    it('leaves a plain scalar binding exactly as it was (autoMap)', () =>
+    it('leaves a plain scalar binding without a function (autoMap)', () =>
     {
         const data = interactor.addHandle().param('WIDTH').toData()
         expect(data.param).toBe('WIDTH')
-        expect(data.paramMap).toBeNull()
         expect(data.paramFnSrc).toBeNull()
     })
 
-    it('is null on a handle that never called param()', () =>
+    it('rejects a map object, pointing to the function form', () =>
     {
-        expect(interactor.addHandle().name('plain').toData().paramMap).toBeNull()
+        expect(() => interactor.addHandle().param('OPENINGS[0]', { du: 'left' } as any))
+            .toThrow(/must be a function.*param\.left \+= handle\.du.*"du":"left"/)
+        expect(errors.length).toBe(1)
     })
 
     it('throws on an unknown param, naming the known ones', () =>
     {
-        expect(() => interactor.addHandle().param('OPENINGZ[0]', { u: 'left' }))
+        expect(() => interactor.addHandle().param('OPENINGZ[0]', moveLeft))
             .toThrow(/unknown param "OPENINGZ".*"OPENINGS".*"WIDTH"/s)
     })
 
     it('validates the NAME of an indexed ref, not the whole reference', () =>
     {
-        expect(() => interactor.addHandle().param('OPENINGS[3]', { u: 'left' })).not.toThrow()
-    })
-
-    it('copies the map, so a later edit of the caller object does not leak in', () =>
-    {
-        const map: any = { u: 'left' }
-        const h = interactor.addHandle().param('OPENINGS[0]', map)
-        map.v = 'sill'
-        expect(h.toData().paramMap).toEqual({ u: 'left' })
-    })
-})
-
-describe('Interactor: relative range vs world axes', () =>
-{
-    let interactor: Interactor
-    let errors: string[]
-
-    beforeEach(() =>
-    {
-        interactor = new Interactor()
-        errors = []
-        interactor.setArchiyou(modulesFor(interactor, errors))
-        interactor.beginRun('script-a', ['OPENINGS'])
-    })
-
-    it('drops world axes from a relative map and explains why', () =>
-    {
-        interactor.addHandle()
-            .param('OPENINGS[0]', { x: 'left', v: 'sill' })
-            .along('xz')
-            .range('-100', '+100')
-
-        const ops = interactor.getManagedHandlesData()
-        expect(opById(ops, 'OPENINGS[0]')?.data?.paramMap).toEqual({ v: 'sill' })
-        expect(errors.join('\n')).toMatch(/relative range.*"x: 'left'"/)
-    })
-
-    it('leaves world axes alone under an absolute range', () =>
-    {
-        interactor.addHandle()
-            .param('OPENINGS[0]', { x: 'left', z: 'sill' })
-            .along('xz')
-            .range([0, 0], [4000, 2500])
-
-        const ops = interactor.getManagedHandlesData()
-        expect(opById(ops, 'OPENINGS[0]')?.data?.paramMap).toEqual({ x: 'left', z: 'sill' })
-        expect(errors).toEqual([])
+        expect(() => interactor.addHandle().param('OPENINGS[3]', moveLeft)).not.toThrow()
     })
 })
 
@@ -148,7 +96,7 @@ describe('Interactor: indexed param handles across re-runs', () =>
     const declare = (openings: Array<{ left: number; sill: number }>) =>
         openings.forEach((o, i) =>
             interactor.addHandle()
-                .param(`OPENINGS[${i}]`, { u: 'left', v: 'sill' })
+                .param(`OPENINGS[${i}]`, (param: any, handle: any) => { param.left += handle.du; param.sill += handle.dv })
                 .at([o.left, 0, o.sill])
                 .along('xz')
                 .range(['-100', '-100'], ['+100', '+100']))
@@ -207,11 +155,11 @@ describe('Interactor: indexed param handles across re-runs', () =>
     it('re-adds when the binding itself changes under a stable handle name', () =>
     {
         interactor.beginRun('script-a', ['OPENINGS'])
-        interactor.addHandle().name('door').param('OPENINGS[0]', { u: 'left' }).at([0, 0, 0])
+        interactor.addHandle().name('door').param('OPENINGS[0]', (param: any, handle: any) => { param.left += handle.du }).at([0, 0, 0])
         interactor.getManagedHandlesData()
 
         interactor.beginRun('script-a', ['OPENINGS'])
-        interactor.addHandle().name('door').param('OPENINGS[1]', { u: 'left' }).at([0, 0, 0])
+        interactor.addHandle().name('door').param('OPENINGS[1]', (param: any, handle: any) => { param.left += handle.du }).at([0, 0, 0])
         const ops = interactor.getManagedHandlesData()
 
         expect(opById(ops, 'door')?._operation).toBe('add')
@@ -221,11 +169,49 @@ describe('Interactor: indexed param handles across re-runs', () =>
     it('emits nothing on a quiet re-exec, so a dragged handle stays put', () =>
     {
         interactor.beginRun('script-a', ['OPENINGS'])
-        interactor.addHandle().name('door').param('OPENINGS[0]', { u: 'left' }).start([0, 0, 0])
+        interactor.addHandle().name('door').param('OPENINGS[0]', (param: any, handle: any) => { param.left += handle.du }).start([0, 0, 0])
         interactor.getManagedHandlesData()
 
         interactor.beginRun('script-a', ['OPENINGS'])
-        interactor.addHandle().name('door').param('OPENINGS[0]', { u: 'left' }).start([0, 0, 0])
+        interactor.addHandle().name('door').param('OPENINGS[0]', (param: any, handle: any) => { param.left += handle.du }).start([0, 0, 0])
         expect(interactor.getManagedHandlesData()).toEqual([])
+    })
+})
+
+describe('Handle placement and range checks', () =>
+{
+    let interactor: Interactor
+    let errors: string[]
+
+    beforeEach(() =>
+    {
+        interactor = new Interactor()
+        errors = []
+        interactor.setArchiyou(modulesFor(interactor, errors))
+        interactor.beginRun('script-a', ['OPENINGS', 'WIDTH'])
+    })
+
+    it('takes flat coordinates as well as an array', () =>
+    {
+        expect(interactor.addHandle().at(10, 20, 30).toData().position).toEqual([10, 20, 30])
+        expect(interactor.addHandle().at([10, 20, 30]).toData().position).toEqual([10, 20, 30])
+        expect(interactor.addHandle().start(5, 6).toData().position).toEqual([5, 6, 0])
+        expect(interactor.addHandle().position(1, 2, 3).toData().position).toEqual([1, 2, 3])
+    })
+
+    it('accepts number and relative string bounds', () =>
+    {
+        expect(() => interactor.addHandle().along('x').range(0, 4000)).not.toThrow()
+        expect(() => interactor.addHandle().along('xz').range(['-100', '-0'], ['+200', '+300'])).not.toThrow()
+    })
+
+    it('throws on a bound that is not a number, naming it as written', () =>
+    {
+        const left = undefined as any
+        const h = () => interactor.addHandle().param('OPENINGS[0]', (param: any, handle: any) => { param.left += handle.du }).along('xz')
+        expect(() => h().range([`-${left}`, '-0'], ['+100', '+100'])).toThrow(/OPENINGS\[0\].*range\(\).*'-undefined'/)
+        expect(() => h().range(0, NaN)).toThrow(/max NaN/)
+        expect(() => h().range(null as any, 100)).toThrow(/min null/)
+        expect(errors.length).toBe(3) // also reported in the script console
     })
 })

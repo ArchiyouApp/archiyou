@@ -47,18 +47,18 @@ wall.gridlines.hide();
 // One drag handle per opening, at its bottom-left corner. Clicking a handle opens that
 // entry's form in the param menu; dragging it moves the opening.
 //
-// OPENINGS[i] binds the handle to ONE entry of the list, and { u:'left' } says which
-// property each drag axis feeds. The range is RELATIVE (string bounds), so 'u'/'v' arrive
-// as the drag DELTA and are added to the entry's current values — no assumption that a
-// property equals a world coordinate. Because the map names the property, the viewer snaps
-// and clamps each one against its own schema (step 10, min/max) before writing.
+// OPENINGS[i] binds the handle to ONE entry of the list, and the function moves it:
+// handle.du/dv are how far the handle was dragged, added to the entry's current values — no
+// assumption that a property equals a world coordinate. The string bounds keep the range
+// relative to where the handle starts. The viewer snaps and clamps every property the
+// function changed against its own schema (step 10, min/max) before writing.
 //
 // .at() rather than .start(): the viewer keeps a dragged handle where the user put it
 // across a re-definition, but these handles must follow the value the script actually got
 // after snapping.
 $OPENINGS.forEach((o, i) =>
     $handle()
-        .param(`OPENINGS[${i}]`, { u: 'left', v: 'sill' })
+        .param(`OPENINGS[${i}]`, (param, handle) => { param.left += handle.du; param.sill += handle.dv })
         .at([o.left, 0, o.sill])
         .along('xz')
         .range([`-${$WIDTH}`, `-${$HEIGHT}`], [`+${$WIDTH}`, `+${$HEIGHT}`])

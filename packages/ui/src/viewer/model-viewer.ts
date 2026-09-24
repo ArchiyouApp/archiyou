@@ -20,7 +20,8 @@ import type { ViewerLabelsOverlay, OverlayLabel, OverlayLabelPos, DimensionParam
 import { handleDefFromData } from './gltf-handles.js';
 import type { HandleDef } from './gltf-handles.js';
 import type { ManagedHandlesData } from '@archiyou/core/src/interaction/types';
-import { applyParamMap, parseParamRef, snapClampChanged } from './handle-param.js';
+import { mapFunctionResult, parseParamRef, snapClampChanged } from './handle-param.js';
+import type { HandleDrag } from '@archiyou/core/src/interaction/types';
 import type { ParamEntryRef } from '@archiyou/editor/src/state/types';
 import './viewer-handles-overlay.js';
 import type { ViewerHandlesOverlay, HandleOverlay, HandleOverlayPos, HandleDragEventDetail } from './viewer-handles-overlay.js';
@@ -2691,21 +2692,27 @@ export class ModelViewer extends SignalWatcher(LitElement)
       return;
     }
 
-    // Compute the final u/v scalar values for this drag position
+    // Compute the final u/v scalar values for this drag position (in the range's own terms,
+    // which is what autoMap and the fraction through the range need)
     const { uScalar, vScalar } = _resolveHandleScalars(handle, handle.anchorLocal);
     const [uClamped, vClamped] = _clampHandleScalars(handle, uScalar, vScalar);
-    const rangeValue: number | [number, number] = handle.rangeType === '1d'
-      ? uClamped
-      : [uClamped, vClamped];
 
-    const handleObj = {
-      x:     handle.anchorLocal.x,
-      y:     handle.anchorLocal.y,
-      z:     handle.anchorLocal.z,
-      u:     uClamped,
-      v:     vClamped,
-      value: rangeValue,
-      range: [handle.rangeMin, handle.rangeMax],
+    // What a map or map function gets, the same for either kind of range (see HandleDrag)
+    const is2D = handle.rangeType === '2d';
+    const moved = startAnchor ? handle.anchorLocal.clone().sub(startAnchor) : new THREE.Vector3();
+    const [minU, minV] = is2D ? handle.rangeMin as [number, number] : [handle.rangeMin as number, 0];
+    const [maxU, maxV] = is2D ? handle.rangeMax as [number, number] : [handle.rangeMax as number, 0];
+    const fraction = (value: number, min: number, max: number) => (max === min) ? 0 : (value - min) / (max - min);
+    const position: [number, number, number] = [handle.anchorLocal.x, handle.anchorLocal.y, handle.anchorLocal.z];
+    const handleObj: HandleDrag = {
+      u:        handle.anchorLocal.dot(handle.plane.uAxis),
+      v:        handle.anchorLocal.dot(handle.plane.vAxis),
+      du:       moved.dot(handle.plane.uAxis),
+      dv:       is2D ? moved.dot(handle.plane.vAxis) : 0,
+      tu:       fraction(uClamped, minU, maxU),
+      tv:       is2D ? fraction(vClamped, minV, maxV) : 0,
+      range:    [handle.rangeMin, handle.rangeMax],
+      position: () => [...position],
     };
 
     const { paramValue, paramMin, paramMax } = await import('@archiyou/editor/src/state/types')
@@ -2714,7 +2721,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
     // ── Multi-param path (.params(fn)) ────────────────────────────────────────
     if (handle.paramsFnSrc)
     {
-      let fn: ((h: any, p: Record<string, any>) => void) | null = null;
+      let fn: ((params: Record<string, any>, handle: HandleDrag) => void) | null = null;
       try
       {
         // eslint-disable-next-line no-eval
@@ -2732,7 +2739,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
       for (const p of allParams) before[p.name] = paramValue(p);
       const paramsObj = structuredClone(before);
 
-      try { fn!(handleObj, paramsObj); }
+      try { fn!(paramsObj, handleObj); }
       catch (err) { console.error(`Handle params function threw:`, err); return; }
 
       // Apply each key that was mutated
@@ -2768,9 +2775,9 @@ export class ModelViewer extends SignalWatcher(LitElement)
       return;
     }
 
-    // An indexed ref (OPENINGS[2]) or a map object both mean the target is an OBJECT, and
-    // objects are written property-by-property against their own sub-schema.
-    if (ref.index !== null || handle.paramMap)
+    // An indexed ref (OPENINGS[2]) or an `object` param: the target is an OBJECT, and objects
+    // are written property-by-property against their own sub-schema.
+    if (ref.index !== null || param.type === 'object')
     {
       this._applyHandleObjectParam(handle, ref, param, handleObj, paramValue);
       return;
@@ -2781,7 +2788,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
     if (handle.paramFnSrc)
     {
       // Explicit map function
-      let fn: ((h: any, p: any) => any) | null = null;
+      let fn: ((param: any, handle: HandleDrag) => any) | null = null;
       try
       {
         // eslint-disable-next-line no-eval
@@ -2797,8 +2804,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
       const copy = structuredClone(currentVal);
       try
       {
-        const returned = fn!(handleObj, copy);
-        next = returned !== undefined ? returned : copy;
+        next = mapFunctionResult(copy, fn!(copy, handleObj));
       }
       catch (err)
       {
@@ -2858,7 +2864,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
     handle: HandleDef,
     ref: { name: string; index: number | null },
     param: any,
-    handleObj: any,
+    handleObj: HandleDrag,
     paramValue: (p: any) => any,
   ): void
   {
@@ -2883,34 +2889,30 @@ export class ModelViewer extends SignalWatcher(LitElement)
     }
 
     const before = indexed ? target : structuredClone(target);
-    let next: Record<string, any> | null;
 
-    if (handle.paramMap)
+    // An object has no range to map onto, so it needs a function saying which property moves
+    if (!handle.paramFnSrc)
     {
-      next = applyParamMap(
-        handleObj, before, handle.paramMap, handle.rangeRelative, objectSchema,
-        (msg) => console.warn(`Handle "${handle.id}": ${msg}`),
-      );
+      console.warn(`Handle "${handle.id}": "${handle.param}" is an object — give param() a function, `
+        + `like (param, handle) => { param.left += handle.du }`);
+      return;
     }
-    else
+
+    // Run like the scalar paramFnSrc path: the function changes the copy it is given or
+    // returns a new object (see mapFunctionResult)
+    const fn = this._reconstructParamFn(handle.paramFnSrc, handle.id);
+    if (!fn) return;
+    const copy = structuredClone(before);
+    let next: Record<string, any>;
+    try
     {
-      // Map-function escape hatch, run exactly like the scalar paramFnSrc path: it may
-      // mutate the copy it is given or return a new value.
-      const fn = this._reconstructParamFn(handle.paramFnSrc!, handle.id);
-      if (!fn) return;
-      const copy = structuredClone(before);
-      try
-      {
-        const returned = fn(handleObj, copy);
-        next = snapClampChanged(before, (returned !== undefined ? returned : copy), objectSchema);
-      }
-      catch (err)
-      {
-        console.error(`Handle "${handle.id}": map function threw:`, err);
-        return;
-      }
+      next = snapClampChanged(before, mapFunctionResult(copy, fn(copy, handleObj)), objectSchema);
     }
-    if (!next) return;
+    catch (err)
+    {
+      console.error(`Handle "${handle.id}": map function threw:`, err);
+      return;
+    }
 
     const value = indexed ? Object.assign(container as any[], { [ref.index as number]: next }) : next;
 
@@ -2933,7 +2935,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
 
   /** Rebuild a map function from its serialized source, as the scalar paramFnSrc path does.
    *  Script-derived code on the main thread — see CONTRIBUTING.md. */
-  private _reconstructParamFn(src: string, handleId: string): ((h: any, v: any) => any) | null
+  private _reconstructParamFn(src: string, handleId: string): ((param: any, handle: HandleDrag) => any) | null
   {
     try
     {

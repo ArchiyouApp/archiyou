@@ -8,19 +8,30 @@ export interface HandlePlane
     vAxis:  [number, number, number];
 }
 
-/** A drag scalar a handle can feed into a param property.
- *  'x'|'y'|'z' are the handle's world position; 'u'|'v' its projection onto the
- *  drag axes — which, under a relative range, IS the drag delta. */
-export type HandleAxis = 'x' | 'y' | 'z' | 'u' | 'v';
-
-/** Drag axis → property name, e.g. `{ u: 'left', v: 'sill' }`.
- *
- *  Declarative on purpose. Because the viewer knows which PROPERTY each axis feeds, it can
- *  step-snap and clamp against that property's own schema before validating — and it has
- *  to, since ScriptParam.validateValue() checks the whole value and would silently reject
- *  a `left` that misses its multipleOf. A map function cannot be introspected that way,
- *  which is why it is the escape hatch and not the default. */
-export type HandleParamMap = Partial<Record<HandleAxis, string>>;
+/** What a mapping function gets as its second argument when a drag ends:
+ *  `.param('OPENINGS[0]', (param, handle) => { param.left += handle.du })`.
+ *  The values are the same whatever range() gets: numbers or relative strings only change
+ *  how the bounds are written. */
+export interface HandleDrag
+{
+    /** Where the handle is along its first drag axis (uAxis), measured from the origin:
+     *  with along('xz'), u is the x */
+    u: number;
+    /** Where the handle is along its second drag axis (vAxis): with along('xz'), v is the z */
+    v: number;
+    /** How far this drag moved it along the first axis */
+    du: number;
+    /** How far this drag moved it along the second axis; 0 on a 1D handle */
+    dv: number;
+    /** How far through the range it is along the first axis, 0 at the minimum to 1 at the maximum */
+    tu: number;
+    /** The same along the second axis; 0 on a 1D handle */
+    tv: number;
+    /** The bounds given to range(), as written (relative bounds as offsets) */
+    range: [number | [number, number], number | [number, number]];
+    /** Where the handle is in the model: [x, y, z] */
+    position(): [number, number, number];
+}
 
 /** Compact display of a handle: a small plain circle instead of the icon button.
  *  Set via Handle.minimized(); null on HandleData means the full icon handle. */
@@ -51,20 +62,17 @@ export interface HandleData
     /** Param reference this handle writes to. Either a plain name (`'WIDTH'`) or one
      *  element of a list param (`'OPENINGS[2]'`) — see Handle.param(). */
     param: string | null;
-    /** Serialized map function `(handle, param) => newParamValue`.
+    /** Serialized map function `(param, handle: HandleDrag) => newValue | void`: it returns a
+     *  new value, or for an object or list param changes the copy it gets (see Handle.param()).
      *  When param is non-null and this is null → autoMap (linear remap of handle
      *  range to param schema min/max). Only works for 1D, non-relative, number params. */
     paramFnSrc: string | null;
-    /** Serialized multi-param mutation function `(handle, params) => void`.
+    /** Serialized multi-param mutation function `(params, handle: HandleDrag) => void`.
      *  `params` is a plain object pre-populated with all current param values
      *  (e.g. { X: 10, Y: 20 }). The function mutates it in-place; the viewer
      *  detects which keys changed and applies each changed param independently.
      *  Use for 2D handles or any case that updates more than one param at once. */
     paramsFnSrc: string | null;
-    /** Declarative drag-axis → property map, for a param whose value is an object (an
-     *  `object` param, or one entry of an object list). Mutually exclusive with
-     *  paramFnSrc — the map is the readable form, the function the escape hatch. */
-    paramMap: HandleParamMap | null;
 }
 
 // ── Managed-handle op protocol ────────────────────────────────────────────────

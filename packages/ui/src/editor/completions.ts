@@ -151,6 +151,8 @@ topLevelCompletions.push(
   { label: 'await',   type: 'keyword' },
   { label: 'console', type: 'variable', detail: 'Console API' },
   { label: 'fab',     type: 'variable', detail: 'Fabrication: contacts and fastenings' },
+  { label: '$handle', type: 'function', detail: '(): Handle',
+    info: 'Make a handle: a point in the viewer that users drag to change a parameter' },
 );
 
 /* ------------------------------------------------------------------ */
@@ -332,6 +334,10 @@ const staticMap = new Map<string, Completion[]>();
 /** Map from class name → instance member completions */
 const memberMap = new Map<string, Completion[]>();
 
+/** Classes that are not shapes: their members only show where the type is known (a Handle
+ *  after `$handle()`), and they are not made with `new` */
+const NON_SHAPE_CLASSES = new Set(['Handle']);
+
 for (const cls of shapeClasses)
 {
   if (cls.statics && cls.statics.length > 0)
@@ -360,7 +366,7 @@ for (const cls of shapeClasses)
 const allMembers: Completion[] = [];
 {
   const seen = new Set<string>();
-  for (const cls of shapeClasses)
+  for (const cls of shapeClasses.filter(c => !NON_SHAPE_CLASSES.has(c.label)))
   {
     for (const m of cls.members)
     {
@@ -378,7 +384,7 @@ const allMembers: Completion[] = [];
 }
 
 /** Shape class names for `new ClassName` completions */
-const classNameCompletions: Completion[] = shapeClasses.map(c => ({
+const classNameCompletions: Completion[] = shapeClasses.filter(c => !NON_SHAPE_CLASSES.has(c.label)).map(c => ({
   label: c.label,
   type: 'class',
   detail: c.detail,
@@ -484,14 +490,15 @@ export function archiyouCompletions(
 
   // Top-level word → Modeler global functions + keywords, merged with
   // identifiers the user defined in their own script (variables, function
-  // declarations, parameters, classes) from the JS syntax tree.
-  const wordMatch = context.matchBefore(/\b\w+$/);
+  // declarations, parameters, classes) from the JS syntax tree. A leading `$` is
+  // part of the word, so `$ha` completes to `$handle` instead of `$$handle`.
+  const wordMatch = context.matchBefore(/(?:\$\w*|\b\w+)$/);
   if (wordMatch)
   {
     return {
       from: wordMatch.from,
       options: mergeLocalIdentifiers(context),
-      validFor: /^\w*$/,
+      validFor: /^\$?\w*$/,
     };
   }
 
