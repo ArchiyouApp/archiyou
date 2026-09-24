@@ -23,7 +23,7 @@ import { Script } from '@archiyou/core/src/Script';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 
 import { api, ApiError } from './api.js';
-import { authService } from './auth-service.js';
+import { authService, authReady } from './auth-service.js';
 import { scripts, editorScript, bumpScripts, saveCollection } from '../state/core.js';
 
 /** fileIds we know exist on the server (so we choose PUT vs POST correctly). */
@@ -50,7 +50,11 @@ function handle(): string | undefined {
  *  local edits. Foreign (read-only) scripts owned by another user are skipped. */
 export async function pullUserScripts(): Promise<void> {
   if (!authed()) return;
-  const user = handle();
+  // On a reload the token is there straight away, but the handle only arrives with the
+  // /auth/me check (authReady). Without waiting, the load-time pull found no user and
+  // silently did nothing: the editor stayed on its local copies, and not knowing which files
+  // the server has, sent every save as a create, which the server refused.
+  const user = handle() ?? (await authReady)?.id;
   if (!user) return;
 
   let remote: ScriptData[];
@@ -98,7 +102,10 @@ export async function pullUserScripts(): Promise<void> {
       // Newer locally (e.g. edited offline) → push our version up.
       toPush.push(local);
     } else {
-      // Server is newer or equal → adopt the server copy.
+      // Server is newer or equal → adopt the server copy. A save of the local copy still
+      // waiting for its debounce would put the old code back on top of it: drop it.
+      const pending = saveTimers.get(fileId);
+      if (pending) { clearTimeout(pending); saveTimers.delete(fileId); }
       const merged = Script.fromData(remoteData);
       if (merged) {
         list[i] = merged;
@@ -178,7 +185,13 @@ export async function syncSaveNow(script: Script): Promise<void> {
       serverFileIds.add(fileId);
     }
   } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
+    if (err instanceof ApiError && err.status === 409) {
+      // Created as new, but the server has the file already (we missed it in a pull): save a
+      // version of it instead.
+      serverFileIds.add(fileId);
+      try { await api.put<ScriptData>(`/scripts/${user}/${fileId}`, data); }
+      catch (e) { console.warn('scripts-sync: save failed', e); }
+    } else if (err instanceof ApiError && err.status === 404) {
       // Server lost the file; recreate it.
       serverFileIds.delete(fileId);
       try { await api.post<ScriptData>(`/scripts/${user}`, data); serverFileIds.add(fileId); }

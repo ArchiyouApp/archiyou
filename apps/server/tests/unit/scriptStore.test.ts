@@ -384,3 +384,20 @@ describe('ScriptStore.listPublishedConfigurators', () => {
     expect(store.listPublishedConfigurators({ author: 'nobody' }).total).toBe(0);
   });
 });
+
+describe('ScriptStore create', () => {
+  it('refuses to create a script that already exists, as a conflict (409) and not a version clash', () => {
+    // The editor sends a create for a file it does not know is on the server (its load-time
+    // pull did not run). That used to fail as 'invalid' with "Version null already exists",
+    // which the editor could not tell from a real problem and dropped the save.
+    const first = store.create(AUTHOR, payload({ name: 'created-twice' }));
+    try {
+      store.create(AUTHOR, payload({ name: 'created-twice', id: first.id, fileId: first.fileId }));
+      expect.unreachable('a second create with the same id must throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ScriptStoreError);
+      expect((e as InstanceType<typeof ScriptStoreError>).code).toBe('conflict');
+      expect((e as Error).message).toMatch(/already exists: save a new version/);
+    }
+  });
+});

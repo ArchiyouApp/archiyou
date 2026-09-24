@@ -224,7 +224,7 @@ export function setupErrorHandling(fastify: FastifyInstance): void {
       return reply.code(404).send({ success: false, error: error.message });
     }
     if (error instanceof ScriptStoreError) {
-      const code = error.code === 'not_found' ? 404 : 422;
+      const code = error.code === 'not_found' ? 404 : error.code === 'conflict' ? 409 : 422;
       return reply.code(code).send({ success: false, error: error.message });
     }
     request.log.error(error);

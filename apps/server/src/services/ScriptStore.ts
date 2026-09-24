@@ -23,7 +23,7 @@ import { db } from '../db/client';
 import { scriptVersions, type ScriptVersionRow, type NewScriptVersionRow } from '../db/schema';
 
 export class ScriptStoreError extends Error {
-  constructor(public readonly code: 'invalid' | 'not_found', message: string) {
+  constructor(public readonly code: 'invalid' | 'not_found' | 'conflict', message: string) {
     super(message);
   }
 }
@@ -607,6 +607,11 @@ export class ScriptStore {
     try {
       db.insert(scriptVersions).values(row).run();
     } catch (e) {
+      // A row id that exists means the file was created before: the caller should save a
+      // version of it (PUT) instead. The other unique index is (file_id, version).
+      if (e instanceof Error && /UNIQUE constraint failed: script_versions\.id\b/i.test(e.message)) {
+        throw new ScriptStoreError('conflict', `Script ${row.fileId} already exists: save a new version of it instead`);
+      }
       if (e instanceof Error && /UNIQUE constraint failed/i.test(e.message)) {
         throw new ScriptStoreError('invalid', `Version "${row.version}" already exists for this file`);
       }
