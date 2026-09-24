@@ -215,3 +215,93 @@ describe('Handle placement and range checks', () =>
         expect(errors.length).toBe(3) // also reported in the script console
     })
 })
+
+describe('Handle mapping functions run outside the script', () =>
+{
+    /*  The viewer rebuilds a mapping function from its source text, where the script's
+        variables do not exist. A function using one used to fail silently on the drag;
+        now it is an error while the script runs, unless the value is passed along. */
+    let interactor: Interactor
+    let errors: string[]
+
+    beforeEach(() =>
+    {
+        interactor = new Interactor()
+        errors = []
+        interactor.setArchiyou(modulesFor(interactor, errors))
+        interactor.beginRun('script-a', ['OPENINGS', 'WIDTH'])
+    })
+
+    it('rejects a script variable the function uses, naming it and how to pass it along', () =>
+    {
+        const dragDir = -1
+        expect(() => interactor.addHandle().param('OPENINGS[0]', (param: any, handle: any) => { param.left += dragDir * handle.du }))
+            .toThrow(/param\('OPENINGS\[0\]'\): the function uses "dragDir".*Pass it along: \.param\('OPENINGS\[0\]', fn, \{ dragDir \}\)/)
+        expect(errors.length).toBe(1) // also in the script console
+    })
+
+    it('finds a name in a branch that would not run', () =>
+    {
+        const limit = 100
+        expect(() => interactor.addHandle().param('WIDTH', (param: any, handle: any) => (handle.du > 1e9) ? limit : param + handle.du))
+            .toThrow(/uses "limit"/)
+    })
+
+    it('allows the arguments, locals and JavaScript built-ins', () =>
+    {
+        expect(() => interactor.addHandle().param('WIDTH', (param: any, handle: any) =>
+        {
+            const step = 10
+            return Math.round((param + handle.du) / step) * step
+        })).not.toThrow()
+    })
+
+    it('carries passed values along as plain data', () =>
+    {
+        const dragDir = -1
+        const data = interactor.addHandle()
+            .param('OPENINGS[0]', (param: any, handle: any) => { param.left += dragDir * handle.du }, { dragDir })
+            .toData()
+        expect(data.fnVars).toEqual({ dragDir: -1 })
+
+        // What the viewer does: rebuild the function with the values as its variables
+        const fn = new Function(...Object.keys(data.fnVars!), `return (${data.paramFnSrc})`)(...Object.values(data.fnVars!))
+        const entry = { left: 1000 }
+        fn(entry, { du: 200 })
+        expect(entry.left).toBe(800)
+    })
+
+    it('rejects a passed value that cannot be sent', () =>
+    {
+        const shapeLike = new (class Mesh { volume() { return 1 } })()
+        expect(() => interactor.addHandle().param('WIDTH', (param: any) => param + shapeLike.volume(), { shapeLike }))
+            .toThrow(/"shapeLike" must hold plain data/)
+    })
+
+    it('checks params() the same way', () =>
+    {
+        const offset = 100
+        expect(() => interactor.addHandle().params((params: any, handle: any) => { params.WIDTH = handle.u - offset }))
+            .toThrow(/params\(\): the function uses "offset".*\.params\(fn, \{ offset \}\)/)
+        const data = interactor.addHandle().params((params: any, handle: any) => { params.WIDTH = handle.u - offset }, { offset }).toData()
+        expect(data.fnVars).toEqual({ offset: 100 })
+    })
+
+    it('sends the handle again when a passed value changes between runs', () =>
+    {
+        const declare = (dragDir: number) => interactor.addHandle().name('door')
+            .param('OPENINGS[0]', (param: any, handle: any) => { param.left += dragDir * handle.du }, { dragDir }).start(0, 0, 0)
+
+        declare(1)
+        interactor.getManagedHandlesData()
+
+        interactor.beginRun('script-a', ['OPENINGS'])
+        declare(1)
+        expect(interactor.getManagedHandlesData()).toEqual([])
+
+        interactor.beginRun('script-a', ['OPENINGS'])
+        declare(-1)
+        const ops = interactor.getManagedHandlesData()
+        expect(opById(ops, 'door')?.data?.fnVars).toEqual({ dragDir: -1 })
+    })
+})

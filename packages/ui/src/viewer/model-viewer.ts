@@ -20,7 +20,7 @@ import type { ViewerLabelsOverlay, OverlayLabel, OverlayLabelPos, DimensionParam
 import { handleDefFromData } from './gltf-handles.js';
 import type { HandleDef } from './gltf-handles.js';
 import type { ManagedHandlesData } from '@archiyou/core/src/interaction/types';
-import { mapFunctionResult, parseParamRef, snapClampChanged } from './handle-param.js';
+import { mapFunctionResult, parseParamRef, rebuildFunction, snapClampChanged } from './handle-param.js';
 import type { HandleDrag } from '@archiyou/core/src/interaction/types';
 import type { ParamEntryRef } from '@archiyou/editor/src/state/types';
 import './viewer-handles-overlay.js';
@@ -1952,7 +1952,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
     // The dimension is measured in model units; the param need not be (a model in
     // mm dimensioning a param in cm). The script's remap bridges the two.
     let next = detail.remapSrc
-      ? this._applyDimRemap(detail.remapSrc, coerced, param)
+      ? this._applyDimRemap(detail.remapSrc, detail.remapVars, coerced, param)
       : coerced;
     if (next === undefined) return;
 
@@ -1973,13 +1973,12 @@ export class ModelViewer extends SignalWatcher(LitElement)
    *  value to a parameter value. The function crossed the worker boundary as text,
    *  so it only ever sees its own arguments — `(value, currentParamValue)`.
    *  Returns undefined when it can't be rebuilt or throws (the edit is then dropped). */
-  private _applyDimRemap(src: string, value: unknown, param: any): unknown
+  private _applyDimRemap(src: string, vars: Record<string, any> | null | undefined, value: unknown, param: any): unknown
   {
     let fn: ((v: unknown, current: unknown) => unknown) | null = null;
     try
     {
-      // eslint-disable-next-line no-eval
-      fn = (0, eval)('(' + src + ')');
+      fn = rebuildFunction(src, vars);
     }
     catch (err)
     {
@@ -2548,6 +2547,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
       circle: l.circle,
       param: l.param,
       paramRemapSrc: l.paramRemapSrc,
+      paramRemapVars: l.paramRemapVars,
       interactive: l.interactive,
       rawValue: l.rawValue,
     }));
@@ -2724,8 +2724,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
       let fn: ((params: Record<string, any>, handle: HandleDrag) => void) | null = null;
       try
       {
-        // eslint-disable-next-line no-eval
-        fn = (0, eval)('(' + handle.paramsFnSrc + ')');
+        fn = rebuildFunction(handle.paramsFnSrc, handle.fnVars);
       }
       catch (err)
       {
@@ -2791,8 +2790,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
       let fn: ((param: any, handle: HandleDrag) => any) | null = null;
       try
       {
-        // eslint-disable-next-line no-eval
-        fn = (0, eval)('(' + handle.paramFnSrc + ')');
+        fn = rebuildFunction(handle.paramFnSrc, handle.fnVars);
       }
       catch (err)
       {
@@ -2900,7 +2898,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
 
     // Run like the scalar paramFnSrc path: the function changes the copy it is given or
     // returns a new object (see mapFunctionResult)
-    const fn = this._reconstructParamFn(handle.paramFnSrc, handle.id);
+    const fn = this._reconstructParamFn(handle.paramFnSrc, handle.fnVars, handle.id);
     if (!fn) return;
     const copy = structuredClone(before);
     let next: Record<string, any>;
@@ -2935,12 +2933,11 @@ export class ModelViewer extends SignalWatcher(LitElement)
 
   /** Rebuild a map function from its serialized source, as the scalar paramFnSrc path does.
    *  Script-derived code on the main thread — see CONTRIBUTING.md. */
-  private _reconstructParamFn(src: string, handleId: string): ((param: any, handle: HandleDrag) => any) | null
+  private _reconstructParamFn(src: string, vars: Record<string, any> | null | undefined, handleId: string): ((param: any, handle: HandleDrag) => any) | null
   {
     try
     {
-      // eslint-disable-next-line no-eval
-      return (0, eval)('(' + src + ')');
+      return rebuildFunction(src, vars);
     }
     catch (err)
     {

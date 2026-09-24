@@ -1,5 +1,6 @@
 import type { ArchiyouModules } from '../types';
 import type { HandleData, HandleDrag, HandleMinimized, HandlePlane, HandleRangeType } from './types';
+import { detachFunction } from '../execution/CodeParser';
 
 const AXIS_VECTORS: Record<string, [number, number, number]> = {
     x: [1, 0, 0],
@@ -41,6 +42,9 @@ export class Handle
     _param: string | null = null;
     paramFnSrc: string | null = null;
     paramsFnSrc: string | null = null;
+    /** Values from the script the mapping function uses, given as the last argument of
+     *  param() or params(): variables of the function when the viewer rebuilds it */
+    fnVars: Record<string, any> | null = null;
 
     // Per-run call-tracking flags — read by Interactor.getManagedHandlesData()
     // to decide which ops to emit. Reset implicitly because Handles are recreated each run.
@@ -304,12 +308,17 @@ export class Handle
      *  returned value only counts for it when it is an object or list too, so
      *  `(param, handle) => param.left = handle.u` works as written. Every property the
      *  function changes is snapped to its step and clamped to its min/max. The function runs
-     *  in the viewer, from its source text: variables of the script are not available in it.
+     *  in the viewer, from its source text: variables of the script are not there. Pass the
+     *  ones it uses in `vars`; a name that is neither passed nor a JavaScript built-in (Math,
+     *  JSON, …) is an error right away, instead of a drag that silently does nothing.
      *
      *  For an indexed ref prefer at() over start(): the viewer keeps a dragged handle
      *  where the user put it across a re-definition, but a handle standing for a list entry
      *  must follow the value the script actually got — a step:10 property snaps to 1230
      *  where the drag ended at 1234.
+     *
+     *  @param vars  Values from the script the function uses, like `{ dragDir }`: plain data
+     *              (numbers, text, lists, plain objects), available in the function by name.
      *
      *  @example
      *  $PARAMS.define('HEIGHT', 'number', { min: 100, max: 300, default: 200 });
@@ -319,10 +328,15 @@ export class Handle
      *  $handle().param('HEIGHT').at(0, 0, ($HEIGHT - 100) * 2).along('z').range(0, 400);
      *  // a function, here switching a boolean halfway
      *  $handle().param('BIG', (param, handle) => handle.tu > 0.5).at(200, 0, 0).along('x').range(0, 400);
+     *  // a value from the script, passed along
+     *  const step = 50;
+     *  $handle().param('HEIGHT', (param, handle) => param + Math.round(handle.du / step) * step, { step })
+     *      .at(0, 50, $HEIGHT).along('z').range('-100', '+100');
      */
     param(
         ref: string,
         map?: ((param: any, handle: HandleDrag) => any) | null,
+        vars?: Record<string, any>,
     ): this
     {
         // Validate against the param's own name; the [index] is a reference INTO it.
@@ -347,8 +361,13 @@ export class Handle
             throw new Error(detail);
         }
 
+        const detached = (typeof map === 'function')
+            ? this._detach(map, vars, `$handle().param('${ref}')`, names => `.param('${ref}', fn, { ${names.join(', ')} })`)
+            : null;
+
         this._param      = ref;
-        this.paramFnSrc  = (typeof map === 'function') ? map.toString() : null;
+        this.paramFnSrc  = detached?.src ?? null;
+        this.fnVars      = detached?.vars ?? null;
         if (!this.id) this.id = ref;
         return this;
     }
@@ -367,10 +386,11 @@ export class Handle
      *             `(params, handle) => { params.X += handle.du; params.Y += handle.dv }`.
      *             `handle` is the same as for param(). The viewer detects which params
      *             changed and applies each one; a returned value is ignored.
+     *  @param vars Values from the script the function uses, as for param()
      *  Use this when one drag updates several params. */
-    params(fn: (params: Record<string, any>, handle: HandleDrag) => void): this
+    params(fn: (params: Record<string, any>, handle: HandleDrag) => void, vars?: Record<string, any>): this
     {
-        const src = fn.toString();
+        const detached = this._detach(fn, vars, '$handle().params()', names => `.params(fn, { ${names.join(', ')} })`);
 
         // Validate keys against known param names immediately (at call time).
         const knownParamNames = this._archiyou?.interactor?.knownParamNames ?? [];
@@ -404,8 +424,23 @@ export class Handle
             }
         }
 
-        this.paramsFnSrc = src;
+        this.paramsFnSrc = detached.src;
+        this.fnVars      = detached.vars;
         return this;
+    }
+
+    /** detachFunction(), with its message also in the script console */
+    private _detach(fn: Function, vars: Record<string, any> | undefined, where: string, passAlong: (names: string[]) => string)
+    {
+        try
+        {
+            return detachFunction(fn, vars, where, passAlong);
+        }
+        catch (e)
+        {
+            this._archiyou?.console?.error((e as Error).message);
+            throw e;
+        }
     }
 
     toData(): HandleData
@@ -429,6 +464,7 @@ export class Handle
             param:        this._param,
             paramFnSrc:   this.paramFnSrc,
             paramsFnSrc:  this.paramsFnSrc,
+            fnVars:       this.fnVars ? structuredClone(this.fnVars) : null,
         };
     }
 }

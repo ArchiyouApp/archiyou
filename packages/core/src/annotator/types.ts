@@ -64,6 +64,7 @@ export interface DimensionLineData
     roundDecimals?:number
     param:string // name param binded to this dimension line
     paramRemapSrc?:string // source of the optional remap function of param(name, remap): re-created in the viewer
+    paramRemapVars?:Record<string, any>|null // values from the script the remap uses (param(name, remap, vars)): its variables in the viewer
     _labelPosition?:Array<number|number|number> // for internal use
     showUnits?:boolean
 }

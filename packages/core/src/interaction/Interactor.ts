@@ -247,6 +247,7 @@ export class Interactor
         if (stored.param !== current.param)                     return true;
         if (stored.paramFnSrc !== current.paramFnSrc)           return true;
         if (stored.paramsFnSrc !== current.paramsFnSrc)         return true;
+        if (JSON.stringify(stored.fnVars ?? null) !== JSON.stringify(current.fnVars ?? null)) return true;
 
         // Drag range: type, bounds, and absolute-vs-relative mode
         if (stored.rangeType !== current.rangeType)             return true;

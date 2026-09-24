@@ -73,6 +73,9 @@ export interface HandleData
      *  detects which keys changed and applies each changed param independently.
      *  Use for 2D handles or any case that updates more than one param at once. */
     paramsFnSrc: string | null;
+    /** Values from the script that paramFnSrc / paramsFnSrc use (the last argument of param()
+     *  or params()): the viewer rebuilds the function with these as variables. Plain data. */
+    fnVars: Record<string, any> | null;
 }
 
 // ── Managed-handle op protocol ────────────────────────────────────────────────

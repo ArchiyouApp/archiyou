@@ -524,3 +524,84 @@ export class CodeParser
 
 
 }
+
+//// FUNCTIONS THAT RUN OUTSIDE THE SCRIPT ////
+
+/** JavaScript's own globals: there wherever a detached function is rebuilt */
+const BUILT_IN_GLOBALS = new Set([
+    'Math', 'JSON', 'Number', 'String', 'Boolean', 'Array', 'Object', 'Date', 'RegExp', 'Map', 'Set',
+    'Symbol', 'BigInt', 'Intl', 'Reflect', 'Error', 'TypeError', 'RangeError', 'parseInt', 'parseFloat',
+    'isNaN', 'isFinite', 'undefined', 'NaN', 'Infinity', 'console', 'structuredClone', 'arguments',
+    'encodeURIComponent', 'decodeURIComponent', 'globalThis',
+]);
+
+/** Numbers, text, booleans, null, and lists and plain objects of those: what survives being
+ *  sent to the viewer (a worker message and the JSON in a GLB) unchanged */
+function isPlainData(value: any): boolean
+{
+    if (value === null || ['number', 'string', 'boolean'].includes(typeof value)) return true;
+    if (Array.isArray(value)) return value.every(isPlainData);
+    if (typeof value !== 'object') return false; // functions, undefined, symbols
+    const proto = Object.getPrototypeOf(value);
+    return (proto === Object.prototype || proto === null) && Object.values(value).every(isPlainData);
+}
+
+/** Prepare a script function that runs somewhere else — a handle's mapping or a dimension's
+ *  remap, which the viewer rebuilds from their source text. A closure does not survive that
+ *  trip: a script variable the function uses is a ReferenceError in the viewer, on a drag
+ *  long after the script ran. So every outside name the function uses must be a JavaScript
+ *  built-in or be given in `vars`, whose values the viewer turns into variables of the
+ *  rebuilt function; that is checked here, from the source, for every branch.
+ *
+ *  @param where     how the caller was called, for the messages: `$handle().param('X')`
+ *  @param passAlong the call that fixes it, for a list of missing names
+ *  @throws an Error naming what is missing or cannot be sent
+ */
+export function detachFunction(
+    fn: Function,
+    vars: Record<string, any> | null | undefined,
+    where: string,
+    passAlong: (names: string[]) => string,
+): { src: string, vars: Record<string, any> | null }
+{
+    const src = fn.toString();
+    const given = vars ?? {};
+
+    if (typeof given !== 'object' || Array.isArray(given))
+    {
+        throw new Error(`${where}: the values for the function must be an object, like { dragDir }`);
+    }
+    const badNames = Object.keys(given).filter(name => !/^[A-Za-z_$][\w$]*$/.test(name));
+    if (badNames.length > 0)
+    {
+        throw new Error(`${where}: ${badNames.map(n => `"${n}"`).join(', ')} cannot be a variable name`);
+    }
+    const notData = Object.entries(given).filter(([, value]) => !isPlainData(value)).map(([name]) => name);
+    if (notData.length > 0)
+    {
+        throw new Error(`${where}: ${notData.map(n => `"${n}"`).join(', ')} must hold plain data — numbers, ` +
+            `text, lists or plain objects — as it is sent to the viewer. Pass the numbers it needs instead.`);
+    }
+
+    let free: string[];
+    try
+    {
+        free = findGlobals(`(${src})`).map(g => g.name);
+    }
+    catch
+    {
+        throw new Error(`${where}: the function cannot be read back from its source. ` +
+            `Write it as an arrow function, like (param, handle) => { … }`);
+    }
+
+    const missing = [...new Set(free)].filter(name => !BUILT_IN_GLOBALS.has(name) && !(name in given));
+    if (missing.length > 0)
+    {
+        const names = missing.map(n => `"${n}"`).join(', ');
+        throw new Error(`${where}: the function uses ${names}, which only ${missing.length > 1 ? 'exist' : 'exists'} ` +
+            `in the script — it runs in the viewer, rebuilt from its source. ` +
+            `Pass ${missing.length > 1 ? 'them' : 'it'} along: ${passAlong(missing)}`);
+    }
+
+    return { src, vars: Object.keys(given).length > 0 ? JSON.parse(JSON.stringify(given)) : null };
+}

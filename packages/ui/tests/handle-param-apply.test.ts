@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { mapFunctionResult, parseParamRef, snapClampChanged, snapClampToSchema } from '../src/viewer/handle-param';
+import { mapFunctionResult, parseParamRef, rebuildFunction, snapClampChanged, snapClampToSchema } from '../src/viewer/handle-param';
 import type { HandleDrag } from '@archiyou/core/src/interaction/types';
 
 /** The Opening type from roomwithopeningsbox, as ParamManager.buildObjectSchema emits it. */
@@ -123,5 +123,28 @@ describe('snapClampChanged — the map-function escape hatch', () =>
   {
     const odd = { ...ENTRY, left: 604.5 };
     expect(snapClampChanged(odd, { ...odd }, SCHEMA)['left']).toBe(604.5);
+  });
+});
+
+describe('rebuildFunction — a script function rebuilt in the viewer', () =>
+{
+  it('gives the function the values the script passed along as variables', () =>
+  {
+    const fn = rebuildFunction<(param: any, handle: any) => void>(
+      '(param, handle) => { param.left += dragDir * handle.du }', { dragDir: -1 });
+    const entry = { left: 1000 };
+    fn(entry, { du: 200 });
+    expect(entry.left).toBe(800);
+  });
+
+  it('rebuilds a function without values, like a dimension remap', () =>
+  {
+    expect(rebuildFunction<(v: number) => number>('(v) => v / 10')(800)).toBe(80);
+  });
+
+  it('has no access to anything else of the page', () =>
+  {
+    const fn = rebuildFunction<() => unknown>('() => typeof ENTRY');
+    expect(fn()).toBe('undefined');
   });
 });

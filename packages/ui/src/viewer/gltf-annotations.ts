@@ -54,6 +54,8 @@ interface DimensionLineData
    *  edited dimension value to the parameter value. Re-created here, in the main
    *  thread, so it is self-contained by contract (see DimensionLine.bindParam). */
   paramRemapSrc?: string;
+  /** Values from the script the remap uses: its variables when rebuilt (see rebuildFunction) */
+  paramRemapVars?: Record<string, any> | null;
   interactive?: boolean;
 }
 
@@ -100,6 +102,8 @@ export interface HtmlLabelDef
   param?: string;
   /** Source of the optional `.param(name, remap)` function (see DimensionLineData). */
   paramRemapSrc?: string;
+  /** Values from the script that remap uses */
+  paramRemapVars?: Record<string, any> | null;
   interactive?: boolean;
   /** Raw numeric value (for dimensions) — used as the starting input value
    *  when the user clicks the label to edit it. */
@@ -229,6 +233,7 @@ export async function applyAnnotations(
       anchorLocal: lp,
       param: d.param,
       paramRemapSrc: d.paramRemapSrc,
+      paramRemapVars: d.paramRemapVars ?? null,
       interactive: !!d.interactive && !!d.param,
       rawValue: d.value,
       dim: { value: d.value, units: d.units, showUnits: d.showUnits, round: d.round, roundDecimals: d.roundDecimals },

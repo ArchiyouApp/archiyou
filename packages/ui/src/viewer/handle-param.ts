@@ -1,3 +1,12 @@
+/** Rebuild a script function the viewer got as source text (a handle's mapping, a dimension's
+ *  remap), with the values the script passed along (`vars`) as its variables. The function
+ *  runs outside the script: detachFunction() in core made sure it needs nothing else. */
+export function rebuildFunction<T = (...args: any[]) => any>(src: string, vars?: Record<string, any> | null): T
+{
+  const names = Object.keys(vars ?? {});
+  return new Function(...names, `return (${src});`)(...names.map(name => vars![name])) as T;
+}
+
 /** What a map FUNCTION's result means. An object or list value may be changed in place,
  *  so for one a returned value only counts when it is an object or list too: a concise
  *  `(param, handle) => param.left = handle.u` returns the number it assigned, and taking

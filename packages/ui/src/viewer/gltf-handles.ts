@@ -24,6 +24,8 @@ export interface HandleRawData
   param: string | null;
   paramFnSrc: string | null;
   paramsFnSrc: string | null;
+  /** Values from the script the mapping function uses (see rebuildFunction) */
+  fnVars?: Record<string, any> | null;
 }
 
 /** The viewer-internal representation of a Handle, with Three.js vectors. */
@@ -46,6 +48,8 @@ export interface HandleDef
   param: string | null;
   paramFnSrc: string | null;
   paramsFnSrc: string | null;
+  /** Values from the script the mapping function uses (see rebuildFunction) */
+  fnVars?: Record<string, any> | null;
 }
 
 /**
@@ -73,6 +77,7 @@ export function handleDefFromData(h: HandleRawData): HandleDef
     param:        h.param ?? null,
     paramFnSrc:   h.paramFnSrc ?? null,
     paramsFnSrc:  h.paramsFnSrc ?? null,
+    fnVars:       h.fnVars ?? null,
   };
 }
 

@@ -23,6 +23,7 @@ import { detectExportFrame } from '../modeler/utils'
 import { isPointLike } from '../modeler/typeguards'
 
 import { validate, optional } from '../decorators'
+import { detachFunction } from '../execution/CodeParser'
 import { PointLikeSchema } from '../modeler/schemas'
 import { DimensionOptionsSchema } from './schemas'
 import { Type } from 'typebox'
@@ -74,6 +75,7 @@ export class DimensionLine extends BaseAnnotation
     showUnits:boolean = false;
     _param:string = null; // name of bound parameter
     _paramRemapSrc:string = null; // source of the optional remap function of param(name, remap)
+    _paramRemapVars:Record<string, any> = null; // values from the script the remap uses: param(name, remap, vars)
     _hasCustomOffsetVec:boolean = false;
     _offsetComponents:[number, number, number] | null = null;
 
@@ -870,48 +872,65 @@ export class DimensionLine extends BaseAnnotation
      *      parameter is scaled or derived - a model in mm with a parameter in cm
      *      is `.param('DEPTH', (v) => v/10)`.
      *
-     *  NOTE: the remap function is serialized to source here and re-created in the
-     *      viewer (the main thread, where the script scope no longer exists), so it
-     *      has to be self-contained: use its arguments and globals like Math only,
-     *      never a variable or function from the script around it. That is checked
-     *      at bind time - see _toRemapSrc().
+     *  @param vars optional values from the script the remap uses, like `{ SCALE }`: plain data
+     *      (numbers, text, lists, plain objects), available in the remap by name.
+     *
+     *  NOTE: the remap function is serialized to source here and re-created in the viewer
+     *      (the main thread, where the script scope no longer exists): a variable of the
+     *      script around it is not there. Pass the ones it uses in `vars`; any other name that
+     *      is not a JavaScript built-in (Math, JSON, …) is an error at bind time.
      */
     @validate(Type.String())
-    bindParam(paramName:string, remap?:(value:number, current?:any) => any):this
+    bindParam(paramName:string, remap?:(value:number, current?:any) => any, vars?:Record<string, any>):this
     {
         this._param = paramName;
         this.interactive = true;
-        this._paramRemapSrc = (remap === undefined || remap === null)
+        const detached = (remap === undefined || remap === null)
                                 ? null
-                                : this._toRemapSrc(remap, paramName);
+                                : this._detachRemap(remap, paramName, vars);
+        this._paramRemapSrc = detached?.src ?? null;
+        this._paramRemapVars = detached?.vars ?? null;
         return this;
     }
 
     /** alias for bindParam */
-    param(paramName:string, remap?:(value:number, current?:any) => any):this
+    param(paramName:string, remap?:(value:number, current?:any) => any, vars?:Record<string, any>):this
     {
-        return this.bindParam(paramName, remap);
+        return this.bindParam(paramName, remap, vars);
     }
 
     /** Serialize a remap function to source, checking up front that it survives the trip.
      *  The viewer rebuilds the function from this string in the main thread: a closure over
      *  a script variable is a ReferenceError there, thrown on an edit long after the
-     *  .param() call that caused it. Rebuilding it here in the same detached way surfaces
-     *  that while the script runs, where the author can see it. */
-    _toRemapSrc(remap:any, paramName:string):string
+     *  .param() call that caused it. detachFunction() finds those names in the source, so
+     *  this fails while the script runs, where the author can see it. The remap is then run
+     *  once, rebuilt as the viewer does, only to warn about one that returns nothing usable. */
+    _detachRemap(remap:any, paramName:string, vars?:Record<string, any>):{ src:string, vars:Record<string, any>|null }
     {
         if(typeof remap !== 'function')
         {
             throw new Error(`DimensionLine::param(): remap of param "${paramName}" must be a function, like (v) => v/10. Received: ${typeof remap}`);
         }
 
-        const src = remap.toString();
+        let detached: { src:string, vars:Record<string, any>|null };
+        try
+        {
+            detached = detachFunction(remap, vars, `DimensionLine::param('${paramName}')`,
+                names => `.param('${paramName}', remap, { ${names.join(', ')} })`);
+        }
+        catch(e)
+        {
+            this._archiyou?.console?.error((e as Error).message);
+            throw e;
+        }
 
-        try {
-            // Rebuild in an empty scope - exactly what the viewer does
-            const detached = (new Function(`return (${src})`))() as (v:number, c?:any) => any;
+        try
+        {
+            // Rebuild in an empty scope with only the passed values - exactly what the viewer does
+            const names = Object.keys(detached.vars ?? {});
+            const rebuilt = (new Function(...names, `return (${detached.src})`))(...names.map(n => detached.vars![n])) as (v:number, c?:any) => any;
             const probe = (typeof this.value === 'number') ? this.value : 1;
-            const out = detached(probe, undefined);
+            const out = rebuilt(probe, undefined);
 
             // A remap may legitimately return a string (a text param), just not nothing
             if(out === undefined || out === null || (typeof out === 'number' && !isFinite(out)))
@@ -923,20 +942,12 @@ export class DimensionLine extends BaseAnnotation
         }
         catch(e)
         {
-            if (e instanceof ReferenceError)
-            {
-                const msg = `DimensionLine::param(): remap of param "${paramName}" cannot run outside the script (${(e as Error).message}). ` +
-                    `It is re-created in the viewer, so keep it self-contained: use only its arguments, like (v) => v/10 - ` +
-                    `no variables or functions from the script around it.`;
-                this._archiyou?.console?.error(msg);
-                throw new Error(msg);
-            }
-            // Anything else is the function's own doing on a probe value: not fatal
+            // The function's own doing on a probe value: not fatal
             this._archiyou?.console?.warn(
                 `DimensionLine::param(): remap of param "${paramName}" threw on value ${this.value}: ${(e as Error).message}`);
         }
 
-        return src;
+        return detached;
     }
 
     /** Generic Shape method (every Annotation class should have this!) */
@@ -1045,6 +1056,7 @@ export class DimensionLine extends BaseAnnotation
             roundDecimals: this.roundDecimals,
             param: this._param,
             paramRemapSrc: this._paramRemapSrc,
+            paramRemapVars: this._paramRemapVars ? structuredClone(this._paramRemapVars) : null,
             showUnits: this.showUnits,
         } as unknown as DimensionLineData
 

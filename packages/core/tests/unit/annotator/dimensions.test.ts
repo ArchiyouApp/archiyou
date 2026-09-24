@@ -258,7 +258,34 @@ describe('Dimensions', () =>
             const dim = line.dim()
 
             expect(() => dim.param('DEPTH', (v: number) => v / scriptVariable))
-                .toThrow(/cannot run outside the script/)
+                .toThrow(/uses "scriptVariable".*Pass it along: \.param\('DEPTH', remap, \{ scriptVariable \}\)/)
+        })
+
+        it('finds a script variable in a branch the probe run would not take', () =>
+        {
+            const hidden = 10
+            const dim = (modeler.line([0, 0], [800, 0]) as any).dim()
+            expect(() => dim.param('DEPTH', (v: number) => (v > 1e9) ? v / hidden : v / 10))
+                .toThrow(/uses "hidden"/)
+        })
+
+        it('takes the values it uses as a third argument, and carries them to the viewer', () =>
+        {
+            const SCALE = 10
+            const dim = (modeler.line([0, 0], [800, 0]) as any).dim().param('DEPTH', (v: number) => v / SCALE, { SCALE })
+
+            const data = dim.toData() as DimensionLineData
+            expect(data.paramRemapVars).toEqual({ SCALE: 10 })
+            const fn = new Function('SCALE', `return (${data.paramRemapSrc})`)(data.paramRemapVars!.SCALE) as (v: number) => number
+            expect(fn(800)).toBe(80)
+        })
+
+        it('rejects a passed value that is not plain data', () =>
+        {
+            const line = modeler.line([0, 0], [800, 0]) as any
+            const dim = line.dim()
+            expect(() => dim.param('DEPTH', (v: number) => v / line.length(), { line }))
+                .toThrow(/"line" must hold plain data/)
         })
 
         it('rejects a remap that is not a function', () =>
