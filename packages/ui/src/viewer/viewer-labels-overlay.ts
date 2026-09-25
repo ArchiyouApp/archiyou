@@ -280,7 +280,9 @@ export class ViewerLabelsOverlay extends LitElement
       --ay-dim-color: var(--color-text, #1e293b);
       /* Dimension values read smaller than shape labels — they sit on the
          drawing itself, so keep them unobtrusive. */
-      --ay-dim-font-size: 0.625rem;
+      --ay-dim-font-size: 0.55rem;
+      /* Fully rounded: a dimension value reads as a pill on the line */
+      --ay-dim-radius: var(--wa-border-radius-pill, 9999px);
 
       /* Interactive (param-bound) dimension values are a bordered chip, so the
          editable ones stand apart from plain dimension text. Their background
@@ -408,6 +410,14 @@ export class ViewerLabelsOverlay extends LitElement
     /* Editing a dimension keeps the (smaller) dimension text size */
     .ay-label--dimension.ay-label--editing {
       font-size: var(--ay-dim-font-size);
+    }
+
+    /* Dimension values are pills, also while interactive or edited. After the rules above,
+       which give those states the square(ish) label radius. */
+    .ay-label--dimension,
+    .ay-label--dimension.ay-label--interactive,
+    .ay-label--dimension.ay-label--editing {
+      border-radius: var(--ay-dim-radius);
     }
 
     /* Leader line from the anchor to the label box */

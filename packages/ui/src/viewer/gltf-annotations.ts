@@ -246,9 +246,9 @@ export async function applyAnnotations(
 
 /**
  * Format a dimension value for display, converting from the dimension's source
- * unit (the script's model unit) into the run's Metric/Imperial display system
- * with an auto-picked unit + fractional inches. Always converts + labels so the
- * value is unambiguous and updates when the switch flips. Reads the execution
+ * unit (the script's model unit) into the run's Metric/Imperial display system.
+ * Metric shows a bare number in the model unit unless the dimension has showUnits;
+ * imperial always shows feet/inches, and follows the switch when it flips. Reads the execution
  * result + scriptModelUnits so it reflects the current run each time it runs.
  */
 export function formatDimensionValue(
@@ -268,8 +268,17 @@ export function formatDimensionValue(
     return (d.round ? _round(d.value, d.roundDecimals ?? 0) : d.value).toString();
   }
 
-  // Convert to the run's display system with unit label (auto unit + fractions).
-  return formatLength(toMM(d.value, src), _runDisplaySystem(), { withUnit: true });
+  // Same rule as the drawings (AnnotatorDimensionLine._formatValueText): metric writes bare
+  // numbers in the model's own unit unless the script asks (`dim({ showUnits: true })`);
+  // imperial keeps its marks, as 6'-3" is how the number is written.
+  const system = _runDisplaySystem();
+  const withUnit = (system === 'imperial') ? true : !!d.showUnits;
+
+  return formatLength(toMM(d.value, src), system, {
+    withUnit,
+    unit: withUnit ? undefined : src,
+    metricDecimals: withUnit ? undefined : d.roundDecimals,
+  });
 }
 
 function _round(n: number, decimals: number): number
