@@ -778,7 +778,7 @@ export class CodeBox extends SignalWatcher(LitElement)
     }
 
     .title {
-      font-weight: 600;
+      font-weight: 400;
       color: var(--color-text);
       font-size: var(--text-sm);
     }
