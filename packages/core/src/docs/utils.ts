@@ -206,6 +206,66 @@ export function stripOuterSVGTags(svg: string): string
 }
 
 /**
+ * Width/height of an image, read from its own data — or undefined when it cannot tell.
+ *
+ *  SVG: the viewBox of the outer <svg> tag, else its width/height attributes.
+ *  PNG: the IHDR chunk. JPEG: the first start-of-frame marker. Only the ratio is used
+ *  (to size an image container from one side), so units do not matter.
+ */
+export function imageAspectRatio(data:string, format:'jpg'|'png'|'svg'):number|undefined
+{
+    if(typeof data !== 'string' || !data){ return undefined }
+
+    const ratio = (w:number, h:number) => (w > 0 && h > 0 && isFinite(w/h)) ? w/h : undefined;
+
+    if(format === 'svg')
+    {
+        const svgTag = stripXMLDeclaration(data).match(/<svg\b[^>]*>/i)?.[0] ?? '';
+        const viewBox = svgTag.match(/viewBox\s*=\s*["']([^"']+)["']/i)?.[1]
+                            ?.trim().split(/[\s,]+/).map(parseFloat);
+        if(viewBox?.length === 4){ return ratio(viewBox[2], viewBox[3]) }
+
+        const attr = (name:string) => parseFloat(svgTag.match(new RegExp(`\\s${name}\\s*=\\s*["']([^"']+)["']`, 'i'))?.[1] ?? '');
+        return ratio(attr('width'), attr('height'));
+    }
+
+    // Raster: data is a base64 data-URI (or bare base64)
+    let bytes:Uint8Array;
+    try
+    {
+        const bin = atob(data.replace(/^data:[^,]*,/, ''));
+        bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+    }
+    catch(e){ return undefined }
+
+    const u16 = (i:number) => (bytes[i] << 8) | bytes[i+1];
+    const u32 = (i:number) => ((bytes[i] << 24) >>> 0) + (bytes[i+1] << 16) + (bytes[i+2] << 8) + bytes[i+3];
+
+    // PNG: 8 byte signature, then IHDR with width and height as big-endian uint32
+    if(bytes[0] === 0x89 && bytes[1] === 0x50 && bytes.length >= 24)
+    {
+        return ratio(u32(16), u32(20));
+    }
+
+    // JPEG: walk the segments up to a start-of-frame (SOF0-15, except DHT/JPG/DAC)
+    if(bytes[0] === 0xFF && bytes[1] === 0xD8)
+    {
+        let i = 2;
+        while(i + 9 < bytes.length && bytes[i] === 0xFF)
+        {
+            const marker = bytes[i+1];
+            if(marker >= 0xC0 && marker <= 0xCF && ![0xC4, 0xC8, 0xCC].includes(marker))
+            {
+                return ratio(u16(i+7), u16(i+5)); // height comes first
+            }
+            i += 2 + u16(i+2);
+        }
+    }
+
+    return undefined;
+}
+
+/**
  * Word-wrap text into SVG <tspan> elements.
  * Uses an estimated character width since no font metric API is available.
  */

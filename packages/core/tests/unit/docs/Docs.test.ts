@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 
 import { save } from '@archiyou/meshup/src/utils'
@@ -10,7 +10,7 @@ import { DOC_DEFAULT_SVG_FONT_FAMILY, DOC_TEXT_HEIGHT_TO_FONT_SIZE_FACTOR } from
 
 import { Modeler } from '../../../src/modeler/Modeler'
 import { Docs } from '../../../src/docs/Docs'
-import { pointsToMm, mmToPoints } from '../../../src/docs/utils'
+import { pointsToMm, mmToPoints, imageAspectRatio } from '../../../src/docs/utils'
 import { ShapeCollection as SmartShapeCollection } from '@archiyou/meshup'
 
 const TEST_OUTPUTS_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../../outputs/docs')
@@ -408,6 +408,112 @@ describe('Doc', () =>
 		expect(svg).toContain('<svg')
 		expect(svg).not.toContain('ShapeCollection::toSVG() — nothing 2D to draw')
 	})
+	it('names the titleblock texts as variables, set on every page at once', async () =>
+	{
+		const { doc } = createDoc()
+
+		doc.create('titled')
+			.page('one')
+			.titleblock({ title: 'Old title', designer: 'Someone' })
+			.page('two')
+			.titleblock({ title: 'Old title', designer: 'Someone' })
+			.set('titleblock:title', 'New title')
+			.set('titleblock:designer', 'Someone else')
+			.set('titleblock:designLicense', 'CC0')
+
+		const pages = await doc.toSVGPages() as Array<any>
+		pages.forEach(page =>
+		{
+			expect(page.svg).toContain('New title')
+			expect(page.svg).not.toContain('Old title')
+			expect(page.svg).toContain('Someone else')
+			expect(page.svg).toContain('CC0')
+		})
+
+		const vars = Object.keys(doc.getDoc('titled')._variables)
+		expect(vars).toEqual(expect.arrayContaining([
+			'titleblock:title', 'titleblock:designer', 'titleblock:designLicense', 'titleblock:manualLicense',
+			'titleblock:logoUrl', 'titleblock:version', 'titleblock:metrics', 'titleblock:params',
+		]))
+	})
+
+	describe('image sizing', () =>
+	{
+		const realFetch = globalThis.fetch
+		afterEach(() => { globalThis.fetch = realFetch })
+
+		// 300x100 PNG header (signature + IHDR), enough to read the size from
+		const PNG_300x100 = new Uint8Array([137,80,78,71,13,10,26,10, 0,0,0,13, 73,72,68,82, 0,0,1,44, 0,0,0,100, 8,6,0,0,0])
+		const SVG_200x100 = '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><rect width="200" height="100"/></svg>'
+
+		function stubImages()
+		{
+			globalThis.fetch = (async () => ({
+				status: 200,
+				arrayBuffer: async () => PNG_300x100.buffer,
+				text: async () => SVG_200x100,
+			})) as any
+		}
+
+		/** width/height of the image content in the page svg */
+		function imageSize(svg:string):[number, number]
+		{
+			const m = svg.match(/<(?:svg|image) x="0" y="0" width="([\d.]+)" height="([\d.]+)"/)
+			return [Number(m[1]), Number(m[2])]
+		}
+
+		it('reads the aspect ratio from svg, png and jpg data', () =>
+		{
+			expect(imageAspectRatio(SVG_200x100, 'svg')).toBe(2)
+			expect(imageAspectRatio('<svg width="30mm" height="10mm"></svg>', 'svg')).toBe(3)
+			expect(imageAspectRatio(`data:image/png;base64,${Buffer.from(PNG_300x100).toString('base64')}`, 'png')).toBe(3)
+			// SOI, APP0 (len 4), SOF0 with height 50, width 100
+			const jpg = new Uint8Array([0xFF,0xD8, 0xFF,0xE0,0,4,0,0, 0xFF,0xC0,0,17,8, 0,50, 0,100, 3])
+			expect(imageAspectRatio(Buffer.from(jpg).toString('base64'), 'jpg')).toBe(2)
+			expect(imageAspectRatio('<svg></svg>', 'svg')).toBeUndefined()
+		})
+
+		it('derives the height of an image from its width, so pivot places the image itself', async () =>
+		{
+			stubImages()
+			const { doc } = createDoc()
+			doc.create('img-auto-height')
+				.page('cover')
+				.image('https://example.test/auto-height-logo.svg')
+				.width(0.5)
+				.pivot(0.5, 0)
+				.position(0.5, 0.5)
+
+			const svg = await doc.toSVG() as string
+			const [w, h] = imageSize(svg)
+			expect(h).toBeCloseTo(w / 2, 3)
+
+			// bottom center on the page center: the image is on the page
+			const [tx, ty] = svg.match(/translate\(([\d.-]+),([\d.-]+)\)/).slice(1).map(Number)
+			expect(ty).toBeGreaterThan(0)
+			expect(ty + h).toBeCloseTo(105, 3) // A4 landscape: page center at 105mm
+			expect(tx + w/2).toBeCloseTo(148.5, 3)
+		})
+
+		it('derives the width from the height, and keeps both when both are set', async () =>
+		{
+			stubImages()
+			const { doc } = createDoc()
+			doc.create('img-auto-width')
+				.page('p1')
+				.image('https://example.test/auto-width-photo.png')
+				.height('20mm')
+				.page('p2')
+				.image('https://example.test/auto-width-photo.png')
+				.width('30mm')
+				.height('8mm')
+
+			// NOTE: ratios only - '20mm' does not come out as exactly 20mm (units resolve against page, apply to content area)
+			const pages = await doc.toSVGPages() as Array<any>
+			const [w1, h1] = imageSize(pages[0].svg)
+			const [w2, h2] = imageSize(pages[1].svg)
+			expect(w1 / h1).toBeCloseTo(3, 3)
+			expect(w2 / h2).not.toBeCloseTo(3, 1) // box kept: the image is fitted into it
+		})
+	})
 })
-
-

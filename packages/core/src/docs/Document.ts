@@ -88,7 +88,7 @@ export class Document
     _activePage?:Page; // active page in this document
     _activeContainer:AnyPageContainer; // active container in this document
     _lastBlock:ContainerBlock; // keep track of latest created block
-    _variables:Record<string, any> = {}; // references to containers, to set content later
+    _variables:Record<string, any> = {}; // references to containers (or a list of them), to set content later
     _component?:string; // component name if this document is part of a component - used for naming on merge
 
     constructor(doc:Docs, name:string)
@@ -504,10 +504,19 @@ export class Document
 
         if(name in this._variables)
         {
-            console.user(`Document::var(name): Overwriting existing variable "${name}" that refers to container "${this._variables[name].name}"!`);
+            const current = [this._variables[name]].flat().map(c => c.name).join(', ');
+            console.user(`Document::var(name): Overwriting existing variable "${name}" that refers to container "${current}"!`);
         }
         this._variables[name] = this._activeContainer;
 
+        return this;
+    }
+
+    /** Add the active container to a variable that can refer to more than one, so set() fills
+     *  all of them: a titleblock on every page is set in one go */
+    _varAdd(name:string):this
+    {
+        this._variables[name] = [this._variables[name] ?? []].flat().concat(this._activeContainer);
         return this;
     }
 
@@ -527,7 +536,7 @@ export class Document
             const available = Object.keys(this._variables);
             throw new Error(`Document::set(name, value): Variable "${name}" does not exist. ${(available.length > 0) ? `Available are: ${available.join(', ')}` : 'No vars available'}`); }
 
-        this._variables[name].setContent(value);
+        [this._variables[name]].flat().forEach(c => c.setContent(value));
 
         return this;
     }
@@ -537,6 +546,11 @@ export class Document
 
     /** Place default title block
      *  @param data:TitleBlockInput
+     *
+     *  Its texts are variables, to set later with set(): 'titleblock:title', 'titleblock:designer',
+     *  'titleblock:designLicense', 'titleblock:manualLicense', 'titleblock:logoUrl',
+     *  'titleblock:version', 'titleblock:metrics' and 'titleblock:params'. With a titleblock
+     *  on more pages, set() changes all of them.
      */
     titleblock(data?:TitleBlockInput):this
     {
@@ -564,6 +578,7 @@ export class Document
             .position(1,0) // right bottom
             .width('30mm')
             .height('8mm')
+            ._varAdd('titleblock:logoUrl')
 
         // Version info left of the logo. Positioned relative to the page's own width —
         // the previous `297-30` mm hardcoded A4 landscape, so on any other page size
@@ -573,21 +588,23 @@ export class Document
             .width(`${TITLE_BLOCK_NUM/2}mm`)
             .height('3mm')
             .pivot(1,0)
-            .position([`${pageWidthMm-30}mm`, '6mm'] as ContainerPositionAbs);
+            .position([`${pageWidthMm-30}mm`, '6mm'] as ContainerPositionAbs)
+            ._varAdd('titleblock:version');
 
         // Metric labelblock
-        this.labelblock('metrics', this._getMetricSummary(), { y: '11mm', width: TITLEBLOCK_WIDTH, numTextLines: 2 }); // TODO: dynamic param readout
+        this.labelblock('metrics', this._getMetricSummary(), { y: '11mm', width: TITLEBLOCK_WIDTH, numTextLines: 2, vars: ['titleblock:metrics'] }); // TODO: dynamic param readout
         const metricsBlock = this.lastBlock();
 
         // Param labelblock
-        this.labelblock('params', this._getParamSummary(), { y: metricsBlock.bbox[3] + BLOCK_MARGIN, width: TITLEBLOCK_WIDTH, numTextLines: 2 }); // TODO: dynamic param readout
+        this.labelblock('params', this._getParamSummary(), { y: metricsBlock.bbox[3] + BLOCK_MARGIN, width: TITLEBLOCK_WIDTH, numTextLines: 2, vars: ['titleblock:params'] }); // TODO: dynamic param readout
         const paramsBlock = this.lastBlock();
 
         // Info labelblock
         this.labelblock(
                         ['designer', 'design license', 'manual license'],
                         [ settings.designer, settings.designLicense, settings.manualLicense],
-                        { y: paramsBlock.bbox[3] + BLOCK_MARGIN, textSize : '3.5mm', width: TITLEBLOCK_WIDTH, numTextLines: 1 });
+                        { y: paramsBlock.bbox[3] + BLOCK_MARGIN, textSize : '3.5mm', width: TITLEBLOCK_WIDTH, numTextLines: 1,
+                          vars: ['titleblock:designer', 'titleblock:designLicense', 'titleblock:manualLicense'] });
         const designBlock =  this.lastBlock();
 
         this.hline({ thickness: '2pnt', color: 'black', length: TITLEBLOCK_WIDTH})
@@ -597,7 +614,8 @@ export class Document
         this.text( data?.title || DEFAULT_SETTINGS.title, { size: '8mm', bold: true })
             .pivot(1,0)
             .width(TITLEBLOCK_WIDTH)
-            .position(1, designBlock.bbox[3] + BLOCK_MARGIN*2);
+            .position(1, designBlock.bbox[3] + BLOCK_MARGIN*2)
+            ._varAdd('titleblock:title');
 
         return this;
     }
@@ -821,6 +839,8 @@ export class Document
                 .width(blockWidthRel)
                 .pivot((i==0) ? 1 : (arr.length > 1) ? 0.5*i/(arr.length-1) : 0.5,0)
                 .position(blockXRel, blockYRel+blockMarginRel+((options?.numTextLines-1)*blockTextSizeRel))
+
+            if(options.vars?.[i]){ this._varAdd(options.vars[i]) }
         })
 
         this._lastBlock = {
@@ -1095,9 +1115,10 @@ export class Document
         return this;
     }
 
-     /** Set Pivot of active Container
-     *   - relative to page content area (0.5,0.5 => center)
-     *   - ContainerAlignment: 'left', 'top'
+     /** Set the point of the active container that sits on its position(), relative to the
+     *  container itself: (0,0) is its left bottom, (0.5,0.5) its center, (1,1) its right top.
+     *  Or an alignment like 'center', 'topleft' or ('left','top'). A missing y is 0 (bottom).
+     *  To align the content (text, image) within the container, use contentAlign().
      *
      *      NOTE: We won't allow offsets with units ('10mm')
      */
@@ -1151,7 +1172,8 @@ export class Document
         return this;
     }
 
-    /** set contentAlign on active container */
+    /** Align the content (text, image, drawing) within the active container: 'center',
+     *  'right', 'bottom', or both like ['center','center']. Default is ['left','top'] */
     contentAlign(align:ContainerHAlignment|ContainerVAlignment|ContainerAlignment):this
     {
         if(!this._activeContainer){ throw new Error(`Document::contentAlign(): Cannot set contentAlign. No active container. Please make one first!`)};
@@ -1263,6 +1285,12 @@ export class Document
             // Take over the variables so they can be set on this document after merging
             Object.entries(doc._variables).forEach(([name, container]) =>
             {
+                // variables made for more containers (like the titleblock's) take them all
+                if(Array.isArray(this._variables[name]) && Array.isArray(container))
+                {
+                    this._variables[name] = [...this._variables[name], ...container];
+                    return;
+                }
                 if(name in this._variables)
                 {
                     console.user(`Document::merge: Variable "${name}" from Document "${mergedDocName}" already exists in Document "${this._name}". Set it on the merged Document before merging!`);

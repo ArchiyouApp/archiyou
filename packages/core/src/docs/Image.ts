@@ -1,7 +1,7 @@
 import { Container } from './Container'
-import type { ContainerData, ContainerContent, ContainerAlignment, ImageOptionsFit, ImageOptions, PageSVGContext } from './types'
+import type { ContainerData, ContainerContent, ContainerAlignment, ImageOptionsFit, ImageOptions, PageSVGContext, WidthHeightInput } from './types'
 import { isContainerAlignment, isImageOptionsFit } from './typeguards'
-import { arrayBufferToBase64, stripOuterSVGTags, stripXMLDeclaration, getPreserveAspectRatio } from './utils'
+import { arrayBufferToBase64, stripOuterSVGTags, stripXMLDeclaration, getPreserveAspectRatio, imageAspectRatio } from './utils'
 import { assetProxyUrlFor } from '../utils'
 
 
@@ -35,6 +35,11 @@ export class Image extends Container
 
     _url:string;
     _options:ImageOptions = {}
+    /** Whether the script set width/height itself — the other side then follows the image. */
+    _widthSet:boolean = false;
+    _heightSet:boolean = false;
+    /** Width/height of the image itself, known once its data is loaded. */
+    _aspect:number|undefined;
 
     constructor(url:string, options:ImageOptions)
     {
@@ -67,7 +72,81 @@ export class Image extends Container
         this._options.grayscale = (typeof options?.grayscale === 'number') ? options.grayscale : this.DEFAULT_GRAYSCALE;   
     }
 
+    _setDefaults()
+    {
+        super._setDefaults();
+        // the defaults are no statement about size
+        this._widthSet = false;
+        this._heightSet = false;
+    }
+
+    width(n:WidthHeightInput)
+    {
+        super.width(n);
+        this._widthSet = true;
+    }
+
+    height(n:WidthHeightInput)
+    {
+        super.height(n);
+        this._heightSet = true;
+    }
+
+    /** The size of this image on the page. A side the script left open (or set to 'auto')
+     *  follows from the other through the image's own aspect ratio, so .width(0.5) gives a
+     *  box that is exactly the image — and pivot() and position() place the image itself,
+     *  not an invisible box of full page height around it. With both sides set, or neither,
+     *  the image is fitted into the box as before.
+     *
+     *  Only a ratio is used, so this works in any units, not only mm. */
+    _autoSizeMm(w:number, h:number):[number, number]
+    {
+        const autoW = this._widthAuto || (this._heightSet && !this._widthSet && !this._heightAuto);
+        const autoH = this._heightAuto || (this._widthSet && !this._heightSet && !this._widthAuto);
+
+        if(!autoW && !autoH){ return [w, h] }
+        if(autoW && autoH)
+        {
+            console.warn(`Image::width|height('auto'): image "${this.name}" has both sides 'auto'. Give it a width or height. Kept its box.`);
+            return [w, h];
+        }
+        if(!this._aspect)
+        {
+            console.warn(`Image::_autoSizeMm(): Could not read the size of image "${this._url}". Kept its box. Set both width and height.`);
+            return [w, h];
+        }
+
+        return autoW ? [h * this._aspect, h] : [w, w / this._aspect];
+    }
+
+    /** Load the image data and read its aspect ratio from it */
+    async _loadAspect(cache?:Record<string,any>):Promise<any>
+    {
+        const data = await this.loadImageData(cache);
+        if(data && this._aspect === undefined)
+        {
+            this._aspect = imageAspectRatio(data, this.getImageFormat());
+        }
+        return data;
+    }
+
+    /** Set the url of this image (for example through a variable: set('titleblock:logoUrl', url)) */
+    setContent(url:any):this
+    {
+        if(typeof url !== 'string' || url.trim() === ''){ throw new Error(`Image::setContent(): Please supply an image url`); }
+        this._url = url;
+        this._aspect = undefined; // a new image, maybe with another shape
+        return this;
+    }
+
     //// OUTPUT ////
+
+    /** The size of an image can depend on its data, so that is loaded before placing it */
+    async toSVG(ctx:PageSVGContext):Promise<{def:string, html:string}>
+    {
+        await this._loadAspect(ctx.cache);
+        return super.toSVG(ctx);
+    }
 
     async toData(cache?:Record<string,any>|undefined):Promise<ContainerData> 
     {
@@ -76,11 +155,15 @@ export class Image extends Container
         let data;
         if(format)
         {  
-            data = await this.loadImageData(cache);
+            data = await this._loadAspect(cache);
         }
 
+        // report the size the image is drawn at (see _autoSizeMm)
+        const baseData = this._toContainerData();
+        [baseData.widthAbs, baseData.heightAbs] = this._autoSizeMm(baseData.widthAbs, baseData.heightAbs);
+
         const containerData = {
-            ...this._toContainerData(),
+            ...baseData,
             content: { 
                 source: this._url,
                 format: format,

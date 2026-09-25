@@ -423,6 +423,7 @@ export interface LabelBlockOptions
     numTextLines?:number // number of lines of text
     margin?:number|string // between label/text and outer block
     line?:boolean
+    vars?:Array<string> // variable names for the texts, to set them later with set(name, value)
 }
 
 
