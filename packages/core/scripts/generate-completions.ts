@@ -31,6 +31,8 @@
  *   ../meshup/src/Bbox.ts             → Bbox members
  *   ../meshup/src/OBbox.ts            → OBbox members
  *   src/interaction/Handle.ts         → Handle members (what $handle() returns)
+ *   src/docs/Docs.ts                  → Docs members (the `doc` global)
+ *   src/docs/Document.ts              → Document members (what doc.create() and the chain return)
  *
  * The brep classes (Solid/Edge/Wire/Face) are deliberately NOT emitted: brep mode is not
  * wired after the SmartShape removal — Modeler._brepNotWired() throws for every brep-only
@@ -342,6 +344,26 @@ const bboxStatics   = extractStatics('../meshup/src/Bbox.ts',   'Bbox',   ['from
 const obboxStatics  = extractStatics('../meshup/src/OBbox.ts',  'OBbox',  ['fromPoints', 'fromMesh'])
 
 /* ------------------------------------------------------------------ */
+/*  Extract: docs (the `doc` global and the Document it builds)         */
+/* ------------------------------------------------------------------ */
+
+const documentMethods = extractPublicMethods(
+    getClass('src/docs/Document.ts', 'Document'),
+    new Set(['createPage', 'pageExists', 'addPipeline', 'toData', 'toSVG', 'toSVGPages',
+             'resolveScopeReferences', 'parseInputNumberUnitsConvertTo']),
+)
+
+// Most Docs methods are one-line shims forwarding to the active Document: they have no
+// JSDoc of their own, so they borrow the Document's
+const documentInfo = new Map(documentMethods.map(m => [m.label, m.info]))
+const docsMethods = extractPublicMethods(
+    getClass('src/docs/Docs.ts', 'Docs'),
+    new Set(['getAssetProxyUrl', 'getAppBaseUrl', 'hasDocs', 'setArchiyou', 'reset', 'executePipelines',
+             'checkAndMakeDefaultDoc', 'toInternalData', 'getDocs', 'instructs', 'getInstruct',
+             'toData', 'toPDF', 'toSVG', 'toSVGPages']),
+).map(m => ({ ...m, info: m.info ?? documentInfo.get(m.label) }))
+
+/* ------------------------------------------------------------------ */
 /*  Assemble: shapeClasses                                              */
 /* ------------------------------------------------------------------ */
 
@@ -413,6 +435,16 @@ const shapeClasses: ShapeClassInfo[] = [
         label: 'Handle',
         detail: 'a point in the viewer that users drag to change a parameter',
         members: extractPublicMethods(getClass('src/interaction/Handle.ts', 'Handle'), new Set(['setArchiyou', 'toData'])),
+    },
+    {
+        label: 'Docs',
+        detail: 'the doc global: makes documents',
+        members: docsMethods,
+    },
+    {
+        label: 'Document',
+        detail: 'a document with pages and containers (view, text, image, …)',
+        members: documentMethods,
     },
 ]
 

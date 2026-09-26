@@ -108,3 +108,48 @@ describe('$handle completions', () =>
     expect(labels(`new `)).not.toContain('Handle');
   });
 });
+
+describe('doc completions', () =>
+{
+  const labels = (doc: string) => complete(doc)?.options.map(o => o.label) ?? [];
+
+  it('offers the doc global at the top level', () =>
+  {
+    expect(labels(`do`)).toContain('doc');
+  });
+
+  it('offers the Docs methods after doc.', () =>
+  {
+    const l = labels(`doc.`);
+    expect(l).toContain('create');
+    expect(l).toContain('page');
+    expect(l).not.toContain('boolean'); // no shape members
+  });
+
+  it('offers the Document methods down a chain, also across lines', () =>
+  {
+    const l = labels(`doc\n  .create('project')\n  .page('cover')\n  .image('https://x.test/a.svg')\n  .width(0.3)\n  .`);
+    expect(l).toContain('pivot');
+    expect(l).toContain('contentAlign');
+    expect(l).not.toContain('create'); // Docs only
+    expect(l).not.toContain('extrude');
+  });
+
+  it('carries the JSDoc along as info', () =>
+  {
+    const pivot = complete(`doc.create('a').`)!.options.find(o => o.label === 'pivot');
+    expect(pivot?.detail).toContain('y?: number');
+    expect(pivot?.info).toContain('contentAlign()');
+  });
+
+  it('knows variables holding a document', () =>
+  {
+    expect(labels(`d = doc.create('a')\nd.page('b').`)).toContain('image');
+    expect(labels(`d = doc\nd.`)).toContain('create');
+  });
+
+  it('stops at methods that do not return the Document', () =>
+  {
+    expect(labels(`doc.lastBlock().`)).not.toContain('pivot');
+  });
+});

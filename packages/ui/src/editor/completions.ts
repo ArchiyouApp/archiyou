@@ -4,6 +4,7 @@
  * Provides completions for:
  *  - top-level Modeler functions (box, sphere, line, sketch, …)
  *  - instance methods on the shapes they return (Mesh, Curve, Polygon, ShapeCollection, …)
+ *  - the `doc` global and the Document its chains build (doc.create('x').page('y').image(…))
  *
  * Shape class data is auto-generated — run:
  *   pnpm --filter @archiyou/core generate:completions
@@ -151,6 +152,7 @@ topLevelCompletions.push(
   { label: 'await',   type: 'keyword' },
   { label: 'console', type: 'variable', detail: 'Console API' },
   { label: 'fab',     type: 'variable', detail: 'Fabrication: contacts and fastenings' },
+  { label: 'doc',     type: 'variable', detail: 'Documents: pages with views, text and images' },
   { label: '$handle', type: 'function', detail: '(): Handle',
     info: 'Make a handle: a point in the viewer that users drag to change a parameter' },
 );
@@ -336,7 +338,7 @@ const memberMap = new Map<string, Completion[]>();
 
 /** Classes that are not shapes: their members only show where the type is known (a Handle
  *  after `$handle()`), and they are not made with `new` */
-const NON_SHAPE_CLASSES = new Set(['Handle']);
+const NON_SHAPE_CLASSES = new Set(['Handle', 'Docs', 'Document']);
 
 for (const cls of shapeClasses)
 {
@@ -348,6 +350,7 @@ for (const cls of shapeClasses)
         label: m.label,
         type: m.type === 'property' ? 'property' : 'method',
         detail: m.detail,
+        info: m.info,
       })),
     );
   }
@@ -358,6 +361,7 @@ for (const cls of shapeClasses)
       label: m.label,
       type: m.type === 'property' ? 'property' : 'method',
       detail: m.detail,
+      info: m.info,
     })),
   );
 }
@@ -377,6 +381,7 @@ const allMembers: Completion[] = [];
           label: m.label,
           type: m.type === 'property' ? 'property' : 'method',
           detail: m.detail,
+          info: m.info,
         });
       }
     }
@@ -389,6 +394,79 @@ const classNameCompletions: Completion[] = shapeClasses.filter(c => !NON_SHAPE_C
   type: 'class',
   detail: c.detail,
 }));
+
+/* ------------------------------------------------------------------ */
+/*  Docs: doc.create('x').page('y').image(…)                           */
+/* ------------------------------------------------------------------ */
+
+/** Methods of Docs/Document that end the chain: they return something other than the
+ *  Document (a block, a list of names, an Instruct) */
+const DOCS_CHAIN_ENDS = new Set(['lastBlock', 'docs', 'instruct']);
+
+/**
+ * Walks a method chain backwards from its end (the text before a `.`), across lines,
+ * and returns its root identifier and the methods called on it, in order:
+ *   `doc\n  .create('a')\n  .page('b')` → { root: 'doc', calls: ['create', 'page'] }
+ * Null when the text does not end in a chain. Parentheses inside strings are not
+ * understood — good enough for completion.
+ */
+export function chainBackwards(textBefore: string): { root: string; calls: string[] } | null
+{
+  let i = textBefore.length;
+  const calls: string[] = [];
+  const skipSpace = () => { while (i > 0 && /\s/.test(textBefore[i - 1])) i--; };
+
+  for (;;)
+  {
+    skipSpace();
+    if (textBefore[i - 1] === ')')
+    {
+      let depth = 0;
+      do
+      {
+        i--;
+        if (textBefore[i] === ')') depth++;
+        else if (textBefore[i] === '(') depth--;
+      }
+      while (i > 0 && depth > 0);
+      if (depth !== 0) return null;
+      skipSpace();
+    }
+
+    const name = textBefore.slice(0, i).match(/[A-Za-z_$][\w$]*$/)?.[0];
+    if (!name) return null;
+    i -= name.length;
+    skipSpace();
+
+    if (textBefore[i - 1] !== '.') return { root: name, calls: calls.reverse() };
+    calls.push(name);
+    i--;
+  }
+}
+
+/** Variables holding the doc global or a Document: `d = doc` → Docs, `d = doc.create('x')` → Document */
+function buildDocsScopeMap(docText: string): Map<string, 'Docs' | 'Document'>
+{
+  const map = new Map<string, 'Docs' | 'Document'>();
+  const re = /\b([A-Za-z_$][\w$]*)\s*=\s*doc\b(\s*\.)?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(docText)) !== null) map.set(m[1], m[2] ? 'Document' : 'Docs');
+  return map;
+}
+
+/** Which docs class the chain before a `.` holds — 'Docs' for `doc.`, 'Document' anywhere
+ *  down a chain on it — or null when it is not a docs chain */
+export function resolveDocsType(textBefore: string, docText: string): 'Docs' | 'Document' | null
+{
+  const chain = chainBackwards(textBefore);
+  if (!chain) return null;
+  if (chain.calls.some(c => DOCS_CHAIN_ENDS.has(c))) return null;
+
+  const rootType = (chain.root === 'doc') ? 'Docs' : buildDocsScopeMap(docText).get(chain.root);
+  if (!rootType) return null;
+
+  return (rootType === 'Docs' && chain.calls.length === 0) ? 'Docs' : 'Document';
+}
 
 /* ------------------------------------------------------------------ */
 /*  Completion source                                                  */
@@ -451,6 +529,17 @@ export function archiyouCompletions(
       return {
         from: memberMatch.from + 1,
         options: moduleMembers,
+        validFor: /^\w*$/,
+      };
+    }
+
+    // `doc.` and every link of a chain on it (also across lines) → Docs / Document methods
+    const docsType = resolveDocsType(textBefore, docText);
+    if (docsType)
+    {
+      return {
+        from: memberMatch.from + 1,
+        options: memberMap.get(docsType) ?? [],
         validFor: /^\w*$/,
       };
     }
