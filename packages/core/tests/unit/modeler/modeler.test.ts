@@ -157,7 +157,7 @@ describe('Modeler', async () =>
             modeler.box(5, 5, 5).move(15, 0, 0),
         ).hide();
 
-        const iso = hidden.iso([1, -1, 1], false, true);
+        const iso = hidden.iso([1, -1, 1], { includeHiddenShapes: true });
 
         expect(iso).toBeInstanceOf(SmartShapeCollection);
         expect(iso.length).toBeGreaterThan(0);
@@ -255,11 +255,11 @@ describe('Modeler', async () =>
 
         // Old merge-first path (the buggy behavior): concatenate polygons, project as one mesh
         const mergedMesh = new ShapeCollection<Mesh>(bigMesh, smMesh).merge() as Mesh;
-        const mergeFirstVisible = mergedMesh.isometry([1, 1, 1], false).length;
+        const mergeFirstVisible = mergedMesh.isometry([1, 1, 1]).length;
 
         // New per-mesh path: ShapeCollection.isometry() projects each mesh with siblings as occluders
         const coll = new ShapeCollection<Mesh>(bigMesh, smMesh);
-        const collVisible = coll.isometry([1, 1, 1], false).length;
+        const collVisible = coll.isometry([1, 1, 1]).length;
 
         console.log(`Merge-first visible: ${mergeFirstVisible}`);
         console.log(`Per-mesh collection visible: ${collVisible}`);
@@ -284,7 +284,7 @@ describe('Modeler', async () =>
         let isoResult: SmartShapeCollection | null = null;
         expect(() =>
         {
-            isoResult = c2.iso([1, 1, 1] as any, false, false) as unknown as SmartShapeCollection;
+            isoResult = c2.iso([1, 1, 1] as any) as unknown as SmartShapeCollection;
         }).not.toThrow();
 
         expect(isoResult).toBeInstanceOf(SmartShapeCollection);
@@ -304,7 +304,7 @@ describe('Modeler', async () =>
         const b1m = b1.toMesh() as Mesh;
         const boxes: Mesh[] = [b1m];
         for (let i = 1; i < 10; i++) { boxes.push(b1m.copy().translate(0, 0, 10 * i) as Mesh); }
-        const mergedIso = (new ShapeCollection<Mesh>(...boxes).merge() as Mesh).isometry([-1, -1, 1], false);
+        const mergedIso = (new ShapeCollection<Mesh>(...boxes).merge() as Mesh).isometry([-1, -1, 1]);
 
         console.log(`Stack iso lines: per-mesh=${stackIso.length} merge-first=${mergedIso.length}`);
 

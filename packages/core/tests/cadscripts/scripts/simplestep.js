@@ -237,7 +237,7 @@ function docPipeline()
 {
     model = all();
     iso = model.iso().move(0,-3000);
-    isoBack = model.iso([1,1,1], false).rotateZ(180).move(-3000,-3000)
+    isoBack = model.iso([1,1,1]).rotateZ(180).move(-3000,-3000)
 
     section = collection(beamVertical, beamDiagonal)
         .addGroup('risers',  beamRisers) // not working

@@ -47,6 +47,19 @@ export type SideX = 'left'|'right'
 export type SideY = 'front'|'back'
 export type SideZ = 'top'|'bottom'
 export type Side = SideX|SideY|SideZ
+
+/** Options of ShapeCollection elevation() and project(), as on meshup (its ProjectionOptions).
+ *  OpenCascade's hidden-line removal is exact, so method, samples, featureAngle and fallback
+ *  are taken but have nothing to act on here. */
+export interface ProjectionOptions
+{
+    method?:string
+    hiddenLines?:boolean // keep occluded edges, in a 'hidden' group
+    includeHiddenShapes?:boolean // also project shapes that are hidden
+    featureAngle?:number
+    samples?:number
+    fallback?:boolean
+}
 export type SketchPlaneName = Plane | Side
 export type CoordArray = [Coord,Coord,Coord]
 export type PointLike = Coord|Array<Coord>|Vector|Point|Vertex // PointLike: All Datatypes that informationally could be seen as a Point

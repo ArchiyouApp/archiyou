@@ -160,7 +160,7 @@ docPipeline = () => {
     legFabBaseCuts.show();
     legFabFaces.show();
 
-    cutIso = layer('cuts').shapes().iso([1,-1,1], true)
+    cutIso = layer('cuts').shapes().iso([1,-1,1], { hiddenLines: true })
                 .rotateZ(-120)
                 .move(3000)
 

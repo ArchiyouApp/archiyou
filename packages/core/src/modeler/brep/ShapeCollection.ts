@@ -15,7 +15,7 @@ import { SHAPE_EXTRUDE_DEFAULT_AMOUNT, SHAPE_SCALE_DEFAULT_FACTOR } from '.';
 import type { ArchiyouApp, PointLike, PointLikeOrAnyShapeOrCollection,
          ShapeType, AnyShape, AnyShapeOrSequence, AnyShapeOrCollection,AnyShapeCollection, 
          MakeShapeCollectionInput,
-         Pivot,AnyShapeSequence, Alignment, Bbox, Side,
+         Pivot,AnyShapeSequence, Alignment, Bbox, Side, ProjectionOptions,
          MeshingQualitySettings,ExportGLTFOptions,
          LayoutOrderType, LayoutOptions, 
          DimensionLevelSettings, AnnotationAutoDimStrategy,
@@ -32,9 +32,9 @@ import { Exporter } from './Exporter'
 import { BaseAnnotation } from '../../annotator/AnnotatorBaseAnnotation'
 
 import { isCoordArray, isPointLike, isPointLikeSequence, 
-      isAnyShape, isAnyShapeCollection, isMainAxis } from './typeguards' // typeguards
+      isAnyShape, isAnyShapeCollection, isMainAxis, isSide } from './typeguards' // typeguards
  
-import { flattenEntitiesToArray, flattenEntities, roundToTolerance } from '.'  // utils
+import { flattenEntitiesToArray, flattenEntities, roundToTolerance, projectionOptions } from '.'  // utils
 
 
 // special libraries
@@ -1348,59 +1348,71 @@ import { getOc } from './index' // OC global getter
          return tmpShape._project(planeNormal,all);
       }
 
-      /** Shape API: Public Project 3D Shapes on XY plane and add result to Scene */
-      @checkInput([['PointLike',[0,1,0]], ['Boolean', false]],['Vector', 'auto'])
-      project(planeNormal?:PointLike, all?:boolean):ShapeCollection
+      /** Plain orthographic projection: every edge as seen from `from`, the ones at the back
+       *  too, with nothing hidden (as meshup ShapeCollection.project()).
+       *
+       *  NOTE: OpenCascade has no projection without its hidden-line removal, so this runs it and
+       *  takes the visible and hidden edges together. Unlike meshup, lines at the back that fall
+       *  on lines at the front are not merged. This used to be project(planeNormal, all), a
+       *  projection along a normal; a direction still projects that way. */
+      project(from:Side|PointLike='front', options?:ProjectionOptions):ShapeCollection
       {
-          return this._project(planeNormal, all);
+         return this._projectFlat(from, projectionOptions(options, 'ShapeCollection.project(from, options)'));
       }
 
-      /** Shape API: Generate elevation from a given side without adding to Scene */
-      @checkInput([['Side', 'top'], ['Boolean', false]], ['auto', 'auto'])
-      _elevation(side?:Side, all?:boolean):ShapeCollection
+      /** Shape API: plain projection without adding to Scene - see project() */
+      _projectFlat(from:Side|PointLike='front', options?:ProjectionOptions):ShapeCollection
       {
-         const visibleShapes = new ShapeCollection(this.filter( shape => shape.visible() === true)); // filter can return single Shape
-         const ocCompoundShape = visibleShapes.toOcCompound(); // combine all Shapes in ShapeCollection as CompoundShape
-         // Again: We are hacking the Shape class a bit here
+         const projected = this._elevation(from, { ...projectionOptions(options, 'ShapeCollection.project(from, options)'), hiddenLines: true });
+         return new ShapeCollection(projected.toArray()); // all edges, without the visible/hidden groups
+      }
+
+      /** Shape API: Generate elevation from a side or direction without adding to Scene */
+      _elevation(from:Side|PointLike='front', options?:ProjectionOptions):ShapeCollection
+      {
+         const o = projectionOptions(options, 'ShapeCollection.elevation(from, options)');
+         // Again: We are hacking the Shape class a bit here - to use Shape._elevationFrom() on a compound
          const tmpShape = new Shape();
-         tmpShape._ocShape = ocCompoundShape; 
-         
-         return tmpShape._elevation(side, all);
+         tmpShape._ocShape = this._projectedShapes(o.includeHiddenShapes).toOcCompound();
+         return tmpShape._elevationFrom(from, !!o.hiddenLines) as ShapeCollection;
+      }
+
+      /** The shapes a projection draws: the visible ones, or all with includeHiddenShapes */
+      _projectedShapes(includeHiddenShapes?:boolean):ShapeCollection
+      {
+         return includeHiddenShapes ? this : new ShapeCollection(this.filter( shape => shape.visible() === true)); // filter can return single Shape
       }
       
-      /** Shape API: Generate elevation from a given side and add to Scene */
-      @checkInput([['Side', 'top'], ['Boolean', false]], ['auto', 'auto'])
-      elevation(side?:Side, all?:boolean):ShapeCollection
+      /** Orthographic elevation of the collection: its visible edges as seen from `from` (a side
+       *  like 'front' or a direction). With `{ hiddenLines: true }` the hidden edges too - or use
+       *  project(). Same API as meshup ShapeCollection.elevation(from, options). */
+      elevation(from:Side|PointLike='front', options?:ProjectionOptions):ShapeCollection
       {
-         return this._elevation(side, all);
+         return this._elevation(from, options);
       }
 
-      /** Shape API: Generate isometric view from Side or corner of ViewCube ('frontlefttop') or PointLike coordinate
-       *      Does not add to Scene
-       *      Use includeHidden=true to output with hidden lines
-       */
-      _isometry(viewpoint?:string|PointLike, includeHidden:boolean=false):ShapeCollection
+      /** Shape API: Isometric view from a corner of the ViewCube ('frontlefttop') or a direction,
+       *  without adding it to the Scene. Options as isometry() */
+      _isometry(viewpoint?:string|PointLike, options?:ProjectionOptions):ShapeCollection
       {
-         const visibleShapes = new ShapeCollection(this.filter( shape => shape.visible() === true));
-         const ocCompoundShape = visibleShapes.toOcCompound(); // combine all Shapes in ShapeCollection as CompoundShape
+         const o = projectionOptions(options, 'ShapeCollection.isometry(cam, options)');
          // Again: We are hacking the Shape class a bit here
          const tmpShape = new Shape();
-         tmpShape._ocShape = ocCompoundShape; 
-         return tmpShape._isometry(viewpoint, includeHidden);
+         tmpShape._ocShape = this._projectedShapes(o.includeHiddenShapes).toOcCompound(); // combine all Shapes as CompoundShape
+         return tmpShape._isometry(viewpoint, !!o.hiddenLines) as ShapeCollection;
       }
 
-      /** Shape API: Generate isometric view from Side or corner of ViewCube ('frontlefttop') or PointLike coordinate
-       *     Add to scene
-      *      Use includeHidden=true to output with hidden lines
-      */
-      isometry(viewpoint?:string|PointLike, includeHidden:boolean=false):ShapeCollection
+      /** Isometric view from a corner of the ViewCube ('frontlefttop') or a direction like
+       *  [-1,-1,1]. With `{ hiddenLines: true }` the hidden edges too. Same API as meshup
+       *  ShapeCollection.isometry(cam, options). */
+      isometry(viewpoint?:string|PointLike, options?:ProjectionOptions):ShapeCollection
       {
-         return this._isometry(viewpoint, includeHidden)
+         return this._isometry(viewpoint, options)
       }
 
-      iso(viewpoint?:string|PointLike, includeHidden:boolean=false):ShapeCollection
+      iso(viewpoint?:string|PointLike, options?:ProjectionOptions):ShapeCollection
       {
-         return this.isometry(viewpoint, includeHidden)
+         return this.isometry(viewpoint, options)
       }
 
       //// ARRAY LIKE API ////

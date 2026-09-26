@@ -37,7 +37,7 @@ sm = box(5,200, 5).align(bigbox, 'leftfrontbottom', 'leftfronttop')
 
 c2 = collection(bigbox,sm);
 c2.merge().iso([1,1,1]).move(500,-400); // big-small ortho contact => dropped seperating edge
-c2.iso([1,1,1], false, false, 100, 10).move(500,-800);
+c2.iso([1,1,1], { samples: 100, featureAngle: 10 }).move(500,-800);
 //modeler.scene().add(c2.isoTest([1,1,1], false, false, 100, 10).move(500,-1400));
 
 
@@ -50,8 +50,8 @@ bhf = boxbetween(
 )
 bhb = bhf.copy().mirrorY();
 floor = collection(bs,bhf, bhb);
-floor.merge().iso([-1,-1,1], false, false, 100, 40).move(1100);
-floor.iso([-1,-1,1], false, false, 200, 10).move(1500);
+floor.merge().iso([-1,-1,1], { samples: 100, featureAngle: 40 }).move(1100);
+floor.iso([-1,-1,1], { samples: 200, featureAngle: 10 }).move(1500);
 //modeler.scene().add(floor.isoTest([-1,-1,1], false, false, 200, 10).move(2000));
 
 // grid of boxes

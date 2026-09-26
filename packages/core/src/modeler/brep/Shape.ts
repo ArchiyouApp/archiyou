@@ -30,7 +30,7 @@ import type {
     Annotation, DimensionOptions, DimensionLevelSettings, AnnotationAutoDimStrategy, toSVGOptions,
     BeamLikeDims,
     Alignment, OrientationXY,
-    ExportGLTFOptions, MeshingQualitySettings
+    ExportGLTFOptions, MeshingQualitySettings, ProjectionOptions
 } from '.'
 
 import { Vector, Point, Bbox, OBbox, Vertex, Edge, Wire, Face,
@@ -51,11 +51,11 @@ import { DimensionLine } from '../../annotator/AnnotatorDimensionLine'
 
     
 import { isPointLike, isSelectionString, isAnyShape, 
-    isMainAxis,isAnyShapeCollection, isLinearShape, isShapeAttributes } from './typeguards'
+    isMainAxis,isAnyShapeCollection, isLinearShape, isShapeAttributes, isSide } from './typeguards'
     
 import { targetOcForGarbageCollection, removeOcTargetForGarbageCollection } from '.'
 
-import { toRad, isNumeric, roundToTolerance, uuidv4 } from '.' // utils
+import { toRad, isNumeric, roundToTolerance, uuidv4, projectionOptions } from '.' // utils
 import { getOc } from './index'
 
 // Import decorators directly (not via the barrel) — the barrel is a cycle and decorators run
@@ -5021,13 +5021,26 @@ export class Shape
         return resultCollection;
     }
 
-    /** Generate elevation from a given side and add to Scene */
-    //@addResultShapesToScene
-    @checkInput([['Side', 'top'], ['Boolean', false]], ['auto', 'auto'])
-    @sceneAdd
-    elevation(side?:Side, all?:boolean):AnyShapeCollection
+    /** Elevation from a side ('front', 'top', ...), a plane name ('xy', 'xz', 'yz') or a direction,
+     *  without adding it to the Scene. With `hiddenLines` also the occluded edges. */
+    _elevationFrom(from:Side|PointLike='front', hiddenLines:boolean=false):AnyShapeCollection
     {
-        return this._elevation(side, all);
+        const PLANE_TO_SIDE = { xy: 'top', xz: 'front', yz: 'right' } as Record<string, Side>; // meshup's plane names
+        const side = PLANE_TO_SIDE[from as string] ?? from;
+        if(isSide(side)){ return this._elevation(side, hiddenLines) }
+        if(isPointLike(from)){ return this._project(from, hiddenLines) }
+        throw new Error(`Shape::elevation(): Invalid view "${JSON.stringify(from)}". Use a side like 'front' or 'top', or a direction like [1,-1,0]`);
+    }
+
+    /** Orthographic elevation of this Shape: its visible edges as seen from `from` (a side like
+     *  'front', a plane name or a direction), added to the Scene. With `{ hiddenLines: true }`
+     *  the hidden edges too, in a 'hidden' group. Same API as meshup Mesh.elevation(from, options);
+     *  OpenCascade's hidden-line removal is exact, so the method and its settings do not apply. */
+    @sceneAdd
+    elevation(from:Side|PointLike='front', options?:ProjectionOptions):AnyShapeCollection
+    {
+        const o = projectionOptions(options, 'Shape.elevation(from, options)');
+        return this._elevationFrom(from, !!o.hiddenLines);
     }
 
     /** Generate isometric view from Side or corner of ViewCube ('frontlefttop') or PointLike coordinate
@@ -5092,20 +5105,20 @@ export class Shape
         }
     }
 
-    /** Generate isometric view from Side or corner of ViewCube ('frontlefttop') or PointLike coordinate
-     *      Use showHidden=true to output with hidden lines
-     */
-    //@addResultShapesToScene
+    /** Isometric view from a corner of the ViewCube ('frontlefttop') or a direction like
+     *  [-1,-1,1], added to the Scene. With `{ hiddenLines: true }` the hidden edges too.
+     *  Same API as meshup Mesh.isometry(cam, options). */
     @sceneAdd
-    isometry(viewpoint?:string|PointLike, includeHidden:boolean=false):AnyShapeCollection
+    isometry(viewpoint?:string|PointLike, options?:ProjectionOptions):AnyShapeCollection
     {
-        return this._isometry(viewpoint, includeHidden)
+        const o = projectionOptions(options, 'Shape.isometry(cam, options)');
+        return this._isometry(viewpoint, !!o.hiddenLines)
     }
 
     /** Alias for isometry() */
-    iso(viewpoint?:string|PointLike, includeHidden:boolean=false):AnyShapeCollection
+    iso(viewpoint?:string|PointLike, options?:ProjectionOptions):AnyShapeCollection
     {
-        return this.isometry(viewpoint, includeHidden)
+        return this.isometry(viewpoint, options)
     }
     
     /** Take Dimensions associated with current Shape to the projected 2D shape

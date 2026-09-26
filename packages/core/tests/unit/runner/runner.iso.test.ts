@@ -17,7 +17,7 @@ describe('Runner — iso on scene-backed mesh collections', () =>
                     bigbox = box(400, 200, 10).move(0, -300);
                     sm = box(5, 200, 5).align(bigbox, 'leftfrontbottom', 'leftfronttop');
                     c2 = collection(bigbox, sm);
-                    c2.iso([1,1,1], false, false, 100, 10).move(500, -400);
+                    c2.iso([1,1,1], { samples: 100, featureAngle: 10 }).move(500, -400);
                 `,
             },
             outputs: ['default/model/glb'],

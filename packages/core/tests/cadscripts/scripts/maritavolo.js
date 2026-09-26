@@ -202,7 +202,7 @@ function docPipeline()
    
 
     // Spine elevation and dimensioning
-    spineElevation = spine.elevation('left', true); //.move(8000, -2000);
+    spineElevation = spine.elevation('left', { hiddenLines: true }); //.move(8000, -2000);
 
     spineElevation.autoDim({ levels: [
         { axis: 'y', at: -spineHeight/2, minDistance : 1  },
@@ -212,7 +212,7 @@ function docPipeline()
     spineElevation.bbox().left().dim();
 
     // Side elevation and dimensioning
-    sideElevation = sideBack.elevation('front', true).move(5000, -2000);
+    sideElevation = sideBack.elevation('front', { hiddenLines: true }).move(5000, -2000);
     sideElevation.autoDim({
         levels: [
             { axis: 'x', at: 0.01, minDistance: 1, offset: 50 },

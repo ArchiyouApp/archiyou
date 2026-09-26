@@ -403,4 +403,54 @@ describe('Modeler — brep mode', () =>
             expect(line.bbox().width()).toBe(100)
         })
     })
+
+    describe('projections of a collection, with the API of meshup', () =>
+    {
+        const edgesIn = (c:any, group:string) => c.group(group)?.length ?? 0
+        const twoBoxes = () => m.collection(m.box(10, 10, 10), m.box(10, 10, 10).move(20, 5, 0)) as any
+
+        it('elevation(from, options) gives the visible edges, and the hidden ones when asked', () =>
+        {
+            const plain = twoBoxes().elevation('front')
+            expect(edgesIn(plain, 'visible')).toBeGreaterThan(0)
+            expect(plain.group('hidden')).toBeFalsy()
+            expect(edgesIn(twoBoxes().elevation('front', { hiddenLines: true }), 'hidden')).toBeGreaterThan(0)
+        })
+
+        it('project(from, options) draws every edge, with nothing hidden', () =>
+        {
+            const projected = twoBoxes().project('left')
+            expect(projected.group('hidden')).toBeFalsy()
+            expect(projected.length).toBe(twoBoxes().elevation('left', { hiddenLines: true }).length)
+            expect(projected.length).toBeGreaterThan(twoBoxes().elevation('left').length)
+        })
+
+        it('takes meshup plane names and a direction', () =>
+        {
+            expect(edgesIn(twoBoxes().elevation('xy'), 'visible')).toBe(edgesIn(twoBoxes().elevation('top'), 'visible'))
+            expect(edgesIn(twoBoxes().elevation([1, -1, 0]), 'visible')).toBeGreaterThan(0)
+        })
+
+        it('isometry(cam, options) draws the brep shapes, the hidden ones when asked', () =>
+        {
+            expect(twoBoxes().iso([-1, -1, 1]).length).toBeGreaterThan(0)
+            expect(edgesIn(twoBoxes().iso([-1, -1, 1], { hiddenLines: true }), 'hidden')).toBeGreaterThan(0)
+        })
+
+        it('refuses the earlier call forms, on a collection and on a single shape', () =>
+        {
+            expect(() => twoBoxes().elevation('front', true)).toThrow(/\{ hiddenLines: true \}/)
+            expect(() => twoBoxes().project('front', true)).toThrow(/options object/)
+            expect(() => twoBoxes().iso([-1, -1, 1], true)).toThrow(/options object/)
+            expect(() => (m.box(10, 10, 10) as any).elevation('front', true)).toThrow(/options object/)
+            expect(() => (m.box(10, 10, 10) as any).iso([-1, -1, 1], 'exact')).toThrow(/\{ method: 'exact' \}/)
+        })
+
+        it('elevation(from, options) and isometry(cam, options) on a single shape', () =>
+        {
+            const box = () => m.box(10, 10, 10) as any
+            expect(edgesIn(box().elevation('front', { hiddenLines: true }), 'visible')).toBeGreaterThan(0)
+            expect(box().isometry([-1, -1, 1]).length).toBeGreaterThan(0)
+        })
+    })
 })

@@ -11,6 +11,21 @@ export { convertValueFromToUnit } from '../../docs/utils'
 // only call across it at runtime, never during module evaluation.
 import { isCoordArray, isAnyShape, isPointLike } from './typeguards'
 
+/** The options of a projection - elevation(from, options), project(from, options) and
+ *  isometry(cam, options) - as on meshup (see its resolveProjectionArgs). Anything else, like
+ *  the earlier elevation(side, all), is refused with what to write instead. */
+export function projectionOptions(options:any, usage:string):{ hiddenLines?:boolean, includeHiddenShapes?:boolean, [key:string]:any }
+{
+    if(options == null){ return {} }
+    if(typeof options === 'object' && !Array.isArray(options)){ return options }
+
+    const instead = (typeof options === 'string') ? `{ method: '${options}' }`
+                  : (typeof options === 'boolean') ? `{ hiddenLines: ${options} }`
+                  : '{ hiddenLines: true }';
+    throw new Error(`${usage}: Give the projection settings as one options object, like ${instead}. `
+        + `The method and the settings (hiddenLines, samples, featureAngle, ...) are no longer separate arguments.`);
+}
+
 /** Round a coordinate to the kernel's working precision.
  *
  *  3 decimals — matching OpenCascade's SHAPE_TOLERANCE of 0.001 (see OcLoader). Rounding
