@@ -90,5 +90,6 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-09-22 | [Help content: docs-only sections and links between documents](./records/2026-09-22-help-content-links.md) | Claude Opus 5 | develop | 2 |
 | 2026-09-24 | [Scene to code: highlight the statement that made a shape](./records/2026-09-24-scene-statement-links.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-09-24 | [Script-set param values, handle mapping and the param menu](./records/2026-09-24-param-set-values.md) | Claude Opus 5.5 | develop (+ meshup main) | 9 (1 in meshup) |
+| 2026-09-25 | [Faster hidden-line drawings: cuboid check, batched contact faces, chained polylines](./records/2026-09-25-projection-contact-faces.md) | Claude Opus 5.5 | develop (+ meshup main) | 3 (1 in meshup) |
 | 2026-09-25 | [Documents: image sizing, doc autocomplete, titleblock variables, viewer dimension labels](./records/2026-09-25-docs-image-titleblock.md) | Claude Opus 5.5 | develop | 4 |
 | 2026-09-25 | [Projections: one options object, a plain project(), styles kept, brep parity](./records/2026-09-25-projection-api.md) | Claude Opus 5.5 | develop (+ meshup main) | 3 (1 in meshup) |
