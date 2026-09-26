@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-25 → (open) |
+| Dates | 2026-09-25 → 2026-09-26 |
 | Model | Claude Opus 5.5 (claude-opus-5-5[1m]), 1M context, Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: each change was asked for in the session, the agent explained the cause or proposed the change, the human approved it) |
 | Human | Mark van der Net: wrote the prompts, found the problems by writing document scripts in the editor, chose to fix image sizing in the library rather than in the script, chose where the viewer tweaks are recorded, reviewed the code |
@@ -99,6 +99,11 @@ has its own record (2026-09-25-projection-api).
 2026-09-25 20:30 +0200  For the AI disclosure grouping. Group the Doc/ImageContainer improvement, the projection/elevations improvements
 2026-09-25 20:31 +0200  Base directory for this skill: /home/mvdnet/archiyou/archiyou/.claude/skills/ai-disclosure
                         
+2026-09-25 22:42 +0200  Review should be: "Reviewed by author in editor with a variety of images"
+2026-09-25 22:43 +0200  ok finalize the commit
+2026-09-26 15:53 +0200  yes commit this
+2026-09-26 16:09 +0200  yes
+2026-09-26 16:21 +0200  yes commit and close the records
 ```
 
 The prompt at 15:4x was not picked up by `prompts.py` (it starts with pasted content); it is
@@ -150,8 +155,17 @@ fully rounded pills, from the `--wa-border-radius-pill` design token.
 - Asked for the viewer tweaks and where the label text size is set (answered, not changed).
 - Decided the grouping of this work for disclosure: documents and the viewer tweaks in this
   record, projections in their own.
+- Chose the summary lines of the three commits from the agent's proposals (the viewer one
+  reworded to "no units on dimension labels, rounded label corners"), and wrote the review line
+  of the first: reviewed in the editor with a variety of images.
+- Ordered the commits so the regenerated completion data, which also carries the projection
+  API, lands after the projection commits.
 
 ## Commits
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| 8c9e804 | Docs: images size from their aspect ratio, titleblock texts as variables | 15:04 "Yes implement auto size height or width for images", 15:33 titleblock variables |
+| 1b5b342 | Viewer: no units on dimension labels, rounded label corners | 15:40 units, 15:45 rounded corners |
+| 917baa2 | Editor: autocomplete for doc chains | 15:14 "Can you add code mirror autosuggestions to docs?" |
+| (this commit) | close the record | 20:30 grouping, 16:21 "yes commit and close the records" |
