@@ -268,6 +268,8 @@ export class ScriptManagerItem extends LitElement
 
     :host(:hover) .actions { opacity: 1; }
     :host .actions:has(.confirm-delete) { opacity: 1; }
+    /* Touch has no hover to reveal the actions: keep them visible. */
+    @media (hover: none) { .actions { opacity: 1; } }
 
     .action-btn {
       width: 26px;

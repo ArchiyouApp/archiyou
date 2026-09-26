@@ -116,6 +116,44 @@ export const tokens = {
   radiusFull: '9999px',
 } as const;
 
+/**
+ * Layout breakpoint: below this width a layout is "compact" (phones, small
+ * tablets in portrait). A string for `unsafeCSS()` in container/media queries,
+ * where custom properties can't be used, e.g.
+ * css`@container configurator (width < ${unsafeCSS(BREAKPOINT_COMPACT)}) { ... }`.
+ */
+export const BREAKPOINT_COMPACT = '48rem';
+
+/**
+ * Tokens that depend on the input device, so they need a media query and can't
+ * be inline :root properties like the rest.
+ *  --hit-min          minimum size of a tap/click target (44px for fingers)
+ *  --input-font-size  text inputs; 16px on touch so iOS doesn't zoom on focus
+ */
+const ADAPTIVE_TOKENS = `
+  :root {
+    --hit-min: 24px;
+    --input-font-size: ${tokens.textSm};
+  }
+  @media (pointer: coarse) {
+    :root {
+      --hit-min: 44px;
+      --input-font-size: ${tokens.textBase};
+    }
+  }
+`;
+
+let adaptiveSheet: CSSStyleSheet | null = null;
+
+/** Adopt the adaptive tokens once per document (applyDesignTokens runs again on theme switches). */
+function applyAdaptiveTokens(doc: Document): void
+{
+  if (adaptiveSheet) return;
+  adaptiveSheet = new CSSStyleSheet();
+  adaptiveSheet.replaceSync(ADAPTIVE_TOKENS);
+  doc.adoptedStyleSheets = [...doc.adoptedStyleSheets, adaptiveSheet];
+}
+
 /** Convert camelCase token key to --kebab-case CSS var name. */
 function toVar(key: string): string {
   return '--' + key.replace(/([A-Z])/g, '-$1').toLowerCase();
@@ -126,6 +164,7 @@ export function applyDesignTokens(root: HTMLElement = document.documentElement):
   for (const [key, value] of Object.entries(tokens)) {
     root.style.setProperty(toVar(key), value);
   }
+  applyAdaptiveTokens(root.ownerDocument);
 
   // ---------------------------------------------------------------------------
   // Map to Web Awesome design tokens

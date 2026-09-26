@@ -7,9 +7,11 @@
  *  (e.g. vitest without the Vite config). */
 export const APP_VERSION: string = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
 
-// Overlay menus — percentages of viewport preferred; px accepted too
-export const OVERLAY_MENU_WIDTH  = '40vw';
-export const OVERLAY_MENU_HEIGHT = '50vh';
+// Overlay menus — any CSS length. 40vw/50dvh on desktop, but never narrower
+// than 28rem / lower than 24rem while the screen allows, and always inside the
+// screen with a 1rem margin (phones).
+export const OVERLAY_MENU_WIDTH  = 'clamp(min(28rem, 100vw - 2rem), 40vw, 100vw - 2rem)';
+export const OVERLAY_MENU_HEIGHT = 'clamp(min(24rem, 100dvh - 2rem), 50dvh, 100dvh - 2rem)';
 
 // Parameter tabs
 export const PARAM_TAB_NAME_MAX_LENGTH       = 15;

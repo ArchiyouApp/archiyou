@@ -538,7 +538,7 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
       z-index: 201;
       width: ${unsafeCSS(OVERLAY_MENU_WIDTH)};
       max-width: calc(100vw - 32px);
-      max-height: calc(100vh - 64px);
+      max-height: calc(100dvh - 64px);
       background: var(--color-bg-elevated, #fff);
       border: 1px solid var(--color-border);
       border-radius: var(--radius-lg, 12px);

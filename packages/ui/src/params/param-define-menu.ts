@@ -628,7 +628,7 @@ export class ParamDefineMenu extends SignalWatcher(LitElement)
                grow past it for tall forms. Only viewports too short for the
                form still scroll. */
             min-height: ${unsafeCSS(OVERLAY_MENU_HEIGHT)};
-            max-height: calc(100vh - 32px);
+            max-height: calc(100dvh - 32px);
             background: var(--color-bg-elevated, #fff);
             border: 1px solid var(--color-border);
             border-radius: var(--radius-lg, 12px);

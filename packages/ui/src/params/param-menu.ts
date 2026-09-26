@@ -829,6 +829,8 @@ export class ParamMenu extends SignalWatcher(LitElement)
 
     .tab:hover .tab-delete-btn { opacity: 0.6; }
     .tab:hover .tab-delete-btn:hover { opacity: 1; color: var(--color-alert); }
+    /* Touch has no hover: show the delete button on the active tab only. */
+    @media (hover: none) { .tab.active .tab-delete-btn { opacity: 0.6; } }
 
     /* ── Tab delete confirmation ── */
 

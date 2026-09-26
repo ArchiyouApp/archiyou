@@ -331,6 +331,8 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
         .entry-btn.confirm { opacity: 0.7; }
         .entry-btn:hover { opacity: 1; background: color-mix(in srgb, var(--color-border) 40%, transparent); }
         .entry-btn.danger:hover { color: var(--color-alert); }
+        /* Touch has no hover to reveal the buttons: keep them visible. */
+        @media (hover: none) { .entry-btn { opacity: 0.7; } }
 
         .confirm-label
         {

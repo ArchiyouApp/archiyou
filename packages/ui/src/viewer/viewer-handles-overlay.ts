@@ -100,12 +100,17 @@ export class ViewerHandlesOverlay extends LitElement
       }));
     };
 
+    // pointercancel (a system gesture took over the touch) ends the drag like a
+    // release, never as a click; otherwise the drag and the disabled orbit
+    // controls would stay stuck.
     const onUp = (ev: PointerEvent) =>
     {
       this._draggingId = null;
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      const click = Math.hypot(ev.clientX - startX, ev.clientY - startY) <= CLICK_SLOP_PX;
+      window.removeEventListener('pointercancel', onUp);
+      const click = ev.type === 'pointerup'
+        && Math.hypot(ev.clientX - startX, ev.clientY - startY) <= CLICK_SLOP_PX;
       this.dispatchEvent(new CustomEvent<HandleDragEventDetail>('handle-drag-end', {
         bubbles: true, composed: true,
         detail: { id: h.id, pointerEvent: ev, click },
@@ -114,6 +119,7 @@ export class ViewerHandlesOverlay extends LitElement
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
 
     this.dispatchEvent(new CustomEvent<HandleDragEventDetail>('handle-drag-start', {
       bubbles: true, composed: true,

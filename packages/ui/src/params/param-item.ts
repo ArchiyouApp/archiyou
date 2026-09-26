@@ -374,6 +374,8 @@ export class ParamItem extends LitElement
     /* The script-lock badge is always visible (no edit/delete to reveal). */
     :host .actions:has(.script-lock) { opacity: 0.6; }
     :host(:hover) .actions:has(.script-lock) { opacity: 1; }
+    /* Touch has no hover to reveal the actions: keep them visible. */
+    @media (hover: none) { .actions { opacity: 1; } }
 
     .script-lock {
       display: flex;

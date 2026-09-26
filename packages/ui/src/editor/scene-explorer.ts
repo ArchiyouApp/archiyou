@@ -546,6 +546,8 @@ export class SceneExplorer extends SignalWatcher(LitElement)
     }
 
     .node-row:hover .vis-btn { opacity: 1; }
+    /* Touch has no hover to reveal the toggle: keep it visible. */
+    @media (hover: none) { .vis-btn { opacity: 1; } }
     .node-row .vis-btn[title="Show node"] { opacity: 0.5; }
     .node-row:hover .vis-btn[title="Show node"] { opacity: 1; }
   `;

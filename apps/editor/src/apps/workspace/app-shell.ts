@@ -47,7 +47,7 @@ export class AppShell extends LitElement
     :host {
       display: flex;
       flex-direction: column;
-      height: 100vh;
+      height: 100dvh;
       font-family: var(--font-sans);
       background: var(--color-bg);
       color: var(--color-text);

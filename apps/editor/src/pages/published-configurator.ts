@@ -135,7 +135,7 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
     :host {
       display: block;
       width: 100%;
-      height: 100vh;
+      height: 100dvh;
       background: var(--color-bg, #fff);
     }
 
@@ -157,7 +157,7 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
       justify-content: center;
       gap: 12px;
       width: 100%;
-      height: 100vh;
+      height: 100dvh;
       font-family: var(--font-sans);
       color: var(--color-text-muted, #666);
     }

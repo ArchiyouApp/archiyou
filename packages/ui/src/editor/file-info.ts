@@ -952,6 +952,8 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
     }
 
     .header:hover .edit-name-btn { opacity: 1; }
+    /* Touch has no hover to reveal the rename button: keep it visible. */
+    @media (hover: none) { .edit-name-btn { opacity: 0.6; } }
 
     .spacer { flex: 1; }
 

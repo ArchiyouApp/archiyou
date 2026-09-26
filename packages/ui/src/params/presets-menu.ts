@@ -298,6 +298,8 @@ export class PresetsMenu extends SignalWatcher(LitElement)
     }
 
     .preset-row:hover .action-btn { opacity: 1; }
+    /* Touch has no hover to reveal the actions: keep them visible. */
+    @media (hover: none) { .action-btn { opacity: 1; } }
     .preset-row:has(.confirm-label) .action-btn { opacity: 1; }
 
     .action-btn:hover {
