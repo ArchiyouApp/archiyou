@@ -187,3 +187,17 @@ test("Edge tangent() refers curved Edges to tangentAt()", () =>
     // tangentAt() stays the way to ask a curved Edge
     expect(new brep.Edge().makeCircle(100).tangentAt([100,0,0]).toArray()).toEqual([0,1,0]);
 })
+
+test("Edge align with start/end", () =>
+{
+    // 'start'/'end' are the Edge's end points, not a bbox point
+    const e = new brep.Edge().makeLine([0,0,0],[100,50,20]).align(new brep.Vertex(500,500,500), 'end');
+    expect(e.end().toArray()).toEqual([500,500,500]);
+    expect(e.start().toArray()).toEqual([400,450,480]);
+
+    const line = new brep.Edge().makeLine([10,20,30],[100,50,20]);
+    const box = new brep.Solid().makeBox(10,10,10).align(line, 'center', 'start');
+    expect(box.center().toArray()).toEqual([10,20,30]);
+    const group = new brep.ShapeCollection(new brep.Solid().makeBox(10,10,10)).align(line, 'center', 'start');
+    expect(group.center().toArray()).toEqual([10,20,30]);
+})

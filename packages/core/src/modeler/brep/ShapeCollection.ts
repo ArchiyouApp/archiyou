@@ -733,12 +733,10 @@ import { getOc } from './index' // OC global getter
 
          // pivot using bbox() of ShapeCollection
          const pivotAlignPerc:Array<number> = (this.bbox().shape())._alignPerc(pivot)
-         const alignmentPerc:Array<number> = (ShapeCollection.isShapeCollection(others)) 
-                                                ? (others.bbox().shape())._alignPerc(alignment) 
-                                                : (others as Shape)._alignPerc(alignment)
-         
          const fromPosition = this.bbox().getPositionAtPerc(pivotAlignPerc).toVector();
-         const toPosition = others.bbox().getPositionAtPerc(alignmentPerc).toVector();
+         const toPosition = (ShapeCollection.isShapeCollection(others)) 
+                                ? others.bbox().getPositionAtPerc((others.bbox().shape())._alignPerc(alignment)).toVector()
+                                : (others as Shape)._alignPosition(alignment); // start/end of a linear Shape
 
          this.move(toPosition.subtracted(fromPosition));
 

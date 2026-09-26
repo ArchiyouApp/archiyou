@@ -3057,22 +3057,27 @@ export class Shape
                 new Point(a).toArray();
     }
 
+    /** Position of an alignment on this Shape: start or end of a linear Shape, otherwise a point on its bbox */
+    _alignPosition(a:Alignment='center'):Vector
+    {
+        return (['start', 'end'].includes(a as string) && isLinearShape(this))
+            ? this.pointAtAlignment(a).toVector()
+            : this.bbox().getPositionAtPerc(this._alignPerc(a)).toVector();
+    }
+
     /** 
      *  Align a given Shape to another by supplying a pivot for current Shape, another Shape and the alignment
      *  For the pivot and alignment you can supply either a string with the combinations of sides (left,right,front,back,bottom,top)
      *  or a array of percentage offsets to [left,front,bottom] corner or Shape
-     *  and for linear Shapes (Edge,Wire) also start and end !!!! TODO !!!!
+     *  and for linear Shapes (Edge,Wire) also start and end
      */
     @checkInput(['AnyShape',['Pivot','center'],['Alignment', 'center']],['auto','auto','auto'])
     align(other:AnyShape, pivot?:Pivot, alignment?:Alignment):this
     {
-        const pivotAlignPerc:Array<number> = this._alignPerc(pivot);
-        const alignmentPerc:Array<number> = this._alignPerc(alignment); // alignment inside other Shape
+        const fromPosition = this._alignPosition(pivot);
+        const toPosition = other._alignPosition(alignment); // alignment inside other Shape
 
-        let fromPosition = this.bbox().getPositionAtPerc(pivotAlignPerc).toVector();
-        let toPosition = other.bbox().getPositionAtPerc(alignmentPerc).toVector();
-
-        this.move(toPosition.subtracted(fromPosition)); //.move(pivotOffsetVec);
+        this.move(toPosition.subtracted(fromPosition));
 
         return this;
     }

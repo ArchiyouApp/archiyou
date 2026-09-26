@@ -93,3 +93,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-09-25 | [Faster hidden-line drawings: cuboid check, batched contact faces, chained polylines](./records/2026-09-25-projection-contact-faces.md) | Claude Opus 5.5 | develop (+ meshup main) | 3 (1 in meshup) |
 | 2026-09-25 | [Documents: image sizing, doc autocomplete, titleblock variables, viewer dimension labels](./records/2026-09-25-docs-image-titleblock.md) | Claude Opus 5.5 | develop | 4 |
 | 2026-09-25 | [Projections: one options object, a plain project(), styles kept, brep parity](./records/2026-09-25-projection-api.md) | Claude Opus 5.5 | develop (+ meshup main) | 3 (1 in meshup) |
+| 2026-09-25 | [Lofts: flat sides, outward walls, kept corners, fast sampling; align() to curve ends](./records/2026-09-25-loft-align-robustness.md) | Claude Opus 5.5 | develop (+ meshup main) | 2 (1 in meshup) |
