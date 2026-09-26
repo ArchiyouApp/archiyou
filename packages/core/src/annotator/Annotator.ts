@@ -6,7 +6,7 @@
  */ 
 
 import type { ArchiyouModules } from '../types';
-import type { MainAxis, AnyShape, AnyShapeCollection } from '../modeler/types'
+import type { MainAxis, AnyShape, AnyShapeCollection, AnyShapeOrCollection } from '../modeler/types'
 // Geometry types live in meshup, not modeler/types — the latter only re-exports
 // the AnyShape* aliases. See the note in AnnotatorDimensionLine.ts: the BREP
 // kernel has identically-named Point/Vector, so be explicit about the source.
@@ -229,6 +229,50 @@ export class Annotator
         const MAX_DISTANCE = 30;
         const selectionBbox = bbox.enlarged(margin ?? MAX_DISTANCE);
         return this.annotations.filter(a => selectionBbox.contains(a.toShape()));
+    }
+
+    /** Carry the dimension lines of `source` into its projection `projection` (an isometry or
+     *  elevation of it), with their values frozen. See DimensionLine.projected().
+     *
+     *  Which ones, when `dims` is not given: those linked to `source` or its Shapes, and every
+     *  dimension line measuring something inside the 3D bounds of `source` - a dimension of a
+     *  selected face (`box.select('F||top').autoDim()`) has no link back to the box.
+     *
+     *  @param dims `false` for none, or the dimension lines to carry over
+     *  @returns the new dimension lines in the projection
+     */
+    projectAnnotations(source:AnyShapeOrCollection, projection:AnyShapeCollection, dims?:boolean|Array<DimensionLine>):Array<DimensionLine>
+    {
+        if(dims === false || typeof (projection as any)?.toScreen !== 'function'){ return [] }
+
+        const picked = Array.isArray(dims) ? dims : this._dimensionLinesOf(source);
+        return picked
+                .filter(d => d instanceof DimensionLine && !(d as any)._projectedFrom) // not a drawing's own
+                .map(d =>
+                {
+                    const projected = d.projected(projection);
+                    if(projected){ (projected as any)._projectedFrom = d }
+                    return projected;
+                })
+                .filter(Boolean);
+    }
+
+    /** Dimension lines linked to a Shape or collection, or measuring inside its bounds */
+    _dimensionLinesOf(source:AnyShapeOrCollection):Array<DimensionLine>
+    {
+        const bbox = (source as any)?.bbox?.();
+        if(!bbox){ return [] }
+
+        const members = (source as any)?.isShapeCollection?.() ? (source as any).toArray() : [];
+        const shapes = new Set([source, ...members]);
+        const [min, max] = [bbox.min(), bbox.max()];
+        const tolerance = Math.max(1e-6, Math.hypot(max.x - min.x, max.y - min.y, max.z - min.z) * 1e-6);
+        const inside = (p:Point) => ['x','y','z'].every(a => p[a] >= min[a] - tolerance && p[a] <= max[a] + tolerance);
+
+        return this.annotations.filter((a):a is DimensionLine =>
+            a instanceof DimensionLine
+            && (shapes.has((a as DimensionLine).linkedTo)
+                || (inside((a as DimensionLine).targetStart) && inside((a as DimensionLine).targetEnd))));
     }
 
     addAnnotations(annotations:Array<Annotation>):this

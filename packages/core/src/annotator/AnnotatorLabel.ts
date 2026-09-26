@@ -189,6 +189,13 @@ export class Label extends BaseAnnotation
         if(this.linkedTo?.bbox){ this.position = this.linkedTo.bbox().center(); }
     }
 
+    /** Move this label along with the drawing it is linked to */
+    translate(dx:number, dy:number=0, dz:number=0):this
+    {
+        this.position = new this.classes.Point(this.position.x + dx, this.position.y + dy, this.position.z + dz);
+        return this;
+    }
+
     //// EXPORTS ////
 
     /** An annotation setting, from the Annotator when one is reachable. */

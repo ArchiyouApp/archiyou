@@ -290,6 +290,47 @@ function shapeToSVG(this: any, options?: any): string | null {
     return this
 }
 
+//// PROJECTIONS ////
+
+/*  A projection draws the dimension lines of what it projects, with their 3D values frozen
+    (see Annotator.projectAnnotations). The projections nest — a collection of one Mesh runs
+    Mesh.isometry() — so only the outermost call carries them over, or they come out twice. */
+let projectionDepth = 0
+
+function withProjectedDims(proto: any, method: string): void
+{
+    const original = proto[method]
+    proto[method] = function (this: any, view?: any, options?: any, ...rest: Array<any>)
+    {
+        // Only an options object carries `dims`: anything else goes on as given, for the kernel to refuse
+        const isOptions = options != null && typeof options === 'object' && !Array.isArray(options)
+        const { dims, ...projectionOptions } = isOptions ? options : {} as any
+        projectionDepth++
+        let projection: any
+        try
+        {
+            projection = original.call(this, view, isOptions ? projectionOptions : options, ...rest)
+        }
+        finally
+        {
+            projectionDepth--
+        }
+        if (projectionDepth === 0)
+        {
+            const annotator = this._modeler?.modules?.annotator ?? this._ay?.annotator ?? this._shapes?.[0]?._ay?.annotator
+            annotator?.projectAnnotations(this, projection, dims)
+        }
+        return projection
+    }
+}
+
+withProjectedDims(meshup.Mesh.prototype, 'isometry')
+withProjectedDims(meshup.Mesh.prototype, 'elevation')
+withProjectedDims(meshup.Curve.prototype, 'isometry')
+withProjectedDims(meshup.ShapeCollection.prototype, 'isometry')
+withProjectedDims(meshup.ShapeCollection.prototype, 'iso') // runs _iso(), not isometry()
+withProjectedDims(meshup.ShapeCollection.prototype, 'elevation')
+
 //// COLLECTION / SCENE AGGREGATION ////
 
 /** The MaterialManager reachable from a set of shapes (they all share one modeler). */

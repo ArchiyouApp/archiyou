@@ -825,6 +825,64 @@ export class DimensionLine extends BaseAnnotation
 
     //// OPERATIONS ////
 
+    /** Move this dimension line along with the drawing it is linked to */
+    translate(dx:number, dy:number=0, dz:number=0):this
+    {
+        const Point = this.classes.Point;
+        this.targetStart = new Point(this.targetStart.x + dx, this.targetStart.y + dy, this.targetStart.z + dz);
+        this.targetEnd = new Point(this.targetEnd.x + dx, this.targetEnd.y + dy, this.targetEnd.z + dz);
+        this._linkedCenterCache = null;
+        return this;
+    }
+
+    /** This dimension line as drawn in a projection (isometry, elevation), with its value
+     *  frozen: the line keeps measuring the real 3D length, while what it spans on paper is
+     *  foreshortened. The drawn line and its offset are mapped through the projection, so a
+     *  dimension on a face lies in the plane of that face in the drawing.
+     *
+     *  @param projection a projection result: a collection answering toScreen() (meshup)
+     *  @returns the new dimension line, registered and linked to the projection, or null when
+     *      this one cannot be drawn there (it runs along the view direction)
+     */
+    projected(projection:AnyShapeCollection):DimensionLine|null
+    {
+        const toScreen = (p:Point):Point|null => (projection as any)?.toScreen?.(p) ?? null;
+        const annotator = this._archiyou?.annotator;
+        if(!annotator){ return null }
+
+        // Where the line is drawn in 3D, and its feet: the line minus the offset. For a plain
+        // dimension the feet are the target points, for an ortho one the line's own ends.
+        const offset = this._scaleComponents(this._resolveOffsetComponents(), this.offsetLength ?? 0);
+        const lineStart = this._calculatePoint('start');
+        const lineEnd = this._calculatePoint('end');
+        const footStart = this._offsetPoint(lineStart, offset, -1);
+        const footEnd = this._offsetPoint(lineEnd, offset, -1);
+
+        const [start, end, drawnStart] = [footStart, footEnd, lineStart].map(toScreen);
+        if(!start || !end || !drawnStart){ return null }
+        if(Math.hypot(end.x - start.x, end.y - start.y) < 1e-9){ return null } // seen end-on
+
+        // The offset as drawn. Pointing at the viewer it is gone: then the line finds its own
+        const drawnOffset:[number, number, number] = [drawnStart.x - start.x, drawnStart.y - start.y, 0];
+        const drawnOffsetLength = this._componentsLength(drawnOffset);
+        const offsetVec = (drawnOffsetLength > 1e-9) ? this._normalizeComponents(drawnOffset) : null;
+
+        const dim = annotator.dimensionLine(start, end, {
+                        offset: offsetVec ? drawnOffsetLength : this.offsetLength,
+                        ...(offsetVec ? { offsetVec } : {}),
+                        ...(this.units ? { units: this.units } : {}),
+                        showUnits: this.showUnits,
+                        roundDecimals: this.roundDecimals,
+                    }) as DimensionLine;
+        dim.round = this.round;
+        dim.textSize = this.textSize;
+        dim._planeNormalCache = [0, 0, 1]; // a projection is drawn on XY
+        dim.setValue(this.value);
+        dim.link(projection);
+        if(offsetVec){ dim.setOffsetVec(new this.classes.Vector(...offsetVec)) } // link() recalculates it
+        return dim;
+    }
+
     /** Set static value  */
     setValue(v:number|string):this
     {

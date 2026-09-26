@@ -393,4 +393,109 @@ describe('Dimensions', () =>
         })
     })
 
+    describe('in projections', () =>
+    {
+        const dimensionedBox = () =>
+        {
+            const box = modeler.box(100, 50, 20) as any
+            box.select('F||top').autoDim()
+            return box
+        }
+        const projectedOf = (projection:any) =>
+            annotator.getAnnotations().filter(a => (a as any).linkedTo === projection) as Array<DimensionLine>
+
+        it('places 3D points where the projection drew them', () =>
+        {
+            const cornersOf = (shape:any) =>
+            {
+                const bb = shape.bbox()
+                return [0, 1, 2, 3, 4, 5, 6, 7].map(i => [
+                            (i & 1) ? bb.max().x : bb.min().x,
+                            (i & 2) ? bb.max().y : bb.min().y,
+                            (i & 4) ? bb.max().z : bb.min().z])
+            }
+            const box = modeler.box(100, 50, 20).move(30, -20, 5) as any
+            const tower = modeler.box(10, 10, 10).move(0, 0, 100) as any
+
+            // A single mesh and a collection take different routes through the projection
+            const cases:Array<[Array<any>, any]> = [
+                [[box], box.iso()],
+                [[box, tower], modeler.collection(box, tower).iso()],
+                [[box], box.elevation('front')],
+            ]
+            cases.forEach(([shapes, drawing]) =>
+            {
+                const screen = shapes.flatMap(cornersOf).map(c => drawing.toScreen(c))
+                const drawn = modeler.collection(...drawing.toArray()).bbox()
+                const xs = screen.map(p => p.x)
+                const ys = screen.map(p => p.y)
+                expect(Math.min(...xs)).toBeCloseTo(drawn.min().x, 6)
+                expect(Math.max(...xs)).toBeCloseTo(drawn.max().x, 6)
+                expect(Math.min(...ys)).toBeCloseTo(drawn.min().y, 6)
+                expect(Math.max(...ys)).toBeCloseTo(drawn.max().y, 6)
+            })
+        })
+
+        it('carries the dimension lines of a selected face into an isometry, values frozen', () =>
+        {
+            const box = dimensionedBox()
+            const dims3d = annotator.getAnnotations().slice() as Array<DimensionLine>
+            expect(dims3d.length).toBeGreaterThan(0)
+
+            const iso = box.iso()
+            const dims = projectedOf(iso)
+
+            expect(dims.length).toBe(dims3d.length)
+            dims.forEach((d, i) =>
+            {
+                expect(d.static).toBe(true)
+                expect(d.value).toBe(dims3d[i].value)
+                // Where the projection drew the measured points
+                const start = iso.toScreen(dims3d[i].targetStart)
+                expect(d.targetStart.x).toBeCloseTo(start.x, 6)
+                expect(d.targetStart.y).toBeCloseTo(start.y, 6)
+                expect(d.targetStart.z).toBeCloseTo(0, 6)
+            })
+            // Foreshortened on paper, the real length in the text
+            expect(dims.some(d => (d as any).targetDir().length() < (d.value as number) - 1)).toBe(true)
+        })
+
+        it('draws them once, however the projection nests', () =>
+        {
+            const box = dimensionedBox()
+            const count = annotator.getAnnotations().length
+            const iso = modeler.collection(box).iso() as any
+
+            expect(projectedOf(iso).length).toBe(count)
+            expect(annotator.getAnnotations().length).toBe(2 * count)
+        })
+
+        it('moves them along with the drawing', () =>
+        {
+            const iso = dimensionedBox().iso().move(1000) as any
+            const [dim] = projectedOf(iso)
+            const src = (dim as any)._projectedFrom as DimensionLine
+
+            expect(dim.targetStart.x).toBeCloseTo(iso.toScreen(src.targetStart).x, 6)
+            expect(dim.targetStart.x).toBeGreaterThan(500)
+        })
+
+        it('takes none with dims: false, and just the given ones with a list', () =>
+        {
+            const box = dimensionedBox()
+            const [first] = annotator.getAnnotations() as Array<DimensionLine>
+
+            expect(projectedOf(box.iso([-1, -1, 1], { dims: false })).length).toBe(0)
+            expect(projectedOf(box.iso([-1, -1, 1], { dims: [first] })).length).toBe(1)
+        })
+
+        it('draws them in the SVG of the drawing', () =>
+        {
+            const iso = dimensionedBox().iso() as any
+            const svg = iso.toSVG() as string
+
+            expect(svg.match(/class="dimensionline"/g)?.length).toBe(projectedOf(iso).length)
+        })
+    })
+
 })
