@@ -40,10 +40,10 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
         const displayValue = (src && display) ? convert(this._value, src, display) : this._value;
 
         // Step-driven fixed-decimal display when idle/after a slider drag (step 1 →
-        // integer, 0.1 → 1 decimal, …); while the field is focused show a
-        // light-rounded value so typing isn't reformatted.
+        // integer, 0.1 → 1 decimal, …); while the field is focused show exactly
+        // what the user typed, so a re-render never rewrites it mid-edit.
         const numStr  = this._focused
-            ? String(Math.round(displayValue * 1e4) / 1e4)
+            ? this._draft
             : this._displayFixed(displayValue, display);
         const fracHint = (src && display && this._displaySystem() === 'imperial')
             ? formatImperial(toMM(this._value, src), { unit: display })
@@ -70,7 +70,8 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
                     max=${ifDefined(this.bare ? undefined : max)}
                     step=${ifDefined(this.bare ? undefined : step)}
                     .value=${numStr}
-                    @focus=${() => { this._focused = true; }}
+                    @focus=${this._onNumberFocus}
+                    @mouseup=${this._onNumberMouseUp}
                     @blur=${() => { this._focused = false; }}
                     @input=${this._onNumberInput}
                     @change=${this._onNumber}
@@ -188,6 +189,14 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
 
     @state() private _value = 0;
     @state() private _focused = false;
+
+    // The number field's text while it has focus: what the user typed, not yet
+    // clamped. Clamping per keystroke turns "4" into the minimum, and the next
+    // keystroke appends to that — the value jumps to the maximum.
+    private _draft = '';
+    // Swallow the mouseup of the click that focused the field, which would
+    // otherwise collapse the select-all into a caret.
+    private _selectOnMouseUp = false;
 
     // Tracks the display system so a Metric/Imperial switch can snap the value.
     private _lastDisplaySystem: UnitSystem | null = null;
@@ -314,31 +323,53 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
         this._commitFromDisplay(Number((e.target as HTMLInputElement).value));
     }
 
+    /** Select the whole value on focus, so typing replaces it. */
+    private _onNumberFocus(e: FocusEvent)
+    {
+        const input = e.target as HTMLInputElement;
+        this._draft = input.value;
+        this._focused = true;
+        this._selectOnMouseUp = true;
+        input.select();
+    }
+
+    private _onNumberMouseUp(e: MouseEvent)
+    {
+        if (!this._selectOnMouseUp) return;
+        this._selectOnMouseUp = false;
+        e.preventDefault();
+    }
+
+    /** Commit (Enter or blur): clamp + snap what was typed. */
     private _onNumber(e: Event)
     {
         const input = e.target as HTMLInputElement;
-        this._commitFromDisplay(Number(input.value));
+        this._commitFromDisplay(input.value === '' ? this._value : Number(input.value));
         // reflect the snapped value back into the display unit (per-unit decimals)
         const src = this._sourceUnit();
         const disp = src ? this._displayUnit(src) : null;
         input.value = this._displayFixed(src && disp ? convert(this._value, src, disp) : this._value, disp);
+        this._draft = input.value;
     }
 
+    /** Live edit: keep the typed text as-is and update the model only once it is
+     *  a value inside the bounds — a partly typed number ("4" on the way to 450)
+     *  is left alone until it is complete or committed. */
     private _onNumberInput(e: InputEvent)
     {
         const input = e.target as HTMLInputElement;
+        this._draft = input.value;
         if (input.value === '') return;
         const parsed = Number(input.value);
         if (!Number.isFinite(parsed)) return;
 
-        // live edit: clamp in source space but don't snap (snap on change)
         const src = this._sourceUnit();
         const srcVal = src ? convert(parsed, this._displayUnit(src), src) : parsed;
-        const clamped = this.bare
-            ? srcVal
-            : Math.max(paramMin(this.param), Math.min(paramMax(this.param), srcVal));
-        this._value = clamped;
-        this._dispatchValue(clamped);
+        const inBounds = srcVal >= paramMin(this.param) && srcVal <= paramMax(this.param);
+        if (!this.bare && !inBounds) return;
+
+        this._value = srcVal;
+        this._dispatchValue(srcVal);
     }
 
     /** Editor only (the configurator renders a read-only unit label): author the
