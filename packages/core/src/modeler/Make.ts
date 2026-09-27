@@ -13,7 +13,9 @@ import { ShapeCollection } from '@archiyou/meshup';
 import type * as meshup from '@archiyou/meshup';
 import type { Polygon } from '@archiyou/meshup';
 import type { Mesh } from '@archiyou/meshup';
+import type * as brepTypes from './brep/index';
 import { Table } from '../calc/Table';
+import { roundTo } from '../utils';
 
 import { BinPacker } from '@archiyou/gdrr2bp-wasm';
 import { collectParts } from './parts';
@@ -112,6 +114,13 @@ type MeshModeler = Omit<Modeler,
         vertex(...args: Parameters<Modeler['vertex']>): meshup.Vertex
     }
 
+/** Miter saw settings for an end cut, in degrees from a square cut. See {@link Make.cutAngles}. */
+export interface CutAngles
+{
+    miter: number   // blade turned around the vertical axis [0-90]
+    bevel: number   // blade tilted from vertical [0-90]
+}
+
 /** Options for {@link Make.partList}. */
 export interface PartListOptions
 {
@@ -119,6 +128,46 @@ export interface PartListOptions
      *  these rows positionally, so the shift is opt-in. */
     labels?: boolean
 }
+
+//// VECTOR HELPERS ////
+/*  Plain [x, y, z] math, so make.cutAngles() reads the same from both kernels */
+
+type Vec3 = [number, number, number]
+
+const COS_1DEG = Math.cos(Math.PI / 180);
+const SIN_1DEG = Math.sin(Math.PI / 180);
+
+const xyz = (p: { x: number, y: number, z: number }): Vec3 => [p.x, p.y, p.z];
+const sub = (p: Vec3, q: Vec3): Vec3 => [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
+const scale = (p: Vec3, f: number): Vec3 => [p[0] * f, p[1] * f, p[2] * f];
+const dot = (p: Vec3, q: Vec3): number => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+const cross = (p: Vec3, q: Vec3): Vec3 => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+const len = (p: Vec3): number => Math.sqrt(dot(p, p));
+const unit = (p: Vec3): Vec3 => scale(p, 1 / len(p));
+
+/** Whether a shape is a closed solid: a beam is, an open loft or a single face is not.
+ *  `edges` are the shape's own edges(), which meshup groups by kind. */
+const isSolid = (shape: any, edges: any): boolean =>
+    shape?.type === 'Solid' // brep
+    || (shape?.type === 'Mesh' && !(edges.getGroup('boundary')?.length > 0)); // meshup: no open edges
+
+/** Whether point p lies within (or on) the bounding box of a shape */
+const onBbox = (shape: any, p: Vec3): boolean =>
+{
+    let bbox;
+    try
+    {
+        bbox = shape?.bbox?.();
+    }
+    catch
+    {
+        return false; // shapes without extent (empty, text) cannot hold the edge
+    }
+    if (!bbox) return false;
+    const [min, max] = [xyz(bbox.min()), xyz(bbox.max())];
+    const tol = 1e-6 * Math.max(1, len(sub(max, min)));
+    return p.every((v, i) => v >= min[i] - tol && v <= max[i] + tol);
+};
 
 export class Make
 {
@@ -1584,6 +1633,153 @@ export class Make
         this.modeler.stats = { ...solution.stats };
 
         return result;
+    }
+
+    //// CUTTING ////
+
+    /** The angles to set on a miter saw for the end cut of a beam-like shape, in degrees:
+     *  `miter` turns the blade around the vertical axis, `bevel` tilts it from vertical.
+     *  A square cut is { miter: 0, bevel: 0 }.
+     *
+     *  The edge says which end and how the beam lies on the saw: it is an edge of the end
+     *  cut, and the other face it bounds lies on the saw table. So the top-left edge measures
+     *  the left end with the top face down on the table. The beam runs along the fence (its
+     *  length axis follows its longest edges); which side is against the fence does not
+     *  change the angles. A compound cut measured from another face of the same end (another
+     *  edge) gives other angles: that is the same cut with the beam turned over.
+     *
+     *  On a mitered beam select the edge through its face, `beam.select('F||top').select('E||left')`:
+     *  a slanted end reaches further left along another face, so `beam.select('E||topleft')`
+     *  can pick the edge of that face instead.
+     *
+     *  An edge from select() knows the beam it was selected from (through its face, too).
+     *  Any other edge, like a copy, is looked up in the scene: pass the beam as second
+     *  argument when that finds none, or shapes that disagree about the cut.
+     *
+     *  @param edge  An edge of the end cut: the one it shares with the face on the table.
+     *  @param beam  The beam the edge belongs to (optional, see above).
+     *  @returns { miter, bevel } in degrees.
+     *
+     *  @example
+     *  beam = box(600, 90, 40)
+     *  angles = make.cutAngles(beam.select('F||bottom').select('E||left'))
+     *  print(angles.miter, angles.bevel) // 0 0: a square cut
+     */
+    cutAngles(edge: meshup.Curve | brepTypes.Edge, beam?: meshup.Mesh | brepTypes.Solid): CutAngles
+    {
+        const USAGE = `Make::cutAngles(edge, beam?): Please supply a single edge of a beam's end cut, like beam.select('F||top').select('E||left')`;
+        const e = edge as any;
+
+        if (!e || e.isShapeCollection?.() || typeof e.start !== 'function' || typeof e.end !== 'function')
+            throw new Error(USAGE);
+
+        const [a, b] = [xyz(e.start()), xyz(e.end())];
+        if (len(sub(b, a)) === 0)
+            throw new Error(`${USAGE}. Got an edge without length.`);
+
+        /*  select() keeps the shape an edge was selected from, up a chain (edge → face → solid).
+            An edge that was not selected is looked up in the scene. */
+        const rootOf = (shape: any): any => shape?._parent ? rootOf(shape._parent) : shape;
+        const owner = beam ?? (e._parent ? rootOf(e._parent) : null);
+        if (owner)
+        {
+            const measured = this._cutAnglesOn(owner, a, b);
+            if ('reason' in measured) throw new Error(`Make::cutAngles(edge, beam?): ${measured.reason}`);
+            return measured;
+        }
+
+        const measured = this._anyKernelModeler.all().toArray()
+                            .filter(shape => onBbox(shape, a) && onBbox(shape, b))
+                            .map(shape => this._cutAnglesOn(shape, a, b));
+        const found = measured.filter((m): m is CutAngles => !('reason' in m));
+
+        if (found.length === 0)
+        {
+            // the edge is on a shape, just not an edge of a cut: say what is wrong with it
+            const onShape = measured.find(m => 'reason' in m && m.onShape) as { reason: string } | undefined;
+            throw new Error(onShape
+                ? `Make::cutAngles(edge, beam?): ${onShape.reason}`
+                : `${USAGE}. Could not find the beam this edge is on: pass it as second argument.`);
+        }
+
+        const disagree = found.some(angles => Math.abs(angles.miter - found[0].miter) > 1e-6 || Math.abs(angles.bevel - found[0].bevel) > 1e-6);
+        if (disagree)
+            throw new Error(`Make::cutAngles(edge, beam?): This edge is on ${found.length} shapes that give different angles. Pass the beam as second argument.`);
+
+        return found[0];
+    }
+
+    /** Miter saw angles for the end cut of `shape` at edge a-b, or why there are none
+     *  (onShape: the edge does lie on a face of the shape) */
+    private _cutAnglesOn(shape: meshup.Shape | brepTypes.AnyShape, a: Vec3, b: Vec3): CutAngles | { reason: string, onShape: boolean }
+    {
+        const s = shape as any;
+        const shapeEdges = (typeof s.edges === 'function') ? s.edges() : null;
+        if (!shapeEdges || !isSolid(s, shapeEdges))
+            return { reason: 'The beam is not a closed solid.', onShape: false };
+
+        const length = len(sub(b, a));
+        const u = scale(sub(b, a), 1 / length);
+        const tol = Math.max(1e-6, 1e-5 * length);
+        const along = (p: Vec3) => dot(sub(p, a), u);
+        const offLine = (p: Vec3) => len(sub(sub(p, a), scale(u, along(p))));
+
+        /*  A face is on the edge when one of its own edges runs along it for some length.
+            Checking segments rather than planes keeps the other triangles of a triangulated
+            face out, and so do faces that only touch an end point. */
+        const onEdge = (face: any): boolean =>
+            face.edges().toArray().some((fe: any) =>
+            {
+                const [p, q] = [xyz(fe.start()), xyz(fe.end())];
+                if (offLine(p) > tol || offLine(q) > tol) return false;
+                const [s0, s1] = [along(p), along(q)].sort((x, y) => x - y);
+                return Math.min(s1, length) - Math.max(s0, 0) > tol;
+            });
+
+        const normals = (s.faces().toArray() as Array<any>)
+                            .filter(onEdge)
+                            .map(face => unit(xyz(face.normal())))
+                            .reduce((distinct: Array<Vec3>, n) =>
+                                distinct.some(m => dot(m, n) > COS_1DEG) ? distinct : [...distinct, n], []);
+
+        if (normals.length !== 2)
+            return { reason: `The edge should be between the end cut and one side of the beam, but it borders ${normals.length} face(s).`, onShape: normals.length > 0 };
+
+        /*  The length axis: the direction the most edge length runs in. Not the longest edge
+            alone, since the diagonal of a steep miter on a short piece can beat the sides,
+            and not the OBB, whose PCA axis leans when only one end is cut. */
+        const axis = (shapeEdges.toArray() as Array<any>)
+                        .map(se => sub(xyz(se.end()), xyz(se.start())))
+                        .filter(d => len(d) > tol)
+                        .reduce((groups: Array<{ dir: Vec3, length: number }>, d) =>
+                        {
+                            const group = groups.find(g => Math.abs(dot(g.dir, unit(d))) > COS_1DEG);
+                            return group
+                                ? groups.map(g => (g === group) ? { ...g, length: g.length + len(d) } : g)
+                                : [...groups, { dir: unit(d), length: len(d) }];
+                        }, [])
+                        .sort((g, h) => h.length - g.length)[0]?.dir;
+
+        if (!axis) return { reason: 'Could not find the length axis of the beam.', onShape: true };
+
+        // The side on the table runs along the beam, the end cut crosses it
+        const [side, end] = [...normals].sort((n, m) => Math.abs(dot(n, axis)) - Math.abs(dot(m, axis)));
+        if (Math.abs(dot(side, axis)) > SIN_1DEG)
+            return { reason: 'The edge is between two cut faces: select the edge the end cut shares with a side of the beam.', onShape: true };
+        if (Math.abs(dot(end, axis)) < SIN_1DEG)
+            return { reason: 'The edge runs along the beam: select an edge of the end cut.', onShape: true };
+
+        /*  On the saw the beam's side lies on the table (up = its normal) with the length axis
+            along the fence. The turntable turns the blade by the miter m around up, the bevel b
+            then tilts it around the line where it meets the table. From a square cut (blade
+            normal = axis) that gives the blade normal
+                n = cos(b)cos(m) * axis + cos(b)sin(m) * across + sin(b) * up
+            Signs only say left or right, so they are dropped. */
+        const across = unit(cross(side, axis));
+        const bevel = Math.asin(Math.min(1, Math.abs(dot(end, side))));
+        const miter = Math.atan2(Math.abs(dot(end, across)), Math.abs(dot(end, axis)));
+
+        return { miter: roundTo(miter * 180 / Math.PI, 6), bevel: roundTo(bevel * 180 / Math.PI, 6) };
     }
 
     //// DATA GATHERING /////

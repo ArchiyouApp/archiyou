@@ -216,6 +216,99 @@ describe('Make', async () =>
         expect(withSpace.length).toBe(2)
     }, 30_000)
 
+    describe('cutAngles', () =>
+    {
+        const [LENGTH, WIDTH, THICKNESS] = [600, 90, 40]
+        const rad = (deg: number) => deg * Math.PI / 180
+        const deg = (r: number) => r * 180 / Math.PI
+
+        /** A beam along x (y: width, z: thickness) whose left end is cut the way a miter saw
+         *  set to `miter` and `bevel` cuts it with the bottom face on the table, and the four
+         *  corners of that cut as [y, z] → point */
+        const cutBeam = (m: Modeler, miter: number, bevel: number) =>
+        {
+            const n = [Math.cos(rad(bevel)) * Math.cos(rad(miter)),
+                       Math.cos(rad(bevel)) * Math.sin(rad(miter)),
+                       Math.sin(rad(bevel))]
+            const origin = [200, WIDTH / 2, THICKNESS / 2] // the cut plane goes through here
+            const corner = (y: number, z: number): [number, number, number] =>
+                [origin[0] - (n[1] * (y - origin[1]) + n[2] * (z - origin[2])) / n[0], y, z]
+
+            const ring = [[0, 0], [WIDTH, 0], [WIDTH, THICKNESS], [0, THICKNESS]] as Array<[number, number]>
+            const left = m.polygon(ring.map(([y, z]) => corner(y, z))) as any
+            const right = m.polygon(ring.map(([y, z]) => [LENGTH, y, z])) as any
+            return { beam: left.loft(right), corner }
+        }
+
+        it('reads a square cut as zero', async () =>
+        {
+            const m = new Modeler()
+            await m.load()
+            const beam = m.box(LENGTH, WIDTH, THICKNESS) as any
+
+            expect(m.make.cutAngles(beam.select('E||bottomleft'))).toEqual({ miter: 0, bevel: 0 })
+        }, 30_000)
+
+        it('reads back the saw settings of a compound cut', async () =>
+        {
+            const m = new Modeler()
+            await m.load()
+            const { beam, corner } = cutBeam(m, 30, 20)
+
+            // the edge the cut shares with the bottom face, found back in the scene
+            const bottomEdge = m.line(corner(0, 0), corner(WIDTH, 0)) as any
+            const angles = m.make.cutAngles(bottomEdge)
+            expect(angles.miter).toBeCloseTo(30, 6)
+            expect(angles.bevel).toBeCloseTo(20, 6)
+
+            // and with the beam given
+            expect(m.make.cutAngles(bottomEdge, beam)).toEqual(angles)
+        }, 30_000)
+
+        it('gives other angles for the same cut with the beam on another face', async () =>
+        {
+            const m = new Modeler()
+            await m.load()
+            const { beam, corner } = cutBeam(m, 30, 20)
+
+            /*  Front face (y = 0) on the table: up is y and the old bevel becomes the miter:
+                blade normal n = (cos b cos m, cos b sin m, sin b) read in that frame */
+            const [cb, sb, cm, sm] = [Math.cos(rad(20)), Math.sin(rad(20)), Math.cos(rad(30)), Math.sin(rad(30))]
+            const angles = m.make.cutAngles(m.line(corner(0, 0), corner(0, THICKNESS)) as any, beam)
+            expect(angles.miter).toBeCloseTo(deg(Math.atan2(sb, cb * cm)), 6)
+            expect(angles.bevel).toBeCloseTo(deg(Math.asin(cb * sm)), 6)
+        }, 30_000)
+
+        it('reads the same cut on both kernels', async () =>
+        {
+            for (const mode of ['mesh', 'brep'] as const)
+            {
+                const m = new Modeler(mode)
+                await m.load()
+
+                // a saw at miter 30, bevel 20 turns the blade around z, then tilts it around y
+                const cutter = (m.box(400, 400, 400) as any).move(-200, 0, 0).rotateY(20).rotateZ(30).move(-200, 0, 0)
+                const beam = (m.box(LENGTH, WIDTH, THICKNESS) as any).subtract(cutter)
+                cutter.removeFromScene?.()
+
+                // both kernels find the beam up the edge's parents (edge → face → solid)
+                const angles = m.make.cutAngles(beam.select('F||bottom').select('E||left'))
+                expect(angles.miter, mode).toBeCloseTo(30, 6)
+                expect(angles.bevel, mode).toBeCloseTo(20, 6)
+            }
+        }, 60_000)
+
+        it('refuses an edge that runs along the beam', async () =>
+        {
+            const m = new Modeler()
+            await m.load()
+            const beam = m.box(LENGTH, WIDTH, THICKNESS) as any
+
+            expect(() => m.make.cutAngles(beam.select('E||frontbottom'), beam)).toThrow(/runs along the beam/)
+            expect(() => m.make.cutAngles(m.line([5000, 0, 0], [5000, 100, 0]) as any)).toThrow(/Could not find the beam/)
+        }, 30_000)
+    })
+
     it('should pack three boxes onto a sheet', async () =>
     {
         await modeler.make.packReady()
