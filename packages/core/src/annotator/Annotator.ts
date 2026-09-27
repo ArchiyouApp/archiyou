@@ -26,6 +26,8 @@ import { validate, optional } from '../decorators'
 import { PointLikeSchema } from '../modeler/schemas'
 
 import { roundTo } from '../utils' // utils
+import { DOC_DIMENSION_LINES_TEXT_HEIGHT, DOC_DIMENSION_LINES_ARROW_SIZE,
+    DOC_DIMENSION_LINES_LINE_WIDTH } from '../constants'
 
 
 export class Annotator
@@ -40,11 +42,11 @@ export class Annotator
         Change them from a script: `annotator.DIMENSION_TEXT_SIZE_MM = 3`. */
 
     /** Height of the value text (mm on the page) */
-    DIMENSION_TEXT_SIZE_MM = 1.5;
+    DIMENSION_TEXT_SIZE_MM = DOC_DIMENSION_LINES_TEXT_HEIGHT;
     /** Width of an arrowhead, tip to tip (mm on the page) */
-    DIMENSION_ARROW_SIZE_MM = 1;
+    DIMENSION_ARROW_SIZE_MM = DOC_DIMENSION_LINES_ARROW_SIZE;
     /** Line weight of the dimension line and its arrows (mm on the page) */
-    DIMENSION_LINE_WIDTH_MM = 0.15;
+    DIMENSION_LINE_WIDTH_MM = DOC_DIMENSION_LINES_LINE_WIDTH;
     /** Colour behind a dimension's value text, so it stays readable where the line, the
      *  geometry or another dimension runs under it. Null draws no box. */
     DIMENSION_TEXT_BACKGROUND_COLOR:string|null = 'white';

@@ -30,7 +30,8 @@ import { Type } from 'typebox'
 
 import { roundTo } from '../utils' // utils
 import { MM_PER_UNIT, toMM, formatLength } from '../units/UnitConverter'
-import { DOC_DEFAULT_SVG_FONT_FAMILY } from '../constants'
+import { DOC_DEFAULT_SVG_FONT_FAMILY, DOC_DIMENSION_LINES_TEXT_HEIGHT, DOC_DIMENSION_LINES_ARROW_SIZE,
+    DOC_DIMENSION_LINES_LINE_WIDTH } from '../constants'
 import { svgXY, svgLine, svgLeader, svgArrow, svgTextLabel } from './svgPrimitives'
 
 /*  Fallbacks for the label proportions, used only when a DimensionLine cannot reach an
@@ -1143,13 +1144,13 @@ export class DimensionLine extends BaseAnnotation
         const perMm = options?.unitsPerMm;
         const drawing = options?.drawingSize;
 
-        const strokeW = perMm ? (ann?.DIMENSION_LINE_WIDTH_MM ?? 0.25) * perMm
+        const strokeW = perMm ? (ann?.DIMENSION_LINE_WIDTH_MM ?? DOC_DIMENSION_LINES_LINE_WIDTH) * perMm
                       : drawing ? drawing / 800 : 0.5;
-        const fontSize = perMm ? (ann?.DIMENSION_TEXT_SIZE_MM ?? 4) * perMm
+        const fontSize = perMm ? (ann?.DIMENSION_TEXT_SIZE_MM ?? DOC_DIMENSION_LINES_TEXT_HEIGHT) * perMm
                       : drawing ? drawing / 80 : 1;
         // The arrow glyph is drawn 10 units wide (see _makeSvgArrow), so a 5mm arrowhead is
         // half a millimeter of scale per glyph unit.
-        const arrowScale = perMm ? ((ann?.DIMENSION_ARROW_SIZE_MM ?? 5) * perMm) / 10
+        const arrowScale = perMm ? ((ann?.DIMENSION_ARROW_SIZE_MM ?? DOC_DIMENSION_LINES_ARROW_SIZE) * perMm) / 10
                       : drawing ? drawing / 667 : 1;
 
         /*  Into the drawing's plane, then into SVG's. `projector` is given when the drawing is

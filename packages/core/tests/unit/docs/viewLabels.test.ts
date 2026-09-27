@@ -131,8 +131,11 @@ describe('labels on a document page', () =>
         expect(labelled).toContain('>reaches out<')
 
         // …and that room is what annotationMarginMm() reports once a label is in the list.
-        const dimensionOnly = annotationMarginMm(annotator)
-        const withLabel = annotationMarginMm(annotator, [{ _type: 'label' }])
+        // Pinned to small value text: a large DIMENSION_TEXT_SIZE_MM already reserves more
+        // than a label reaches, which is right but hides what this checks.
+        const small = { ...annotator, DIMENSION_TEXT_SIZE_MM: 1.5 }
+        const dimensionOnly = annotationMarginMm(small)
+        const withLabel = annotationMarginMm(small, [{ _type: 'label' }])
         expect(withLabel).toBeGreaterThan(dimensionOnly)
     })
 
