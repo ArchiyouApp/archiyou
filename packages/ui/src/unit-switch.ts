@@ -93,6 +93,12 @@ export class UnitSwitch extends LitElement
     }
 
     .seg-btn.active:hover { color: var(--color-white, #fff); }
+
+    /* Fingers: a segmented control you can hit without zooming in. */
+    @media (pointer: coarse)
+    {
+      .seg-btn { padding: 8px 14px; font-size: var(--text-sm); }
+    }
   `;
 }
 

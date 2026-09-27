@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-26 → (open) |
+| Dates | 2026-09-26 → 2026-09-27 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: three small fixes asked for one by one in the session) |
 | Human | Mark van der Net: wrote the prompts, found the three problems, reviewed the code |
@@ -153,6 +153,7 @@
                         " with params 200,411,100,23,23 give an error "ERROR at line 64: "Annotator.autoDimPart(): Please make sure you have a 2D part on the XY plane! Use layflat() to lay a tilted part down first." - please debug
 2026-09-26 22:16 +0200  Take the last script and test something: put a mouse cursor in a parameter value field and type something. The value jumps to the max somehow. Can you just make it so when user clicks the entire value is selected and the user types in the new value.
 2026-09-26 23:07 +0200  make the commit according to nlnet disclosure format
+2026-09-27 21:17 +0200  yes
 ```
 
 ## Plan (agent output, reviewed by the human before implementation)
@@ -169,9 +170,14 @@ No plan: each fix was asked for directly. What the agent found and did:
 - Set the text height back to 2.5 mm after trying 5 mm.
 - Found the autoDim error with specific parameters of the frame script.
 - Found the jumping parameter value and chose the behaviour: select the whole value on click, type the new one.
+- Approved the three commit messages; the agent drafted the descriptions, the summary lines are the human's.
 - The agent tested the parameter field in the running editor (typing 450 and 5000 into CONTENT_HEIGHT) and ran the meshup and core unit tests.
 
 ## Commits
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| meshup 7d3251a | Bbox: flat within 1e-7 of its size | This script: ... give an error ... - please debug |
+| 70b3746 | Dimension line sizes from constants, autoDim on nearly flat parts | Cant the settings in constants.ts be wired up? / please do / ... please debug |
+| 49da428 | Parameter field: select on click, clamp on Enter | Take the last script and test something: ... |
+| (this commit) | record closed | make the commit according to nlnet disclosure format |

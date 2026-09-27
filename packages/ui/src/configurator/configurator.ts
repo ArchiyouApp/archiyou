@@ -1,8 +1,6 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
-
-import '@awesome.me/webawesome/dist/components/split-panel/split-panel.js';
 
 import { createExecutionFailureResult, runScript, warmupWorker } from '@archiyou/editor/src/services/execution-service';
 import { setExecutionResult, setExecuting } from '@archiyou/editor/src/state/workspace';
@@ -10,6 +8,9 @@ import { configuratorUnitSystem } from '@archiyou/editor/src/state/workspace';
 import { buildConfiguratorRequest } from '@archiyou/editor/src/state/configurator';
 import { syncConfiguratorParamsToUrl } from '@archiyou/editor/src/state/configurator-url';
 import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
+import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
+
+import '../bottom-sheet.js';
 
 import '../viewer/model-viewer.js';
 import './configurator-header.js';
@@ -28,30 +29,26 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     // are formatted at execution time from request.unitSystem).
     this._pendingUnitSystem = configuratorUnitSystem.get();
     return html`
-      <wa-split-panel position="33">
-        <wa-icon
-          class="split-grip"
-          slot="divider"
-          library="lucide"
-          name="grip-vertical"
-        ></wa-icon>
-
-        <div class="sidebar" slot="start">
-          <configurator-header></configurator-header>
+      <!-- One DOM for both layouts, so the viewer is never re-created: on wide
+           screens the sheet is docked as the sidebar, on compact ones it slides
+           up over the full-screen viewer. -->
+      <div class="stage">
+        <bottom-sheet class="sidebar" detents="peek half full" ?docked=${!this._compact}>
+          <configurator-header slot="header"></configurator-header>
           <configurator-controls
             @configurator-params-changed=${this._handleParamsChanged}
           ></configurator-controls>
-        </div>
+        </bottom-sheet>
 
-        <div class="viewer-pane" slot="end">
-          <model-viewer></model-viewer>
+        <div class="viewer-pane">
+          <model-viewer presentation></model-viewer>
           <configurator-viewer-actions
             class="viewer-actions"
             ?preview=${this.preview}
           ></configurator-viewer-actions>
           <configurator-attribution class="viewer-attribution"></configurator-attribution>
         </div>
-      </wa-split-panel>
+      </div>
 
       <configurator-metric-bar ?preview=${this.preview}></configurator-metric-bar>
     `;
@@ -64,7 +61,12 @@ export class PageConfigurator extends SignalWatcher(LitElement)
    *  actions a published configurator gets. */
   @property({ type: Boolean, reflect: true }) preview = false;
 
+  /** Below BREAKPOINT_COMPACT: parameters in a bottom sheet instead of a sidebar.
+   *  The styles follow the same breakpoint with a container query. */
+  @state() private _compact = false;
+
   @state() private _executing = false;
+  private _resizeObserver: ResizeObserver | null = null;
   private _paramExecTimeout: number | null = null;
   private _pendingUnitSystem: string | null = null;
   private _lastUnitSystem: string | null = null;
@@ -73,6 +75,14 @@ export class PageConfigurator extends SignalWatcher(LitElement)
   override connectedCallback()
   {
     super.connectedCallback();
+    // The host's own width, not the window's: the configurator also runs inside
+    // the editor's preview dialog and in third-party iframes.
+    this._resizeObserver = new ResizeObserver(([entry]) =>
+    {
+      const rootFontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      this._compact = entry.contentRect.width < parseFloat(BREAKPOINT_COMPACT) * rootFontSize;
+    });
+    this._resizeObserver.observe(this);
     warmupWorker()
       .then(() => this._execute())
       .catch(err =>
@@ -99,6 +109,7 @@ export class PageConfigurator extends SignalWatcher(LitElement)
   override disconnectedCallback()
   {
     super.disconnectedCallback();
+    this._resizeObserver?.disconnect();
     if (this._paramExecTimeout !== null) clearTimeout(this._paramExecTimeout);
   }
 
@@ -158,23 +169,21 @@ export class PageConfigurator extends SignalWatcher(LitElement)
       height: 100%;
       overflow: hidden;
       background: var(--color-bg);
+      container: configurator / inline-size;
     }
 
-    wa-split-panel
+    .stage
     {
       flex: 1;
       min-height: 0;
-      /* Left unset, Web Awesome's 0.25rem default is narrower than the grip,
-         so the handle spilled ~5px each side of its own track. */
-      --divider-width: var(--size-divider);
+      display: grid;
+      grid-template-columns: clamp(300px, 33%, 420px) 1fr;
+      /* Header row of the sheet when it rests at "peek" on compact screens. */
+      --sheet-peek: 64px;
     }
 
     .sidebar
     {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      overflow-y: auto;
       background: var(--color-bg-elevated);
       border-right: 1px solid var(--color-border);
     }
@@ -183,8 +192,6 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     .viewer-pane
     {
       position: relative;
-      width: 100%;
-      height: 100%;
       min-width: 0;
       overflow: hidden;
     }
@@ -214,26 +221,44 @@ export class PageConfigurator extends SignalWatcher(LitElement)
 
     configurator-metric-bar
     {
-      height: 80px;
       flex-shrink: 0;
     }
 
-    .split-grip
+    /* ── Compact: full-screen viewer, parameters in the bottom sheet ── */
+    @container configurator (width < ${unsafeCSS(BREAKPOINT_COMPACT)})
     {
-      width: 18px;
-      background: var(--color-bg-elevated);
-      border-left: 1px solid var(--color-border);
-      border-right: 1px solid var(--color-border);
-      color: var(--color-text-muted, #aaa);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: col-resize;
-    }
+      .stage
+      {
+        display: block;
+        position: relative;
+      }
 
-    wa-split-panel::part(divider)
-    {
-      background: transparent;
+      .sidebar { border-right: none; }
+
+      /* Ends above the resting sheet, so the model is framed in what stays visible. */
+      .viewer-pane
+      {
+        position: absolute;
+        inset: 0 0 var(--sheet-peek) 0;
+      }
+
+      /* Top-left, clear of the viewer menu along the bottom edge. */
+      .viewer-attribution
+      {
+        right: auto;
+        left: var(--space-sm);
+        top: var(--space-sm);
+        bottom: auto;
+        /* The feedback panel opens below the bar instead of above it. */
+        flex-direction: column-reverse;
+        align-items: flex-start;
+      }
+
+      .viewer-actions
+      {
+        right: var(--space-sm);
+        top: var(--space-sm);
+      }
     }
   `;
 }

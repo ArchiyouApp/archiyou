@@ -146,6 +146,11 @@ export class ConfiguratorPresets extends SignalWatcher(LitElement)
     {
       background: color-mix(in srgb, var(--color-primary) 16%, var(--color-bg-elevated));
     }
+
+    @media (pointer: coarse)
+    {
+      .preset-btn { min-height: var(--hit-min); padding: 5px 14px; }
+    }
   `;
 }
 

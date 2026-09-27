@@ -94,6 +94,13 @@ export class ParamItemBoolean extends LitElement
         :host([mode="presentation"]) .checkbox { width: 16px; height: 16px; }
         :host([mode="presentation"]) .label { color: var(--color-text); }
 
+        /* Fingers: the whole label row is the target, and the box is visible at a glance. */
+        @media (pointer: coarse)
+        {
+            .wrap     { min-height: var(--hit-min); }
+            .checkbox { width: 20px; height: 20px; }
+        }
+
         .label
         {
             font-family: var(--font-sans);

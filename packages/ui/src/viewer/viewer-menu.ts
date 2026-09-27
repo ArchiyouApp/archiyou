@@ -8,6 +8,9 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 export class ViewerMenu extends LitElement
 {
   @property() activeStyleId = 'realistic';
+  /** Visitor-facing (configurator): only navigation, view style, grid and AR
+   *  when the device supports it. */
+  @property({ type: Boolean, reflect: true }) presentation = false;
   @property({ type: Boolean }) arSupported = false;
   @property({ type: Boolean }) arActive = false;
   @property({ type: Boolean }) isOrtho = false;
@@ -179,13 +182,13 @@ export class ViewerMenu extends LitElement
           ` : ''}
 
           <!-- projection toggle -->
-          <button
+          ${this.presentation ? '' : html`<button
             class="icon-btn ${this.isOrtho ? 'active' : ''}"
             title=${this.isOrtho ? 'Switch to Perspective' : 'Switch to Isometric'}
             @click=${() => this._emit('viewer-toggle-projection')}
           >
             <wa-icon library="lucide" name="box"></wa-icon>
-          </button>
+          </button>`}
 
           <!-- grid toggle -->
           <button
@@ -196,29 +199,31 @@ export class ViewerMenu extends LitElement
             <wa-icon library="lucide" name="grid-3x3"></wa-icon>
           </button>
 
-          <!-- gizmo toggle -->
-          <button
-            class="icon-btn ${this.gizmoVisible ? 'active' : ''}"
-            title=${this.gizmoVisible ? 'Hide UCS gizmo' : 'Show UCS gizmo'}
-            @click=${() => this._emit('viewer-toggle-gizmo')}
-          >
-            <wa-icon library="lucide" name="axis-3d"></wa-icon>
-          </button>
+          ${this.presentation ? '' : html`
+            <!-- gizmo toggle -->
+            <button
+              class="icon-btn ${this.gizmoVisible ? 'active' : ''}"
+              title=${this.gizmoVisible ? 'Hide UCS gizmo' : 'Show UCS gizmo'}
+              @click=${() => this._emit('viewer-toggle-gizmo')}
+            >
+              <wa-icon library="lucide" name="axis-3d"></wa-icon>
+            </button>
 
-          <!-- render: placeholder for future -->
-          <button class="icon-btn disabled" title="Render (coming soon)" disabled>
-            <wa-icon library="lucide" name="camera"></wa-icon>
-          </button>
+            <!-- render: placeholder for future -->
+            <button class="icon-btn disabled" title="Render (coming soon)" disabled>
+              <wa-icon library="lucide" name="camera"></wa-icon>
+            </button>
+          `}
 
-          <!-- AR mode -->
-          <button
+          <!-- AR mode (visitors only see it where it works) -->
+          ${this.presentation && !this.arSupported ? '' : html`<button
             class="icon-btn ${this.arActive ? 'active' : ''} ${!this.arSupported ? 'disabled' : ''}"
             title=${arTitle}
             ?disabled=${!this.arSupported}
             @click=${() => this.arSupported && this._emit('viewer-toggle-ar')}
           >
             <wa-icon library="lucide" name="glasses"></wa-icon>
-          </button>
+          </button>`}
         </div>
       </aside>
     `;
@@ -230,9 +235,13 @@ export class ViewerMenu extends LitElement
       display: block;
     }
 
+    /* Wraps (not scrolls: that would clip the flyouts) when the viewer is
+       narrower than the menu. */
     aside {
       display: flex;
       flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: center;
       align-items: center;
       gap: 2px;
       padding: 6px;
@@ -246,6 +255,8 @@ export class ViewerMenu extends LitElement
     .group {
       display: flex;
       flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: center;
       align-items: center;
       gap: 2px;
     }

@@ -1,4 +1,4 @@
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
 
@@ -12,6 +12,7 @@ import './configurator-download-menu.js';
 
 import { editorScript, executing as scriptExecuting, executionResult } from '@archiyou/editor/src/state/workspace';
 import type { Metric } from '@archiyou/core/src/calc/types';
+import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
 @customElement('configurator-metric-bar')
 export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
@@ -185,6 +186,7 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
          never scales with the split-panel divider or its own contents. */
       height: 80px;
       flex: 0 0 80px;
+      padding-bottom: env(safe-area-inset-bottom);
       box-sizing: border-box;
       overflow: hidden;
       border-top: 1px solid var(--color-border);
@@ -198,14 +200,21 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
       height: 100%;
     }
 
+    /* Swipes on touch; the chevrons are the way to scroll with a mouse. */
     .scroll-area
     {
       display: flex;
       flex: 1;
-      overflow-x: hidden;
+      overflow-x: auto;
+      scrollbar-width: none;
       scroll-behavior: smooth;
+      scroll-snap-type: x proximity;
       align-items: stretch;
     }
+
+    .scroll-area::-webkit-scrollbar { display: none; }
+
+    configurator-metric-card { scroll-snap-align: start; }
 
     .nav-btn
     {
@@ -220,6 +229,11 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
       color: var(--color-text-muted, #888);
       cursor: pointer;
       font-size: var(--text-sm);
+    }
+
+    @media (hover: none)
+    {
+      .nav-btn { display: none; }
     }
 
     .nav-btn.prev
@@ -280,7 +294,7 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
        only the frame around it. */
     .download-popover
     {
-      --max-width: 26rem;
+      --max-width: min(26rem, 100vw - 16px);
     }
 
     .download-popover::part(body)
@@ -300,6 +314,20 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
       color: var(--color-text-muted, #888);
       font-style: italic;
       white-space: nowrap;
+    }
+
+    /* ── Compact: a slim bar under the configurator's bottom sheet ── */
+    @container configurator (width < ${unsafeCSS(BREAKPOINT_COMPACT)})
+    {
+      :host
+      {
+        height: calc(60px + env(safe-area-inset-bottom));
+        flex-basis: calc(60px + env(safe-area-inset-bottom));
+      }
+
+      .download-wrap { padding: 0 var(--space-sm); }
+
+      .download-btn { min-height: var(--hit-min); }
     }
   `;
 }

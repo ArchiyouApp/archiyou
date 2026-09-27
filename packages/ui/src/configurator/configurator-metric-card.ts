@@ -1,10 +1,11 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 import type { Metric } from '@archiyou/core/src/calc/types';
 import { METRIC_DEFAULT_ICON } from '@archiyou/core/src/constants';
+import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
 @customElement('configurator-metric-card')
 export class ConfiguratorMetricCard extends LitElement
@@ -119,6 +120,16 @@ export class ConfiguratorMetricCard extends LitElement
       font-weight: 400;
       color: var(--color-text-muted, #888);
       white-space: nowrap;
+    }
+
+    /* Compact configurator: narrower cards, so a phone shows about three. */
+    @container configurator (width < ${unsafeCSS(BREAKPOINT_COMPACT)})
+    {
+      .card
+      {
+        min-width: 112px;
+        padding: var(--space-xs) var(--space-md);
+      }
     }
   `;
 }

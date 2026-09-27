@@ -118,8 +118,14 @@ export class ParamItemOptions extends LitElement
         /* Presentation mode (configurator): roomier select for end users. */
         :host([mode="presentation"]) .select
         {
-            font-size: var(--text-sm);
+            font-size: var(--input-font-size);
             padding:   5px 8px;
+        }
+
+        /* Touch: 16px so iOS doesn't zoom on focus, and a finger-sized box. */
+        @media (pointer: coarse)
+        {
+            .select { font-size: var(--input-font-size); min-height: var(--hit-min); }
         }
     `;
 }

@@ -493,7 +493,7 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
             min-width:   0;
             width:       50px;
             font-family: var(--font-sans);
-            font-size:   var(--text-sm);
+            font-size:   var(--input-font-size);
             color:       var(--color-text);
             background:  var(--color-bg-elevated);
             border:      none;
@@ -607,6 +607,15 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
 
         /* Narrower than the editor's box: no unit dropdown to make room for. */
         .wrap.pres .num-unit { width: 100px; height: 26px; }
+
+        /* Fingers: taller slider (its whole box takes the drag), full-size step
+           buttons and value box. */
+        @media (pointer: coarse)
+        {
+            .wrap.pres .slider   { height: var(--hit-min); }
+            .wrap.pres .step-btn { width: var(--hit-min); height: var(--hit-min); font-size: 14px; }
+            .wrap.pres .num-unit { width: 112px; height: 36px; }
+        }
     `;
 }
 

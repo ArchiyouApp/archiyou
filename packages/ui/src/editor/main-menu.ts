@@ -47,14 +47,28 @@ export class MainMenu extends SignalWatcher(LitElement)
       <wa-dialog
         class="configurator-dialog"
         label=${msg('Configurator Preview')}
-        style="--width: 80vw"
         ?open=${this._configuratorOpen}
         @wa-after-hide=${this._onDialogAfterHide}
       >
+        <!-- Desktop / phone width: the configurator lays itself out by its own
+             width, so a narrow frame shows exactly what visitors get on a phone. -->
+        <div slot="header-actions" class="device-toggle" role="group" aria-label=${msg('Preview width')}>
+          <wa-button size="small" appearance="plain"
+              class=${this._previewPhone ? '' : 'active'}
+              aria-pressed=${!this._previewPhone}
+              @click=${() => { this._previewPhone = false; }}
+          ><wa-icon library="lucide" name="monitor" label=${msg('Desktop')}></wa-icon></wa-button>
+          <wa-button size="small" appearance="plain"
+              class=${this._previewPhone ? 'active' : ''}
+              aria-pressed=${this._previewPhone}
+              @click=${() => { this._previewPhone = true; }}
+          ><wa-icon library="lucide" name="smartphone" label=${msg('Phone')}></wa-icon></wa-button>
+        </div>
         ${this._configuratorOpen
           ? html`
               <page-configurator
                 preview
+                class=${this._previewPhone ? 'phone' : ''}
                 @configurator-publish=${this._publishFromPreview}
               ></page-configurator>`
           : ''}
@@ -90,6 +104,8 @@ export class MainMenu extends SignalWatcher(LitElement)
 
   @state() private _active: MenuItem | null = 'code';
   @state() private _configuratorOpen = false;
+  /** Preview at phone width (390px) instead of the dialog's full width. */
+  @state() private _previewPhone = false;
 
   // ── 3. Lifecycle ──
   override updated(changed: Map<string, unknown>)
@@ -185,9 +201,21 @@ export class MainMenu extends SignalWatcher(LitElement)
       color: var(--color-primary);
     }
 
+    .configurator-dialog
+    {
+      --width: 80vw;
+    }
+
     .configurator-dialog::part(dialog)
     {
-      height: 80vh;
+      height: 80dvh;
+    }
+
+    .device-toggle
+    {
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
     }
 
     .configurator-dialog::part(header)
@@ -215,6 +243,14 @@ export class MainMenu extends SignalWatcher(LitElement)
     {
       flex: 1;
       min-height: 0;
+    }
+
+    page-configurator.phone
+    {
+      align-self: center;
+      width: 390px;
+      max-width: 100%;
+      border-inline: 1px solid var(--color-border);
     }
   `;
 }

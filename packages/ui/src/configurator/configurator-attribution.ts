@@ -199,8 +199,8 @@ export class ConfiguratorAttribution extends LitElement
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 28px;
-      height: 28px;
+      width: max(28px, var(--hit-min));
+      height: max(28px, var(--hit-min));
       padding: 0;
       border: none;
       border-radius: var(--radius-full, 9999px);
@@ -233,7 +233,7 @@ export class ConfiguratorAttribution extends LitElement
 
     .panel
     {
-      width: 280px;
+      width: min(280px, 100cqw - 16px);
       box-sizing: border-box;
       display: flex;
       flex-direction: column;
@@ -269,8 +269,8 @@ export class ConfiguratorAttribution extends LitElement
 
     .panel .icon-btn.small
     {
-      width: 20px;
-      height: 20px;
+      width: var(--hit-min);
+      height: var(--hit-min);
       color: var(--color-text-muted, #888);
       font-size: 12px;
     }
@@ -298,6 +298,9 @@ export class ConfiguratorAttribution extends LitElement
     }
 
     .message:focus { border-color: var(--color-primary); }
+
+    /* 16px on touch, so iOS doesn't zoom in when the field gets focus. */
+    @media (pointer: coarse) { .message { font-size: var(--input-font-size); } }
 
     .error
     {

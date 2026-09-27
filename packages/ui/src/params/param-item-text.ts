@@ -120,7 +120,7 @@ export class ParamItemText extends LitElement
             width:         100%;
             box-sizing:    border-box;
             font-family:   var(--font-sans);
-            font-size:     var(--text-sm);
+            font-size:     var(--input-font-size);
             color:         var(--color-text);
             background:    var(--color-bg-elevated);
             border:        1px solid var(--color-border);

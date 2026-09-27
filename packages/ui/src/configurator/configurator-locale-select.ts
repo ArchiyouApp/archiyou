@@ -73,6 +73,12 @@ export class ConfiguratorLocaleSelect extends SignalWatcher(LitElement)
 
     .select:hover { background: color-mix(in srgb, var(--color-border) 40%, transparent); }
     .select:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+
+    /* Touch: finger-sized, and 16px so iOS doesn't zoom when the list opens. */
+    @media (pointer: coarse)
+    {
+      .select { min-height: var(--hit-min); font-size: var(--input-font-size); }
+    }
   `;
 }
 

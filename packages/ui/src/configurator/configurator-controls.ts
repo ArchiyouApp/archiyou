@@ -28,7 +28,7 @@ export class ConfiguratorControls extends SignalWatcher(LitElement)
           @unit-system-change=${(e: CustomEvent<UnitSystem>) => setConfiguratorUnitSystem(e.detail)}
         ></unit-switch>
         <span class="unit-spacer"></span>
-        <span id="unit-help" class="unit-help"><wa-icon library="lucide" name="circle-help"></wa-icon></span>
+        <span id="unit-help" class="unit-help" tabindex="0" role="button" aria-label="About units"><wa-icon library="lucide" name="circle-help"></wa-icon></span>
         <wa-tooltip for="unit-help" placement="bottom">
           Choose how measurements are shown for you. Metric uses millimetres (mm); Imperial uses inches (in).
           This is your local preference and does not change the script.
@@ -78,10 +78,14 @@ export class ConfiguratorControls extends SignalWatcher(LitElement)
 
     .unit-spacer { flex: 1; }
 
+    /* Focusable, so a tap opens the tooltip on touch screens. */
     .unit-help
     {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
+      min-width: var(--hit-min);
+      min-height: var(--hit-min);
       cursor: help;
       opacity: 0.6;
     }

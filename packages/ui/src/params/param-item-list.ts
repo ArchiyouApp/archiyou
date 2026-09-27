@@ -216,6 +216,14 @@ export class ParamItemList extends LitElement
             border-color: var(--color-primary);
             color:        var(--color-primary);
         }
+
+        /* Fingers: finger-sized remove/add buttons, 16px input (no iOS zoom). */
+        @media (pointer: coarse)
+        {
+            .chip-remove { min-width: 28px; min-height: 28px; justify-content: center; font-size: 12px; }
+            .add-input   { font-size: var(--input-font-size); min-height: var(--hit-min); }
+            .add-btn     { width: var(--hit-min); height: var(--hit-min); }
+        }
     `;
 }
 

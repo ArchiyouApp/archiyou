@@ -123,6 +123,10 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
           ${formats.length
             ? html`<span class="row-formats">(${this._formatList(formats)})</span>`
             : nothing}
+          <!-- On the row, not only in its tooltip: touch screens have no hover. -->
+          ${about || blocked
+            ? html`<span class="row-about">${[about, blocked ? 'Not available yet' : ''].filter(Boolean).join(' · ')}</span>`
+            : nothing}
         </span>
 
         ${busy
@@ -261,7 +265,7 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
     {
       display: block;
       /* Matches the popover's --max-width in configurator-metric-bar. */
-      width: 26rem;
+      width: min(26rem, 100vw - 16px);
       max-width: 100%;
       font-family: var(--font-sans);
       background: var(--color-bg-elevated, #fff);
@@ -280,7 +284,7 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
     {
       display: flex;
       flex-direction: column;
-      max-height: 50vh;
+      max-height: 50dvh;
       overflow-y: auto;
     }
 
@@ -341,6 +345,14 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
     .row-formats
     {
       color: var(--color-text-muted, #888);
+      font-weight: 400;
+      font-size: var(--text-xs);
+    }
+
+    .row-about
+    {
+      flex-basis: 100%;
+      color: var(--color-text-gray, #6c7285);
       font-weight: 400;
       font-size: var(--text-xs);
     }

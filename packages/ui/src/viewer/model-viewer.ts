@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -183,6 +183,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
         @handle-drag-end=${this._onHandleDragEnd}
       ></viewer-handles-overlay>
       <viewer-menu
+        ?presentation=${this.presentation}
         .activeStyleId=${this._activeStyleId}
         .arSupported=${this._arSupported}
         .arActive=${this._arActive}
@@ -360,6 +361,10 @@ export class ModelViewer extends SignalWatcher(LitElement)
   }
 
   // ── 4. State ──
+
+  /** Shown to visitors (the configurator), not authors: the viewer menu drops
+   *  the modelling tools. */
+  @property({ type: Boolean }) presentation = false;
 
   // Reactive state that updates viewer-menu props
   @state() private _activeStyleId = 'realistic';
@@ -3016,11 +3021,15 @@ export class ModelViewer extends SignalWatcher(LitElement)
       touch-action: none; /* prevent browser from capturing scroll/gesture events away from OrbitControls */
     }
 
+    /* Centred with auto margins rather than left:50% + translate, so the menu
+       may use the full width before it wraps in a narrow viewer. */
     viewer-menu {
       position: absolute;
       bottom: 16px;
-      left: 50%;
-      transform: translateX(-50%);
+      inset-inline: 0;
+      width: fit-content;
+      max-width: calc(100% - 16px);
+      margin-inline: auto;
       z-index: 10;
     }
   `;

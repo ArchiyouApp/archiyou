@@ -375,6 +375,13 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
             border-color: var(--color-primary, var(--color-gray-dark));
             color:        var(--color-text);
         }
+
+        /* Fingers: finger-sized entry and add buttons. */
+        @media (pointer: coarse)
+        {
+            .entry-btn { width: var(--hit-min); height: var(--hit-min); font-size: 12px; }
+            .add-btn   { min-height: var(--hit-min); padding: 3px 12px; }
+        }
     `;
 }
 

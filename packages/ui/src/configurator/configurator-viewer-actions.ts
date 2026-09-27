@@ -10,7 +10,7 @@
  *     "Embed", which opens a ready-to-paste <iframe> snippet.
  */
 
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
 
@@ -18,6 +18,7 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 import { editorScript } from '@archiyou/editor/src/state/workspace';
 import { publicConfiguratorUrl } from '../editor/publish-constants.js';
+import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
 /** Height of the embed frame. The width is fluid (100% of the host element), so
  *  the snippet drops into any column without the user picking numbers. */
@@ -60,14 +61,14 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
       <div class="actions">
         ${sourceUrl ? html`
           <a class="action-btn" href=${sourceUrl} target="_blank" rel="noopener"
-              title="Open this script's source in the editor">
+              title="Open this script's source in the editor" aria-label="View source">
             <wa-icon library="lucide" name="code"></wa-icon>
             <span>View source</span>
           </a>` : nothing}
 
         ${embedUrl ? html`
           <button class="action-btn ${this._embedOpen ? 'active' : ''}"
-              title="Embed this configurator on your site"
+              title="Embed this configurator on your site" aria-label="Embed"
               @click=${() => { this._embedOpen = !this._embedOpen; }}>
             <wa-icon library="lucide" name="code-xml"></wa-icon>
             <span>Embed</span>
@@ -251,8 +252,7 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
 
     .panel
     {
-      width: 420px;
-      max-width: 80vw;
+      width: min(420px, 100cqw - 16px);
       display: flex;
       flex-direction: column;
       gap: var(--space-md);
@@ -359,6 +359,27 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
       font-size: var(--text-xs);
       font-weight: 600;
       cursor: pointer;
+    }
+
+    /* Compact configurator: round icon buttons (labels stay as aria-label). */
+    @container configurator (width < ${unsafeCSS(BREAKPOINT_COMPACT)})
+    {
+      .action-btn:not(.primary)
+      {
+        justify-content: center;
+        min-width: var(--hit-min);
+        min-height: var(--hit-min);
+        padding: 0;
+        font-size: var(--text-sm);
+      }
+
+      .action-btn:not(.primary) span { display: none; }
+
+      .close-btn
+      {
+        width: var(--hit-min);
+        height: var(--hit-min);
+      }
     }
   `;
 }
