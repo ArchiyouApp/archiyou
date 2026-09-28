@@ -40,7 +40,7 @@ import { editorScript, executing, executionResult, scenegraph, scriptParams, scr
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
 import { registerScheduleExecution, triggerResetCamera } from '../state/viewer';
 import { registerHelpRunner, openHelpDoc, claimOnboarding, setHelpCursor, lookupHelpAtCursor, ONBOARDING_PATH } from '../state/help';
-import { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
+import type { RunnerScriptExecutionRequest, RunnerScriptExecutionResult } from '@archiyou/core/src/runner/types';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 
 /** Model formats offered in the main menu ▸ Export to… (see _exportModel()) */
@@ -565,18 +565,63 @@ export class PageEditor extends SignalWatcher(LitElement)
     } as RunnerScriptExecutionRequest;
   }
 
-  /** Execute the current script: produces model + tables.
-   *  Then triggers a separate lean run for any active tool-specific outputs. */
-  async execute()
+  /** Execute the current script: model, tables and the outputs of the open tools, in one run.
+   *
+   *  One run at a time. Code edits and parameter ticks used to start a run each, on top of
+   *  the ones still going: they queued up behind each other in the worker, and a late one
+   *  could write its result over a newer one. A trigger during a run now only asks for one
+   *  more, which then runs with the code and params as they are by then. Every caller gets
+   *  the result of the last run. */
+  async execute(): Promise<RunnerScriptExecutionResult | undefined>
   {
+    if (this._running)
+    {
+      this._rerun = true;
+      return this._running;
+    }
+
+    this._running = (async () =>
+    {
+      let result: RunnerScriptExecutionResult | undefined;
+      do
+      {
+        this._rerun = false;
+        result = await this._executeOnce();
+      }
+      while (this._rerun);
+      return result;
+    })();
+
+    try
+    {
+      return await this._running;
+    }
+    finally
+    {
+      this._running = null;
+    }
+  }
+
+  private _running: Promise<RunnerScriptExecutionResult | undefined> | null = null;
+  private _rerun = false;
+  private _runCount = 0; // lets a tool's own run see that a full run started after it
+
+  /** The outputs the open tools show (metrics, documents), each once */
+  private _toolOutputs(): string[]
+  {
+    return [...new Set(this._activeTools.flatMap(t => t.outputs ?? []))];
+  }
+
+  private async _executeOnce(): Promise<RunnerScriptExecutionResult | undefined>
+  {
+    this._runCount++;
     const result = await runScript(
-      this._buildRequest(['default/model/glb', 'default/tables/*/json'])
+      this._buildRequest(['default/model/glb', 'default/tables/*/json', ...this._toolOutputs()])
     );
 
     if (result)
     {
       setExecutionResult(result);
-      await this._executeToolOutputs();
       // Have the model's picture taken for the browser page, later and in the background:
       // the service debounces, renders from this run's GLB off screen, and skips scripts
       // that are not ours. Visibility comes from the reconciled scenegraph, so the picture
@@ -592,18 +637,25 @@ export class PageEditor extends SignalWatcher(LitElement)
     }
   }
 
-  /** Run a lean extra execute for any active tools that declare outputs (e.g. metrics, docs).
-   *  The results are merged into the current editorState result, avoiding a second heavy model export. */
-  private async _executeToolOutputs()
+  /** Fill a tool opened after the last run: a lean run for just its outputs, merged into the
+   *  current result, so the model is not exported again for it. Every later run requests
+   *  the tool's outputs itself (see _toolOutputs()). */
+  private async _executeToolOutputs(outputs: string[])
   {
-    const toolOutputs = this._activeTools.flatMap(t => t.outputs ?? []);
-    if (toolOutputs.length === 0) return;
+    // A run going on now started without this tool; one more run brings its outputs
+    if (this._running)
+    {
+      this._rerun = true;
+      return;
+    }
 
+    const runCount = this._runCount;
     const extraResult = await runScript(
-      this._buildRequest(toolOutputs, ['error'])
+      this._buildRequest(outputs, ['error'])
     );
 
-    if (!extraResult)
+    // A full run started meanwhile and carries these outputs itself: this result is older
+    if (!extraResult || runCount !== this._runCount)
     {
       return;
     }
@@ -615,32 +667,21 @@ export class PageEditor extends SignalWatcher(LitElement)
       return;
     }
 
-    const mergedMessages = [...(current.messages ?? []), ...(extraResult.messages ?? [])];
-    const mergedOutputs = [...(current.outputs ?? []), ...(extraResult.outputs ?? [])];
-    const mergedWarnings = [...(current.warnings ?? []), ...(extraResult.warnings ?? [])];
-
-    if (
-      extraResult.status === 'error'
-      || (extraResult.errors?.length ?? 0) > 0
-      || mergedOutputs.length !== (current.outputs?.length ?? 0)
-      || mergedMessages.length !== (current.messages?.length ?? 0)
-      || mergedWarnings.length !== (current.warnings?.length ?? 0)
-    )
-    {
-      setExecutionResult({
-        ...current,
-        status: extraResult.status === 'error' ? 'error' : current.status,
-        created: extraResult.created ?? current.created,
-        duration: (current.duration ?? 0) + (extraResult.duration ?? 0),
-        request: extraResult.request ?? current.request,
-        errors: extraResult.status === 'error'
-          ? (extraResult.errors ?? current.errors)
-          : current.errors,
-        warnings: mergedWarnings,
-        messages: mergedMessages,
-        outputs: mergedOutputs,
-      });
-    }
+    // Replace what the current result has under the same paths, never add a second copy
+    const replaced = new Set((extraResult.outputs ?? []).map(o => o.path.requestedPath));
+    setExecutionResult({
+      ...current,
+      status: extraResult.status === 'error' ? 'error' : current.status,
+      errors: extraResult.status === 'error'
+        ? (extraResult.errors ?? current.errors)
+        : current.errors,
+      warnings: [...(current.warnings ?? []), ...(extraResult.warnings ?? [])],
+      messages: [...(current.messages ?? []), ...(extraResult.messages ?? [])],
+      outputs: [
+        ...(current.outputs ?? []).filter(o => !replaced.has(o.path.requestedPath)),
+        ...(extraResult.outputs ?? []),
+      ],
+    });
   }
 
 
@@ -977,7 +1018,7 @@ export class PageEditor extends SignalWatcher(LitElement)
     // run a lean extra execute immediately to populate its data.
     if (tool.outputs?.length && executionResult.get())
     {
-      this._executeToolOutputs();
+      this._executeToolOutputs(tool.outputs);
     }
   }
 
