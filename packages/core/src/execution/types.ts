@@ -143,7 +143,14 @@ export enum ScriptParamType
     options = 'options',
     list    = 'list',
     object  = 'object',
+    /** A slider with two handles: [from, to] or the three parts [a, b, c] between them */
+    numberRanges = 'number-ranges',
 }
+
+/** What a 'number-ranges' param gives the script:
+ *      'range' → [from, to], the stretch between the two handles
+ *      'split' → [a, b, c], the parts start→handle 1→handle 2→end, adding up to maximum - minimum */
+export type NumberRangesMode = 'range' | 'split'
 
 
 //// PARAM MANAGEMENT ////
@@ -173,6 +180,12 @@ export interface ScriptParamDefineOptions
     of?: string|Record<string, any>
     /** Property of an object entry to use as its label in the UI. Falls back to `name`. */
     labelProp?: string
+    /** 'number-ranges': 'range' ([from, to], default) or 'split' ([a, b, c]) */
+    mode?: NumberRangesMode
+    /** 'number-ranges': smallest range (range) or smallest part (split) */
+    minSpan?: number
+    /** 'number-ranges': a label per handle (range) or per part (split) */
+    labels?: Array<string>
     // JSON-Schema keywords (pass-through)
     minimum?: number
     maximum?: number

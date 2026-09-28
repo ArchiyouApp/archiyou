@@ -162,6 +162,12 @@ function coerce(raw: string, param: ScriptParam): any
       if (['false', '0', 'no', 'off'].includes(v)) return false;
       return undefined;
     }
+    case 'number-ranges':
+    {
+      // ?BAYS=25,50,25 — plain numbers; the param's validation decides whether they fit
+      const numbers = raw.split(',').map(part => (part.trim() === '') ? NaN : Number(part));
+      return numbers.every(Number.isFinite) ? numbers : undefined;
+    }
     case 'list':
     case 'object':
     {
@@ -179,6 +185,8 @@ function serialize(value: any, param: ScriptParam): string
 {
   switch (param.type)
   {
+    case 'number-ranges':
+      return Array.isArray(value) ? value.join(',') : String(value);
     case 'list':
     case 'object':
       return JSON.stringify(value);

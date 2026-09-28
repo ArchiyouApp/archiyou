@@ -9,6 +9,7 @@ import '@awesome.me/webawesome/dist/components/tab-panel/tab-panel.js';
 
 import '../params/param-item.js';
 import '../params/param-item-number.js';
+import '../params/param-item-number-ranges.js';
 import '../params/param-item-boolean.js';
 import '../params/param-item-text.js';
 import '../params/param-item-options.js';
@@ -160,6 +161,7 @@ export class ConfiguratorParams extends SignalWatcher(LitElement)
                         ? html`<param-item-object-list .param=${p} .value=${v} .t=${translate.get()} mode="presentation"></param-item-object-list>`
                         : html`<param-item-list        .param=${p} .value=${v} mode="presentation"></param-item-list>`;
       case 'object':  return html`<param-item-object  .param=${p} .value=${v} .t=${translate.get()} mode="presentation"></param-item-object>`;
+      case 'number-ranges': return html`<param-item-number-ranges .param=${p} .value=${v} mode="presentation" context="configurator"></param-item-number-ranges>`;
       default:        return nothing;
     }
   }

@@ -313,3 +313,35 @@ describe('ParamManager.diffManagedValues()', () =>
         expect(diff).toEqual({ changes: [], rerun: false })
     })
 })
+
+// ── define() — number-ranges ─────────────────────────────────────────────────
+
+describe('ParamManager.define() — number-ranges', () =>
+{
+    it('maps mode, minSpan and labels into the schema and sets the global', () =>
+    {
+        const pm = new ParamManager()
+        pm.define('bays', 'number-ranges', { mode: 'split', minimum: 0, maximum: 100, minSpan: 10, labels: ['a', 'b', 'c'], default: [25, 50, 25] })
+
+        const s = pm.getParamsMap()['BAYS'].schema as any
+        expect(s.mode).toBe('split')
+        expect(s.minSpan).toBe(10)
+        expect(s.labels).toEqual(['a', 'b', 'c'])
+        expect(pm.getParamsMap()['BAYS'].default).toEqual([25, 50, 25])
+    })
+
+    it('rescales the current value when the track changes, instead of resetting it', () =>
+    {
+        // The user split a 4000 wall 1000/2000/1000; the wall grows to 6000
+        const incoming = {
+            name: 'BAYS', type: 'number-ranges',
+            schema: { type: 'array', mode: 'split', minimum: 0, maximum: 4000, multipleOf: 10 },
+            _value: [1000, 2000, 1000], _definedProgrammatically: true,
+        } as unknown as ScriptParamData
+
+        const pm = new ParamManager([incoming])
+        pm.define('bays', 'number-ranges', { mode: 'split', minimum: 0, maximum: 6000, multipleOf: 10 })
+
+        expect(pm.getParamsMap()['BAYS']._value).toEqual([1500, 3000, 1500])
+    })
+})

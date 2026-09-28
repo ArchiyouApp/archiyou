@@ -8,6 +8,7 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 import './param-item';
 import './param-item-number';
+import './param-item-number-ranges';
 import './param-item-boolean';
 import './param-item-text';
 import './param-item-options';
@@ -268,7 +269,7 @@ export class ParamMenu extends SignalWatcher(LitElement)
       <param-item
         .param=${p}
         ?disabled=${!paramEnabled(p)}
-        ?block=${isObjectListParam(p) || p.type === 'object'}
+        ?block=${isObjectListParam(p) || p.type === 'object' || p.type === 'number-ranges'}
         class=${isDragOver ? 'drag-over' : ''}
         data-name=${ifDefined(p.name)}
       >
@@ -309,6 +310,7 @@ export class ParamMenu extends SignalWatcher(LitElement)
                         ? html`<param-item-object-list .param=${p} .value=${paramValue(p)}></param-item-object-list>`
                         : html`<param-item-list        .param=${p}></param-item-list>`;
       case 'object':  return html`<param-item-object  .param=${p} .value=${paramValue(p)}></param-item-object>`;
+      case 'number-ranges': return html`<param-item-number-ranges .param=${p} context="editor"></param-item-number-ranges>`;
       default:        return nothing;
     }
   }

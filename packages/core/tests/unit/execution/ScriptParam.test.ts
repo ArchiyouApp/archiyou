@@ -16,7 +16,7 @@ describe('PARAM_TYPE_SCHEMAS', () =>
 {
     it('covers every ScriptParamType', () =>
     {
-        const expected = ['number', 'boolean', 'text', 'options', 'list', 'object']
+        const expected = ['number', 'boolean', 'text', 'options', 'list', 'object', 'number-ranges']
         expected.forEach(t => expect(PARAM_TYPE_SCHEMAS).toHaveProperty(t))
     })
 
@@ -392,5 +392,75 @@ describe('ScriptParam — toData() round-trip', () =>
         expect(p2.name).toBe(p1.name)
         expect(p2.default).toBe(p1.default)
         expect(p2.validateValue(5)).toBe(true)
+    })
+})
+
+// ── number-ranges ────────────────────────────────────────────────────────────
+
+describe('number-ranges', () =>
+{
+    const ranges = (schema: Record<string, any>): ScriptParam =>
+        makeParam({ name: 'bays', type: 'number-ranges' as any, schema })
+
+    it('derives the item count and bounds from the track', () =>
+    {
+        const range = ranges({ minimum: 0, maximum: 2700, multipleOf: 50 }).schema as any
+        expect(range.minItems).toBe(2)
+        expect(range.items).toEqual({ type: 'number', minimum: 0, maximum: 2700, multipleOf: 50 })
+
+        const split = ranges({ mode: 'split', minimum: 0, maximum: 100, minSpan: 10 }).schema as any
+        expect(split.maxItems).toBe(3)
+        expect(split.items).toEqual({ type: 'number', minimum: 10, maximum: 100, multipleOf: 1 })
+    })
+
+    it('rederives stale item bounds instead of keeping them', () =>
+    {
+        const s = ranges({ minimum: 0, maximum: 500, items: { type: 'number', minimum: 0, maximum: 100 } }).schema as any
+        expect(s.items.maximum).toBe(500)
+    })
+
+    it('defaults to the whole track (range) or three parts on the grid (split)', () =>
+    {
+        expect(ranges({ minimum: 10, maximum: 90 }).default).toEqual([10, 90])
+        expect(ranges({ mode: 'split', minimum: 0, maximum: 100 }).default).toEqual([33, 34, 33])
+        expect(ranges({ mode: 'split', minimum: 0, maximum: 1, multipleOf: 0.1 }).default).toEqual([0.3, 0.4, 0.3])
+    })
+
+    it('split: the parts have to add up to maximum - minimum', () =>
+    {
+        const p = ranges({ mode: 'split', minimum: 0, maximum: 100, minSpan: 10 })
+        expect(p.validateValue([25, 50, 25])).toBe(true)
+        expect(p.validateValue([30, 50, 30])).toBe(false)
+        expect(p.validateValue([5, 50, 45])).toBe(false)   // part under minSpan
+        expect(p.validateValue([25, 75])).toBe(false)      // handles, not parts
+    })
+
+    it('range: from before to, at least minSpan apart', () =>
+    {
+        const p = ranges({ minimum: 0, maximum: 2700, multipleOf: 50, minSpan: 300 })
+        expect(p.validateValue([900, 2100])).toBe(true)
+        expect(p.validateValue([2100, 900])).toBe(false)
+        expect(p.validateValue([2000, 2100])).toBe(false)
+        expect(p.validateValue([900, 2800])).toBe(false)
+    })
+
+    it('fits a value: scaled to the total, snapped, minSpan kept', () =>
+    {
+        const split = ranges({ mode: 'split', minimum: 0, maximum: 100, minSpan: 10 }).schema as any
+        expect(ScriptParam.fitRanges(split, [25, 50, 25])).toEqual([25, 50, 25])
+        expect(ScriptParam.fitRanges(split, [1000, 2000, 1000])).toEqual([25, 50, 25])
+        expect(ScriptParam.fitRanges(split, [0, 100, 0])).toEqual([10, 80, 10])
+
+        const range = ranges({ minimum: 0, maximum: 2700, multipleOf: 50, minSpan: 300 }).schema as any
+        expect(ScriptParam.fitRanges(range, [2600, 2700])).toEqual([2400, 2700])
+        expect(ScriptParam.fitRanges(range, [2100, 912])).toEqual([900, 2100])
+        expect(ScriptParam.fitRanges(range, 'garbage')).toBeUndefined()
+        expect(ScriptParam.fitRanges(range, [1, 2, 3])).toBeUndefined()
+    })
+
+    it('writes itself back as a define() call', () =>
+    {
+        const p = ranges({ mode: 'split', minimum: 0, maximum: 100, minSpan: 10, labels: ['a', 'b', 'c'], default: [25, 50, 25] })
+        expect(p.toScriptJs()).toContain(`$PARAMS.define('BAYS', 'number-ranges', { default: [25,50,25], mode: "split", minimum: 0, maximum: 100, multipleOf: 1, minSpan: 10, labels: ["a","b","c"] })`)
     })
 })

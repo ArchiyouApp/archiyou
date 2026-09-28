@@ -171,3 +171,26 @@ describe('encodeParamValues', () =>
     expect(decodeParamValues(`?${query}`, PARAMS).LABEL).toBe('a&b=c');
   });
 });
+
+describe('number-ranges in the URL', () =>
+{
+  const BAYS = ScriptParam.fromData({
+    name: 'BAYS', type: 'number-ranges',
+    schema: { mode: 'split', minimum: 0, maximum: 100, minSpan: 10, default: [25, 50, 25] },
+  } as any);
+
+  it('reads and writes plain comma-separated numbers', () =>
+  {
+    expect(decodeParamValues('?BAYS=20,60,20', [BAYS]).BAYS).toEqual([20, 60, 20]);
+    const query = encodeParamValues('', [BAYS], { BAYS: [20, 60, 20] });
+    expect(new URLSearchParams(query).get('BAYS')).toBe('20,60,20');
+    expect(encodeParamValues('', [BAYS], { BAYS: [25, 50, 25] })).toBe('');   // the default
+  });
+
+  it('drops parts that do not add up, or are not numbers', () =>
+  {
+    quiet();
+    expect(decodeParamValues('?BAYS=30,50,30', [BAYS])).toEqual({});
+    expect(decodeParamValues('?BAYS=20,,60', [BAYS])).toEqual({});
+  });
+});

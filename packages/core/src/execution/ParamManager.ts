@@ -547,6 +547,13 @@ export class ParamManager
      * if ($SHOW) box($WIDTH, 50, 20)
      *
      * @example
+     * // A slider with two handles: the stretch between them, or the three parts they make
+     * $PARAMS.define('WINDOW', 'number-ranges', { minimum: 0, maximum: 2700, multipleOf: 50, minSpan: 300, default: [900, 2100], units: 'mm' })
+     * $PARAMS.define('BAYS', 'number-ranges', { mode: 'split', minimum: 0, maximum: 100, labels: ['Left', 'Middle', 'Right'], default: [25, 50, 25] })
+     * const [sill, head] = $WINDOW
+     * const [left, middle, right] = $BAYS // adds up to 100
+     *
+     * @example
      * // Advanced: the whole definition as one object
      * $PARAMS.define({ name: 'SIZE', type:'number', schema: { type: 'number', minimum: 0, maximum: 100, default: 50 } })
      */
@@ -586,7 +593,13 @@ export class ParamManager
         // definition. Without this, re-defining each run would reset the slider
         // back to the script default.
         const existing = this.getParamController(upper);
-        const curVal = existing?.targetParam?._value;
+        // A ranges value is fitted to the new definition instead of dropped: its track can
+        // follow another param (`maximum: $LENGTH`), and a reset on every change of that
+        // param would throw away what the user set
+        const prevVal = existing?.targetParam?._value;
+        const curVal = ((param.type as string) === 'number-ranges')
+            ? ScriptParam.fitRanges(param.schema as Record<string, any>, prevVal) ?? prevVal
+            : prevVal;
         if (curVal !== undefined && param.validateValue(curVal))
         {
             param._value = curVal;
@@ -616,6 +629,14 @@ export class ParamManager
         const schema: Record<string, any> = { ...baseSchema, ...ParamManager.schemaKeywordsFrom(o) };
 
         if (o.listItemType !== undefined) schema.items = { type: o.listItemType };
+
+        // 'number-ranges' settings JSON Schema has no word for; fromData() derives the rest
+        if ((type as string) === 'number-ranges')
+        {
+            ['mode', 'minSpan', 'labels']
+                .filter(key => o[key] !== undefined)
+                .forEach(key => { schema[key] = o[key]; });
+        }
 
         // `of:` — a defineObject() type, an inline object schema, or a properties map.
         // The resolved schema is INLINED here: ScriptParamData.schema is the only param

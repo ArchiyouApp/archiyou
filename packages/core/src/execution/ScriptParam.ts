@@ -10,7 +10,7 @@ import { Type, type TSchema } from 'typebox'
 import { Check, Errors } from 'typebox/value'
 
 import type { ModelUnits } from '../modeler/types'
-import type { ParamBehaviourTarget, ParamBehaviourFn, ScriptParamType, ScriptParamData } from './types'
+import type { ParamBehaviourTarget, ParamBehaviourFn, ScriptParamType, ScriptParamData, NumberRangesMode } from './types'
 
 import { ScriptParamSchema } from './schemas'
 
@@ -72,6 +72,31 @@ export const PARAM_TYPE_SCHEMAS: Record<ScriptParamType, Record<string, unknown>
         properties: {},
         default:    {},
     },
+
+    /** A slider with two handles. minimum/maximum/multipleOf are the track: on an
+     *  array they are ignored by Check(), so they only say where the handles can go.
+     *  The item count, the bounds of each number and the default follow from the
+     *  track; see ScriptParam.normalizeRangesSchema() */
+    'number-ranges':
+    {
+        type:       'array',
+        mode:       'range',
+        minimum:    0,
+        maximum:    100,
+        multipleOf: 1,
+        default:    [0, 100], // a split has 3 numbers, so it replaces this with its own
+    },
+}
+
+/** The settings of a 'number-ranges' param, read from its schema */
+export interface NumberRangesConfig
+{
+    mode:       NumberRangesMode
+    minimum:    number
+    maximum:    number
+    multipleOf: number
+    minSpan:    number
+    labels:     Array<string>
 }
 
 
@@ -153,17 +178,23 @@ export class ScriptParam
             ? n.options as string[]
             : undefined;
 
+        const mergedSchema = {
+            ...baseSchema,
+            ...(legacyOptions ? { enum: legacyOptions } : {}),
+            ...(normalized as any)?.schema,
+        }
+        const isRanges = (typeKey as string) === 'number-ranges'
+        const schema = (isRanges) ? ScriptParam.normalizeRangesSchema(mergedSchema) : mergedSchema
+
         const withSchema: ScriptParamData = {
             ...(normalized as ScriptParamData),
             description: nullToUndef(n?.description),
             units:       nullToUndef(n?.units),
             label:       nullToUndef(n?.label),
             group:       nullToUndef(n?.group),
-            schema: {
-                ...baseSchema,
-                ...(legacyOptions ? { enum: legacyOptions } : {}),
-                ...(normalized as any)?.schema,
-            },
+            // a ranges default is fitted to the track, so the top-level one has to follow
+            ...((isRanges && n?.default !== undefined) ? { default: schema.default } : {}),
+            schema,
         }
 
         ScriptParam._assertSchema(ScriptParamSchema, withSchema, 'ScriptParam.fromData()')
@@ -210,13 +241,14 @@ export class ScriptParam
     /** Validate value against the parameter's value schema, returning errors */
     validateValueVerbose(v: any): { success: boolean; errors: Array<string> }
     {
-        const success = Check(this.schema, v)
-        const errors = success
-            ? []
-            : ScriptParam._getSchemaErrors(this.schema, v).map(msg => `ScriptParam: ${msg} for "${this.name}"`)
+        // Check() first: the rules of a 'number-ranges' param assume an array of numbers
+        const problems = (!Check(this.schema, v))
+            ? ScriptParam._getSchemaErrors(this.schema, v)
+            : ((this.type as string) === 'number-ranges') ? ScriptParam._rangesErrors(this.schema, v as Array<number>) : []
+        const errors = problems.map(msg => `ScriptParam: ${msg} for "${this.name}"`)
 
         errors.forEach(error => console.error(error))
-        return { success, errors }
+        return { success: problems.length === 0, errors }
     }
 
     /** The value schema is the param schema itself */
@@ -322,6 +354,14 @@ export class ScriptParam
             case 'list':
                 opts.listItemType = s.items?.type ?? 'string';
                 break;
+            case 'number-ranges':
+                opts.mode       = s.mode ?? 'range';
+                opts.minimum    = s.minimum;
+                opts.maximum    = s.maximum;
+                opts.multipleOf = s.multipleOf;
+                if (s.minSpan) opts.minSpan = s.minSpan;
+                if (Array.isArray(s.labels) && s.labels.length > 0) opts.labels = s.labels;
+                break;
         }
 
         const entries = Object.entries(opts)
@@ -330,6 +370,139 @@ export class ScriptParam
         const optsStr = entries ? `{ ${entries} }` : '{}';
 
         return `$PARAMS.define('${this.name}', '${this.type}', ${optsStr});`;
+    }
+
+    //// NUMBER RANGES ////
+
+    /** The settings of a 'number-ranges' schema, with their defaults */
+    static rangesConfig(schema: Record<string, any>): NumberRangesConfig
+    {
+        const num = (v: any, fallback: number): number => (typeof v === 'number' && Number.isFinite(v)) ? v : fallback
+        const minimum = num(schema?.minimum, 0)
+        const multipleOf = num(schema?.multipleOf, 1)
+
+        return {
+            mode:       (schema?.mode === 'split') ? 'split' : 'range',
+            minimum,
+            maximum:    Math.max(minimum, num(schema?.maximum, 100)),
+            multipleOf: (multipleOf > 0) ? multipleOf : 1,
+            minSpan:    Math.max(0, num(schema?.minSpan, 0)),
+            labels:     Array.isArray(schema?.labels) ? schema.labels.map(String) : [],
+        }
+    }
+
+    /** Complete a 'number-ranges' schema from its track (minimum, maximum, multipleOf):
+     *      range → 2 numbers, each within [minimum, maximum]
+     *      split → 3 parts, each within [minSpan, maximum - minimum]
+     *  Always derived, never taken from the input, so an edit of the track cannot
+     *  leave them stale. A default that does not fit is fitted: with a track that
+     *  follows another param (`maximum: $LENGTH`) no fixed default fits every run. */
+    static normalizeRangesSchema(schema: Record<string, any>): Record<string, any>
+    {
+        const c = ScriptParam.rangesConfig(schema)
+        const split = c.mode === 'split'
+        const total = c.maximum - c.minimum
+        const count = (split) ? 3 : 2
+        // Handles snap to the grid from minimum (as the number slider does). The numbers are
+        // then multiples of multipleOf only when minimum (range) or the total (split) is one;
+        // demanding it otherwise would leave no valid value at all
+        const onGrid = ScriptParam._isMultiple((split) ? total : c.minimum, c.multipleOf)
+
+        const out: Record<string, any> = {
+            ...schema,
+            mode:       c.mode,
+            minimum:    c.minimum,
+            maximum:    c.maximum,
+            multipleOf: c.multipleOf,
+            minItems:   count,
+            maxItems:   count,
+            items: {
+                type:    'number',
+                minimum: (split) ? c.minSpan : c.minimum,
+                maximum: (split) ? total : c.maximum,
+                ...(onGrid ? { multipleOf: c.multipleOf } : {}),
+            },
+        }
+        out.default = ScriptParam.fitRanges(out, schema.default) ?? ScriptParam._rangesDefault(c)
+
+        return out
+    }
+
+    /** Bring a 'number-ranges' value within the schema: snapped to multipleOf, inside
+     *  the track, ranges at least minSpan long, split parts scaled to add up to the total.
+     *  A value that already fits comes back unchanged. Returns undefined for anything
+     *  that is not two (range) or three (split) numbers. */
+    static fitRanges(schema: Record<string, any>, value: any): Array<number> | undefined
+    {
+        const c = ScriptParam.rangesConfig(schema)
+        const split = c.mode === 'split'
+        const count = (split) ? 3 : 2
+        const usable = Array.isArray(value) && value.length === count && value.every(v => typeof v === 'number' && Number.isFinite(v))
+        if (!usable) { return undefined }
+
+        const decimals = (String(c.multipleOf).split('.')[1] ?? '').length
+        const round = (v: number): number => Number(v.toFixed(decimals))
+        const snap = (v: number): number => round(c.minimum + Math.round((v - c.minimum) / c.multipleOf) * c.multipleOf)
+        const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
+
+        // Both modes are two handles on the track; work on those
+        const sum = (value as Array<number>).reduce((acc, v) => acc + Math.max(0, v), 0)
+        const total = c.maximum - c.minimum
+        const handles = (split)
+            ? (sum > 0)
+                ? [c.minimum + Math.max(0, value[0]) / sum * total, c.minimum + (Math.max(0, value[0]) + Math.max(0, value[1])) / sum * total]
+                : [c.minimum + total / 3, c.minimum + total * 2 / 3]
+            : [Math.min(value[0], value[1]), Math.max(value[0], value[1])]
+
+        // Split keeps minSpan to the ends as well, a range only between the handles
+        const edge = (split) ? c.minSpan : 0
+        const lo = c.minimum + edge
+        const hi = c.maximum - edge
+        const h1 = clamp(snap(handles[0]), lo, hi)
+        const h2 = clamp(Math.max(snap(handles[1]), h1 + c.minSpan), lo, hi)
+        const first = clamp(Math.min(h1, h2 - c.minSpan), lo, hi)
+
+        return (split)
+            ? [round(first - c.minimum), round(h2 - first), round(c.maximum - h2)]
+            : [round(first), round(h2)]
+    }
+
+    /** Without a default: the whole track (range) or three parts as equal as the grid allows (split) */
+    static _rangesDefault(c: NumberRangesConfig): Array<number>
+    {
+        if (c.mode === 'range') { return [c.minimum, c.maximum] }
+
+        const total = c.maximum - c.minimum
+        return ScriptParam.fitRanges({ ...c }, [total / 3, total / 3, total / 3]) as Array<number>
+    }
+
+    /** What Check() cannot say about a 'number-ranges' value (it already has the right
+     *  count of numbers within their bounds) */
+    static _rangesErrors(schema: Record<string, any>, value: Array<number>): Array<string>
+    {
+        const c = ScriptParam.rangesConfig(schema)
+        const eps = 1e-9 * Math.max(1, Math.abs(c.minimum), Math.abs(c.maximum))
+
+        if (c.mode === 'split')
+        {
+            const total = c.maximum - c.minimum
+            const sum = value.reduce((acc, v) => acc + v, 0)
+            return (Math.abs(sum - total) > eps)
+                ? [`the parts ${JSON.stringify(value)} add up to ${sum} — must add up to ${total}`]
+                : []
+        }
+
+        const [from, to] = value
+        if (to < from - eps) { return [`the range ${JSON.stringify(value)} runs backwards — from must be <= to`] }
+        return (to - from < c.minSpan - eps)
+            ? [`the range ${JSON.stringify(value)} is ${to - from} long — must be at least ${c.minSpan}`]
+            : []
+    }
+
+    static _isMultiple(v: number, step: number): boolean
+    {
+        const ratio = v / step
+        return Math.abs(ratio - Math.round(ratio)) < 1e-9 * Math.max(1, Math.abs(ratio))
     }
 
     //// VALIDATION ////
