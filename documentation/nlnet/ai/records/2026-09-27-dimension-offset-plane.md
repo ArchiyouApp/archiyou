@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-27 → (open) |
+| Dates | 2026-09-27 → 2026-09-28 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: one bug fix asked for in the session) |
 | Human | Mark van der Net: wrote the prompts, found the problem in a picture-frame script, chose how to commit |
@@ -209,6 +209,8 @@
                         
                         " I have some dimension lines that offset along the z-axis. Can you fix, so they always offset along the normal of the Shape(or shape parent) - the dimension line is called on a edge as a face. Or if there is no normal (1D element) by default the offset should be along the XY plane, not in the Z direction
 2026-09-27 21:16 +0200  yes commit it
+2026-09-28 10:22 +0200  please check what is still open now
+2026-09-28 11:05 +0200  yes commit the dimension fix. then close records
 ```
 
 ## What was done (agent output, reviewed by the human)
@@ -238,8 +240,16 @@ lines made that XZ, so every dimension, even on a horizontal face, stepped off a
 - Chose to commit this fix on its own, leaving the staged dimension-sizes unit
   (2026-09-26-doc-dimension-sizes-param-input) staged and uncommitted.
 - Wrote the commit summary.
+- The agent's first attempt to commit reset the shared index while other sessions were
+  staging and committing, which briefly unstaged another unit's record-close; the agent
+  restored it and stopped. The human had the open work checked the next morning and asked for
+  the commit once the index was clear.
+- The agent ran the unit tests (all green apart from a brep Shelling timeout under load) and the
+  author's picture-frame script, whose dimensions no longer offset along Z.
 
 ## Commits
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| d20be8b | Dimensions offset in the plane of what they measure | I have some dimension lines that offset along the z-axis. Can you fix ... |
+| (this commit) | record closed | yes commit the dimension fix. then close records |
