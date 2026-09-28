@@ -96,3 +96,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-09-25 | [Lofts: flat sides, outward walls, kept corners, fast sampling; align() to curve ends](./records/2026-09-25-loft-align-robustness.md) | Claude Opus 5.5 | develop (+ meshup main) | 2 (1 in meshup) |
 | 2026-09-26 | [Dimension lines in isometries and elevations](./records/2026-09-26-projection-dimensions.md) | Claude Opus 5.5 | develop (+ meshup main) | 2 (1 in meshup) |
 | 2026-09-26 | [Dimension sizes from constants, autoDim on nearly flat parts, parameter field typing](./records/2026-09-26-doc-dimension-sizes-param-input.md) | Claude Opus 5.5 | develop (+ meshup main) | 3 (1 in meshup) |
+| 2026-09-27 | [Miter saw angles from a beam edge (make.cutAngles), parent tracking in meshup select()](./records/2026-09-27-make-cut-angles.md) | Claude Opus 5.5 | develop (+ meshup main) | 3 (1 in meshup) |
