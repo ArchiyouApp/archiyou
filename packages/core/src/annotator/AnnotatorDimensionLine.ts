@@ -18,7 +18,8 @@ import type { Vector, Point, PointLike, Curve } from '@archiyou/meshup'
 import type { ArchiyouModules } from '../types'
 import type { DimensionLineData, DimensionOptions, AnnotationType } from './types'
 import { BaseAnnotation } from './AnnotatorBaseAnnotation'
-import { detectExportFrame } from '../modeler/utils'
+import { commonPlaneNormal } from '../modeler/utils'
+import type { Vec3 } from '../modeler/utils'
 
 import { isPointLike } from '../modeler/typeguards'
 
@@ -60,6 +61,7 @@ export class DimensionLine extends BaseAnnotation
     linkedTo:any = null; // the main parent Shape or ShapeCollection this dimension is linked to
     _linkedCenterCache:[number, number, number]|null = null; // see _linkedCenter()
     _planeNormalCache:[number, number, number]|null = null; // see _planeNormal()
+    _planeNormalFixed:[number, number, number]|null = null; // set when the plane is known up front (a projection)
     // value:number; // the value of the dimension line, from BaseAnnotation
     static:boolean = false;
     units:ModelUnits = null;
@@ -336,6 +338,8 @@ export class DimensionLine extends BaseAnnotation
         }
 
         this.linkedTo.addAnnotations(this);
+        this._linkedCenterCache = null;
+        this._planeNormalCache = null; // a flat Shape to link to has a plane of its own
 
         // recalculate for offset based on main shape
         this._calculateAutoOffsetLength(); 
@@ -471,8 +475,12 @@ export class DimensionLine extends BaseAnnotation
                                             : dimLineHasAxes.includes(this.ortho) 
                                                 ? this.ortho
                                                 : shapeBiggestAxis;
-                const orthoOffsetAxis = ['x','y','z'].find(a => a !== this._orthoAxis ) as MainAxis
-                const axisIndex = (orthoOffsetAxis === 'x') ? 0 : (orthoOffsetAxis === 'y') ? 1 : 2;
+                // Of the other two axes, the one the in-plane perpendicular leans to most: the
+                // first one that is not the measured axis could point straight out of the plane
+                const measuredIndex = ['x','y','z'].indexOf(this._orthoAxis);
+                const axisIndex = [0, 1, 2]
+                                    .filter(i => i !== measuredIndex)
+                                    .reduce((best, i) => Math.abs(newOffsetComponents[i]) > Math.abs(newOffsetComponents[best]) ? i : best);
                 const axisValue = newOffsetComponents[axisIndex] >= 0 ? 1 : -1;
 
                 newOffsetComponents = [0, 0, 0];
@@ -576,27 +584,36 @@ export class DimensionLine extends BaseAnnotation
     /** The normal of the plane this dimension offsets INSIDE.
      *
      *  A dimension stands off perpendicular to itself, and "perpendicular" only means
-     *  something once you say in which plane. This used to answer XY for every dimension in
-     *  every model: on a wall elevation drawn on XZ the offset came out along Y, which points
-     *  straight out of the drawing, so the dimension line landed exactly on top of the
-     *  geometry it measures — and in the 3D viewer it floated off the face of the wall.
+     *  something once you say in which plane. In order:
      *
-     *  `override` is the DRAWING's plane, which an exporter knows exactly (see Projector).
-     *  Without one — the viewer, and toData() — the model's own 2D plane is the same answer
-     *  by another route. A model with no 2D plane at all is 3D, and there the plan normal is
-     *  as good as any, which is what this always used to assume.
+     *  1. `override`: the DRAWING's plane, which an exporter knows exactly (see Projector).
+     *  2. The plane of what is measured: the Shape the dimension was made from, or the first
+     *     of its parents that is flat — so an edge of a face stands off inside that face,
+     *     whichever way the face is turned. A straight edge has no plane of its own.
+     *  3. The model's plane, when ALL of it lies in one: a wall elevation drawn on XZ.
+     *  4. XY. This used to take the plane most of the model's shapes share, which in a 3D
+     *     model is whatever its reference lines happen to be drawn in — a few vertical lines
+     *     sent every dimension up the Z axis, off the faces they measure.
      */
     _planeNormal(override?:{ x:number, y:number, z:number }|null):[number, number, number]
     {
         if(override){ return [override.x, override.y, override.z] }
+        if(this._planeNormalFixed){ return this._planeNormalFixed }
         if(this._planeNormalCache){ return this._planeNormalCache }
 
-        const shapes = this._archiyou?.modeler?.all?.()?.toArray?.() ?? [];
-        const frame = detectExportFrame(shapes);
-        this._planeNormalCache = frame
-                                    ? [frame.normal.x, frame.normal.y, frame.normal.z]
-                                    : [0, 0, 1];
+        const shapesOf = (s:any):Array<any> => this.classes.ShapeCollection.isShapeCollection(s) ? s.toArray() : [s];
+        const measured = this._ancestry(this.targetShape).concat(this.linkedTo ? [this.linkedTo] : []);
+        const normal = measured.reduce((found:Vec3|null, s) => found ?? commonPlaneNormal(shapesOf(s)), null)
+                        ?? commonPlaneNormal(this._archiyou?.modeler?.all?.()?.toArray?.() ?? []);
+
+        this._planeNormalCache = normal ? [normal.x, normal.y, normal.z] : [0, 0, 1];
         return this._planeNormalCache;
+    }
+
+    /** The Shape itself followed by its parents, innermost first */
+    _ancestry(shape:any):Array<any>
+    {
+        return shape ? [shape, ...this._ancestry(shape._parent)] : [];
     }
 
     /** Unit vector perpendicular to the dimension line, inside `planeNormal`'s plane, or null
@@ -877,7 +894,7 @@ export class DimensionLine extends BaseAnnotation
                     }) as DimensionLine;
         dim.round = this.round;
         dim.textSize = this.textSize;
-        dim._planeNormalCache = [0, 0, 1]; // a projection is drawn on XY
+        dim._planeNormalFixed = [0, 0, 1]; // a projection is drawn on XY
         dim.setValue(this.value);
         dim.link(projection);
         if(offsetVec){ dim.setOffsetVec(new this.classes.Vector(...offsetVec)) } // link() recalculates it

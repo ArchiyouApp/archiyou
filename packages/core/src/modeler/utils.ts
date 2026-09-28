@@ -166,13 +166,15 @@ function bestPlaneAlong(boxes: Box[], n: Vec3, tol: number): { count: number; of
     return best
 }
 
-/** Points a plane can be fitted through. Curves and meshes both tessellate; a shape that
- *  cannot contributes nothing, which only costs it the oblique fallback below. */
+/** Points a plane can be fitted through. Curves and meshes both tessellate, faces give their
+ *  corners; a shape that can do neither contributes nothing, which only costs it the oblique
+ *  fallback below. */
 export function samplePoints(shape: any): Vec3[]
 {
     try
     {
-        const pts = shape?.tessellate?.()
+        // Faces and polygons do not tessellate to points; their corners span the same plane
+        const pts = shape?.tessellate?.() ?? shape?.vertices?.()?.toArray?.()
         return Array.isArray(pts) ? pts.map(asVec3) : []
     }
     catch { return [] }
@@ -228,6 +230,23 @@ export function detectExportFrame(shapes: any[], want: ExportPlane = 'auto'): Ex
     }
 
     return best ? frameFromNormal(best.normal, best.offset) : fitObliquePlane(shapes, tol)
+}
+
+/** Normal of the one plane ALL these shapes lie in, or null when they do not share one: a
+ *  solid, a single straight line (it lies in every plane through it), a 3D model. Unlike
+ *  detectExportFrame() this does not settle for the most populated plane — a plane most of a
+ *  3D model's reference lines happen to share says nothing about the rest of it.
+ *
+ *  Solids are ruled out up front, so a 3D model is answered without tessellating it. */
+export function commonPlaneNormal(shapes: any[]): Vec3 | null
+{
+    const isSolid = (s: any): boolean => s?.isSolid?.() ?? ['Solid', 'Shell', 'Mesh'].includes(s?.type)
+    if (shapes.some(isSolid)) return null
+
+    const boxes = shapes.map(shapeBox).filter((b): b is Box => b !== null)
+    if (boxes.length === 0) return null
+
+    return fitObliquePlane(shapes, planeTolerance(boxes))?.normal ?? null // null for collinear points too
 }
 
 /** Does this shape lie on the drawing's plane (within tolerance)? */

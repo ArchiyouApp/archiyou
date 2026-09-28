@@ -371,6 +371,38 @@ describe('Dimensions', () =>
             expect(z).toBeCloseTo(0, 6)
         })
 
+        // A 3D model whose loose lines mostly share an XZ plane used to hand that plane to
+        // every dimension in it, sending them up the Z axis.
+        const modelWithVerticalLines = () =>
+        {
+            modeler.box(100, 50, 20)
+            modeler.line([0, 0, 0], [0, 0, 200])
+            modeler.line([50, 0, 0], [50, 0, 200])
+            modeler.line([100, 0, 0], [100, 0, 200])
+        }
+
+        it('offsets a loose line in a 3D model inside XY', () =>
+        {
+            modelWithVerticalLines()
+            const dl = (modeler.line([0, -100, 0], [100, -100, 0]) as any).dim() as DimensionLine
+            const [x, y, z] = (dl as any)._resolveOffsetComponents()
+
+            expect(Math.abs(y)).toBeCloseTo(1, 6)
+            expect(x).toBeCloseTo(0, 6)
+            expect(z).toBeCloseTo(0, 6)
+        })
+
+        it('offsets the edges of a face inside that face, whichever way it is turned', () =>
+        {
+            modelWithVerticalLines()
+            const face = modeler.rect(100, 40).rotateX(90).move(0, -300, 100) as any // upright, in XZ
+            face.autoDim()
+
+            const dims = annotator.getAnnotations() as Array<DimensionLine>
+            expect(dims.length).toBeGreaterThan(0)
+            dims.forEach(dl => expect((dl as any)._resolveOffsetComponents()[1]).toBeCloseTo(0, 6)) // never out of the face
+        })
+
         it('lets an explicit offset vector win over the plane', () =>
         {
             const dl = elevation().dim({ offsetVec: [0, 1, 0] }) as DimensionLine
