@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-28 → (open) |
+| Dates | 2026-09-28 → 2026-09-28 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code as agent (research and plan in the session, then implementation) |
 | Human | Mark van der Net: wrote the prompts, asked for the feature and the % split example, decided on the JSON Schema option names, reviewed plan and code |
@@ -10,7 +10,16 @@
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+
+```
+2026-09-28 10:31 +0200  Can you research a new param type 'number-ranges' that is a slider with two handler that generate two or three numbers : either one range from one handle to another or three ranges from start to handle1, handle1 to handle2 and handle2 to end. webawesome has a range slider type with two handles to support this. Come up with a good way to configure it. A example of a application is a range slider that the user can use to define 3 numbers wihtin 100 (%) - so for example 25%, 50%, 25%. Also set up a example script in the local database
+2026-09-28 10:33 +0200  Base directory for this skill: /home/mvdnet/archiyou/archiyou/.claude/skills/archiyou-local-db
+2026-09-28 12:33 +0200  For the design (min,max etc) keep as much as possible in line with JSON names. So minimum, maximum, multipleOf
+2026-09-28 12:45 +0200  go ahead and implement it
+2026-09-28 12:45 +0200  Base directory for this skill: /home/mvdnet/archiyou/archiyou/.claude/skills/ai-disclosure
+2026-09-28 13:03 +0200  Small visual tweaks: Dont put the colors underneath the input fields for split mode. Also dont make the input fields fill the entire container width, Do align them together with the labels, but make them smaller width. The central label in split should be dead-center, the input field too. the start and end labels can be alignedl left and right
+2026-09-28 13:10 +0200  please commit according to nlnet policy
+```
 
 ## Plan (agent output, reviewed by the human before implementation)
 ## Param type `number-ranges`
@@ -154,8 +163,26 @@ track. The app takes the fitted `_value` along with the new definition.
    two thumbs at most. Not in scope.
 
 ## Review and decisions by the human
-- Options use the JSON Schema names (`minimum`, `maximum`, `multipleOf`) rather than `min`/`max`/`step`.
+
+- Asked for the research: a two-handle slider giving a range or a three-way split,
+  configured well, with a % split (25/50/25) as the example, and an example script in
+  the local database.
+- Decided the options follow the JSON Schema names: `minimum`, `maximum`, `multipleOf`
+  rather than `min`/`max`/`step`.
+- Approved the plan for implementation ("go ahead and implement it"). The first open
+  point of the plan (a track that follows another param) was built as part of it; the
+  other open points (authoring in the param define menu, translation of `labels`, more
+  than two handles) stay open.
+- Reviewed the control in the editor and asked for the split field layout: no part
+  colours under the fields, fields not filling the width, first part left, middle part
+  dead centre, last part right, each label aligned with its field.
+- Asked for the commit under the NLnet policy; picked the summary and the description
+  and approved the message. Hunks of other work in `types.ts` (a format list) and
+  `param-menu.ts` (a tab ResizeObserver) were left out of the commit.
 
 ## Commits
+
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| dba236f | Param type number-ranges: two handles, a range or a three-way split | "go ahead and implement it" / "Small visual tweaks: Dont put the colors underneath the input fields for split mode. …" |
+| (this commit) | Close the disclosure record for the number-ranges param | "please commit according to nlnet policy" |
