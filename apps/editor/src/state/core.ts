@@ -17,6 +17,7 @@ import { signal, computed } from '@lit-labs/signals';
 import { Script } from '@archiyou/core/src/Script';
 import type { RunnerScriptExecutionResult } from '@archiyou/core/src/runner/types';
 import type { ModelMode } from '@archiyou/core/src/modeler/types';
+import type { ScriptData } from '@archiyou/core/src/execution/types';
 import { uuid4 } from '@archiyou/core/src/utils';
 
 import { EDITOR_START_SCRIPT } from '../settings';
@@ -24,7 +25,7 @@ import type { UserState, WorkspaceCoreState } from './types';
 import { scenegraph, reconcileScenegraph, setInteractiveShapes, applyManagedParamsAndPresets, applyManagedValues } from './editor';
 import { applyManagedBehaviours, evaluateParamBehaviours } from './param-behaviours';
 import { currentUser } from '../services/auth-service.js';
-import { syncCreate, syncSaveActive, syncDelete } from '../services/scripts-sync.js';
+import { syncCreate, syncSaveActive, syncSaveNow, syncDelete, flushPendingSave } from '../services/scripts-sync.js';
 
 //// LOCAL STORAGE ////
 
@@ -469,6 +470,26 @@ export function updateScriptCode(code: string): void
   script.updated = new Date();
   saveActive();
   editorScript.set(script);
+}
+
+/** Bring back the code, params and presets of a stored version of the active script.
+ *  The save still waiting for its debounce goes out first, so the state from just before
+ *  the restore keeps a row of its own; the restore itself is saved as a checkpoint, which
+ *  the server never merges away. Undoing a restore is restoring the row before it. */
+export async function restoreScriptVersion(data: ScriptData): Promise<void>
+{
+  const script = editorScript.get();
+  if (!script || isReadOnly.get()) return;
+  if (script.fileId) await flushPendingSave(script.fileId);
+
+  script.code = data.code;
+  script.params = script._buildParams(data.params);
+  script.presets = data.presets ?? {};
+  script.updated = new Date();
+  saveActive();
+  saveCollection();
+  editorScript.set(script);
+  await syncSaveNow(script, { checkpoint: true });
 }
 
 /** Update the name of the active script. */

@@ -27,6 +27,7 @@ import '@archiyou/ui/editor/tools/instruct-tool.js';
 import '@archiyou/ui/editor/tools/console-tool.js';
 import '@archiyou/ui/editor/tools/profiling-tool.js';
 import '@archiyou/ui/editor/tools/help-tool.js';
+import '@archiyou/ui/editor/tools/versions-tool.js';
 import '@archiyou/ui/editor/file-info.js';
 import '@archiyou/ui/editor/script-manager.js';
 import '@archiyou/ui/editor/script-importer.js';
@@ -63,6 +64,7 @@ export class PageEditor extends SignalWatcher(LitElement)
     { id: 'docs',    icon: 'file-text',  name: 'Documents', exclusive: false, component: 'editor-document-tool', width: 40, height: 60, outputs: ['default/docs/*/svg', 'default/docs/*/svg-pages'] },
     { id: 'instruct', icon: 'list-ordered', name: 'Instructions', exclusive: false, component: 'editor-instruct-tool', width: 30, height: 50 },
     { id: 'profiling', icon: 'timer',    name: 'Profiling', exclusive: false, component: 'editor-profiling-tool', width: 30, height: 50 },
+    { id: 'versions', icon: 'history',   name: 'Versions',  exclusive: false, component: 'editor-versions-tool', width: 34, height: 60 },
   ];
 
   //// 
@@ -127,6 +129,7 @@ export class PageEditor extends SignalWatcher(LitElement)
             slot="end"
             .tools=${this._activeTools}
             @tool-close=${this._handleToolClose}
+            @version-restore=${this._handleVersionRestore}
           ></editor-tool-panels>
         </wa-split-panel>
       </wa-split-panel>
@@ -441,7 +444,18 @@ export class PageEditor extends SignalWatcher(LitElement)
   {
     if (isReadOnly.get()) return;
     updateScriptCode(code);
+    await this._runNow();
+  }
 
+  /** The Versions tool restored a version (already saved): run it. */
+  private _handleVersionRestore()
+  {
+    void this._runNow();
+  }
+
+  /** Run the script right after its code was replaced from outside the code box. */
+  private async _runNow()
+  {
     // The code box echoes the new code back as a change event, which schedules an
     // automatic run a moment later — on top of this one. Let it do so, then cancel it.
     await this.updateComplete;

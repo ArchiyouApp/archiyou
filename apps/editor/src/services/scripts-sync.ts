@@ -29,9 +29,30 @@ import { scripts, editorScript, bumpScripts, saveCollection } from '../state/cor
 /** fileIds we know exist on the server (so we choose PUT vs POST correctly). */
 const serverFileIds = new Set<string>();
 
-/** Per-file debounce timers for active-script saves. */
-const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** Per-file debounced active-script saves: the timer and the script it will send. */
+const saveTimers = new Map<string, { timer: ReturnType<typeof setTimeout>; script: Script }>();
 const SAVE_DEBOUNCE_MS = 900;
+
+/** One row of a file's server-side history (ScriptStore.listVersions). */
+export interface VersionMeta
+{
+  id: string;
+  version: string | null;
+  name: string | null;
+  lines: number;
+  created: number;
+  updated: number;
+}
+
+/** Drop the debounced save of a file, if one is waiting. Returns the script it would send. */
+function cancelPendingSave(fileId: string): Script | undefined
+{
+  const pending = saveTimers.get(fileId);
+  if (!pending) return undefined;
+  clearTimeout(pending.timer);
+  saveTimers.delete(fileId);
+  return pending.script;
+}
 
 function authed(): boolean {
   return authService.isAuthenticated();
@@ -104,8 +125,7 @@ export async function pullUserScripts(): Promise<void> {
     } else {
       // Server is newer or equal → adopt the server copy. A save of the local copy still
       // waiting for its debounce would put the old code back on top of it: drop it.
-      const pending = saveTimers.get(fileId);
-      if (pending) { clearTimeout(pending); saveTimers.delete(fileId); }
+      cancelPendingSave(fileId);
       const merged = Script.fromData(remoteData);
       if (merged) {
         list[i] = merged;
@@ -159,27 +179,36 @@ export function syncSaveActive(script: Script): void {
   if (!authed()) return;
   const fileId = script.fileId;
   if (!fileId) return;
-  const existing = saveTimers.get(fileId);
-  if (existing) clearTimeout(existing);
-  saveTimers.set(
-    fileId,
-    setTimeout(() => {
-      saveTimers.delete(fileId);
-      void syncSaveNow(script);
-    }, SAVE_DEBOUNCE_MS),
-  );
+  cancelPendingSave(fileId);
+  const timer = setTimeout(() => {
+    saveTimers.delete(fileId);
+    void syncSaveNow(script);
+  }, SAVE_DEBOUNCE_MS);
+  saveTimers.set(fileId, { timer, script });
 }
 
-/** Immediate save: PUT if the file is known server-side, else POST (create). */
-export async function syncSaveNow(script: Script): Promise<void> {
+/** Send a file's debounced save now instead of when its timer fires. A restore calls this
+ *  first, so the state from just before it is kept as a row of its own. */
+export async function flushPendingSave(fileId: string): Promise<void>
+{
+  const script = cancelPendingSave(fileId);
+  if (script) await syncSaveNow(script);
+}
+
+/** Immediate save: PUT if the file is known server-side, else POST (create).
+ *  `checkpoint` makes the server append a row instead of merging into a recent autosave. */
+export async function syncSaveNow(script: Script, opts: { checkpoint?: boolean } = {}): Promise<void> {
   if (!authed()) return;
   const user = handle();
   const data = script.toData();
   const fileId = data.fileId;
   if (!user || !fileId) return;
+  // This save sends the script's current state, so a debounced save of it is redundant.
+  if (saveTimers.get(fileId)?.script === script) cancelPendingSave(fileId);
+  const putPath = `/scripts/${user}/${fileId}${opts.checkpoint ? '?checkpoint=1' : ''}`;
   try {
     if (serverFileIds.has(fileId)) {
-      await api.put<ScriptData>(`/scripts/${user}/${fileId}`, data);
+      await api.put<ScriptData>(putPath, data);
     } else {
       await api.post<ScriptData>(`/scripts/${user}`, data);
       serverFileIds.add(fileId);
@@ -189,7 +218,7 @@ export async function syncSaveNow(script: Script): Promise<void> {
       // Created as new, but the server has the file already (we missed it in a pull): save a
       // version of it instead.
       serverFileIds.add(fileId);
-      try { await api.put<ScriptData>(`/scripts/${user}/${fileId}`, data); }
+      try { await api.put<ScriptData>(putPath, data); }
       catch (e) { console.warn('scripts-sync: save failed', e); }
     } else if (err instanceof ApiError && err.status === 404) {
       // Server lost the file; recreate it.
@@ -207,15 +236,42 @@ export async function syncSaveNow(script: Script): Promise<void> {
  *  menus need it to suggest a version that can't collide. Empty when anonymous
  *  or when the file is not on the server (yet). */
 export async function fetchFileVersions(fileId: string): Promise<string[]> {
+  const versions = await listFileVersions(fileId);
+  return versions.map((v) => v.version).filter((v): v is string => !!v);
+}
+
+/** The file's server-side history, newest first. Empty when anonymous or when the file
+ *  is not on the server (yet). */
+export async function listFileVersions(fileId: string): Promise<VersionMeta[]>
+{
   if (!authed() || !fileId) return [];
   const user = handle();
   if (!user) return [];
-  try {
-    const versions = await api.get<Array<{ version: string | null }>>(`/scripts/${user}/${fileId}/versions`);
-    return versions.map((v) => v.version).filter((v): v is string => !!v);
-  } catch (err) {
+  try
+  {
+    return await api.get<VersionMeta[]>(`/scripts/${user}/${fileId}/versions`);
+  }
+  catch (err)
+  {
     console.warn('scripts-sync: version list failed', err);
     return [];
+  }
+}
+
+/** One stored version of the user's file in full, or null. */
+export async function fetchFileVersion(fileId: string, versionId: string): Promise<ScriptData | null>
+{
+  if (!authed() || !fileId || !versionId) return null;
+  const user = handle();
+  if (!user) return null;
+  try
+  {
+    return await api.get<ScriptData>(`/scripts/${user}/${fileId}/versions/${versionId}`);
+  }
+  catch (err)
+  {
+    console.warn('scripts-sync: version fetch failed', err);
+    return null;
   }
 }
 
@@ -237,8 +293,7 @@ export async function syncDelete(fileId: string): Promise<void> {
   if (!authed() || !fileId) return;
   const user = handle();
   if (!user) return;
-  const timer = saveTimers.get(fileId);
-  if (timer) { clearTimeout(timer); saveTimers.delete(fileId); }
+  cancelPendingSave(fileId);
   try {
     await api.delete(`/scripts/${user}/${fileId}`);
   } catch (err) {

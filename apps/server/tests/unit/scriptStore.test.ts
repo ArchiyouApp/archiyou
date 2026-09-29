@@ -15,7 +15,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 
 import type { ScriptData, ScriptShared } from '@archiyou/core/src/execution/types';
 import type { ScriptStore } from '../../src/services/ScriptStore';
@@ -48,6 +48,8 @@ beforeAll(async () => {
   const mod = await import('../../src/services/ScriptStore');
   store = mod.scriptStore;
   ScriptStoreError = mod.ScriptStoreError;
+  // Every save appends, so the tests below see one row per save (see 'autosave merging').
+  store.coalesceMs = 0;
 });
 
 describe('ScriptStore sharing', () => {
@@ -399,5 +401,109 @@ describe('ScriptStore create', () => {
       expect((e as InstanceType<typeof ScriptStoreError>).code).toBe('conflict');
       expect((e as Error).message).toMatch(/already exists: save a new version/);
     }
+  });
+});
+
+/**
+ * The editor autosaves after every pause in typing. Saves within the window merge into the
+ * latest working-copy row, so the history holds about one row per stretch of work — but a
+ * rename, a restore (checkpoint) and any shared or published version always get a row.
+ */
+describe('ScriptStore autosave merging', () => {
+  const tick = (ms = 5) => new Promise((r) => setTimeout(r, ms));
+
+  beforeEach(() => { store.coalesceMs = 10 * 60 * 1000; });
+  afterEach(() => { store.coalesceMs = 0; });
+
+  it('merges saves inside the window into one row', async () => {
+    const fileId = newFile('merged');
+    const [first] = store.listVersions(AUTHOR, fileId);
+    await tick();
+    store.saveVersion(AUTHOR, fileId, payload({ name: 'merged', code: 'const a = 2;' }));
+    await tick();
+    const saved = store.saveVersion(AUTHOR, fileId, payload({ name: 'merged', code: 'const a = 3;\nconst b = 4;' }));
+
+    const versions = store.listVersions(AUTHOR, fileId);
+    expect(versions).toHaveLength(1);
+    expect(versions[0].id).toBe(first.id);
+    expect(versions[0].created).toBe(first.created);
+    expect(versions[0].updated).toBeGreaterThan(first.updated);
+    expect(versions[0].lines).toBe(2);
+    expect(saved.id).toBe(first.id);
+    expect(store.getFile(AUTHOR, fileId).code).toBe('const a = 3;\nconst b = 4;');
+  });
+
+  it('appends a row once the window has passed', async () => {
+    store.coalesceMs = 20;
+    const fileId = newFile('windowed');
+    await tick(30);
+    store.saveVersion(AUTHOR, fileId, payload({ name: 'windowed', code: 'const a = 2;' }));
+
+    expect(store.listVersions(AUTHOR, fileId)).toHaveLength(2);
+  });
+
+  it('appends on a rename, and the old name still resolves', async () => {
+    const fileId = newFile('before-rename');
+    await tick();
+    store.saveVersion(AUTHOR, fileId, payload({ name: 'after-rename' }));
+
+    expect(store.listVersions(AUTHOR, fileId).map((v) => v.name)).toEqual(['after-rename', 'before-rename']);
+    expect(store.getFileByName(AUTHOR, 'before-rename').fileId).toBe(fileId);
+  });
+
+  it('always appends a checkpoint', async () => {
+    const fileId = newFile('checkpointed');
+    await tick();
+    store.saveVersion(AUTHOR, fileId, payload({ name: 'checkpointed', code: 'const restored = 1;' }), { checkpoint: true });
+
+    expect(store.listVersions(AUTHOR, fileId)).toHaveLength(2);
+  });
+
+  it('never overwrites a shared or published version', async () => {
+    const fileId = newFile('released');
+    store.share(AUTHOR, fileId, payload({ name: 'released', version: '0.1', shared: SHARED }));
+    await tick();
+    store.saveVersion(AUTHOR, fileId, payload({ name: 'released', code: 'const a = 2;' }));
+    await tick();
+    store.publish(AUTHOR, fileId, payload({ name: 'released', version: '0.2', published: { public: true, fulfillments: [] } }));
+    await tick();
+    store.saveVersion(AUTHOR, fileId, payload({ name: 'released', code: 'const a = 3;' }));
+
+    const versions = store.listVersions(AUTHOR, fileId).map((v) => v.version);
+    expect(versions).toEqual([null, '0.2', null, '0.1', null]);
+    expect(store.getShared(AUTHOR, 'released', '0.1')?.code).toBe('const a = 1;');
+    expect(store.getPublished(AUTHOR, 'released', '0.2')?.code).toBe('const a = 1;');
+  });
+
+  it('merges working copies that carry published metadata', async () => {
+    // After publishing, the editor keeps `published` on its script, so every autosave
+    // carries it. Those rows are still unversioned working copies.
+    const fileId = newFile('republished');
+    store.publish(AUTHOR, fileId, payload({ name: 'republished', version: '0.1', published: { public: true, fulfillments: [] } }));
+    await tick();
+    store.saveVersion(AUTHOR, fileId, payload({ name: 'republished', code: 'const a = 2;', published: { public: true, fulfillments: [] } }));
+    await tick();
+    store.saveVersion(AUTHOR, fileId, payload({ name: 'republished', code: 'const a = 3;', published: { public: true, fulfillments: [] } }));
+
+    expect(store.listVersions(AUTHOR, fileId).map((v) => v.version)).toEqual([null, '0.1', null]);
+  });
+
+  it('writes nothing for a save that changes nothing, even after the window', async () => {
+    store.coalesceMs = 20;
+    const fileId = newFile('unchanged');
+    const [before] = store.listVersions(AUTHOR, fileId);
+    await tick(30);
+    store.saveVersion(AUTHOR, fileId, payload({ name: 'unchanged' }));
+
+    expect(store.listVersions(AUTHOR, fileId)).toEqual([before]);
+  });
+
+  it('keeps the thumbnail on a merged row', async () => {
+    const fileId = newFile('pictured');
+    store.setFileThumbnail(AUTHOR, fileId, '/thumbs/pictured.png');
+    await tick();
+    store.saveVersion(AUTHOR, fileId, payload({ name: 'pictured', code: 'const a = 2;' }));
+
+    expect(store.getFile(AUTHOR, fileId).thumbnail).toBe('/thumbs/pictured.png');
   });
 });

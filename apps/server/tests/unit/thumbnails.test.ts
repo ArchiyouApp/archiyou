@@ -251,8 +251,9 @@ describe('ScriptStore — thumbnail column', () => {
     expect(stamped.thumbnail).toBe('/thumbnails/tester/wip/working-1.png');
     expect(store.getFile(AUTHOR, fileId).thumbnail).toBe('/thumbnails/tester/wip/working-1.png');
 
-    // A save appends a new row; the URL follows — and a client's own value is ignored.
-    const saved = store.saveVersion(AUTHOR, fileId, payload({ name: 'wip', code: 'box(1);', thumbnail: '/thumbnails/evil.png' } as Partial<ScriptData>));
+    // A save that appends a new row (a checkpoint: a plain autosave would merge into this
+    // one); the URL follows — and a client's own value is ignored.
+    const saved = store.saveVersion(AUTHOR, fileId, payload({ name: 'wip', code: 'box(1);', thumbnail: '/thumbnails/evil.png' } as Partial<ScriptData>), { checkpoint: true });
     expect(saved.id).not.toBe(stamped.id);
     expect(saved.thumbnail).toBe('/thumbnails/tester/wip/working-1.png');
     expect(store.listForUser(AUTHOR).find((s) => s.fileId === fileId)?.thumbnail).toBe('/thumbnails/tester/wip/working-1.png');

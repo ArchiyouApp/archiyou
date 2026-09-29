@@ -42,6 +42,8 @@ export interface PublishedConfigurator {
 export interface VersionMeta {
   id: string;
   version: string | null; // the concrete semver (set on share/publish), else null
+  name: string | null;
+  lines: number; // line count of the code, so a history list needs no code
   created: number; // epoch ms
   updated: number;
 }
@@ -52,6 +54,10 @@ function unvalidated(published: ScriptData['published']): ScriptData['published'
 }
 
 export class ScriptStore {
+  /** Autosaves within this window of the latest row's `created` overwrite that row
+   *  instead of appending one (see saveVersion). Public so tests can set it to 0. */
+  coalesceMs = 10 * 60 * 1000;
+
   /** Validate + normalize an incoming payload via the core Script model. */
   private normalize(data: unknown): ScriptData {
     const script = Script.fromData(data as Record<string, unknown>);
@@ -581,6 +587,8 @@ export class ScriptStore {
     return rows.map((r) => ({
       id: r.id,
       version: r.version ?? null,
+      name: r.name ?? null,
+      lines: r.code.split('\n').length,
       created: r.created.getTime(),
       updated: r.updated.getTime(),
     }));
@@ -631,21 +639,60 @@ export class ScriptStore {
     return this.rowToData({ ...row, created: now, updated: now } as ScriptVersionRow);
   }
 
-  /** Append a new version to an existing file (ownership-checked). */
-  saveVersion(author: string, fileId: string, payload: unknown): ScriptData {
+  /** Save the file's working copy (ownership-checked).
+   *
+   *  The editor autosaves after every pause in typing, so appending each save would bury
+   *  the history under near-identical rows. Instead a save overwrites the latest row when
+   *  that row is still a fresh working copy:
+   *    - unversioned: a shared or published version is never touched (working copies do
+   *      carry `shared`/`published`, inherited from the file);
+   *    - created less than `coalesceMs` ago, measured from `created`, so continuous work
+   *      still splits into rows;
+   *    - under the same name: a rename appends, because resolveFileIdByName needs the old
+   *      row to keep resolving `$component('./oldname')`.
+   *  `checkpoint` always appends: a restore is its own row. The merged row keeps its id,
+   *  `created`, `shared` and thumbnail. A save that changes nothing writes nothing. */
+  saveVersion(author: string, fileId: string, payload: unknown, opts: { checkpoint?: boolean } = {}): ScriptData {
     const latest = this.latestRow(author, fileId); // ownership gate (throws not_found)
     const data = this.normalize(payload);
-    const id = uuid4();
     const now = new Date();
     const shared = latest.shared ?? null; // versions inherit the file's shared state
     // …and its preview: the working copy's thumbnail is stamped on whatever row is latest
     // (setFileThumbnail), and a save must not lose it — the picture is of the same file,
     // at worst one edit stale until the editor's next run replaces it.
     const thumbnail = latest.thumbnail ?? null;
+
+    // Nothing changed (the editor re-saves on load, and after a run that leaves the code
+    // alone): no row, not even a merged one — the history only moves with the content.
+    if (!opts.checkpoint && this.sameContent(latest, data)) return this.rowToData(latest);
+
+    const merge = !opts.checkpoint
+      && latest.version == null
+      && now.getTime() - latest.created.getTime() < this.coalesceMs
+      && latest.name === (data.name ?? null);
+    if (merge) {
+      const { created: _created, ...content } = this.toRow(data, author, { id: latest.id, fileId, version: null, shared, thumbnail, now });
+      db.update(scriptVersions).set(content).where(eq(scriptVersions.id, latest.id)).run();
+      return this.rowToData({ ...content, created: latest.created } as ScriptVersionRow);
+    }
+
     // reset-on-save: each new version resets the version to null.
-    const row = this.toRow(data, author, { id, fileId, version: null, shared, thumbnail, now });
+    const row = this.toRow(data, author, { id: uuid4(), fileId, version: null, shared, thumbnail, now });
     this.insertRow(row);
     return this.rowToData({ ...row, created: now, updated: now } as ScriptVersionRow);
+  }
+
+  /** Whether a payload carries exactly the content a row already holds. */
+  private sameContent(row: ScriptVersionRow, data: ScriptData): boolean {
+    const json = (v: unknown) => JSON.stringify(v ?? null);
+    return row.code === data.code
+      && row.name === (data.name ?? null)
+      && row.description === (data.description ?? null)
+      && row.details === (data.details ?? null)
+      && json(row.tags ?? []) === json(data.tags ?? [])
+      && json(row.params) === json(data.params ?? null)
+      && json(row.presets) === json(data.presets ?? null)
+      && json(row.published) === json(unvalidated(data.published));
   }
 
   /** Share a file: append a new row carrying a concrete semver + the ScriptShared

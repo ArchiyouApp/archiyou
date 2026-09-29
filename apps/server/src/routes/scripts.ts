@@ -135,10 +135,16 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
     return scriptStore.getFile(request.user.sub, request.params.fileId);
   });
 
-  // Append a new version to an existing file.
-  fastify.put<{ Params: { user: string; fileId: string } }>('/scripts/:user/:fileId', auth, async (request) => {
-    return scriptStore.saveVersion(request.user.sub, request.params.fileId, request.body);
-  });
+  // Save the working copy of an existing file: merges into a recent autosave row, or
+  // appends a new version. `?checkpoint=1` always appends (a restore, see saveVersion).
+  fastify.put<{ Params: { user: string; fileId: string }; Querystring: { checkpoint?: string } }>(
+    '/scripts/:user/:fileId',
+    auth,
+    async (request) => {
+      const checkpoint = request.query.checkpoint === '1';
+      return scriptStore.saveVersion(request.user.sub, request.params.fileId, request.body, { checkpoint });
+    },
+  );
 
   // Delete a file and all its versions.
   fastify.delete<{ Params: { user: string; fileId: string } }>('/scripts/:user/:fileId', auth, async (request, reply) => {

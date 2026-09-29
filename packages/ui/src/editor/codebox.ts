@@ -113,6 +113,16 @@ const lightTheme = [
   syntaxHighlighting(lightHighlightStyle),
 ];
 const themeCompartment = new Compartment();
+
+/** The code box theme for the current light/dark mode, for other code views (the
+ *  Versions tool's diff). data-theme is always set now (light or dark), so it decides;
+ *  the media query is only a fallback for the first paint before the theme is applied. */
+export function codeTheme()
+{
+  const attr = document.documentElement.dataset['theme'];
+  const isDark = attr ? attr === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return isDark ? oneDark : lightTheme;
+}
 // Toggles editability without rebuilding the editor (read-only shared scripts).
 const editableCompartment = new Compartment();
 
@@ -483,11 +493,7 @@ export class CodeBox extends SignalWatcher(LitElement)
 
   private _currentTheme()
   {
-    // data-theme is always set now (light or dark), so it decides; the media
-    // query is only a fallback for the first paint before the theme is applied.
-    const attr = document.documentElement.dataset['theme'];
-    const isDark = attr ? attr === 'dark' : this._darkMQ.matches;
-    return isDark ? oneDark : lightTheme;
+    return codeTheme();
   }
 
   /** Get the current editor text. */
