@@ -106,3 +106,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-09-26 | [Script modules: recipes and output formats; fab out of the engine](./records/2026-09-26-module-recipes-outputs.md) | Claude Opus 5.5 | develop | 2 |
 | 2026-09-28 | [Editor: one run per edit, tool outputs in the same run](./records/2026-09-28-editor-single-run.md) | Claude Opus 5.5 | develop | 2 |
 | 2026-09-28 | [Script version history: browse, diff, restore](./records/2026-09-28-script-versions.md) | Claude Opus 5.5 | develop | 2 |
+| 2026-09-28 | [meshup: Sketch.lineTo() after a skipped line, 3D corner keywords on a flat Bbox](./records/2026-09-28-meshup-sketch-bbox.md) | Claude Opus 5.5 | develop (+ meshup main) | 3 (2 in meshup) |
