@@ -21,7 +21,7 @@
             ScriptOutputFormatDoc, ScriptOutputPathData, ScriptOutputDataWrapper } 
         from './types';
 
-import { isScriptOutputFormat, isScriptOutputCategory } from './typeguards'; // ScripOutputManager typeguards
+import { isScriptOutputFormat, isModuleOutputFormat, isScriptOutputCategory } from './typeguards'; // ScripOutputManager typeguards
 import { convertStringValue, recordToUrlParams } from '../utils'; // utils
  
  export class ScriptOutputPath
@@ -70,7 +70,11 @@ import { convertStringValue, recordToUrlParams } from '../utils'; // utils
 
             this.entityName = match.groups.entity;
 
-            if(!match.groups.format || match.groups.format === '*' || isScriptOutputFormat(match.groups.format))
+            // A model format a script module builds ('btlx') is not known here; the Runner asks
+            // the modules for it and reports a format nobody builds.
+            if(!match.groups.format || match.groups.format === '*'
+                || (match.groups.category === 'model' && isModuleOutputFormat(match.groups.format))
+                || isScriptOutputFormat(match.groups.format))
             {
                 // If format is null, we set it to wildcard
                 this.format = match.groups.format as ScriptOutputFormat || '*';

@@ -6,6 +6,8 @@ export type {
     AyArchiyou,
     AyModule,
     AyModuleWarmContext,
+    AyModuleOutput,
+    AyModuleOutputContext,
     AyModuleFactory,
     AyServerModuleMethod,
     AyServerModule,

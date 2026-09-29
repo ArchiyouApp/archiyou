@@ -1,7 +1,7 @@
 import type { ScriptParam } from "./ScriptParam";
 import type { ScriptOutputPathData, ScriptParamData, ScriptParamType, ScriptOutputFormat, ScriptOutputCategory, ScriptOutputDataWrapper } from "./types";
 
-import { SCRIPT_OUTPUT_MODEL_FORMATS, SCRIPT_OUTPUT_METRIC_FORMATS, SCRIPT_OUTPUT_TABLE_FORMATS, SCRIPT_OUTPUT_DOC_FORMATS } from "../constants";
+import { SCRIPT_OUTPUT_MODEL_FORMATS, SCRIPT_OUTPUT_METRIC_FORMATS, SCRIPT_OUTPUT_TABLE_FORMATS, SCRIPT_OUTPUT_DOC_FORMATS, MODULE_FORMAT_RE } from "../constants";
 
 export function isScriptOutputPathData(o:any): o is ScriptOutputPathData
 {
@@ -44,6 +44,13 @@ export function isScriptOutputFormat(o:any):o is ScriptOutputFormat
         console.error(`isScriptOutputFormat: Unknown output format "${o}". Valid formats: ${ALL_FORMATS.join(', ')}`);
     }
     return r;
+}
+
+/** A model format no built-in exporter writes, in the shape a script module may declare one
+ *  (manifest `outputs`, e.g. 'btlx'). Whether a module actually builds it is decided per run. */
+export function isModuleOutputFormat(o:any):boolean
+{
+    return typeof o === 'string' && MODULE_FORMAT_RE.test(o) && !SCRIPT_OUTPUT_MODEL_FORMATS.includes(o) && o !== 'internal';
 }
 
 export function isScriptOutputCategory(o:any):o is ScriptOutputCategory

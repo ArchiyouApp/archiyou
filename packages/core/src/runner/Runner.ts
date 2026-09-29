@@ -45,6 +45,7 @@ import type { ScriptOutputFormat, ScriptOutputFormatModel, ScriptStatement, Scri
 import { CodeParser } from '../execution/CodeParser'; // helper for parsing code into ScriptStatements and pipelines
 import { Pipeline } from '../execution/Pipeline'; // Pipeline class
 import { ScriptOutputPath } from '../execution/ScriptOutputPath';
+import { isModuleOutputFormat } from '../execution/typeguards';
 
 import { roundTo, hash, toRad, toDeg } from '../utils';
 import type { ConsoleMessageType } from '../console/types';
@@ -53,7 +54,7 @@ import { Db } from '../calc/Db';
 
 // Archiyou modules
 import { Console, NATIVE_CONSOLE } from '../console/Console';
-import { Modeler, loadIFCModule, loadFabModule } from '../modeler/Modeler';
+import { Modeler, loadIFCModule } from '../modeler/Modeler';
 import type { ModelMode } from '../modeler/types';
 import { isAnyShape } from '../modeler/types';
 import { Annotator } from '../annotator/Annotator';
@@ -67,7 +68,6 @@ import { ModuleRegistry } from '../modules/ModuleRegistry'; // optional, entitle
 import { MODELER_METHODS_INTO_GLOBAL, SCRIPT_OUTPUT_GLTF_OPTIONS_DEFAULT, outputsNeedRecipes } from '../constants'; 
 import { ParamManager } from '../execution/ParamManager';
 import type { Make } from '../modeler/Make';
-import type { FabFacade } from '../modeler/Fab';
 import type { Handle } from '../interaction/Handle';
 import type { ShapeCollection } from '@archiyou/meshup';
 
@@ -106,8 +106,6 @@ export interface ScriptGlobals
     calc: Calc;
     /** Ready-made building parts: walls, floors, frames and part lists. */
     make: Make;
-    /** Fabrication: how the parts of the model are cut, joined and priced. */
-    fab: FabFacade;
     /** Materials to assign to shapes, with their colour, weight and carbon. */
     materials: MaterialManager;
     /** The parameters of the script. `$PARAMS.define()` adds one; every parameter is
@@ -502,7 +500,6 @@ export class Runner
             annotator: state._archiyou.annotator, // dimension/label settings live here (DIMENSION_TEXT_SIZE_MM, ...)
             materials: state._archiyou.materials,
             make: state._archiyou.modeler.make, // Make lives on Modeler, not directly on ArchiyouModules
-            fab: state._archiyou.modeler.fab, // fabrication facade; its module loads on demand (_loadFabWhenUsed)
             interactor: state._archiyou.interactor,
         });
 
@@ -528,6 +525,8 @@ export class Runner
 
         console.info(`Runner::_addScriptModulesToScopeState(): Adding script module(s): ${names.join(', ')}`);
         Object.assign(state, globals);
+        // The read side of recipes, for modules that declare `recipes` (see _syncRecipeRecording)
+        if(this._recipe) state._archiyou.recipes = this._recipe.recipeApi;
         this._moduleRegistry.linkToArchiyou(state._archiyou);
 
         return state;
@@ -809,13 +808,12 @@ export class Runner
         // loading is async and the per-scope setup (_executionStartRunInScope) is not.
         await this._ensureKernel(request.kernel);
 
-        // Record how shapes are made only when something reads it: FreeCAD and friends, or `fab`
+        // Record how shapes are made only when something reads it: FreeCAD and friends, or a
+        // script module that declares `recipes` (fab)
         await this._syncRecipeRecording(request);
 
         // The IFC classifier loads on demand; explainIFC() is synchronous, so load it up front when used
         await this._loadIFCWhenUsed(request);
-        // Same for the fabrication module behind `fab`
-        await this._loadFabWhenUsed(request);
 
         // Per-statement mode: split the script and execute statement-by-statement so a
         // single failure halts with a partial model instead of losing the whole run, and
@@ -828,12 +826,13 @@ export class Runner
         return await this._execute(request, true, true);
     }
 
-    /** Switch shape recipe recording on for runs that request a recipe format or use `fab` (which reads
-     *  saw cuts and drillings from recipes), off for all others. Recording stays on through the export at
-     *  the end of the run, which is what reads it. */
+    /** Switch shape recipe recording on for runs that request a recipe format or load a script module
+     *  that reads recipes (manifest `recipes`, like fab: saw cuts and drillings), off for all others.
+     *  Recording stays on through the export at the end of the run, which is what reads it. Runs after
+     *  _prepareModules(), which decides the modules. */
     private async _syncRecipeRecording(request: RunnerScriptExecutionRequest): Promise<void>
     {
-        const wanted = outputsNeedRecipes(request.outputs) || this._usesFab(request);
+        const wanted = outputsNeedRecipes(request.outputs) || this._moduleRegistry.needsRecipes();
         if (!wanted && !this._recipe) return;
         this._recipe ??= await import('../modeler/Recipe');
         if (wanted)
@@ -851,20 +850,6 @@ export class Runner
     {
         const codes = [request.script?.code, ...Object.values(this._componentScripts).map(s => (s as any)?.code)];
         if (codes.some(code => typeof code === 'string' && /\bexplainIFC\s*\(/.test(code))) await loadIFCModule();
-    }
-
-    /** Load the fabrication module before a run whose script, or any of its components, uses `fab`:
-     *  every fab.*() call is synchronous for scripts. Components are already prefetched at this point. */
-    private async _loadFabWhenUsed(request: RunnerScriptExecutionRequest): Promise<void>
-    {
-        if (this._usesFab(request)) await loadFabModule();
-    }
-
-    /** Whether the script, or any of its components, calls fab.something() */
-    private _usesFab(request: RunnerScriptExecutionRequest): boolean
-    {
-        const codes = [request.script?.code, ...Object.values(this._componentScripts).map(s => (s as any)?.code)];
-        return codes.some(code => typeof code === 'string' && /\bfab\s*\.\s*\w+\s*\(/.test(code));
     }
 
     private _finalizeExecutionDuration(result: RunnerScriptExecutionResult | null | undefined, executeStartTime: number): void
@@ -1283,7 +1268,6 @@ ${description === '***** CODE ****\nUnexpected end of input' ? code : ''}
         await this._prefetchComponentScripts(request); // idempotent; needed when called via executeUrl()
         await this._prefetchImportAssets(request);      // idempotent; $import() assets for the direct path
         await this._prepareModules(request);            // idempotent; script modules for the direct path
-        await this._loadFabWhenUsed(request);           // idempotent; `fab` for the direct path
 
         const executeStartTime = performance.now();
 
@@ -1835,13 +1819,19 @@ ${contextLines.join('\n')}
 
         if(!code || !catalog?.length) return;
 
+        // Components run on this run's modules (their scopes get the same globals), so a module a
+        // component declares is loaded with the script's own. They are prefetched by now.
+        const componentCode = Object.values(this._componentScripts)
+            .map(s => (s as any)?.code)
+            .filter((c): c is string => typeof c === 'string');
+
         const req = request as RunnerScriptExecutionRequest;
         this._moduleRegistry.setOptions({
             moduleApiUrl: req.moduleApiUrl ?? '',
             authToken: req.authToken,
         });
 
-        await this._moduleRegistry.prepare(code, catalog);
+        await this._moduleRegistry.prepare([code, ...componentCode].join('\n'), catalog);
 
         // Then let each module pull in whatever the script should be able to
         // reach synchronously. Separate from prepare() because a warm-up needs
@@ -2823,24 +2813,6 @@ ${contextLines.join('\n')}
                     break;
                 }
 
-                case 'btlx': // BTLx timber machining data: parts with saw cuts and drillings, see BTLxExporter.ts
-                {
-                    const script = request.script as any;
-                    outp = await scope.modeler.toBTLx({
-                        ...(outputPath?.formatOptions as any ?? {}),
-                        name: script?.name,
-                        version: script?.version,
-                    });
-                    if(outp)
-                    {
-                        outputs.push({
-                            path: outputPathData,
-                            output: outp
-                        } as ScriptOutputData);
-                    }
-                    break;
-                }
-
                 case 'fcstd': // FreeCAD document: recipes become parametric features, see FCStdExporter.ts
                 {
                     const script = request.script as any;
@@ -2920,7 +2892,38 @@ ${contextLines.join('\n')}
                     break;
 
                 default:
-                    console.error(`Runner::_getScopeRunnerScriptExecutionResult(): Skipped unknown model format '${outputPath.format}' in requested output '${outputPath.resolvedPath}'`); 
+                {
+                    // A format a script module builds (its manifest `outputs`), like 'btlx' from fab.
+                    // Output paths let any plain format token through, so this is also where a format
+                    // nobody builds is reported.
+                    const format = outputPath.format as string;
+                    if(!isModuleOutputFormat(format))
+                    {
+                        // 'internal' and the like: nothing to export here
+                        console.error(`Runner::_exportPipelineModels(): Skipped unknown model format '${format}' in requested output '${outputPath.resolvedPath}'`);
+                        break;
+                    }
+                    const { module, entry } = this._moduleRegistry.outputProvider(format, request.modules);
+                    if(!module || typeof module.output !== 'function')
+                    {
+                        throw new Error(entry
+                            ? `Output '${outputPath.resolvedPath}': the '${format}' format is built by the '${entry.id}' module. Add $module('${entry.id}') to the script.`
+                            : `Output '${outputPath.resolvedPath}': unknown model format '${format}'.`);
+                    }
+                    const script = request.script as any;
+                    outp = await module.output(format, {
+                        modeler: scope.modeler,
+                        options: { ...(outputPath.formatOptions ?? {}) },
+                        script: { name: script?.name, version: script?.version },
+                    });
+                    if(outp)
+                    {
+                        outputs.push({
+                            path: outputPathData,
+                            output: outp
+                        } as ScriptOutputData);
+                    }
+                }
             }
 
             // Check if any output was added

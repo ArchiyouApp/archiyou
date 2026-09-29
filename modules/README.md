@@ -82,7 +82,8 @@ Module 'fem': not declared in this script — add $module('fem') before using it
 `await` at the top level is fine — scripts already run as async functions. Whether a module needs
 it is decided by its `runtime`, which the Modules panel shows.
 
-Modules compose with everything else normally: parameters, `$component`, `calc`, `docs`.
+Modules compose with everything else normally: parameters, `$component`, `calc`, `docs`. A component
+that uses a module declares it in its own code; the module is then loaded for the whole run.
 
 ```js
 $PARAMS.define('LOAD', 'number', { label: 'Load', units: 'N', default: 500, minimum: 0, maximum: 5000 });
@@ -278,6 +279,24 @@ misbehave:
   never shadow a core global.
 
 `id` must equal the directory name at deploy time, or the backend skips the module with a warning.
+
+Two optional fields let a client module take part in more of a run:
+
+- **`"recipes": true`** — the module reads *how* shapes were made (primitives, transforms,
+  booleans). Recording that costs time on every modeling call, so the Runner only does it for runs
+  that load such a module (or request a recipe export format), and hands the read functions over as
+  `ay.recipes` (`recipeOf(shape)`, `resolveRecipe()`, `classify()`, …). The recipe code stays in
+  core: it imports the whole mesh kernel, so it cannot be part of a bundle.
+- **`"outputs"`** — model formats the module builds, requested like the built-in ones:
+  ```jsonc
+  "outputs": [{ "format": "btlx", "category": "model", "ext": "btlx", "mime": "application/xml",
+                "label": "BTLx (timber)" }]
+  ```
+  `default/model/btlx` then reaches the module's `output(format, { modeler, options, script })`
+  after the script ran; it returns the file (text or bytes) or `null`. A format must be a new
+  lowercase token (never a built-in one like `glb`), is never part of a `default/model/*`
+  wildcard, and a run that requests it without declaring the module gets an error naming the
+  `$module()` to add. The `fab` module is the worked example.
 
 ### `DOCS.md` — the documentation the editor shows
 

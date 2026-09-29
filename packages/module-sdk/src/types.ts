@@ -53,6 +53,25 @@ export interface AyModuleCompletion {
     type?: 'method' | 'property' | 'function' | 'class';
 }
 
+/** An output format a client module builds, requested like a built-in one:
+ *  `default/model/<format>`. The Runner asks the module declaring it through
+ *  AyModule.output(); a run whose script does not declare the module gets an
+ *  error naming it. Never part of a `default/model/*` wildcard, which stays the
+ *  built-in formats. */
+export interface AyModuleOutput {
+    /** Lowercase format token, e.g. 'btlx'. Must not be a built-in format. */
+    format: string;
+    /** Output category; only 'model' for now. */
+    category: 'model';
+    /** File extension without the dot, e.g. 'btlx'. */
+    ext: string;
+    /** MIME type of the file, e.g. 'application/xml'. */
+    mime: string;
+    /** Short name for export menus, e.g. 'BTLx (timber)'. */
+    label?: string;
+    description?: string;
+}
+
 /** A module's manifest.json. Read by the backend at boot and handed to the
  *  runner, which validates it before the module is allowed into a scope. */
 export interface AyModuleManifest {
@@ -112,6 +131,19 @@ export interface AyModuleManifest {
      * Ignored for `runtime: 'client'`.
      */
     client?: boolean;
+    /**
+     * The module reads shape recipes (how each shape was made: primitives,
+     * transforms, booleans), so a run that loads it records them.
+     *
+     * Recording costs time and memory on every modeling call, so the Runner only
+     * switches it on when something reads it: a recipe export format, or a
+     * module with this flag. The recipes are read through `ay.recipes` (see
+     * AyArchiyou). Client modules only.
+     */
+    recipes?: boolean;
+    /** Output formats the module builds (see AyModuleOutput). Client modules only;
+     *  the module must implement AyModule.output(). */
+    outputs?: Array<AyModuleOutput>;
 }
 
 /** A manifest as served by `GET /modules`, annotated for the current caller.
@@ -169,7 +201,21 @@ export interface AyArchiyou {
     modules?: any;
     oc?: any;
     meshup?: any;
+    /** Read access to shape recipes: `recipeOf(shape)`, `resolveRecipe(...)`,
+     *  `classify(...)` and friends (core's Recipe.ts `recipeApi`). Present for runs
+     *  that record recipes, i.e. when a loaded module declares `recipes: true`. */
+    recipes?: any;
     [key: string]: any;
+}
+
+/** What AyModule.output() is handed to build a file. */
+export interface AyModuleOutputContext {
+    /** The run's modeler, the same as `ay.modeler`. */
+    modeler: any;
+    /** Options from the output path, e.g. `{ holes: true }` for `default/model/btlx?holes=true`. */
+    options: Record<string, any>;
+    /** Name and version of the script being run, for file headers. */
+    script: { name?: string; version?: string };
 }
 
 /** What a module is told about the run when warm() is called.
@@ -225,6 +271,10 @@ export interface AyModule {
     setArchiyou(ay: AyArchiyou): void;
     /** Called once per run, after setArchiyou — drop per-run state here. */
     reset?(): void;
+    /** Build one of the formats the manifest declares in `outputs`, after the
+     *  script ran. Returns the file (text or bytes), or null when the model has
+     *  nothing to write in this format. */
+    output?(format: string, ctx: AyModuleOutputContext): string | Uint8Array | null | Promise<string | Uint8Array | null>;
     /** The script-facing API. Anything else on the object is callable from a
      *  user script as `<global>.<name>(...)`. */
     [key: string]: any;

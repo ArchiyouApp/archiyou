@@ -23,7 +23,7 @@
 import semver from 'semver';
 import type { AyArchiyou, AyModule, AyModuleCatalogEntry, AyModuleFactoryContext, AyModuleWarmContext } from './sdkTypes';
 
-import { MODELER_METHODS_INTO_GLOBAL, ARCHIYOU_CORE_VERSION } from '../constants';
+import { MODELER_METHODS_INTO_GLOBAL, ARCHIYOU_CORE_VERSION, SCRIPT_OUTPUT_MODEL_FORMATS, MODULE_FORMAT_RE } from '../constants';
 import { loadClientModule, ModuleLoadError } from './loadClientModule';
 import { serverModuleStub, type SyncTransport } from './serverModuleStub';
 import { unavailableStub, ModuleUnavailableError } from './unavailableStub';
@@ -37,7 +37,7 @@ import { unavailableStub, ModuleUnavailableError } from './unavailableStub';
  *  by the Runner, so both cases are reserved. */
 export const RESERVED_SCOPE_NAMES: ReadonlySet<string> = new Set<string>([
     // Archiyou modules
-    'console', 'modeler', 'docs', 'doc', 'calc', 'annotator', 'materials', 'make', 'fab', 'interactor',
+    'console', 'modeler', 'docs', 'doc', 'calc', 'annotator', 'materials', 'make', 'interactor',
     // logging helpers
     'print', 'log',
     // debugging helper
@@ -99,6 +99,10 @@ export class ModuleRegistry
 
     /** Resolved for the current run: global name -> value to put in the scope. */
     private _globals: Record<string, any> = {};
+
+    /** Manifests of the client modules loaded for the current run, by global —
+     *  what needsRecipes() and outputProvider() read. Stubs are not in it. */
+    private _loaded: Record<string, AyModuleCatalogEntry> = {};
 
     /** Diagnostics for the current run, for logging and tests. */
     private _rejected: Array<RejectedModule> = [];
@@ -166,6 +170,15 @@ export class ModuleRegistry
             return `unknown runtime '${entry.runtime}'`;
         }
 
+        // A format a module builds is requested by a plain path segment, and must
+        // not take over one of the engine's own formats.
+        const badOutput = (entry.outputs ?? []).find(o => !o || !MODULE_FORMAT_RE.test(o.format)
+            || o.category !== 'model' || SCRIPT_OUTPUT_MODEL_FORMATS.includes(o.format));
+        if(badOutput)
+        {
+            return `output format '${badOutput?.format}' is not a new lowercase model format`;
+        }
+
         const coreVersion = this._opts.coreVersion ?? ARCHIYOU_CORE_VERSION;
         if(entry.engine)
         {
@@ -202,6 +215,7 @@ export class ModuleRegistry
     async prepare(code: string, catalog: Array<AyModuleCatalogEntry> | undefined): Promise<void>
     {
         this._globals = {};
+        this._loaded = {};
         this._rejected = [];
         this._idToGlobal = {};
         this._reasons = {};
@@ -304,6 +318,7 @@ export class ModuleRegistry
             {
                 if(stub) this._refreshStub(cached, stub);
                 this._globals[entry.global] = cached;
+                this._loaded[entry.global] = entry;
                 return;
             }
 
@@ -329,6 +344,7 @@ export class ModuleRegistry
 
                 this._instances[key] = instance;
                 this._globals[entry.global] = instance;
+                this._loaded[entry.global] = entry;
             }
             catch(e)
             {
@@ -476,5 +492,23 @@ export class ModuleRegistry
     globals(): Record<string, any>
     {
         return { ...this._globals };
+    }
+
+    /** Does a module loaded for this run read shape recipes (manifest `recipes`)?
+     *  The Runner then records them, see Runner._syncRecipeRecording. */
+    needsRecipes(): boolean
+    {
+        return Object.values(this._loaded).some(e => e.recipes === true);
+    }
+
+    /** The module loaded for this run that builds `format` (manifest `outputs`),
+     *  or null. `declaredBy` names a catalog module that would build it but is
+     *  not loaded — for an error that says which `$module()` is missing. */
+    outputProvider(format: string, catalog?: Array<AyModuleCatalogEntry>): { module: AyModule | null, entry: AyModuleCatalogEntry | null }
+    {
+        const builds = (e: AyModuleCatalogEntry) => (e.outputs ?? []).some(o => o?.format === format);
+        const entry = Object.values(this._loaded).find(builds);
+        if(entry) return { module: this._globals[entry.global] as AyModule, entry };
+        return { module: null, entry: (catalog ?? []).find(builds) ?? null };
     }
 }

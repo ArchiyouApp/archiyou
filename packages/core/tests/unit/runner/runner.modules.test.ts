@@ -335,3 +335,64 @@ describe('Runner — script modules', () =>
         expect(built).toBe(1)
     })
 })
+
+describe('Runner — what a module adds to a run', () =>
+{
+    const OUTPUT = { format: 'plan', category: 'model' as const, ext: 'plan', mime: 'text/plain' }
+
+    it('builds a model format the module declares, with the run options', async () =>
+    {
+        const runner = await new Runner().load()
+        const mod = withModule(runner, {
+            output: (format: string, ctx: any) => `${format}: ${ctx.modeler.all().length} shape(s), ${ctx.script.name}, detail ${ctx.options.detail}`,
+        })
+
+        const result = await runner.execute({
+            script: { code: `$module('example')\nbox(10)`, name: 'plans' },
+            modules: [entry({ outputs: [OUTPUT] })],
+            outputs: ['default/model/plan?detail=2'],
+        } as any)
+
+        expect(result.status, errorText(result)).toBe('success')
+        expect(result.outputs?.[0]?.output).toBe('plan: 1 shape(s), plans, detail 2')
+        expect(mod._ay).toBeTruthy()
+    })
+
+    it('names the module to declare for its format, and reports a format nobody builds', async () =>
+    {
+        const runner = await new Runner().load()
+        withModule(runner, { output: () => 'x' })
+        const request = (outputs: string[]) => ({
+            script: { code: 'box(10)' },
+            modules: [entry({ outputs: [OUTPUT] })],
+            outputs,
+        } as any)
+
+        const undeclared = await runner.execute(request(['default/model/plan']))
+        expect(undeclared.status).toBe('error')
+        expect(errorText(undeclared)).toContain("built by the 'example' module. Add $module('example')")
+
+        const unknown = await runner.execute(request(['default/model/nope']))
+        expect(unknown.status).toBe('error')
+        expect(errorText(unknown)).toContain("unknown model format 'nope'")
+    })
+
+    it('records recipes for a module that reads them and hands it the recipe access', async () =>
+    {
+        const runner = await new Runner().load()
+        const mod = withModule(runner, {
+            // what fab does: read how a shape was made while the script runs
+            made: (shape: any) => mod._ay.recipes.recipeOf(shape) ? 'recorded' : 'none',
+        })
+
+        const result = await runner.execute({
+            script: { code: `$module('example')\nb = box(10)\nprint(example.made(b))` },
+            modules: [entry({ recipes: true })],
+            outputs: [],
+            messages: ['user'],
+        } as any)
+
+        expect(result.status, errorText(result)).toBe('success')
+        expect((result.messages ?? []).map((m: any) => m.message).join(' ')).toContain('recorded')
+    })
+})

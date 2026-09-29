@@ -25,6 +25,17 @@ export const ModuleCompletionSchema = Type.Object({
   ),
 });
 
+/** A model output format a client module builds. See AyModuleOutput. */
+export const ModuleOutputSchema = Type.Object({
+  // Lands in output paths (`default/model/<format>`), so a plain lowercase token
+  format: Type.String({ minLength: 1, maxLength: 32, pattern: '^[a-z][a-z0-9-]*$' }),
+  category: Type.Literal('model'),
+  ext: Type.String({ minLength: 1, maxLength: 16, pattern: '^[A-Za-z0-9]+$' }),
+  mime: Type.String({ minLength: 1, maxLength: 128 }),
+  label: Type.Optional(Type.String({ maxLength: 200 })),
+  description: Type.Optional(Type.String({ maxLength: 2000 })),
+});
+
 export const ModuleManifestSchema = Type.Object({
   // Ids and versions land in URL paths, so they are constrained to characters
   // that survive a path segment without escaping surprises.
@@ -41,6 +52,10 @@ export const ModuleManifestSchema = Type.Object({
   public: Type.Optional(Type.Boolean()),
   /** A server module that also ships a client wrapper bundle. See AyModuleManifest.client. */
   client: Type.Optional(Type.Boolean()),
+  /** Runs that load the module record shape recipes. See AyModuleManifest.recipes. */
+  recipes: Type.Optional(Type.Boolean()),
+  /** Output formats the module builds. See AyModuleManifest.outputs. */
+  outputs: Type.Optional(Type.Array(ModuleOutputSchema, { maxItems: 20 })),
 });
 
 export type ModuleManifest = Static<typeof ModuleManifestSchema>;

@@ -29,6 +29,8 @@ export type {
     AyArchiyou,
     AyModule,
     AyModuleWarmContext,
+    AyModuleOutput,
+    AyModuleOutputContext,
     AyModuleFactory,
     AyModuleFactoryContext,
     AyServerModuleMethod,

@@ -17,6 +17,7 @@ import type { Console } from "./console/Console";
 import type { Runner } from "./runner/Runner";
 import type { MaterialManager } from "./materials/MaterialManager";
 import type { ModuleRegistry } from "./modules/ModuleRegistry";
+import type { RecipeApi } from "./modeler/Recipe";
 import type { SceneNodeData } from "./modeler/types";
 
 
@@ -35,6 +36,9 @@ export interface ArchiyouModules
      *  one module reach another, and the built-ins reach modules. Undefined in
      *  contexts that build an ArchiyouModules without a Runner. */
     modules?: ModuleRegistry,
+    /** Read access to shape recipes for script modules that declare `recipes` (Recipe.ts
+     *  `recipeApi`). Set by the Runner for runs that record recipes. */
+    recipes?: RecipeApi,
     // modeling kernels
     oc?: any, // OpenCascade (BREP) 
     meshup?: any, // Meshup (mesh/curve) // TODO: TS typing

@@ -1814,3 +1814,11 @@ export function explainNode(node: RecipeNode, classifications?: Classifications,
         }
     }
 }
+
+/** The read side of recipes that script modules get as `ay.recipes` (manifest `recipes: true`):
+ *  a module cannot import this file, which pulls in the whole mesh kernel, so the Runner hands it
+ *  these functions instead. Recording itself stays with the Runner. */
+export const recipeApi = Object.freeze({
+    recipeOf, resolveRecipe, classify, toolOpsOf, leafPlanes, affineFrame, affineApply, nodeBounds,
+});
+export type RecipeApi = typeof recipeApi;

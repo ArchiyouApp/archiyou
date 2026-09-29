@@ -154,7 +154,8 @@ describe('ModuleRegistry — validation', () =>
 {
     const cases: Array<[string, Partial<AyModuleCatalogEntry>, RegExp]> = [
         ['a reserved module name', { global: 'calc' }, /already used by Archiyou/],
-        ['the fab facade', { global: 'fab' }, /already used by Archiyou/],
+        ['a built-in output format', { outputs: [{ format: 'glb', category: 'model', ext: 'glb', mime: 'model/gltf-binary' }] }, /not a new lowercase model format/],
+        ['an output format that is not a plain token', { outputs: [{ format: 'Big File', category: 'model', ext: 'x', mime: 'text/plain' }] }, /not a new lowercase model format/],
         ['a reserved modeling function', { global: 'box' }, /already used by Archiyou/],
         ['a lowercased modeling function', { global: 'planebetween' }, /already used by Archiyou/],
         ['the $ param namespace', { global: '$fem' }, /not a valid global name/],
@@ -306,6 +307,36 @@ describe('ModuleRegistry — lifecycle', () =>
         await reg.prepare("$module('example')\nexample.run()", [entry()])
 
         expect(() => reg.linkToArchiyou({} as any)).not.toThrow()
+    })
+})
+
+describe('ModuleRegistry — recipes and output formats', () =>
+{
+    const OUTPUT = { format: 'plan', category: 'model' as const, ext: 'plan', mime: 'text/plain' }
+
+    it('reports recipes wanted only while a module that asks for them is loaded', async () =>
+    {
+        const reg = new ModuleRegistry().setOptions({ loadClient: async () => fakeModule() })
+        await reg.prepare(`$module('example')`, [entry({ recipes: true })])
+        expect(reg.needsRecipes()).toBe(true)
+        await reg.prepare('box(10)', [entry({ recipes: true })]) // not declared: not loaded
+        expect(reg.needsRecipes()).toBe(false)
+        await reg.prepare(`$module('example')`, [entry()])
+        expect(reg.needsRecipes()).toBe(false)
+    })
+
+    it('finds the loaded module that builds a format, or names the one to declare', async () =>
+    {
+        const mod = fakeModule()
+        const catalog = [entry({ outputs: [OUTPUT] })]
+        const reg = new ModuleRegistry().setOptions({ loadClient: async () => mod })
+
+        await reg.prepare(`$module('example')`, catalog)
+        expect(reg.outputProvider('plan', catalog)).toEqual({ module: mod, entry: catalog[0] })
+
+        await reg.prepare('box(10)', catalog)
+        expect(reg.outputProvider('plan', catalog)).toEqual({ module: null, entry: catalog[0] })
+        expect(reg.outputProvider('other', catalog)).toEqual({ module: null, entry: null })
     })
 })
 
