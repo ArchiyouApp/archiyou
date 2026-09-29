@@ -298,12 +298,14 @@ export class ParamItemNumberRanges extends SignalWatcher(LitElement)
             --h2:    66%;
         }
 
+        /* Inset from the param's name above it; the width follows (no 100%),
+           so the margin does not push the fields past the right edge */
         .wrap
         {
             display:        flex;
             flex-direction: column;
             gap:            var(--space-xs);
-            width:          100%;
+            margin-left:    var(--space2xl);
         }
 
         .slider

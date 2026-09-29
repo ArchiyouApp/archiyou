@@ -98,6 +98,6 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-09-26 | [Dimension sizes from constants, autoDim on nearly flat parts, parameter field typing](./records/2026-09-26-doc-dimension-sizes-param-input.md) | Claude Opus 5.5 | develop (+ meshup main) | 3 (1 in meshup) |
 | 2026-09-27 | [Miter saw angles from a beam edge (make.cutAngles), parent tracking in meshup select()](./records/2026-09-27-make-cut-angles.md) | Claude Opus 5.5 | develop (+ meshup main) | 3 (1 in meshup) |
 | 2026-09-27 | [Dimension lines offset in the plane of what they measure](./records/2026-09-27-dimension-offset-plane.md) | Claude Opus 5.5 | develop | 1 |
-| 2026-09-28 | [Param type number-ranges: a slider with two handles](./records/2026-09-28-number-ranges-param.md) | Claude Opus 5.5 | develop | 2 |
+| 2026-09-28 | [Param type number-ranges: a slider with two handles](./records/2026-09-28-number-ranges-param.md) | Claude Opus 5.5 | develop | 3 |
 | 2026-09-28 | [Menu params locked by enable() or enableIf(true)](./records/2026-09-28-programmatic-param-flag.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-09-28 | [Configurator: dimension edits, param order, document centering](./records/2026-09-28-configurator-edits-param-order.md) | Claude Opus 5.5 | develop | 3 |

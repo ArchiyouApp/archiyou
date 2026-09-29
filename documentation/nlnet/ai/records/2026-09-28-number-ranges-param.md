@@ -19,6 +19,7 @@
 2026-09-28 12:45 +0200  Base directory for this skill: /home/mvdnet/archiyou/archiyou/.claude/skills/ai-disclosure
 2026-09-28 13:03 +0200  Small visual tweaks: Dont put the colors underneath the input fields for split mode. Also dont make the input fields fill the entire container width, Do align them together with the labels, but make them smaller width. The central label in split should be dead-center, the input field too. the start and end labels can be alignedl left and right
 2026-09-28 13:10 +0200  please commit according to nlnet policy
+2026-09-28 13:15 +0200  Just a small addition to the last work. Can you add a margin-left to the number-range param content so it is inset from the name of the param
 ```
 
 ## Plan (agent output, reviewed by the human before implementation)
@@ -186,3 +187,4 @@ track. The app takes the fitted `_value` along with the new definition.
 |---|---|---|
 | dba236f | Param type number-ranges: two handles, a range or a three-way split | "go ahead and implement it" / "Small visual tweaks: Dont put the colors underneath the input fields for split mode. …" |
 | (this commit) | Close the disclosure record for the number-ranges param | "please commit according to nlnet policy" |
+| (this commit) | number-ranges: fields inset from the param name | "Just a small addition to the last work. Can you add a margin-left …" (committed 2026-09-29) |
