@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-28 → (open) |
+| Dates | 2026-09-28 → 2026-09-28 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: a bug report, a question, then the change) |
 | Human | Mark van der Net: wrote the prompts, found the slow runs and duplicated metrics, asked why the editor ran twice, decided on the change |
@@ -365,3 +365,5 @@ after the document outputs of the same run are exported.
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| 226ff08 | Editor: one run per edit, tool outputs in the same run | "yes go ahead" / "First commit the change to the execution configuration" |
+| (this commit) | Close the disclosure record for the editor single run | "commit the last two things" (2026-09-29) |
