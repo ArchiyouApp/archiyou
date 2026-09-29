@@ -8,6 +8,8 @@
 
 import { signal } from '@lit-labs/signals';
 
+import type { ScriptParam } from '@archiyou/core/src/execution/ScriptParam';
+
 export const viewStyleId      = signal<string | null>(null);
 export const cameraOrtho      = signal<boolean>(false);
 export const arActive         = signal<boolean>(false);
@@ -66,4 +68,33 @@ export function registerScheduleExecution(cb: () => void): void
 export function scheduleExecution(): void
 {
   _scheduleExecutionCb?.();
+}
+
+/** Where viewer-side param edits (handle drags, dimension edits) read and write values.
+ *  Without one they go to the editor's script params. The configurator keeps its
+ *  end-user values apart from those, so it registers itself while mounted — otherwise
+ *  an edit in its viewer lands in the editor's script and never reaches its own menu. */
+export interface ViewerParamStore
+{
+  /** Current value of a param, as a handle map or dimension remap sees it. */
+  value(param: ScriptParam): any;
+  /** Store new values (by param name) and re-run once. */
+  set(values: Record<string, any>): void;
+}
+
+let _paramStore: ViewerParamStore | null = null;
+
+/** Returns the function that unregisters it again. */
+export function registerViewerParamStore(store: ViewerParamStore): () => void
+{
+  _paramStore = store;
+  return () =>
+  {
+    if (_paramStore === store) _paramStore = null;
+  };
+}
+
+export function viewerParamStore(): ViewerParamStore | null
+{
+  return _paramStore;
 }

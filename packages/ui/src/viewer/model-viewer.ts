@@ -8,7 +8,7 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { buildScenegraphPath, executionResult, scenegraph, scriptParams, updateParam, selectedPath, setSelectedPath, interactiveShapes, activeParamEntry, setActiveParamEntry, isObjectListParam, paramItemSchema } from '@archiyou/editor/src/state/workspace';
 import { formatDimensionValue } from './gltf-annotations.js';
-import { scheduleExecution, resetCameraCounter,
+import { scheduleExecution, viewerParamStore, resetCameraCounter,
          instructName, instructStep, setInstructAvailable } from '@archiyou/editor/src/state/viewer';
 import type { ScriptOutputData } from '@archiyou/core/src/execution/types';
 import type { SceneNodeData } from '@archiyou/core/src/modeler/types';
@@ -1936,7 +1936,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
   /** Forwarded from <viewer-labels-overlay> when the user edits a bound
    *  dimension label. We coerce to the parameter's declared type, run the
    *  script's optional remap function (`.param(name, remap)`) over it, validate
-   *  against its JSON schema, and only call updateParam() on success — silent
+   *  against its JSON schema, and only commit it on success — silent
    *  drops on invalid input per the design (mid-typing values can fail
    *  min/multipleOf, that's fine). */
   private _onDimParamChange = (e: Event) =>
@@ -1970,9 +1970,29 @@ export class ModelViewer extends SignalWatcher(LitElement)
 
     if (!param.validateValue(next)) return; // silent — wait for the user to type more
 
-    updateParam(detail.param, { value: next });
-    scheduleExecution();
+    this._commitParams({ [detail.param]: next });
   };
+
+  /** Current value of a param, as a handle map or dimension remap sees it: the
+   *  configurator's end-user value while one is mounted, the script's own otherwise. */
+  private _paramValueOf(param: any): any
+  {
+    const store = viewerParamStore();
+    return store ? store.value(param) : (param._value ?? param.default);
+  }
+
+  /** Write edited param values where the host keeps them and re-run once. */
+  private _commitParams(values: Record<string, any>): void
+  {
+    const store = viewerParamStore();
+    if (store)
+    {
+      store.set(values);
+      return;
+    }
+    Object.entries(values).forEach(([name, value]) => updateParam(name, { value }));
+    scheduleExecution();
+  }
 
   /** Rebuild the script's remap function from source and map the edited dimension
    *  value to a parameter value. The function crossed the worker boundary as text,
@@ -1993,7 +2013,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
 
     try
     {
-      const out = fn!(value, param._value ?? param.default);
+      const out = fn!(value, this._paramValueOf(param));
       return out === undefined ? undefined : out;
     }
     catch (err)
@@ -2720,8 +2740,9 @@ export class ModelViewer extends SignalWatcher(LitElement)
       position: () => [...position],
     };
 
-    const { paramValue, paramMin, paramMax } = await import('@archiyou/editor/src/state/types')
-      .catch(() => ({ paramValue: (p: any) => p._value ?? p.default, paramMin: () => 0, paramMax: () => 100 }));
+    const { paramMin, paramMax } = await import('@archiyou/editor/src/state/types')
+      .catch(() => ({ paramMin: () => 0, paramMax: () => 100 }));
+    const paramValue = (p: any) => this._paramValueOf(p);
 
     // ── Multi-param path (.params(fn)) ────────────────────────────────────────
     if (handle.paramsFnSrc)
@@ -2747,7 +2768,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
       catch (err) { console.error(`Handle params function threw:`, err); return; }
 
       // Apply each key that was mutated
-      let anyChanged = false;
+      const changed: Record<string, any> = {};
       for (const p of allParams)
       {
         if (paramsObj[p.name] === undefined) continue;
@@ -2761,10 +2782,9 @@ export class ModelViewer extends SignalWatcher(LitElement)
         }
         if (!p.validateValue(newVal)) { console.warn(`Handle params fn: invalid value for "${p.name}":`, newVal); continue; }
         console.info('Handle updated param', p.name, '→', newVal);
-        updateParam(p.name, { value: newVal });
-        anyChanged = true;
+        changed[p.name] = newVal;
       }
-      if (anyChanged) scheduleExecution();
+      if (Object.keys(changed).length > 0) this._commitParams(changed);
       return;
     }
 
@@ -2927,8 +2947,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
     }
 
     console.info('Handle updated param', handle.param, '→', next);
-    updateParam(param.name, { value });
-    scheduleExecution();
+    this._commitParams({ [param.name]: value });
 
     // Re-base the drag zone on the position just reached. Execution is async (50ms debounce
     // plus a full CAD run), so a second drag started before the re-run lands would otherwise
@@ -2951,7 +2970,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
     }
   }
 
-  /** Shared tail for single-param path: prechecks → validate → updateParam → scheduleExecution. */
+  /** Shared tail for single-param path: prechecks → validate → commit. */
   private async _applyHandleParam(param: any, next: any): Promise<void>
   {
     for (const { check, fix } of PARAM_MAP_PRECHECKS)
@@ -2964,8 +2983,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
       return;
     }
     console.info('Handle updated param', param.name, '→', next);
-    updateParam(param.name, { value: next });
-    scheduleExecution();
+    this._commitParams({ [param.name]: next });
   };
 
   /** Build a visible line (1D) or rect (2D) showing the handle's drag range. */

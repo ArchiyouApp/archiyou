@@ -5,7 +5,8 @@ import { SignalWatcher } from '@lit-labs/signals';
 import { createExecutionFailureResult, runScript, warmupWorker } from '@archiyou/editor/src/services/execution-service';
 import { setExecutionResult, setExecuting } from '@archiyou/editor/src/state/workspace';
 import { configuratorUnitSystem } from '@archiyou/editor/src/state/workspace';
-import { buildConfiguratorRequest } from '@archiyou/editor/src/state/configurator';
+import { buildConfiguratorRequest, configuratorValueFor, setConfiguratorValue } from '@archiyou/editor/src/state/configurator';
+import { registerViewerParamStore } from '@archiyou/editor/src/state/viewer';
 import { syncConfiguratorParamsToUrl } from '@archiyou/editor/src/state/configurator-url';
 import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
 import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
@@ -70,6 +71,7 @@ export class PageConfigurator extends SignalWatcher(LitElement)
   private _paramExecTimeout: number | null = null;
   private _pendingUnitSystem: string | null = null;
   private _lastUnitSystem: string | null = null;
+  private _unregisterParamStore: (() => void) | null = null;
 
   // ── 3. Lifecycle ──
   override connectedCallback()
@@ -83,6 +85,16 @@ export class PageConfigurator extends SignalWatcher(LitElement)
       this._compact = entry.contentRect.width < parseFloat(BREAKPOINT_COMPACT) * rootFontSize;
     });
     this._resizeObserver.observe(this);
+    // Handle drags and dimension edits in the viewer are param edits like the menu's:
+    // they go into this configurator's values and its run, not the editor's script.
+    this._unregisterParamStore = registerViewerParamStore({
+      value: p => configuratorValueFor(p),
+      set:   values =>
+      {
+        Object.entries(values).forEach(([name, value]) => setConfiguratorValue(name, value));
+        this._handleParamsChanged();
+      },
+    });
     warmupWorker()
       .then(() => this._execute())
       .catch(err =>
@@ -110,6 +122,8 @@ export class PageConfigurator extends SignalWatcher(LitElement)
   {
     super.disconnectedCallback();
     this._resizeObserver?.disconnect();
+    this._unregisterParamStore?.();
+    this._unregisterParamStore = null;
     if (this._paramExecTimeout !== null) clearTimeout(this._paramExecTimeout);
   }
 
