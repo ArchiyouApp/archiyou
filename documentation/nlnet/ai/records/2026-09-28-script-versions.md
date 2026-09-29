@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-28 → (open) |
+| Dates | 2026-09-28 → 2026-09-29 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code in plan mode, then as agent |
 | Human | Mark van der Net: wrote the prompts, chose server-side merging of autosaves, restore of code + params + presets and a diff view in the first version, reviewed plan and code |
@@ -10,7 +10,14 @@
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+```
+2026-09-28 15:38 +0200  Can you check what it takes to have version tool that browser previous script versions, can revert, maybe check diffs?
+2026-09-29 00:02 +0200  Go and implement versions
+2026-09-29 00:13 +0200  Base directory for this skill: /tmp/claude-1000/bundled-skills/2.1.284/3e3aa8b4aebd9d8cac5a3647e933961b/run
+2026-09-29 13:38 +0200  Some small UI tunes. Do you have local datetime format applied? Can you remove the buttons "vs current" and "vs previous": One would expect to always compare with the current right? (so vs. current is default). Can you also instead of "Params differ" - a readout of the difference between params?
+2026-09-29 20:38 +0200  Delete the test rows and commit
+2026-09-29 21:14 +0200  commit the last two things
+```
 
 ## Plan (agent output, reviewed by the human before implementation)
 
@@ -149,8 +156,16 @@ The new files are one tool component and one test.
   locale, like the rest of the app.
 
 ## Review and decisions by the human
-(filled as you go)
+- Plan: chose server-side merging of autosaves (about one row per 10 minutes of work), restore of
+  code, params and presets, and a diff view in the first version.
+- Reviewed the tool in the browser, then asked for comparison with the current script only (the
+  "vs current / vs previous" toggle removed), a readout per param and preset instead of "Params
+  differ", and checked that times follow the local format.
+- Had the test rows the agent's browser check left in the local dev database deleted, and the work
+  committed with the message approved as shown.
 
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| 2523d92 | Script version history: browse, diff and restore in a Versions tool | "Go and implement versions" / "Some small UI tunes. …" / "Delete the test rows and commit" |
+| (this commit) | Close the disclosure record for script version history | "commit the last two things" |
