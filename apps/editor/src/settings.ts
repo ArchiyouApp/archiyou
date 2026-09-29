@@ -167,7 +167,7 @@ export const VIEWER_GIZMO_RECALC_FRACTION = 0.2;
 // arrowhead should be are separate questions, so retuning the arm above must not
 // silently resize every dimension line. 20 = the arm length these were tuned at.
 export const DIMENSION_LINE_COLOR        = 0x222222; // line + arrowheads
-export const DIMENSION_ARROW_BASE_LENGTH = 20;
+export const DIMENSION_ARROW_BASE_LENGTH = 70;
 export const DIMENSION_ARROW_LENGTH      = DIMENSION_ARROW_BASE_LENGTH * VIEWER_GIZMO_ARROW_LENGTH_RATIO; // = 1.0
 export const DIMENSION_ARROW_RADIUS      = DIMENSION_ARROW_BASE_LENGTH * VIEWER_GIZMO_ARROW_RADIUS_RATIO; // = 0.2
 
