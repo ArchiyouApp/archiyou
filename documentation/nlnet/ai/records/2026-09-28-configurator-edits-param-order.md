@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-28 → (open) |
+| Dates | 2026-09-28 → 2026-09-29 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: three bug reports, each with its cause and fix) |
 | Human | Mark van der Net: wrote the prompts, found the three bugs in ur_house_sketch and ur_house_detailed, reviewed the fixes |
@@ -840,9 +840,15 @@
 
 ## Review and decisions by the human
 
-(filled when the unit closes)
+- Found and reported the three bugs while using `ur_house_sketch` and `ur_house_detailed`.
+- The agent typechecked each fix and ran the related tests, but did not try them in the browser in
+  that session; the human reviewed the code before the commits.
+- Committed on 2026-09-29, one commit per bug report.
 
 ## Commits
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| 3ff9197 | Configurator: viewer edits go to its own param values | "Im using the configurator (ur_house_sketch) - but there is a problem with interactive dimension lines …" |
+| af5c9bb | Params follow the order the script defines them in | "… The params are defined in a clear order, but in the roof menu i get this order: …" |
+| (this commit) | Documents centred after a new run | "Im looking at the ur_house_detailed and have the docs tool open. …" |

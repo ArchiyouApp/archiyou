@@ -169,8 +169,11 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
 
     // Default view: fit the whole page (incl. its gray padding) into the stage,
     // slightly zoomed out so it reads as a sheet. Wait a frame so layout/SVG
-    // intrinsic height are settled.
-    requestAnimationFrame(() => this._fitView());
+    // intrinsic height are settled — but only after Panzoom's own init, which pans
+    // to (0,0) in a setTimeout of its own. After a long render (a new run) a frame
+    // is already due and would fire first, and that late pan then undid the
+    // centering: the page sat on its layout centre, low in the stage.
+    setTimeout(() => requestAnimationFrame(() => this._fitView()));
   }
 
   override disconnectedCallback()
