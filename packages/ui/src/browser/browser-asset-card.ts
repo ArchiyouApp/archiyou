@@ -106,7 +106,7 @@ export class BrowserAssetCard extends LitElement
     :host {
       display: flex;
       flex-direction: column;
-      width: 220px;
+      min-width: 0;
       background: var(--color-bg);
       border: 1px solid var(--color-border);
       border-radius: var(--radius-md);

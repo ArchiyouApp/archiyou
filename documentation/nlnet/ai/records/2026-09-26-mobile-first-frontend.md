@@ -210,6 +210,13 @@ Add a small Desktop / Phone toggle to the Preview Configurator dialog. Phone set
 - Configurator on phones: full-screen viewer with the parameters in a bottom sheet (chosen over a stacked viewer/params layout).
 - Editor on phones: "view & tweak" (chosen over read-only on phones or tablet-only).
 
+## Changes to the plan during implementation
+
+- The sheet component is `<bottom-sheet>` (`packages/ui/src/bottom-sheet.ts`), without the `ay-` prefix, like `unit-switch` and `version-pill`. Events are `sheet-change` and `sheet-dismiss`.
+- Viewer menu: it wraps instead of scrolling when narrow, because scrolling would clip its upward flyouts. The configurator's presentation mode keeps the grid toggle and shows AR only where it is supported.
+- Not done: `inputmode="decimal"` on number params (`type=number` already brings up a numeric keyboard, and `decimal` would drop the minus key); `pointerdown` stop in `param-item-number` (not needed, since touch doesn't start HTML5 drags); the `param-object-form` label column (the sheet gives it the full phone width).
+- Added: `grid-auto-rows: max-content` on the browser grid (cards clip their overflow, so auto rows collapsed them); `dismissible` on the sheet, so the editor's tools sheet closes by dragging down.
+
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|

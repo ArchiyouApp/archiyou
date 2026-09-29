@@ -13,9 +13,11 @@
  *   open-current    (no detail)            the tile's "Current script" button was used
  */
 
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { msg } from '@lit/localize';
+
+import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
 import '@awesome.me/webawesome/dist/components/tab-group/tab-group.js';
 import '@awesome.me/webawesome/dist/components/tab/tab.js';
@@ -191,15 +193,28 @@ export class BrowserAssetGrid extends LitElement
       padding-bottom: var(--space-sm);
     }
 
+    /* Columns of at least 220px that share out the leftover width, so a row
+       always ends flush with the edge instead of leaving a ragged gap. */
     .grid {
       flex: 1;
       min-height: 0;
       overflow-y: auto;
-      display: flex;
-      flex-wrap: wrap;
-      align-content: flex-start;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(13.75rem, 100%), 1fr));
+      /* Cards clip their overflow, so an auto row could squeeze them to nothing. */
+      grid-auto-rows: max-content;
+      align-content: start;
       gap: var(--space-lg);
       padding: var(--space-lg);
+    }
+
+    /* Compact: two columns on a phone. */
+    @container browser (width < ${unsafeCSS(BREAKPOINT_COMPACT)}) {
+      .grid {
+        grid-template-columns: repeat(auto-fill, minmax(min(9.5rem, 100%), 1fr));
+        gap: var(--space-md);
+        padding: var(--space-md);
+      }
     }
 
     .state {
@@ -212,6 +227,7 @@ export class BrowserAssetGrid extends LitElement
     }
 
     .empty {
+      grid-column: 1 / -1;
       width: 100%;
       font-size: var(--text-sm);
       color: var(--color-text-muted);

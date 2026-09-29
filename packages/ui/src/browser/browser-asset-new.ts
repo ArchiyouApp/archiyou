@@ -66,7 +66,7 @@ export class BrowserAssetNew extends LitElement
       align-items: center;
       justify-content: center;
       gap: var(--space-xs);
-      width: 220px;
+      min-width: 0;
       min-height: 200px;
       background: var(--color-gray);
       border: 1px solid var(--color-border);
@@ -74,7 +74,7 @@ export class BrowserAssetNew extends LitElement
     }
 
     .action {
-      width: 160px;
+      width: min(160px, 100% - 2 * var(--space-sm));
     }
 
     .action::part(base) {

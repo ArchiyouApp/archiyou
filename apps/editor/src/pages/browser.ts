@@ -18,7 +18,7 @@
  * link, so the URL is shareable), a configurator to its public page.
  */
 
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
 import { msg } from '@lit/localize';
@@ -40,6 +40,7 @@ import { fetchPublicShared, fetchSharedWithMe } from '../services/sharing.js';
 import { fetchPublishedConfigurators } from '../services/publishing.js';
 import { enqueueBackfill, THUMBNAIL_STORED_EVENT, type BackfillTarget, type ThumbnailStoredDetail } from '../services/thumbnails.js';
 import { editorPathFor } from '../services/script-links.js';
+import { BREAKPOINT_COMPACT } from '../styles/design-tokens.js';
 import { scripts, openScript, userState, browserSearch, browserSort, setBrowserSearch, setBrowserSort, editorScript } from '../state/workspace';
 
 type SectionId = 'all' | 'scripts' | 'shared' | 'configurators' | 'projects';
@@ -352,6 +353,7 @@ export class PageBrowser extends SignalWatcher(LitElement)
       display: flex;
       flex: 1;
       min-height: 0;
+      container: browser / inline-size;
     }
 
     .sidebar {
@@ -382,6 +384,12 @@ export class PageBrowser extends SignalWatcher(LitElement)
     browser-asset-grid {
       flex: 1;
       min-height: 0;
+    }
+
+    /* Compact: the tabs already list every section, and the operator link is
+       also in the account menu, so the sidebar can go. */
+    @container browser (width < ${unsafeCSS(BREAKPOINT_COMPACT)}) {
+      .sidebar { display: none; }
     }
   `;
 }

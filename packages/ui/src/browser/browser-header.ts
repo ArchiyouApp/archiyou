@@ -6,9 +6,11 @@
  * 'script'; projects are listed but not available yet).
  */
 
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { msg } from '@lit/localize';
+
+import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
@@ -88,7 +90,8 @@ export class BrowserHeader extends LitElement
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: var(--space-lg);
+      flex-wrap: wrap;
+      gap: var(--space-md) var(--space-lg);
       padding: var(--space-lg);
       border-bottom: 1px solid var(--color-border);
     }
@@ -109,6 +112,13 @@ export class BrowserHeader extends LitElement
 
     .search {
       width: 240px;
+    }
+
+    /* Compact: title on its own line, search stretches next to Create. */
+    @container browser (width < ${unsafeCSS(BREAKPOINT_COMPACT)}) {
+      :host { padding: var(--space-md) var(--space-lg); }
+      .actions { flex: 1 1 100%; }
+      .search { flex: 1; width: auto; min-width: 0; }
     }
 
     /* The app's primary blue rather than Web Awesome's brand color, like the configurator's Download button. */
