@@ -103,3 +103,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-09-28 | [Configurator: dimension edits, param order, document centering](./records/2026-09-28-configurator-edits-param-order.md) | Claude Opus 5.5 | develop | 3 |
 | 2026-09-21 | [Help: onboarding tour, tutorials, API reference, docs site](./records/2026-09-21-help-tool.md) | Claude Opus 5 | help (merged into develop) | 5 |
 | 2026-09-26 | [Mobile-first frontend: configurator, browser, editor](./records/2026-09-26-mobile-first-frontend.md) | Claude Opus 5.5 | develop | 4 (phase 1 inside f60058b) |
+| 2026-09-26 | [Script modules: recipes and output formats; fab out of the engine](./records/2026-09-26-module-recipes-outputs.md) | Claude Opus 5.5 | develop | 2 |

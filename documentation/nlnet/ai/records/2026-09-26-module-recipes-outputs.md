@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-26 → (open) |
+| Dates | 2026-09-26 → 2026-09-29 |
 | Model | Claude Opus 5.5 (claude-opus-5-5[1m]), 1M context, Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: research in the session, plan approved before implementation) |
 | Human | Mark van der Net: wrote the prompts, asked for the change, reviewed plan and code |
@@ -15,7 +15,20 @@ for shape recipes, and a module can build model output formats. The fab code its
 separately distributed script module outside this repository, which is out of scope for this record.
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+
+The session also held unrelated work on 2026-09-25 and messages from other Claude sessions; only
+this unit's prompts are listed.
+
+```
+2026-09-26 15:54 +0200  Can you move the Fab.ts and BLTX export stuff out the main core and put it in a Fab module please. Do a quick research on how to pull it out and set it up as a module
+2026-09-26 16:22 +0200  [Request interrupted by user for tool use]
+2026-09-26 16:22 +0200  please continue
+2026-09-26 16:58 +0200  Omit the fab module from the disclosures. Its out of scope for NLnet
+2026-09-26 20:34 +0200  [Request interrupted by user for tool use]
+2026-09-29 21:00 +0200  what work still has no commit?
+2026-09-29 21:02 +0200  yes, start with the fab module
+2026-09-29 21:14 +0200  commit the last two things
+```
 
 ## Plan (agent output, reviewed by the human before implementation)
 
@@ -80,7 +93,10 @@ server-side runs load no script modules.
 - Did not answer the design questions and asked to continue, so the agent took its recommended
   defaults, among them the general output-format hook for BTLx.
 - Kept the module itself out of these disclosures: it is outside the NLnet scope.
+- 2026-09-29: had the work committed as one commit, with the message approved as shown.
 
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| 899d7e6 | Modules read recipes and build output formats; fab leaves core | "Can you move the Fab.ts and BLTX export stuff out the main core …" / "yes, start with the fab module" |
+| (this commit) | Close the disclosure record for script module recipes and outputs | "commit the last two things" |
