@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-26 → (open) |
+| Dates | 2026-09-26 → 2026-09-29 |
 | Model | Claude Opus 5.5 (claude-opus-5-5[1m]), 1M context, Claude Code agent |
 | Tool | Claude Code in plan mode (visual analysis with chrome-devtools emulation), then as agent |
 | Human | Mark van der Net: wrote the prompts, chose the configurator bottom sheet and the editor "view & tweak" scope, reviewed plan and code |
@@ -10,7 +10,17 @@
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+```
+2026-09-26 20:58 +0200  Currently the frontend: editor/file-browser and most importantly the configurator are not mobile-first. Can you analyze, also visually and come up with a plan to implement that. It should be simple and elegant.
+2026-09-26 21:26 +0200  Base directory for this skill: /home/mvdnet/archiyou/archiyou/.claude/skills/ai-disclosure
+2026-09-26 23:05 +0200  Do the first commit.
+2026-09-27 21:17 +0200  prepare the commit please according to nlnet policy
+2026-09-27 21:28 +0200  commit
+2026-09-29 21:00 +0200  what work still has no commit?
+2026-09-29 21:04 +0200  yes, do mobile-first next
+2026-09-29 21:08 +0200  yes do next
+2026-09-29 21:14 +0200  commit the last two things
+```
 
 ## Plan (agent output, reviewed by the human before implementation)
 ## Mobile-first frontend: configurator, browser, editor
@@ -209,6 +219,14 @@ Add a small Desktop / Phone toggle to the Preview Configurator dialog. Phone set
 
 - Configurator on phones: full-screen viewer with the parameters in a bottom sheet (chosen over a stacked viewer/params layout).
 - Editor on phones: "view & tweak" (chosen over read-only on phones or tablet-only).
+- Asked for the first commit (phase 0) and, on 2026-09-27, for the phase 1 commit.
+- 2026-09-29: approved the phase 2 message and asked for the phase 3 commit with the summary only.
+- Phase 1 is not a commit of its own. While it was staged, another session's commit on the shared
+  index took its files: they are in `f60058b` ("Close the disclosure record for dimension sizes and
+  parameter typing", record `2026-09-26-doc-dimension-sizes-param-input.md`). The agent prepared a
+  split, which needed moving `develop` and was left to the human, and was not applied. On 2026-09-29
+  the human asked to commit this ("commit the last two things"), so it is noted here and in that
+  record instead of rewriting the history.
 
 ## Changes to the plan during implementation
 
@@ -220,3 +238,8 @@ Add a small Desktop / Phone toggle to the Preview Configurator dialog. Phone set
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| a5eee29 | Mobile: breakpoint and touch tokens, dvh, overlays that fit a phone | "Do the first commit." (phase 0) |
+| f60058b | (phase 1, inside "Close the disclosure record for dimension sizes and parameter typing") | "prepare the commit please according to nlnet policy" / "commit" (phase 1: the configurator with its parameters in a bottom sheet, `bottom-sheet.ts`, the configurator components, param items, `viewer-menu.ts`, `model-viewer.ts`, `main-menu.ts`) |
+| f54572e | Mobile: browser grid that fills the width, two columns on a phone | "yes, do mobile-first next" (phase 2) |
+| e44f8e6 | Mobile: the editor on a phone, viewer over code, tools in a sheet | "yes, do mobile-first next" (phase 3) |
+| (this commit) | Close the disclosure record for the mobile-first frontend | "commit the last two things" |

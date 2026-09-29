@@ -181,3 +181,8 @@ No plan: each fix was asked for directly. What the agent found and did:
 | 70b3746 | Dimension line sizes from constants, autoDim on nearly flat parts | Cant the settings in constants.ts be wired up? / please do / ... please debug |
 | 49da428 | Parameter field: select on click, clamp on Enter | Take the last script and test something: ... |
 | (this commit) | record closed | make the commit according to nlnet disclosure format |
+
+Note (2026-09-29): `f60058b`, the commit that closed this record, also contains files of another
+unit: phase 1 of the mobile-first frontend (`bottom-sheet.ts`, the configurator components, several
+param items, `viewer-menu.ts`, `model-viewer.ts`, `main-menu.ts`). A parallel session had staged them
+on the shared index. Their disclosure is `2026-09-26-mobile-first-frontend.md`.
