@@ -532,7 +532,8 @@ export function deleteParam(name: string): void
  *
  *  Code is the source of truth: script-defined params overwrite same-named
  *  params (preserving the user's current value where the new schema still
- *  accepts it) and are flagged `_definedProgrammatically`. `deleted` entries
+ *  accepts it) and keep the `_definedProgrammatically` flag define() gave them;
+ *  a menu param the script only enabled or hid stays unflagged. `deleted` entries
  *  (params the script previously defined but dropped this run — full sync) are
  *  removed, but only when they are programmatic; UI-authored params are never
  *  auto-removed. Saves are diff-gated: an identical re-run applies nothing, so
@@ -555,7 +556,9 @@ export function applyManagedParamsAndPresets(
       if (!upper) continue;
       const existing = s.params[upper];
 
-      const incoming = ScriptParam.fromData({ ...data, name: upper, _definedProgrammatically: true });
+      // The flag comes from the script: define() sets it. A menu param the script only
+      // touched (enable(), hide(), enableIf(true)) arrives as 'updated' without it and stays editable
+      const incoming = ScriptParam.fromData({ ...data, name: upper });
       // preserve the user's current value if the new definition still accepts it
       if (existing && existing._value !== undefined && incoming.validateValue(existing._value))
       {
