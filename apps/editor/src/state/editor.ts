@@ -564,7 +564,8 @@ export function applyManagedParamsAndPresets(
       {
         incoming._value = existing._value;
       }
-      incoming.order = existing?.order ?? data.order ?? Object.keys(s.params).length;
+      // The script's order wins: define() always sends one (explicit, or where it is defined)
+      incoming.order = data.order ?? existing?.order ?? Object.keys(s.params).length;
 
       if (!existing || !deepEqual(existing.toData(), incoming.toData()))
       {
@@ -679,8 +680,8 @@ export const paramGroups = computed<string[]>(() =>
 /** Move group `source` to the place of group `target` in the tab order. Every param stays in
  *  its own group: the tab order follows the params' `order`, so this renumbers `order` over
  *  all params, group by group in the new order, each keeping its order within the group.
- *  'main' stays the first tab whatever its params' numbers. A script re-run keeps these
- *  numbers (applyManagedParamsAndPresets preserves `order`). */
+ *  'main' stays the first tab whatever its params' numbers. Params the script defines take
+ *  their order from the script again on the next run (see applyManagedParamsAndPresets). */
 export function moveParamGroup(source: string, target: string): void
 {
   const s = editorScript.get();

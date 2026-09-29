@@ -86,6 +86,41 @@ describe('ParamManager.define() — preserves the current value', () =>
     })
 })
 
+// ── define() — order ─────────────────────────────────────────────────────────
+
+describe('ParamManager.define() — order', () =>
+{
+    it('orders params without an explicit order as the script defines them', () =>
+    {
+        const pm = new ParamManager()
+        pm.define('WIDTH', 'number', { order: 0, default: 10 })
+        pm.define('ROOF_TYPE', 'options', { options: ['gable', 'shed'], default: 'gable' })
+        pm.define('ROOF_ANGLE', 'number', { default: 35 })
+
+        const map = pm.getParamsMap()
+        expect(map['WIDTH'].order).toBe(0)          // explicit order is kept
+        expect(map['ROOF_TYPE'].order).toBe(1)
+        expect(map['ROOF_ANGLE'].order).toBe(2)
+    })
+
+    it('replaces an order saved with the script from an earlier run', () =>
+    {
+        // OVERHANG_SIZE was stored at order 0, but the script now defines it second
+        const stale = (name: string, order: number): ScriptParamData => ({
+            name, type: 'number', order,
+            schema: { type: 'number', default: 0 },
+            _definedProgrammatically: true,
+        } as ScriptParamData)
+
+        const pm = new ParamManager([stale('ROOF_TYPE', 0), stale('OVERHANG_SIZE', 0)])
+        pm.define('ROOF_TYPE', 'number', { default: 0 })
+        pm.define('OVERHANG_SIZE', 'number', { default: 0 })
+
+        expect(pm.getParamsMap()['OVERHANG_SIZE'].order).toBe(1)
+        expect(pm.getManagedParams().updated.map(p => [p.name, p.order])).toContainEqual(['OVERHANG_SIZE', 1])
+    })
+})
+
 // ── preset() ─────────────────────────────────────────────────────────────────
 
 describe('ParamManager.preset()', () =>

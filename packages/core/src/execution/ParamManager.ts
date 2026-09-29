@@ -585,6 +585,10 @@ export class ParamManager
         param._definedProgrammatically = true;
         this._checkObjectDefault(param);
         const upper = param.name.toUpperCase();
+        // Without an explicit `order` a param sits where the script defines it. The order is
+        // part of the definition like the label: moving a define() moves the param in the
+        // menus, and an order saved with the script from an earlier run does not outlive it
+        if (param.order === undefined && !this._definedThisRun.has(upper)) param.order = this._definedThisRun.size;
         this._definedThisRun.add(upper); // register even if definition is unchanged (full-sync)
 
         // Preserve the user's current value across re-runs: if a param with this

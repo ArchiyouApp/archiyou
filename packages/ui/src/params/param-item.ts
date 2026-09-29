@@ -81,7 +81,8 @@ export class ParamItem extends LitElement
 
     return html`
       <div class="compact-head">
-      <span class="grip" title="Drag to reorder" @pointerdown=${this._onGripPointerDown}>
+      <!-- A script-defined param sits where the script defines it, so there is nothing to drag -->
+      <span class="grip ${programmatic ? 'locked' : ''}" title="Drag to reorder" @pointerdown=${this._onGripPointerDown}>
         <wa-icon library="lucide" name="grip-horizontal"></wa-icon>
       </span>
 
@@ -173,7 +174,7 @@ export class ParamItem extends LitElement
 
   private _onDragStart = (e: DragEvent) =>
   {
-    if (this._dragLocked) { e.preventDefault(); return; }
+    if (this._dragLocked || isProgrammatic(this.param)) { e.preventDefault(); return; }
     e.dataTransfer!.effectAllowed = 'move';
     e.dataTransfer!.setData('text/plain', this.param.name);
     this.setAttribute('dragging', '');
@@ -326,7 +327,7 @@ export class ParamItem extends LitElement
       transition: opacity 0.1s;
     }
 
-    :host(:hover) .grip { visibility: visible; }
+    :host(:hover) .grip:not(.locked) { visibility: visible; }
 
     .grip:hover { opacity: 0.9; }
 
