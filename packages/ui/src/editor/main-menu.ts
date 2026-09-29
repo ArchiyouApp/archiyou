@@ -32,14 +32,14 @@ export class MainMenu extends SignalWatcher(LitElement)
           class=${this._active === 'code' ? 'active' : ''}
           @click=${() => this._select('code')}
         ><wa-icon library="lucide" name="code" label="Code editor"></wa-icon></wa-button>
-        <wa-tooltip for="btn-code" placement="right">${msg('Code editor')}</wa-tooltip>
+        <wa-tooltip for="btn-code" placement=${this._tipPlacement()}>${msg('Code editor')}</wa-tooltip>
 
         <wa-button
           id="btn-configurator"
           appearance="plain"
           @click=${this._openConfigurator}
         ><wa-icon library="lucide" name="tv-minimal-play" label="Preview Configurator"></wa-icon></wa-button>
-        <wa-tooltip for="btn-configurator" placement="right">${msg('Preview Configurator')}</wa-tooltip>
+        <wa-tooltip for="btn-configurator" placement=${this._tipPlacement()}>${msg('Preview Configurator')}</wa-tooltip>
 
       </div>
 
@@ -83,7 +83,7 @@ export class MainMenu extends SignalWatcher(LitElement)
               appearance="plain"
               @click=${() => Router.go('/admin')}
             ><wa-icon library="lucide" name="shield-check" label="Admin"></wa-icon></wa-button>
-            <wa-tooltip for="btn-admin" placement="right">${msg('Admin')}</wa-tooltip>`
+            <wa-tooltip for="btn-admin" placement=${this._tipPlacement()}>${msg('Admin')}</wa-tooltip>`
           : nothing}
 
         <wa-button
@@ -92,7 +92,7 @@ export class MainMenu extends SignalWatcher(LitElement)
           class=${'dimmed ' + (this._active === 'settings' ? 'active' : '')}
           @click=${() => this._select('settings')}
         ><wa-icon library="lucide" name="settings" label="Settings"></wa-icon></wa-button>
-        <wa-tooltip for="btn-settings" placement="right">${msg('Settings')}</wa-tooltip>
+        <wa-tooltip for="btn-settings" placement=${this._tipPlacement()}>${msg('Settings')}</wa-tooltip>
       </div>
 
       <!-- configurator dialog -->
@@ -103,6 +103,9 @@ export class MainMenu extends SignalWatcher(LitElement)
   @property({ type: String }) active: MenuItem | null = 'code';
 
   @state() private _active: MenuItem | null = 'code';
+  /** A bar along the top (compact editor) instead of a rail on the left. */
+  @property({ type: Boolean, reflect: true }) horizontal = false;
+
   @state() private _configuratorOpen = false;
   /** Preview at phone width (390px) instead of the dialog's full width. */
   @state() private _previewPhone = false;
@@ -143,6 +146,11 @@ export class MainMenu extends SignalWatcher(LitElement)
       bubbles: true,
       composed: true,
     }));
+  }
+
+  private _tipPlacement(): 'right' | 'bottom'
+  {
+    return this.horizontal ? 'bottom' : 'right';
   }
 
   private _select(item: MenuItem)
@@ -190,6 +198,24 @@ export class MainMenu extends SignalWatcher(LitElement)
       gap: var(--space-1, 4px);
       margin-top: auto;
     }
+
+    :host([horizontal]) {
+      flex-direction: row;
+      width: auto;
+      height: 48px;
+      padding: 0 var(--space-sm);
+      border-right: none;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    :host([horizontal]) .sections,
+    :host([horizontal]) .bottom {
+      flex-direction: row;
+      margin-top: 0;
+    }
+
+    :host([horizontal]) .sections { flex: 0 0 auto; margin-left: var(--space-sm); }
+    :host([horizontal]) .bottom   { margin-left: auto; }
 
     /* Not built yet: present, but kept in the background. */
     wa-button.dimmed {

@@ -980,6 +980,22 @@ export class CodeBox extends SignalWatcher(LitElement)
       font-size: 0.72rem !important;
     }
 
+    /* Touch: 16px code (iOS zooms into anything smaller on focus) and title-bar
+       buttons you can hit with a finger. */
+    @media (pointer: coarse) {
+      .cm-content,
+      .cm-line,
+      .cm-gutters {
+        font-size: var(--input-font-size) !important;
+      }
+
+      .options-button,
+      .execute-button {
+        width: 32px;
+        height: 32px;
+      }
+    }
+
     /* ── CodeMirror chrome ──
        The code canvas sits one shade under the white panel headers, and the
        gutter shares that surface instead of being a separate ruled column.

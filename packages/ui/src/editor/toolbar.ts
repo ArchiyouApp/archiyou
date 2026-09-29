@@ -46,13 +46,15 @@ export class EditorToolbar extends LitElement
       >
         <wa-icon library="lucide" name=${tool.icon} label=${tool.name}></wa-icon>
       </wa-button>
-      <wa-tooltip for="tool-btn-${tool.id}" placement="left">${msg(tool.name)}</wa-tooltip>
+      <wa-tooltip for="tool-btn-${tool.id}" placement=${this.horizontal ? 'top' : 'left'}>${msg(tool.name)}</wa-tooltip>
     `;
   }
 
   // ── 2. Properties ──
   @property({ type: Array }) tools: ToolDef[] = [];
   @property({ type: Array }) activeIds: string[] = [];
+  /** A bar along the bottom (compact editor) instead of a rail on the right. */
+  @property({ type: Boolean, reflect: true }) horizontal = false;
 
   // ── 4. Behaviour & Methods ──
   private _toggle(id: string)
@@ -86,6 +88,23 @@ export class EditorToolbar extends LitElement
       align-items: center;
       gap: var(--space-1, 4px);
       width: 100%;
+    }
+
+    :host([horizontal]) {
+      flex-direction: row;
+      width: auto;
+      height: calc(48px + env(safe-area-inset-bottom));
+      padding: 0 var(--space-sm) env(safe-area-inset-bottom);
+      border-left: none;
+      border-top: 1px solid var(--color-border);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    :host([horizontal]) .tool-buttons {
+      flex-direction: row;
+      justify-content: space-around;
+      min-width: max-content;
     }
 
     wa-button.active::part(base) {

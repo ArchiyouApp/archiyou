@@ -17,6 +17,7 @@ import type { ScriptParamType, ScriptParamData, ParamOperation, ScriptStatementR
               ManagedValuesData } from '@archiyou/core/src/execution/types';
 import type { SceneNodeData } from '@archiyou/core/src/modeler/types';
 import { deepEqual } from '@archiyou/core/src/utils';
+import { BREAKPOINT_COMPACT } from '../styles/design-tokens';
 
 import { editorScript, bumpScript, saveCore, executionResult } from './core';
 import { evaluateParamBehaviours } from './param-behaviours';
@@ -70,6 +71,14 @@ export const activeBottomPanel = signal<'console' | 'scene' | 'none'>('console')
 export const fileManagerCollapsed = signal<boolean>(true);
 export const paramMenuCollapsed   = signal<boolean>(false);
 export const presetMenuCollapsed  = signal<boolean>(true);
+
+/** Window narrower than BREAKPOINT_COMPACT (phones): the editor stacks the viewer
+ *  over params + code, lays its rails out as bars and opens tools in a bottom sheet. */
+const compactQuery = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+  ? window.matchMedia(`(width < ${BREAKPOINT_COMPACT})`)
+  : null;
+export const compactLayout = signal<boolean>(compactQuery?.matches ?? false);
+compactQuery?.addEventListener('change', e => compactLayout.set(e.matches));
 
 /** The object-list entry currently expanded in the param menu, or null.
  *

@@ -28,6 +28,7 @@ import '@archiyou/ui/editor/tools/console-tool.js';
 import '@archiyou/ui/editor/tools/profiling-tool.js';
 import '@archiyou/ui/editor/tools/help-tool.js';
 import '@archiyou/ui/editor/tools/versions-tool.js';
+import '@archiyou/ui/bottom-sheet.js';
 import '@archiyou/ui/editor/file-info.js';
 import '@archiyou/ui/editor/script-manager.js';
 import '@archiyou/ui/editor/script-importer.js';
@@ -41,6 +42,7 @@ import { editorScript, executing, executionResult, scenegraph, scriptParams, scr
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
 import { registerScheduleExecution, triggerResetCamera } from '../state/viewer';
 import { registerHelpRunner, openHelpDoc, claimOnboarding, setHelpCursor, lookupHelpAtCursor, ONBOARDING_PATH } from '../state/help';
+import { compactLayout } from '../state/editor';
 import type { RunnerScriptExecutionRequest, RunnerScriptExecutionResult } from '@archiyou/core/src/runner/types';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 
@@ -75,9 +77,15 @@ export class PageEditor extends SignalWatcher(LitElement)
     this._pendingUnitSystem = scriptUnitSystem.get();
     // Same for the geometry kernel — read here so SignalWatcher tracks it.
     this._pendingKernel = kernel.get();
+    // Phones: viewer on top, params + code below, rails as bars, tools in a sheet.
+    // The same elements in every layout, so the viewer and the editor survive a rotation.
+    const compact = compactLayout.get();
+    this.toggleAttribute('compact', compact);
+    const tools = this._activeTools;
     return html`
       <editor-main-menu
         data-help="main-menu"
+        ?horizontal=${compact}
         .active=${this._activeSection}
         @menu-action=${this._handleMenuAction}
         @menu-select=${this._handleMenuSelect}
@@ -98,13 +106,15 @@ export class PageEditor extends SignalWatcher(LitElement)
             <wa-icon library="lucide" name="x"></wa-icon>
           </button>
         </div>` : ''}
+      <div class="work">
       <wa-split-panel
-            position=${this._wideHelp ? 100 / 3 : 50}
+            orientation=${compact ? 'vertical' : 'horizontal'}
+            position=${compact ? 45 : this._wideHelp ? 100 / 3 : 50}
             snap="25% 50% 75%"
         >
         <wa-icon class="split-grip"
-            slot="divider" library="lucide" name="grip-vertical"></wa-icon>
-        <div class="left-panel" slot="start">
+            slot="divider" library="lucide" name=${compact ? 'grip-horizontal' : 'grip-vertical'}></wa-icon>
+        <div class="left-panel" slot=${compact ? 'end' : 'start'}>
           <editor-file-info data-help="file-info" @script-forked=${this._handleScriptForked}></editor-file-info>
           <presets-menu></presets-menu>
           <param-menu data-help="params" @param-value-change=${() => this._scheduleParamExecute()}></param-menu>
@@ -119,22 +129,35 @@ export class PageEditor extends SignalWatcher(LitElement)
           ></editor-code-box>
         </div>
         <wa-split-panel
-          slot="end"
+          slot=${compact ? 'start' : 'end'}
           class="viewer-tools-split"
-          position=${this._wideHelp ? 50 : this._activeTools.length > 0 ? 100 - this._activeTools.reduce((max, t) => Math.max(max, t.width), 0) : 100}
+          position=${compact ? 100 : this._wideHelp ? 50 : tools.length > 0 ? 100 - tools.reduce((max, t) => Math.max(max, t.width), 0) : 100}
         >
-          ${this._activeTools.length > 0 ? html`<wa-icon slot="divider" class="split-grip" library="lucide" name="grip-vertical"></wa-icon>` : ''}
+          ${tools.length > 0 && !compact ? html`<wa-icon slot="divider" class="split-grip" library="lucide" name="grip-vertical"></wa-icon>` : ''}
           <model-viewer slot="start" data-help="viewer"></model-viewer>
+          ${compact ? '' : html`
+            <editor-tool-panels
+              slot="end"
+              .tools=${tools}
+              @tool-close=${this._handleToolClose}
+              @version-restore=${this._handleVersionRestore}
+            ></editor-tool-panels>`}
+        </wa-split-panel>
+      </wa-split-panel>
+      ${compact && tools.length > 0 ? html`
+        <bottom-sheet class="tools-sheet" detents="half full" detent="half" dismissible
+            @sheet-dismiss=${() => { this._activeTools = []; }}>
+          <span slot="header" class="tools-sheet-title">${tools.map(t => t.name).join(' · ')}</span>
           <editor-tool-panels
-            slot="end"
-            .tools=${this._activeTools}
+            .tools=${tools}
             @tool-close=${this._handleToolClose}
             @version-restore=${this._handleVersionRestore}
           ></editor-tool-panels>
-        </wa-split-panel>
-      </wa-split-panel>
+        </bottom-sheet>` : ''}
+      </div>
       <editor-toolbar
         data-help="toolbar"
+        ?horizontal=${compact}
         .tools=${this.TOOLS}
         .activeIds=${this._activeTools.map(t => t.id)}
         @tool-toggle=${this._handleToolToggle}
@@ -1083,8 +1106,18 @@ export class PageEditor extends SignalWatcher(LitElement)
       overflow: hidden;
     }
 
+    /* Between the two rails; positioning context for the compact tools sheet. */
+    .work {
+      position: relative;
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+    }
+
     wa-split-panel {
       flex: 1;
+      min-width: 0;
       min-height: 0;
       --divider-width: var(--size-divider);
     }
@@ -1099,6 +1132,42 @@ export class PageEditor extends SignalWatcher(LitElement)
 
     editor-main-menu { flex-shrink: 0; }
     editor-toolbar    { flex-shrink: 0; }
+
+    /* ── Compact (phones): main menu bar / viewer over params + code / tools bar ── */
+    :host([compact]) {
+      flex-direction: column;
+    }
+
+    :host([compact]) wa-split-panel:not(.left-split):not(.viewer-tools-split) {
+      --min: 120px;
+      --max: calc(100% - 120px);
+    }
+
+    /* Too little height to share: the pane scrolls and the code keeps a usable size. */
+    :host([compact]) .left-panel {
+      overflow-y: auto;
+    }
+
+    :host([compact]) .left-panel editor-code-box {
+      flex: 0 0 auto;
+      min-height: 280px;
+    }
+
+    .tools-sheet {
+      --sheet-top-gap: 0px;
+    }
+
+    .tools-sheet-title {
+      display: block;
+      padding: var(--space-lg) var(--space-lg) var(--space-sm);
+      font-size: var(--text-sm);
+      font-weight: 600;
+      color: var(--color-text);
+    }
+
+    .tools-sheet editor-tool-panels {
+      height: 100%;
+    }
 
     /* Main menu ▸ Delete script confirmation */
     .delete-dialog {

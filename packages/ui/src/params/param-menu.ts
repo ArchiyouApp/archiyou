@@ -65,6 +65,8 @@ export class ParamMenu extends SignalWatcher(LitElement)
   @state() private _presetNameDraft = '';
 
   private _scrollListeners = new WeakSet<HTMLElement>();
+  /** Re-measures tab overflow when the panel changes width (split drag, rotation). */
+  private _tabResizeObserver = new ResizeObserver(() => this._updateTabOverflow());
 
   // ── Render ──
 
@@ -605,6 +607,12 @@ export class ParamMenu extends SignalWatcher(LitElement)
 
   // ── Tab overflow / scroll ──
 
+  override disconnectedCallback()
+  {
+    super.disconnectedCallback();
+    this._tabResizeObserver.disconnect();
+  }
+
   override updated()
   {
     this._revealActiveEntry();
@@ -615,6 +623,7 @@ export class ParamMenu extends SignalWatcher(LitElement)
       this._scrollListeners.add(area);
       area.addEventListener('scroll', () => this._updateScrollState(area));
     }
+    if (area) this._tabResizeObserver.observe(area); // no-op when already observed
     this._updateTabOverflow();
   }
 
