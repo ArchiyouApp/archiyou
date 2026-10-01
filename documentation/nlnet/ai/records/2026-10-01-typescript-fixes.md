@@ -57,3 +57,5 @@ errors that ui reports only because its config is stricter than core's own.
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| `5796ff8` (meshup) | ShapeCollection.name() typed like Shape.name() | Can you do an effort to fix the easiest TS errors/warnings? |
+| `cd85281` | Clear TypeScript errors: brep types, imports, unused code | the brep does have a wasm. Please do a review and see what errors you can clear up |
