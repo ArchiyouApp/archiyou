@@ -95,7 +95,7 @@ describe('Modeler animations', () =>
             modeler.scene().removeChild(child)
         })
 
-        const box = modeler.box(2, 4, 6).rotateX(45)
+        const box = modeler.box(2, 4, 6).rotateX(45) as any
         /*  The GLB carries the kernel's native Z-up coordinates, and the layouter's transforms
             are already in that same space — so the quaternion arrives in the animation exactly
             as the obbox gave it. This used to be wrapped in a -90 degrees X axis conversion,
@@ -136,11 +136,11 @@ describe('Modeler animations', () =>
 
     test('exploded animation with a couple of shapes', async () =>
     {
-        const b = modeler.box(10,10,10).color('red');
-        const s = modeler.sphere(5).color('blue').move(5,5,5);
+        const b = modeler.box(10,10,10).color('red') as any;
+        const s = modeler.sphere(5).color('blue').move(5,5,5) as any;
         b.subtract(s);
-        const c = modeler.circle(15).color('yellow');
-        const r = modeler.rect(20,20).color('green');
+        const c = modeler.circle(15).color('yellow') as any;
+        const r = modeler.rect(20,20).color('green') as any;
 
         const col = new ShapeCollection(b, s, c, r).color('blue');
         const colExp = col.copy().color('red');

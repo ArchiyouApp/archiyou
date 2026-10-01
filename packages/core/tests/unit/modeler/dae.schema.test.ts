@@ -346,7 +346,7 @@ describe('DAE COLLADA 1.4.1 structural validation', () =>
 
     it('emits no pinched or zero-area faces for booleans and curved solids', async () =>
     {
-        const box = modeler.box(100, 100, 100)
+        const box = (modeler.box(100, 100, 100) as any)
         box.subtract(modeler.cylinder(20, 200))
         modeler.sphere(50).move(200, 0, 0)
 

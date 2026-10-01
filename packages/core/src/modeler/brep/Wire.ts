@@ -359,7 +359,7 @@ export class Wire extends Shape
     // Approach from FreeCad: https://github.com/FreeCAD/FreeCAD/blob/48aafc3f8b36ded8dc80fbf83ec608898ed16d4a/src/Mod/Part/App/TopoShape.cpp
     // With slightly different API
     @checkInput([[Number,100],[Number,50],[Number,360],[Boolean, false]], ['auto','auto','auto'])
-    makeSpiral(firstRadius:number, secondRadius:number, angle:number, lefthand:boolean)
+    makeSpiral(firstRadius:number, secondRadius:number, angle:number, lefthand?:boolean)
     {
         /* Oc docs:
             - https://dev.opencascade.org/doc/occt-7.6.0/refman/html/class_geom2d___line.html
@@ -1144,7 +1144,7 @@ export class Wire extends Shape
     /** Make a Solid by lofting from one Wire through section Wires (private: without adding to Scene)  */
     @protectOC([]) // TODO: hints
     @checkInput(['AnyShapeOrCollection', [Boolean, WIRE_LOFTED_SOLID ]], ['ShapeCollection', 'auto'])
-    _lofted(sections:AnyShapeOrCollection, solid?:boolean):IShell|Solid
+    _lofted(sections:AnyShapeOrCollection|Array<AnyShape>, solid?:boolean):IShell|Solid
     {
         // OC docs: https://dev.opencascade.org/doc/occt-7.5.0/refman/html/class_b_rep_offset_a_p_i___thru_sections.html
         // TODO: test ruled
@@ -1207,7 +1207,7 @@ export class Wire extends Shape
 
     /** Make a Solid by lofting a flat Shape through a number of sections  */
     @checkInput(['AnyShapeOrCollection', [Boolean, WIRE_LOFTED_SOLID ]], ['ShapeCollection', 'auto'])
-    loft(sections:AnyShapeOrCollection, solid?:boolean):IShell|Solid
+    loft(sections:AnyShapeOrCollection|Array<AnyShape>, solid?:boolean):IShell|Solid
     {
         let loftedShape = this._lofted(sections,solid);
         this.replaceShape(loftedShape);

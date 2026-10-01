@@ -941,7 +941,7 @@ export class Shape
             // NOTE: only Annotations linked to this Shape are included in calculation!
             if(withAnnotations && this.annotations.length > 0)
             {
-                const annotationShapes = new ShapeCollection(this.annotations.map(a => a.toShape()));
+                const annotationShapes = new ShapeCollection(this.annotations.map(a => a.toShape()) as any);
                 newBbox = newBbox.added(annotationShapes.bbox())._fromShape(this)
             }
 
@@ -1496,7 +1496,7 @@ export class Shape
         if (this.type === 'Face') { return (this as any).normal?.() ?? null; }
         const faces = (this.faces()?.toArray() ?? []).filter((f:any) => f.isPlanar?.());
         if (!faces.length) { return null; }
-        const largest = faces.reduce((a:any, b:any) => (b.area() > a.area() ? b : a));
+        const largest:any = faces.reduce((a:any, b:any) => (b.area() > a.area() ? b : a));
         return largest.normal();
     }
 
@@ -2272,14 +2272,14 @@ export class Shape
      *   We can use this method on Shapes: Edges, Wires and Faces. For Shells and Solids lofting does not make much sense
      *   @param sections: Can be a Vertex,Edge,Wire,Face or an Array of those
      */
-    _lofted(sections:AnyShapeOrCollection, solid?:boolean):Shell|Solid 
+    _lofted(sections:AnyShapeOrCollection|Array<AnyShape>, solid?:boolean):Shell|Solid 
     {   
         // if not overriden by subclass (Edge,Wire,Face): we give this error
         throw new Error(`Shape::lofted: Sorry, cannot loft a Shape of type '${this.type}'!`);
     }
 
 
-    loft(sections:AnyShapeOrCollection, solid?:boolean):Shell|Solid 
+    loft(sections:AnyShapeOrCollection|Array<AnyShape>, solid?:boolean):Shell|Solid 
     {   
         // if not overriden by subclass (Edge,Wire,Face): we give this error
         throw new Error(`Shape::lofted: Sorry, cannot loft a Shape of type '${this.type}'!`);
@@ -3733,7 +3733,7 @@ export class Shape
      *                Shell => [ Face, Face ]
     */
     @checkInput('ShapeType', 'auto')
-    getSubShapes(type:ShapeType):Array<Shape>
+    getSubShapes(type:ShapeType):ShapeCollection
     {
         const TYPE_TO_FUNC:{[key:string]:string} = {
             'Vertex' : 'vertices',

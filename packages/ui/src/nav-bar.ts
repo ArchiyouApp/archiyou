@@ -7,7 +7,7 @@ import { SignalWatcher } from '@lit-labs/signals';
 import { userState } from '@archiyou/editor/src/state/workspace';
 import { authService } from '@archiyou/editor/src/services/auth-service.js';
 import {
-  applyDarkTheme, removeDarkTheme, isDarkTheme,
+  isDarkTheme,
   getThemePreference, setThemePreference,
 } from '@archiyou/editor/src/styles/dark-theme.js';
 import type { ThemePreference } from '@archiyou/editor/src/styles/dark-theme.js';

@@ -1,4 +1,4 @@
-import { Vector as MeshupVector } from '@archiyou/meshup'
+import { Vector as MeshupVector, type Mesh } from '@archiyou/meshup'
 import { ShapeCollection } from '@archiyou/meshup'
 import { isKernelShapeCollection } from './typeguards'
 import { SceneNode as MeshupSceneNode } from '@archiyou/meshup'
@@ -32,7 +32,7 @@ export class Layouter
     }
 
     /** Copied flattened shapes of scene to do stuff with */
-    workNodeShapes(): Array<{ node: MeshupSceneNode, shape: AnyShape }>
+    workNodeShapes(): Array<{ node: MeshupSceneNode, shape: Mesh }>
     {
         return this._shapeNodes().map(s => 
         {
@@ -108,7 +108,7 @@ export class Layouter
 
             const explodeDir = shape.center().toVector().subtract(colCenter).normalize();
             // If shape is at the center, assign an arbitrary direction
-            if (explodeDir.length() < 1e-6){ explodeDir.set(1, 0, 0);}
+            if (explodeDir.length() < 1e-6){ explodeDir.setX(1).setY(0).setZ(0);}
 
             // Find a position for the shape that does not collide with previously placed shapes
             if(index > 0) // skip first shape
@@ -139,7 +139,7 @@ export class Layouter
         // placedShapeNodes now has the final positions for each shape, we can generate transforms
         const transforms: Array<LayoutTransformation> = placedShapeNodes.map(({ node, shape }) =>
         {
-            const translation = shape.center().toVector().subtract(node.shape().center()).toArray() as [number, number, number];
+            const translation = shape.center().toVector().subtract((node.shape() as Mesh).center()).toArray() as [number, number, number];
             return {
                 sceneNode: node,
                 translation,
@@ -172,7 +172,7 @@ export class Layouter
         let lastX = 0;
         const transforms = this._shapeNodes().map((node, i) =>
         {
-            const obbox = node.shape().obbox();
+            const obbox = (node.shape() as Mesh).obbox();
             const quaternion = obbox.toOrthoQuaternion();
             // NOTE: we don't really need to work with shapes here
             const translate = obbox.center().toVector().reverse() // to origin
@@ -364,7 +364,7 @@ export class Layouter
     /** Convert a ShapeCollection into a MeshupSceneNode */
     private _sceneFromCollection(shapes: ShapeCollection<any>): MeshupSceneNode
     {
-        const root = MeshupSceneNode.root('root')
+        const root = MeshupSceneNode.root<MeshupSceneNode>('root')
 
         shapes.toArray().forEach(shape =>
         {

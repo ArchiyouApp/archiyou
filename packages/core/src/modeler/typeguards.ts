@@ -1,4 +1,5 @@
-import type { PointLike, AnyShapeCollection, AnyShapeOrCollection } from './types'
+import type { PointLike } from '@archiyou/meshup'
+import type { AnyShapeCollection, AnyShapeOrCollection } from './types'
 
 import { isPointLike as meshupIsPointLike } from '@archiyou/meshup'
 

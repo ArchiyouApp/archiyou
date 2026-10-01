@@ -894,7 +894,7 @@ import { getOc } from './index' // OC global getter
          // Faces would fuse into a hollow Shell at the next union().
          const results = this.shapes
             .map(shape => shape.extrude(amount, direction) ?? shape)
-            .flatMap(r => ShapeCollection.isShapeCollection(r) ? (r as ShapeCollection).toArray() : [r as AnyShape]);
+            .flatMap(r => ShapeCollection.isShapeCollection(r) ? (r as unknown as ShapeCollection).toArray() : [r as AnyShape]);
          return new ShapeCollection(results);
       }
 
@@ -1058,7 +1058,7 @@ import { getOc } from './index' // OC global getter
          if(withAnnotations)
          {
             // Add Annotations linked to Collection
-            this.getAnnotations().forEach( a => combinedBbox = combinedBbox.added(a.toShape().bbox(false)));
+            this.getAnnotations().forEach( a => combinedBbox = combinedBbox.added((a.toShape() as any).bbox(false)));
             
             // Extra: enlarge bbox with possible Annotations within or nearby
             /*

@@ -600,7 +600,7 @@ export class Annotator
                                         ['move'+sectionLineDepthAxis.toUpperCase()](-SECTION_PLANE_DEPTH/2);
 
                 if(bboxOutline){ collection.add(bboxOutline); }
-                const intersections = collection._intersections(sectionPlane);
+                const intersections = collection['_intersections'](sectionPlane);
                 if(bboxOutline){ collection.pop(); } // remove last added bbox outline
 
                 intersections.forEach((int) => 

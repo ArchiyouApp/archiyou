@@ -25,7 +25,7 @@ import { Vector, Vertex, Edge, ShapeCollection } from '.'
 
 import { isRelativeCartesianCoordString, parseRelativePolarCoordString, relativeCoordToNumber, roundToTolerance} from '.' // utils
 
-import { gp_Pnt, gp_Vec } from '../../wasm/archiyou-opencascade'
+import type { gp_Pnt, gp_Vec } from './wasm/archiyou-opencascade'
 import { getOc } from './index' // OC global getter
 
 

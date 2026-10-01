@@ -9,7 +9,7 @@ import type { Calc } from "../calc/Calc";
 
 import type { ConsoleMessage, ConsoleMessageType } from "../console/types";
 
-import type { Script } from "../execution/Script";
+import type { Script } from "../Script";
 import type { ScriptData, ScriptMeta, ScriptParamData,
     ScriptStatementResult } from "../execution/types";
 
@@ -69,7 +69,7 @@ export interface RunnerScriptScope extends ProxyConstructor
 /** Request results from executing a script */
 export interface RunnerScriptExecutionRequest
 {
-    kernel: ModelMode // which kernel to use for execution - this can be switched in script but initial kernel is set here;
+    kernel?: ModelMode // which kernel to use for execution - this can be switched in script but initial kernel is set here;
     script:Script|ScriptData // script to execute
     component?:string // name of component if any
     params?:Record<string,any> // param values

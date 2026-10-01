@@ -959,7 +959,7 @@ export class Runner
         }
 
         // Params from script definition and values from request
-        const params = (request.script.params && typeof request.script.params === 'object' && Object.keys(request.script.params).length > 0) 
+        const params:any[] = (request.script.params && typeof request.script.params === 'object' && Object.keys(request.script.params).length > 0) 
             ? Object.values(request.script.params) : [];
 
         // Make sure we got name in param obj definition too
@@ -1112,7 +1112,7 @@ export class Runner
         {
             // An OpenCascade exception pointer. Ask OC for the real failure text when the
             // kernel is loaded; the raw number is meaningless on its own.
-            const ocMessage = this._modeler?.kernel?.()?.getOc?.()
+            const ocMessage = (this._modeler?.kernel?.() as any)?.getOc?.()
                 ?.OCJS?.getStandard_FailureData?.(e)?.GetMessageString?.();
             return ocMessage
                 ? `geometry kernel error: ${ocMessage}`

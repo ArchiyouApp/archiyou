@@ -53,7 +53,7 @@ describe('Modeler SVG export', () =>
         handed `.curves()` and so could not see a face even if it wanted to. */
     it('draws flattened faces through the options serializer too', () =>
     {
-        modeler.box(100, 10, 30).flatten()
+        (modeler.box(100, 10, 30) as any).flatten()
 
         const svg = modeler.toSVG({ padding: 0.05 }) as string
         expect(svg).toContain('<polygon ')

@@ -135,17 +135,18 @@ export interface ScriptImportStatement
 
 export type ScriptParamData = Static<typeof ScriptParamSchema>
 
-export enum ScriptParamType
+export const ScriptParamType =
 {
-    number  = 'number',
-    boolean = 'boolean',
-    text    = 'text',
-    options = 'options',
-    list    = 'list',
-    object  = 'object',
+    number  : 'number',
+    boolean : 'boolean',
+    text    : 'text',
+    options : 'options',
+    list    : 'list',
+    object  : 'object',
     /** A slider with two handles: [from, to] or the three parts [a, b, c] between them */
-    numberRanges = 'number-ranges',
-}
+    numberRanges : 'number-ranges',
+} as const
+export type ScriptParamType = typeof ScriptParamType[keyof typeof ScriptParamType]
 
 /** What a 'number-ranges' param gives the script:
  *      'range' → [from, to], the stretch between the two handles

@@ -36,7 +36,8 @@ import { isPointLike } from '.' // typeguards
 import { targetOcForGarbageCollection, removeOcTargetForGarbageCollection } from '.'
 
 // utils
-import { toRad, roundToTolerance, convertValueFromToUnit } from '.'
+import { toRad, roundToTolerance } from '.'
+import { fromMM } from '../../units/UnitConverter'
 // decorators
 
 
@@ -275,7 +276,7 @@ export class Edge extends Shape
 
             const geomTrimmedCurveHandle = (type == 'threepoint') ? 
                                     new this._oc.GC_MakeArcOfCircle_4(start._toOcPoint(), mid._toOcPoint(), end._toOcPoint()).Value() : // mid point is a point
-                                    new this._oc.GC_MakeArcOfCircle_5(start._toOcPoint(), mid._toOcVector(), end._toOcPoint()).Value(); // mid point is a tangent
+                                    new this._oc.GC_MakeArcOfCircle_5(start._toOcPoint(), new Point(mid)._toOcVector(), end._toOcPoint()).Value(); // mid point is a tangent
 
             const geomCurveHandle = new this._oc.Handle_Geom_Curve_2(geomTrimmedCurveHandle.get());
             const newOcEdge = new this._oc.BRepBuilderAPI_MakeEdge_24(geomCurveHandle).Edge();
@@ -1010,7 +1011,7 @@ export class Edge extends Shape
 
     /** Loft (forwarded to Wire) */
     @checkInput(['AnyShapeOrCollection', [Boolean, WIRE_LOFTED_SOLID ]], ['ShapeCollection', 'auto'])
-    loft(sections:AnyShapeOrCollection, solid?:boolean):IShell|Solid
+    loft(sections:AnyShapeOrCollection|Array<AnyShape>, solid?:boolean):IShell|Solid
     {
         let newShape = this._toWire()._lofted(sections,solid)
         this.replaceShape(newShape);
@@ -1415,9 +1416,9 @@ export class Edge extends Shape
             { prop: 'color', attr: 'stroke', transform : (val) => (val) ? new Color(val).toHex() : null },
             { prop: 'dash', attr: 'stroke-dasharray', transform : (val:Array<number>) =>
                 (Array.isArray(val) && val.length)
-                    ? val.map(d => convertValueFromToUnit(d, 'mm', modelUnits)).join(' ')
+                    ? val.map(d => fromMM(d, modelUnits)).join(' ')
                     : null },
-            { prop: 'width', attr: 'stroke-width' , transform : (val) => (val != null) ? convertValueFromToUnit(val, 'mm', modelUnits) : null },
+            { prop: 'width', attr: 'stroke-width' , transform : (val) => (val != null) ? fromMM(val, modelUnits) : null },
             { prop: 'opacity', attr: 'stroke-opacity' , transform : (val) => val ?? null },
         ]
 

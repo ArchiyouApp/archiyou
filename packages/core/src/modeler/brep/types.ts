@@ -100,6 +100,27 @@ export type PipelineType = 'docs' | '3dprint' | 'cnc' | 'techdraw' | 'laser'
 
 //// INTERFACES ////
 
+/** Dimensions of a beam-like Shape, sorted small to large (see Shape.beamDims()) */
+export interface BeamLikeDims
+{
+    small:number
+    mid:number
+    length:number
+}
+
+export type LayoutOrderType = 'line'|'grid'|'binpack'|'nest'
+
+/** Options for ShapeCollection.layout() and pack() */
+export interface LayoutOptions
+{
+    autoRotate?:boolean // lay shapes flat first (default true)
+    flatten?:boolean // flatten shapes to 2D
+    margin?:number // space between shapes
+    stockWidth?:number // binpack: width of the stock sheet
+    stockHeight?:number // binpack: height of the stock sheet
+    drawStock?:boolean // binpack: draw the stock outlines (default true)
+}
+
 /** Saved Scripts by Version */
 export interface ScriptVersion 
 {

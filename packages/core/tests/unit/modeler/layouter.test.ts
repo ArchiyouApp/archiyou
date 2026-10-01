@@ -35,7 +35,7 @@ describe('Layouter', () =>
 
         modeler.scene().addChild(parent)
         parent.addChild(child)
-        child.add(nestedBox)
+        child.add(nestedBox as any)
 
         return { rootBox, nestedBox }
     }

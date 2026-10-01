@@ -98,7 +98,7 @@ export class Db
             console.error(`Db::generateShapesData: Cannot get Shapes without an instance of Modeler. Please supply it in constructor!`);
             return [];
         }
-        let shapesData = this._archiyou.modeler.allShapes().map((shape: any) => shape.toTableData());
+        let shapesData = this._archiyou.modeler.allShapes().toArray().map((shape: any) => shape.toTableData());
         return shapesData;
     }
 

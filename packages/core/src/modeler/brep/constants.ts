@@ -3,7 +3,7 @@
 // Enables fine grained settings
 // See App settings in settings.ts
 
-import type { DocPathStyle } from './types'
+import type { DocPathStyle } from '../../docs/types'
 
 //// IMPORTANT FLAGS ////
 export const USE_GARBAGE_COLLECTION = false; // if true, we will use garbage collection for OpenCascade objects

@@ -266,7 +266,7 @@ describe('GLTFBuilder.addAnimations', () =>
             siblings — so four legs called `leg` collapsed onto the LAST glTF node of that
             name: three of them never moved and one accumulated all four sets of keyframes.
             An assembly of repeated parts is the normal case, not a corner one. */
-        const scene = meshup.SceneNode.root('root')
+        const scene = meshup.SceneNode.root<meshup.SceneNode>('root')
         // close enough together that the explode has to separate all four of them
         const legs = [0, 1, 2, 3].map(i =>
             meshup.Mesh.Box(1, 1, 4).moveToX(i % 2 ? 0.6 : -0.6).moveToY(i < 2 ? 0.6 : -0.6))
@@ -295,7 +295,7 @@ describe('GLTFBuilder.addAnimations', () =>
 
 function createSceneFixture(): { scene: meshup.SceneNode<any>; entries: SceneEntry[] }
 {
-    const scene = meshup.SceneNode.root('root')
+    const scene = meshup.SceneNode.root<meshup.SceneNode>('root')
 
     const entries: SceneEntry[] = [
         {

@@ -18,15 +18,15 @@ test("Intersection Basics", () =>
 
     // vertex - vertex
     expect(v1.intersection(v2)).toEqual(null); // null
-    expect(v2.intersection(v3).toArray()).toEqual([100,100,100]); // Vertex(100,100,100)
-    expect(v3.intersection(v2).toArray()).toEqual([100,100,100]); // Vertex(100,100,100)
+    expect((v2.intersection(v3) as any).toArray()).toEqual([100,100,100]); // Vertex(100,100,100)
+    expect((v3.intersection(v2) as any).toArray()).toEqual([100,100,100]); // Vertex(100,100,100)
     // vertex - edge
-    expect(v1.intersection(lh).toArray()).toEqual([100,0,0]); // V(100,0,0)
+    expect((v1.intersection(lh) as any).toArray()).toEqual([100,0,0]); // V(100,0,0)
     // edge - edge
-    expect(lv.intersection(lh).toArray()).toEqual([0,0,0]); // V(0,0,0)
+    expect((lv.intersection(lh) as any).toArray()).toEqual([0,0,0]); // V(0,0,0)
     // vertex - solid
     expect(b.intersection(v1)).toEqual(null); // null
-    expect(s.intersection(v1).toArray()).toEqual([100,0,0]); // vertex(100,0,0)
+    expect((s.intersection(v1) as any).toArray()).toEqual([100,0,0]); // vertex(100,0,0)
     // edge - solid
     expect(s.intersection(lv).length()).toEqual(100); // 100
 

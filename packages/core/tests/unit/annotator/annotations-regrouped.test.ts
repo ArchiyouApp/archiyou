@@ -83,7 +83,7 @@ describe('Annotations on regrouped collections', () =>
     {
         // The route that always worked — the two-sided link on the Shape itself — must keep
         // reporting every dimension exactly once, not twice now that a second route exists.
-        const box = modeler.box(100, 50, 10).flatten('z')
+        const box = (modeler.box(100, 50, 10) as any).flatten('z')
         box.dim({ offset: 20 })
 
         const made = annotator.getAnnotations().length

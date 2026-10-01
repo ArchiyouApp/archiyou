@@ -353,7 +353,7 @@ describe('furniture aligns to the drawing, not the container', () =>
 
         const doc = makeDocs(modules)
         doc.create('d').page('p').view('v', { scale: 1/2, caption: true })
-            .shapes(shapes).width(1).height(0.45).contentAlign('center', 'center')
+            .shapes(shapes).width(1).height(0.45).contentAlign(['center', 'center'])
 
         const { captionX, geometryCentreMm, wMm } = measure(await doc.toSVG() as string)
 

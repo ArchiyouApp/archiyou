@@ -39,7 +39,7 @@ describe('Modeler', async () =>
 
     it('SmartMeshCurve.vertices() returns smart vertices with SmartShape methods', async () =>
     {
-        const line = modeler.line([0,0], [10,0]);
+        const line = (modeler.line([0,0], [10,0]) as any);
         const vs = line.vertices();
         expect(vs.length).toBe(2);
         // wrapped as smart vertices → SmartShape API (label, dim, material) is available
@@ -73,7 +73,7 @@ describe('Modeler', async () =>
         modeler = new Modeler();
         await modeler.load();
 
-        const box = modeler.box(10,10,10); // added to scene automatically
+        const box = modeler.box(10,10,10) as any; // added to scene automatically
 
         modeler.layer('boxes')
             .color('blue')
@@ -86,7 +86,7 @@ describe('Modeler', async () =>
 
         modeler.layer('sphere')
             .color('yellow')
-            .add(modeler.sphere(10).move(0,0,15));
+            .add(modeler.sphere(10).move(0,0,15) as any);
 
         expect(modeler.scene().shapes().length).toBe(3); 
 
@@ -200,7 +200,7 @@ describe('Modeler', async () =>
         await modeler.load();
 
         const bigbox = modeler.box(400, 200, 10).move(0, -300);
-        const small = modeler.box(5, 200, 5).align(bigbox as any, 'leftfrontbottom', 'leftfronttop');
+        const small = (modeler.box(5, 200, 5) as any).align(bigbox, 'leftfrontbottom', 'leftfronttop');
         const stack = modeler.collection(bigbox, small);
 
         const iso = stack.iso();
@@ -221,7 +221,7 @@ describe('Modeler', async () =>
         await modeler.load();
 
         const bigbox = modeler.box(400, 200, 10).move(0, -300) as SmartMesh;
-        const sm = modeler.box(5, 200, 5).align(bigbox as any, 'leftfrontbottom', 'leftfronttop') as SmartMesh;
+        const sm = (modeler.box(5, 200, 5) as any).align(bigbox as any, 'leftfrontbottom', 'leftfronttop') as SmartMesh;
 
         // Access underlying meshup Mesh objects
         const bigMesh = bigbox.toMesh() as Mesh;
@@ -248,7 +248,7 @@ describe('Modeler', async () =>
         await modeler.load();
 
         const bigbox = modeler.box(400, 200, 10).move(0, -300) as SmartMesh;
-        const sm = modeler.box(5, 200, 5).align(bigbox as any, 'leftfrontbottom', 'leftfronttop') as SmartMesh;
+        const sm = (modeler.box(5, 200, 5) as any).align(bigbox as any, 'leftfrontbottom', 'leftfronttop') as SmartMesh;
 
         const bigMesh = bigbox.toMesh() as Mesh;
         const smMesh = sm.toMesh() as Mesh;
@@ -275,7 +275,7 @@ describe('Modeler', async () =>
         await modeler.load();
 
         const bigbox = modeler.box(400, 200, 10).move(0, -300) as SmartMesh;
-        const sm = modeler.box(5, 200, 5).align(bigbox as any, 'leftfrontbottom', 'leftfronttop') as SmartMesh;
+        const sm = (modeler.box(5, 200, 5) as any).align(bigbox as any, 'leftfrontbottom', 'leftfronttop') as SmartMesh;
 
         // Exact browser path: modeler.collection() → SmartShapeCollection, then .iso() on it
         const c2 = modeler.collection(bigbox, sm);
@@ -363,7 +363,7 @@ describe('Modeler — mesh mode methods', () =>
 
     it('SmartMeshCurve.segments() returns a SmartShapeCollection of SmartMeshCurve', async () =>
     {
-        const poly = m.polyline([0, 0], [10, 0], [10, 10]);
+        const poly = (m.polyline([0, 0], [10, 0], [10, 10]) as any);
         const segs = poly.segments();
         expect(segs).toBeInstanceOf(SmartShapeCollection);
         expect(segs.length).toBe(2);
@@ -414,7 +414,7 @@ describe('Modeler — mesh mode methods', () =>
     {
         const cube = m.cube(10, 10, 10);
         expect(cube).toBeInstanceOf(SmartMesh);
-        expect(cube.mode).toBe('mesh');
+        expect((cube as any).mode).toBe('mesh');
         expect(cube.bbox().width()).toBe(10);
     });
 
@@ -422,7 +422,7 @@ describe('Modeler — mesh mode methods', () =>
     {
         const box = m.boxBetween([0, 0, 0], [10, 20, 30]);
         expect(box).toBeInstanceOf(SmartMesh);
-        expect(box.mode).toBe('mesh');
+        expect((box as any).mode).toBe('mesh');
         expect(box.bbox().width()).toBe(10);
         expect(box.bbox().depth()).toBe(20);
         expect(box.bbox().height()).toBe(30);
@@ -432,7 +432,7 @@ describe('Modeler — mesh mode methods', () =>
     {
         const s = m.sphere(10);
         expect(s).toBeInstanceOf(SmartMesh);
-        expect(s.mode).toBe('mesh');
+        expect((s as any).mode).toBe('mesh');
         expect(s.type).toBe('Mesh');
     });
 
@@ -440,7 +440,7 @@ describe('Modeler — mesh mode methods', () =>
     {
         const cyl = m.cylinder(5, 10);
         expect(cyl).toBeInstanceOf(SmartMesh);
-        expect(cyl.mode).toBe('mesh');
+        expect((cyl as any).mode).toBe('mesh');
         expect(cyl.type).toBe('Mesh');
     });
 

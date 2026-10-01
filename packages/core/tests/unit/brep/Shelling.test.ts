@@ -34,7 +34,7 @@ test("ShellingBoxes", () =>
     let b2 = new brep.Solid().makeBox(20,20,50).move(0,0,50).hide();
     let u1 = b1.copy().union(b2).hide();
     let u2 = u1.copy().fillet(3, 'V[7-10]').hide();
-    let u3 = u2.copy().shell(-2, null).hide();
+    let u3 = (u2.copy() as any).shell(-2, null).hide();
     let cutbox = new brep.Solid().makeBox(300,300,300).move(150);
     let u4 = u3.copy().subtract(cutbox.hide());
     expect(u4.faces().length).toEqual(33);

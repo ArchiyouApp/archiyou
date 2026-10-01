@@ -33,7 +33,8 @@
 
 import { BaseAnnotation } from './AnnotatorBaseAnnotation'
 import type { LabelData, LabelOptions, LabelShape, LabelTarget } from './types'
-import type { PointLike, Point, AnyShape, AnyShapeOrCollection } from '../modeler/types'
+import type { PointLike, Point } from '@archiyou/meshup'
+import type { AnyShape, AnyShapeOrCollection } from '../modeler/types'
 import { svgLeader, svgArrow, svgCircleMarker, svgTextLabel } from './svgPrimitives'
 import { DOC_DEFAULT_SVG_FONT_FAMILY } from '../constants'
 

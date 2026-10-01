@@ -788,7 +788,7 @@ export class Make
                                 width - 2 * studThickness
                             ) // enlarge is limited to right side of wall
                             {
-                                newOpeningMax.x = width - 2 * studThickness;
+                                newOpeningMax.setX(width - 2 * studThickness);
                                 curOpeningFlags.snapRight = true; // right snap mode drops frame
                                 console.log(`Enlarged opening #${i} to fit to end of wall`);
                             }
@@ -1621,7 +1621,7 @@ export class Make
                 groupShapes.push(shape);
             }
 
-            result.addGroup(`sheet${pi + 1}`, groupShapes);
+            result.addGroup(`sheet${pi + 1}`, groupShapes as any);
         }
 
         // Remove copies that the solver could not place (sheet too small)

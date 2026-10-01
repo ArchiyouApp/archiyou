@@ -38,7 +38,7 @@ describe('Labels', () =>
 
     it('shape.label(value) creates one Label annotation', () =>
     {
-        const box = modeler.box(10, 10, 10)
+        const box = (modeler.box(10, 10, 10) as any)
         const l = box.label('hello')
 
         expect(l).toBeInstanceOf(Label)
@@ -48,7 +48,7 @@ describe('Labels', () =>
 
     it('serializes to LabelData with type, value and a 3-tuple position', () =>
     {
-        modeler.box(10, 10, 10).label('Part A')
+        (modeler.box(10, 10, 10) as any).label('Part A')
 
         const data = annotator.getAnnotationsData() as LabelData[]
         expect(data.length).toBe(1)
@@ -63,20 +63,20 @@ describe('Labels', () =>
 
     it('passes through a custom CSS class option', () =>
     {
-        modeler.box(5, 5, 5).label('tagged', { class: 'my-label' })
+        (modeler.box(5, 5, 5) as any).label('tagged', { class: 'my-label' })
         const d = (annotator.getAnnotationsData() as LabelData[])[0]
         expect(d.class).toBe('my-label')
     })
 
     it('coerces non-string values to string', () =>
     {
-        modeler.box(5, 5, 5).label(42 as unknown as string)
+        (modeler.box(5, 5, 5) as any).label(42 as unknown as string)
         expect((annotator.getAnnotationsData() as LabelData[])[0].value).toBe('42')
     })
 
     it('labels and dimension lines coexist in the annotation list', () =>
     {
-        const box = modeler.box(20, 30, 40)
+        const box = (modeler.box(20, 30, 40) as any)
         box.dim()    // 3 bbox dimension lines (mesh)
         box.label('Block')
 
@@ -87,7 +87,7 @@ describe('Labels', () =>
 
     it('line(...).start().label() works (start() returns a SmartMeshVertex)', () =>
     {
-        const v = modeler.line([0, 0, 0], [100, 0, 0]).start()
+        const v = (modeler.line([0, 0, 0], [100, 0, 0]) as any).start()
         expect(typeof (v as any).label).toBe('function')
 
         const l = v.label('A')
@@ -102,14 +102,14 @@ describe('Labels', () =>
 
     it('line(...).end().label() anchors at the end point', () =>
     {
-        modeler.line([0, 0, 0], [100, 0, 0]).end().label('B')
+        (modeler.line([0, 0, 0], [100, 0, 0]) as any).end().label('B')
         const d = (annotator.getAnnotationsData() as LabelData[])[0]
         expect(d.position.map(n => Math.round(n))).toEqual([100, 0, 0])
     })
 
     it('no leader by default', () =>
     {
-        modeler.box(5, 5, 5).label('plain')
+        (modeler.box(5, 5, 5) as any).label('plain')
         const d = (annotator.getAnnotationsData() as LabelData[])[0]
         expect(d.line).toBe(false)
     })
@@ -120,7 +120,7 @@ describe('Labels', () =>
         working, but `target` is what says which of the two is drawn. */
     it('line:true gives default leader length/angle, no anchor marker', () =>
     {
-        modeler.box(5, 5, 5).label('L', { line: true })
+        (modeler.box(5, 5, 5) as any).label('L', { line: true })
         const d = (annotator.getAnnotationsData() as LabelData[])[0]
         expect(d.line).toBe(true)
         expect(d.offset).toBe(40)
@@ -206,7 +206,7 @@ describe('Labels', () =>
 
     it('a leader is implied when offset/circle is set; values pass through', () =>
     {
-        modeler.box(5, 5, 5).label('L', { offset: 80, angle: 45, circle: true })
+        (modeler.box(5, 5, 5) as any).label('L', { offset: 80, angle: 45, circle: true })
         const d = (annotator.getAnnotationsData() as LabelData[])[0]
         expect(d.line).toBe(true)        // implied
         expect(d.offset).toBe(80)
@@ -219,7 +219,7 @@ describe('Labels', () =>
         /*  `arrow:true` was an alias for the circle marker, from when the marker WAS an
             arrowhead and before it was renamed. There is a real arrow again, so the alias
             means what it says rather than the opposite of it. */
-        modeler.box(5, 5, 5).label('L', { arrow: true } as any)
+        (modeler.box(5, 5, 5) as any).label('L', { arrow: true } as any)
         const d = (annotator.getAnnotationsData() as LabelData[])[0]
         expect(d.target).toBe('arrow')
         expect(d.line).toBe(true)        // implied, same as any other marker
@@ -227,7 +227,7 @@ describe('Labels', () =>
 
     it('annotator.reset() clears labels', () =>
     {
-        modeler.box(5, 5, 5).label('x')
+        (modeler.box(5, 5, 5) as any).label('x')
         expect(annotator.getAnnotations().length).toBe(1)
         annotator.reset()
         expect(annotator.getAnnotations().length).toBe(0)
@@ -240,7 +240,7 @@ describe('Labels', () =>
     {
         const label = (value: string, options?: Record<string, any>) =>
         {
-            modeler.box(10, 10, 10).label(value, options as any)
+            (modeler.box(10, 10, 10) as any).label(value, options as any)
             const all = annotator.getAnnotations()
             return all[all.length - 1] as Label   // several labels per test — take the new one
         }

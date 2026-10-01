@@ -37,7 +37,7 @@ describe('Make', async () =>
         const subLayers = wall._layer!.children().map((c: { name: string }) => c.name)
         expect(subLayers).toEqual(expect.arrayContaining(['studs', 'plates', 'insulation']))
 
-        wall.insulation.hide()
+        ;(wall as any).insulation.hide()
         await save(`${TEST_OUTPUT_DIR}/wall.glb`, await wall.toGLB())
     })
 

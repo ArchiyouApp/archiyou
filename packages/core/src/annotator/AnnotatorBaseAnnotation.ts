@@ -1,7 +1,8 @@
 import { uuid4 } from '../utils' // utils
 
 import type { ArchiyouModules } from '../types'
-import type { AnyShape, Bbox } from '../modeler/types'
+import type { Bbox } from '@archiyou/meshup'
+import type { AnyShape } from '../modeler/types'
 import type { AnnotationType } from './types'
 
 export class BaseAnnotation

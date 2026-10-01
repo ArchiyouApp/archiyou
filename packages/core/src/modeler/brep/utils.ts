@@ -132,7 +132,7 @@ export function relativeCoordToNumber(s: string, relValue: number = 0): number {
 }
 
 /** Register an OpenCascade object for garbage collection (stub) */
-export function targetOcForGarbageCollection(_obj: any): void {
+export function targetOcForGarbageCollection(_obj: any, _ocShape?: any): void {
     // OpenCascade GC management - implementation depends on OC wasm bindings
 }
 

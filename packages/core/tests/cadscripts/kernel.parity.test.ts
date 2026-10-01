@@ -236,7 +236,7 @@ function matchUp(mesh: Array<Recorded>, brep: Array<Recorded>): Pick<Row, 'pairs
 //// THE TABLE ////
 
 const pad = (s: string | number, n: number) => String(s).padEnd(n)
-const num = (n: number, w = 4) => String(n).padStart(w)
+const num = (n: string | number, w = 4) => String(n).padStart(w)
 
 function bboxOf(r: Recorded): string
 {

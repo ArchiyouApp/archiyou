@@ -175,7 +175,7 @@ export class Modeler
     /** Reset state */
     reset()
     {
-        this._scene = meshup.SceneNode.root('root'); // new scene root
+        this._scene = meshup.SceneNode.root<meshup.SceneNode>('root'); // new scene root
         this._sidSeq = 0; // a run starts numbering from 1 again
         this._scene.setSidProvider(() => this._nextSid());
         this._setActiveLayer(this._scene);
@@ -907,7 +907,7 @@ export class Modeler
      *  b = sphere(60).moveX(200)
      *  collection(a, b).color('green')
      */
-    collection(...args: Array<any>): meshup.ShapeCollection
+    collection(...args: Array<any>): meshup.ShapeCollection<any>
     {
         const col = new meshup.ShapeCollection() // empty: keep constructor scene-agnostic
         col._modeler = this

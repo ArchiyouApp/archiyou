@@ -309,7 +309,7 @@ describe('Doc', () =>
         const modeler = new Modeler();
         await modeler.load();
 
-        const iso = modeler.box(10,20,30).iso();
+        const iso = (modeler.box(10,20,30) as any).iso();
 
 		doc.create('test')
 			.page('test')

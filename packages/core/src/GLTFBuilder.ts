@@ -784,7 +784,7 @@ export class GLTFBuilder
         return rotation
     }
 
-    _createAnimationTimeSamples(duration: number, interpolation: LayoutAnimationInterpolation): Float32Array
+    _createAnimationTimeSamples(duration: number, interpolation: LayoutAnimationInterpolation): Float32Array<ArrayBuffer>
     {
         const sampleCount = this._animationSampleCount(interpolation)
 
@@ -821,7 +821,7 @@ export class GLTFBuilder
         start: [number, number, number],
         end: [number, number, number],
         interpolation: LayoutAnimationInterpolation,
-    ): Float32Array
+    ): Float32Array<ArrayBuffer>
     {
         return new Float32Array(
             this._createAnimationProgressSamples(interpolation).flatMap(progress => [
@@ -836,7 +836,7 @@ export class GLTFBuilder
         start: [number, number, number, number],
         end: [number, number, number, number],
         interpolation: LayoutAnimationInterpolation,
-    ): Float32Array
+    ): Float32Array<ArrayBuffer>
     {
         return new Float32Array(
             this._createAnimationProgressSamples(interpolation).flatMap(progress => this._slerpQuaternion(start, end, progress))

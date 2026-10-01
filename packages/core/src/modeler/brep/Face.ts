@@ -756,7 +756,7 @@ export class Face extends Shape
 
     /** Make a Shell or Solid by lofting outerWire of Face to other Wire Shapes  */
     @checkInput(['AnyShapeOrCollection', [Boolean, FACE_LOFT_SOLID ]], ['ShapeCollection', 'auto'])
-    _lofted(sections:AnyShapeOrCollection, solid?:boolean):IShell|Solid
+    _lofted(sections:AnyShapeOrCollection|Array<AnyShape>, solid?:boolean):IShell|Solid
     {
         let outerWire = this.outerWire();
         return outerWire._lofted(sections, solid); // already added to Scene
@@ -765,7 +765,7 @@ export class Face extends Shape
 
     /** Loft current Face */
     @checkInput(['AnyShapeOrCollection', [Boolean, FACE_LOFT_SOLID ]], ['ShapeCollection', 'auto'])
-    loft(sections:AnyShapeOrCollection, solid?:boolean):IShell|Solid
+    loft(sections:AnyShapeOrCollection|Array<AnyShape>, solid?:boolean):IShell|Solid
     {
         let outerWire = this.outerWire();
         let loftedShape = outerWire._lofted(sections, solid);

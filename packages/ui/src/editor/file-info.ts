@@ -204,7 +204,6 @@ export class EditorFileInfo extends SignalWatcher(LitElement)
 
   private _renderBody()
   {
-    const script  = editorScript.get();
     const displayVersion = this._displayVersion();
     const version = displayVersion
         ? `${displayVersion}${this._isChangedSinceVersion() ? ' (last shared/published — code changed since)' : ''}`
