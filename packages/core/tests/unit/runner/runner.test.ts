@@ -101,6 +101,116 @@ describe('Runner', () =>
 
 })
 
+describe('Runner: the documents follow the script, unless the request says otherwise', () =>
+{
+    // a 48" (1219.2 mm) wide sheet, its width dimensioned in a document
+    const sheet = (units:string, width:number, height:number) => `
+        units('${units}');
+        sheet = rect(${width}, ${height});
+        sheet.bbox().back().dim();
+        docs.create('sheet').page('p').view('v').shapes(sheet);
+    `
+    const MM_SHEET = sheet('mm', 1219.2, 2438.4)
+    const INCH_SHEET = sheet('inch', 48, 96)
+
+    const run = (runner:Runner, code:string, request:Partial<RunnerScriptExecutionRequest> = {}) => runner.execute({
+        kernel: 'mesh',
+        script: { code },
+        outputs: ['default/docs/*/svg'],
+        ...request,
+    })
+    const docSvg = (result:any) => String(result.outputs?.find((o:any) => o.path.category === 'docs')?.output ?? '')
+
+    it("writes the documents of a script in inches imperial, without being asked", async () =>
+    {
+        const result = await run(await new Runner().load(), INCH_SHEET)
+
+        expect(result.status).toBe('success')
+        expect(docSvg(result)).toContain(`48"`)
+    })
+
+    it("keeps them metric when only the display system is imperial", async () =>
+    {
+        const result = await run(await new Runner().load(), MM_SHEET, { unitSystem: 'imperial' })
+
+        expect(result.status).toBe('success')
+        expect(docSvg(result)).toContain('1219')
+        expect(docSvg(result)).not.toContain(`48"`)
+    })
+
+    it('writes them in the system the request asks for the documents', async () =>
+    {
+        const runner = await new Runner().load()
+
+        expect(docSvg(await run(runner, MM_SHEET, { docUnitSystem: 'imperial' }))).toContain(`48"`)
+        expect(docSvg(await run(runner, INCH_SHEET, { docUnitSystem: 'metric' }))).toContain('1219')
+    })
+
+    it('forgets it on the next run without one', async () =>
+    {
+        const runner = await new Runner().load()
+        await run(runner, MM_SHEET, { docUnitSystem: 'imperial' })
+        const result = await run(runner, MM_SHEET)
+
+        expect(result.status).toBe('success')
+        expect(docSvg(result)).toContain('1219')
+        expect(docSvg(result)).not.toContain(`48"`)
+    })
+})
+
+describe('Runner: model units from the request', () =>
+{
+    const SHEET = `
+        sheet = rect(48, 96);
+        sheet.bbox().back().dim();
+        docs.create('sheet').page('p').view('v').shapes(sheet);
+    `
+
+    it('reads the numbers of a script authored in inches as inches, without converting them', async () =>
+    {
+        const runner = await new Runner().load()
+        const result = await runner.execute({
+            kernel: 'mesh',
+            script: { code: SHEET },
+            modelUnits: 'inch',
+            unitSystem: 'imperial',
+            outputs: ['default/docs/*/svg'],
+        })
+
+        expect(result.status).toBe('success')
+        expect(result.meta?.units).toBe('inch')
+        // the geometry keeps the numbers the script wrote: a 4 by 8 foot sheet is 48 by 96, not 1219.2 by 2438.4
+        expect(result.meta?.bbox?.slice(0, 2)).toEqual([-24, -48])
+        expect(result.meta?.bbox?.slice(3, 5)).toEqual([24, 48])
+
+        // and they are measured as inches: the 48 wide sheet reads 48"
+        const svg = String(result.outputs?.find(o => o.path.category === 'docs')?.output ?? '')
+        expect(svg).toContain(`48"`)
+    })
+
+    it("lets a script's own units() win", async () =>
+    {
+        const runner = await new Runner().load()
+        const result = await runner.execute({
+            kernel: 'mesh',
+            script: { code: `units('mm'); rect(48, 96);` },
+            modelUnits: 'inch',
+            outputs: ['default/model/glb'],
+        })
+
+        expect(result.status).toBe('success')
+        expect(result.meta?.units).toBe('mm')
+    })
+
+    it('leaves the model in millimeters without it', async () =>
+    {
+        const runner = await new Runner().load()
+        const result = await runner.execute({ kernel: 'mesh', script: { code: `rect(48, 96);` }, outputs: ['default/model/glb'] })
+
+        expect(result.meta?.units).toBe('mm')
+    })
+})
+
 // ── Error line extraction tests ───────────────────────────────────────────────
 // These tests calibrate and verify that Runner correctly maps eval stack-trace
 // line numbers back to the original user-script line numbers.

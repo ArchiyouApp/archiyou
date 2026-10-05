@@ -3,8 +3,12 @@ import { ModelUnitsSchema, PointLikeSchema } from '../modeler/schemas'
 
 export const DimensionOptionsSchema = Type.Optional(
     Type.Object({
-        /** The model unit the VALUE is in (mm, inch, …) — not whether to print it. */
-        units:        Type.Optional(ModelUnitsSchema),
+        /** The model unit the VALUE is in (mm, inch, …) — not whether to print it.
+         *  Without the { default: 'mm' } of ModelUnitsSchema: TypeBox injected it whenever
+         *  units was left out, so in a script built in inches every dimension that was not
+         *  made from a Shape (autoDim, dimensionLine) read its inches as millimeters. Left
+         *  out, a dimension measures in the model's unit (see DimensionLine.setOptions). */
+        units:        Type.Optional(Type.Union([...ModelUnitsSchema.anyOf])),
         /** Print the unit after the value. Off by default: a metric drawing writes bare
          *  numbers and states the unit once in the title block. Imperial marks (6'-3") are
          *  notation rather than a unit suffix and are always kept. */

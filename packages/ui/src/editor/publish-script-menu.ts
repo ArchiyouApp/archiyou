@@ -639,7 +639,7 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
         script:     scriptData,
         outputs:    ['default/model/glb'],
         messages:   ['error'],
-        unitSystem: scriptData.units ?? 'metric',
+        unitSystem: scriptData.units, // the override; unset follows units()
       } as RunnerScriptExecutionRequest);
 
       this._duration = result?.duration ?? 0;

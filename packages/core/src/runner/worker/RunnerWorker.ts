@@ -30,7 +30,7 @@ import type { ScriptData } from '../../execution/types';
 import type { AyModuleCatalogEntry } from '../../modules/sdkTypes';
 
 import type { Script } from '../../Script';
-import type { ModelMode } from '../../modeler/types';
+import type { ModelMode, ModelUnits } from '../../modeler/types';
 import type { ConsoleMessageType } from '../../console/types';
 import { getOutput, type OutputData } from './output';
 
@@ -44,6 +44,8 @@ export interface RunOptions
   params?: Record<string, any>;
   kernel?: ModelMode;                    // 'mesh' | 'brep'; default from constructor
   unitSystem?: 'metric' | 'imperial';
+  docUnitSystem?: 'metric' | 'imperial'; // documents only, over unitSystem
+  modelUnits?: ModelUnits;               // the unit the script is authored in, see RunnerScriptExecutionRequest
   componentScripts?: ScriptData[];       // local $component('./name') scripts
   selection?: string[];
   messages?: ConsoleMessageType[];
@@ -203,6 +205,8 @@ export class RunnerWorker
       outputs: opts.outputs ?? DEFAULT_OUTPUTS,
       params: opts.params,
       unitSystem: opts.unitSystem,
+      docUnitSystem: opts.docUnitSystem,
+      modelUnits: opts.modelUnits,
       componentScripts: opts.componentScripts,
       selection: opts.selection,
       messages: opts.messages,

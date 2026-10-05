@@ -325,7 +325,7 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
         script:     scriptData,
         outputs:    ['default/model/glb'],
         messages:   ['error'],
-        unitSystem: scriptData.units ?? 'metric',
+        unitSystem: scriptData.units, // the override; unset follows units()
       } as RunnerScriptExecutionRequest, { background: true });
       this._thumbnailPng = result?.status === 'error' ? null : await renderThumbnailPng(glbOf(result), scenegraphOf(result));
     }

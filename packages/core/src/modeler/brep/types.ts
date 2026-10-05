@@ -575,7 +575,9 @@ export interface DocPipeline
 
 //// DOC:PAGE ////
 
-export type PageSize = 'A0'|'A1'|'A2'|'A3'|'A4'|'A5'|'A6'|'A7';
+// One list of page sizes: the docs module's
+import type { PageSize } from '../../docs/types';
+export type { PageSize };
 export type PageOrientation = 'landscape'|'portrait';
 export type PageSide = 'width'|'height'
 export type AnyPageContainer = Container|View

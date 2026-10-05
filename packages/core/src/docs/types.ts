@@ -65,7 +65,11 @@ export interface DocSVGPage
 
 //// DOC:PAGE ////
 
-export type PageSize = 'A0'|'A1'|'A2'|'A3'|'A4'|'A5'|'A6'|'A7';
+/** ISO (A0-A7), US (Letter, Legal, Tabloid), ANSI (ANSI_A-ANSI_E) and architectural (ARCH_A-ARCH_E1) */
+export type PageSize = 'A0'|'A1'|'A2'|'A3'|'A4'|'A5'|'A6'|'A7'
+    |'Letter'|'Legal'|'Tabloid'
+    |'ANSI_A'|'ANSI_B'|'ANSI_C'|'ANSI_D'|'ANSI_E'
+    |'ARCH_A'|'ARCH_B'|'ARCH_C'|'ARCH_D'|'ARCH_E'|'ARCH_E1';
 export type PageOrientation = 'landscape'|'portrait';
 export type PageSide = 'width'|'height'
 export type AnyPageContainer = Container|View
@@ -192,6 +196,9 @@ export interface TableContainerOptions
     fontsize?: number
     fontcolor?: string
     footer?: Array<ComputedFooterRow> // computed footer rows (from calc.Table.computeFooterRows())
+    /** The unit of each column that holds lengths, like { length: 'mm', width: 'mm' }.
+     *  Those columns are written in the document's unit system; the others as they are. */
+    units?: Record<string, ModelUnits>
 }
 
 //// DOCS:PAGE:CONTAINER:TEXT ////

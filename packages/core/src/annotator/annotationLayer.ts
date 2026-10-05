@@ -13,6 +13,17 @@
 
 import type { SVGLayer } from '../modeler/SVGExporter'
 import type { Projector } from '../modeler/utils'
+import type { UnitSystem, ImperialNotation } from '../units/UnitConverter'
+import type { ModelUnits } from '../modeler/types'
+
+/** How annotations write their values, when the drawing says so rather than the run */
+export interface AnnotationFormat
+{
+    unitSystem?:UnitSystem
+    notation?:ImperialNotation
+    /** The unit bare metric numbers are written in (a document's mm); unset is the model's */
+    unit?:ModelUnits
+}
 
 /** Room around the annotations, in page millimeters, when nothing better is known.
  *  Three times the default 4mm value text — see annotationMarginMm(). */
@@ -179,6 +190,7 @@ function regroupedAnnotations(o:any, already:Array<any>):Array<any>
  *  @param unitsPerMm model units per page millimeter, when the drawing has a known scale —
  *      annotations size their text, arrowheads and line weight in real millimeters from it.
  *  @param drawingSize the drawing's largest side, used instead when there is no page.
+ *  @param format how values are written, when the drawing has a unit system of its own.
  *
  *  NOTE: the box is the annotations' own extents, with no room added for the value text that
  *  sits at the middle of a dimension line. That margin is a property of the FRAME (it is
@@ -186,7 +198,7 @@ function regroupedAnnotations(o:any, already:Array<any>):Array<any>
  */
 export function annotationLayer(
     annotations:Array<any>,
-    options?:{ unitsPerMm?:number, drawingSize?:number, projector?:Projector }):SVGLayer
+    options?:{ unitsPerMm?:number, drawingSize?:number, projector?:Projector, format?:AnnotationFormat }):SVGLayer
 {
     const elements:Array<string> = [];
     let box:{ minX:number, minY:number, maxX:number, maxY:number } | null = null;
@@ -195,7 +207,7 @@ export function annotationLayer(
     (annotations ?? []).forEach(a =>
     {
         const elem = a?.toSVG?.({ drawingSize: options?.drawingSize, unitsPerMm: options?.unitsPerMm,
-                                  projector: to });
+                                  projector: to, format: options?.format });
         if(typeof elem !== 'string' || elem.length === 0){ return }
         elements.push(elem);
 

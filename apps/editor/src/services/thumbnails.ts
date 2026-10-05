@@ -306,7 +306,7 @@ async function backfillOne(t: BackfillTarget): Promise<void>
       script:     data,
       outputs:    [GLB_OUTPUT],
       messages:   ['error'],
-      unitSystem: data.units ?? 'metric',
+      unitSystem: data.units, // the override; unset follows units()
       // As the editor does: local scripts resolve $component('./name').
       componentScripts: scripts.get().filter(s => s.fileId !== t.fileId).map(s => s.toData()),
     } as RunnerScriptExecutionRequest, { background: true });

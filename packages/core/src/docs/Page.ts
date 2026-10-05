@@ -4,6 +4,10 @@ import { View } from './View'
 import type { PageSide, WidthHeightInput, PageData, DocUnits, PageSize, PageOrientation, AnyPageContainer, ValueWithUnitsString, PageSVGContext } from './types'
 import { isPageSize, isAnyPageContainer } from './typeguards'
 import { convertValueFromToUnit, escapeXml } from './utils'
+import { PAGE_SIZE_TO_WIDTH_HEIGHT_MM } from '../constants'
+
+/** The page sizes, for error messages */
+export const PAGE_SIZES_TEXT = 'A0-A7, Letter, Legal, Tabloid, ANSI_A-ANSI_E, ARCH_A-ARCH_E, ARCH_E1';
  
 
 //// PAGE CLASS ////
@@ -13,25 +17,13 @@ export class Page
     //// SETTINGS ////
     DEFAULT_PADDING:WidthHeightInput = '1cm';
     DEFAULT_SIZE:PageSize = 'A4';
-    PAGE_ISO_SIZE_TO_WIDTH_HEIGHT_MM = { // landscape
-        A0: { w : 1189, h:841 },
-        A1: { w : 841, h:594  },
-        A2: { w : 594, h:420  },
-        A3: { w : 420, h:297  },
-        A4: { w : 297, h:210  },
-        A5: { w : 210, h:148  },
-        A6: { w : 148 , h:105  },
-        A7: { w : 105, h:74  },
-    }
-    
-
     //// END SETTINGS ////
 
     name:string;
     _docs:Docs; // main Docs module
     _doc:Document; // doc instance to which this page belongs
     _units:DocUnits; // taken from _docs module and _doc
-    _size:PageSize; // ISO page size (A0-A7)
+    _size:PageSize; // page size (A0-A7, Letter, ANSI_A-E, ARCH_A-E1 ...)
     _width:number; // in doc units (mm,cm,inch)
     _height:number;
     _orientation:PageOrientation = 'landscape';
@@ -64,7 +56,7 @@ export class Page
 
     size(size:PageSize)
     {
-        if(!isPageSize(size)){ throw new Error(`Doc::pageSize: Invalid ISO page size. Use: A0-A7`);}
+        if(!isPageSize(size)){ throw new Error(`Doc::pageSize: Invalid page size "${size}". Use: ${PAGE_SIZES_TEXT}`);}
         this._size = size;
         this._sizeToWidthHeight(this._size); // set width and height in Document units
     }
@@ -251,25 +243,13 @@ export class Page
         return this._containers.some( c => c.name === name);
     }
 
-    /** Transform given ISO page size (A0-A7) to units in Document units */
+    /** Transform given page size (A4, Letter, ARCH_D ...) to units in Document units */
     _sizeToWidthHeight(size:PageSize)
     {
-        let pageWidth = this.PAGE_ISO_SIZE_TO_WIDTH_HEIGHT_MM[size].w;
-        let pageHeight = this.PAGE_ISO_SIZE_TO_WIDTH_HEIGHT_MM[size].h;
+        const pageMm = PAGE_SIZE_TO_WIDTH_HEIGHT_MM[size];
 
         // Convert to units in Document
-        if(this._units === 'cm')
-        { 
-            pageWidth /= 10;
-            pageHeight /= 10;
-        }
-        else if(this._units === 'inch')
-        {
-            pageWidth = convertValueFromToUnit(pageWidth, 'mm', 'inch');
-            pageHeight = convertValueFromToUnit(pageHeight, 'mm', 'inch');
-        }
-
-        this.width(pageWidth);
-        this.height(pageHeight);
+        this.width(convertValueFromToUnit(pageMm.w, 'mm', this._units));
+        this.height(convertValueFromToUnit(pageMm.h, 'mm', this._units));
     }   
 }

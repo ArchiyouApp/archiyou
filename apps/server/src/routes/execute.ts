@@ -22,7 +22,7 @@
  * on path 1, one immutable (fileId, version) code snapshot on path 2.
  *
  * Body: { params?, preset?, outputs?: string[], cache?: boolean, forceFileResponse?: boolean,
- *         kernel?, unitSystem? }
+ *         kernel?, unitSystem?, docUnitSystem?, modelUnits? }
  * Default output is ['default/model/glb'].
  */
 
@@ -31,6 +31,7 @@ import semver from 'semver';
 
 import { Script } from '@archiyou/core/src/Script';
 import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
+import { isLengthUnit } from '@archiyou/core/src/units/UnitConverter';
 
 import { config } from '../config';
 import { moduleHost } from '../modules/ModuleHost';
@@ -47,6 +48,10 @@ interface ExecuteBody {
   forceFileResponse?: boolean;
   kernel?: string;
   unitSystem?: 'metric' | 'imperial';
+  /** The documents' unit system, see RunnerScriptExecutionRequest; unset follows the script's units() */
+  docUnitSystem?: 'metric' | 'imperial';
+  /** The unit the script is authored in ('inch', 'mm' ...), see RunnerScriptExecutionRequest */
+  modelUnits?: string;
 }
 
 /** Resolve the caller's handle if a valid token is present, else null.
@@ -145,6 +150,16 @@ export async function registerExecuteRoutes(fastify: FastifyInstance): Promise<v
         return { success: false, error: 'Invalid request body. Expected an object.', data: null };
       }
 
+      if (body.docUnitSystem !== undefined && !['metric', 'imperial'].includes(body.docUnitSystem)) {
+        reply.code(400);
+        return { success: false, error: `Invalid docUnitSystem "${body.docUnitSystem}". Use 'metric' or 'imperial'.`, data: null };
+      }
+
+      if (body.modelUnits !== undefined && !isLengthUnit(body.modelUnits)) {
+        reply.code(400);
+        return { success: false, error: `Invalid modelUnits "${body.modelUnits}". Use a length unit like 'mm' or 'inch'.`, data: null };
+      }
+
       const script = Script.fromData(scriptData);
       if (!script) {
         reply.code(500);
@@ -190,6 +205,8 @@ export async function registerExecuteRoutes(fastify: FastifyInstance): Promise<v
         // Presentation only, but it silently changes every dimension and doc string if
         // dropped — so it must ride along rather than defaulting to metric.
         unitSystem: body.unitSystem ?? scriptData.units,
+        docUnitSystem: body.docUnitSystem,
+        modelUnits: isLengthUnit(body.modelUnits) ? body.modelUnits : undefined,
         assetProxyUrl: internalApiUrl,
         componentLibraryUrl: internalApiUrl,
         moduleApiUrl: internalApiUrl,

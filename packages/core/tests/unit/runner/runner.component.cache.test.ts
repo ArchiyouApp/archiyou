@@ -193,6 +193,34 @@ describe('Runner: component result cache bookkeeping', () =>
         expect(key({ w: 1, h: 2 })).not.toBe(key({ w: 2, h: 1 }))
     })
 
+    it('keys on the unit the component is authored in', async () =>
+    {
+        const runner = await new Runner().load()
+        const script = Script.fromData({ name: 'x', code: `box(1,1,1);` })!
+
+        const key = (modelUnits?:string) => runner._componentResultCacheKey(script, {
+            component: './x', kernel: 'mesh', params: {}, outputs: ['default/model/internal'], modelUnits,
+        } as any)
+
+        expect(key('inch')).not.toBe(key('mm'))
+        expect(key('inch')).not.toBe(key())
+        expect(key('inch')).toBe(key('inch'))
+    })
+
+    it("keys on the documents' unit system", async () =>
+    {
+        const runner = await new Runner().load()
+        const script = Script.fromData({ name: 'x', code: `box(1,1,1);` })!
+
+        const key = (docUnitSystem?:string) => runner._componentResultCacheKey(script, {
+            component: './x', kernel: 'mesh', params: {}, outputs: ['default/docs/*/svg'], docUnitSystem,
+        } as any)
+
+        expect(key('imperial')).not.toBe(key('metric'))
+        expect(key('imperial')).not.toBe(key())
+        expect(key('imperial')).toBe(key('imperial'))
+    })
+
     it('never memoises a failed execution', async () =>
     {
         const runner = await new Runner().load()

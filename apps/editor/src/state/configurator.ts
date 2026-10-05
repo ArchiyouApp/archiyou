@@ -14,7 +14,7 @@ import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/typ
 import type { ConsoleMessageType } from '@archiyou/core/src/console/types';
 
 import { editorScript } from './core';
-import { configuratorUnitSystem } from './units';
+import { configuratorUnitSystemPick, scriptUnitSystemOverride } from './units';
 import type { ScriptPreset } from './types';
 
 //// DERIVED DEFINITIONS (read-only, from core script) ////
@@ -114,8 +114,10 @@ export function buildConfiguratorRequest(
     messages,
     script: scriptData,
     params: paramValues,
-    // display = the end-user's local choice (geometry stays in the model unit)
-    unitSystem: configuratorUnitSystem.get(),
+    // display = the end-user's pick, else the author's file-bar override, else the script's
+    // units(); the pick reaches the documents too (geometry stays in the model unit)
+    unitSystem: configuratorUnitSystemPick.get() ?? scriptUnitSystemOverride.get(),
+    docUnitSystem: configuratorUnitSystemPick.get(),
   } as RunnerScriptExecutionRequest;
 }
 

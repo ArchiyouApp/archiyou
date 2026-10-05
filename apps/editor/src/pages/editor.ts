@@ -38,7 +38,7 @@ import '@archiyou/ui/editor/manage-configurators-menu.js';
 import '@archiyou/ui/editor/modules-menu.js';
 import type { ToolDef } from '@archiyou/ui/editor/toolbar.js';
 
-import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystem, ensureScriptUnitSystem, perStatement, kernel, autoRun, wasActiveScriptRestored } from '../state/workspace';
+import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystemOverride, docUnitSystemOverride, perStatement, kernel, autoRun, wasActiveScriptRestored } from '../state/workspace';
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
 import { registerScheduleExecution, triggerResetCamera } from '../state/viewer';
 import { registerHelpRunner, openHelpDoc, claimOnboarding, setHelpCursor, lookupHelpAtCursor, ONBOARDING_PATH } from '../state/help';
@@ -73,8 +73,9 @@ export class PageEditor extends SignalWatcher(LitElement)
 
   override render()
   {
-    // Track the script's unit system so a flip re-runs to regenerate doc/SVG text.
-    this._pendingUnitSystem = scriptUnitSystem.get();
+    // Track the unit system overrides so a flip re-runs to regenerate doc/SVG text. The
+    // overrides, not the effective systems: those also move when a run reports units().
+    this._pendingUnitSystem = `${scriptUnitSystemOverride.get() ?? ''}/${docUnitSystemOverride.get() ?? ''}`;
     // Same for the geometry kernel — read here so SignalWatcher tracks it.
     this._pendingKernel = kernel.get();
     // Phones: viewer on top, params + code below, rails as bars, tools in a sheet.
@@ -286,10 +287,6 @@ export class PageEditor extends SignalWatcher(LitElement)
   override updated()
   {
     this._reflectScriptUrl();
-
-    // Persist a default (metric) unit system onto any script that has none, so
-    // every script carries an explicit setting. Idempotent — runs once per script.
-    ensureScriptUnitSystem();
 
     // Metric/Imperial flip → re-run so doc/SVG dimension text regenerates with
     // the new units (3D dims + readouts already update live). Skip the first
@@ -593,8 +590,9 @@ export class PageEditor extends SignalWatcher(LitElement)
       params: paramValues,
       selection: selectedPath.get() ? [selectedPath.get() as string] : [],
       componentScripts,
-      // editor: display in the script's own unit system
-      unitSystem: scriptUnitSystem.get(),
+      // the overrides only: unset, the run follows the script's units()
+      unitSystem: scriptUnitSystemOverride.get(),
+      docUnitSystem: docUnitSystemOverride.get(),
       // per-statement mode: partial model on error + profiling (toggled next to Run)
       perStatement: perStatement.get(),
       // geometry kernel for this run: mesh (default) or brep (toggled next to Run)

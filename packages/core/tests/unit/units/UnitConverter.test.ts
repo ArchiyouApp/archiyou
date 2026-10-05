@@ -7,6 +7,7 @@ import {
     formatImperial, formatMetric, formatLength, formatFromUnit,
     paramDisplayDecimals,
     stepDecimals,
+    isLengthUnit,
 } from '../../../src/units/UnitConverter'
 import type { ModelUnits } from '../../../src/modeler/types'
 
@@ -174,12 +175,36 @@ describe('UnitConverter', () =>
             expect(formatImperial(toMM(0.5, 'inch'), { unit: 'inch' })).toBe('1/2"')
         })
 
-        it('formats feet + inch', () =>
+        it('formats feet + inch the architectural way', () =>
         {
-            // 18.5" = 1' 6 1/2"
-            expect(formatImperial(toMM(18.5, 'inch'), { unit: 'feet' })).toBe("1' 6 1/2\"")
-            // exact feet
-            expect(formatImperial(toMM(24, 'inch'), { unit: 'feet' })).toBe("2'")
+            // 18.5" = 1'-6 1/2"
+            expect(formatImperial(toMM(18.5, 'inch'), { unit: 'feet' })).toBe("1'-6 1/2\"")
+            // exact feet still write their inches
+            expect(formatImperial(toMM(24, 'inch'), { unit: 'feet' })).toBe("2'-0\"")
+            expect(formatImperial(toMM(96, 'inch'))).toBe("8'-0\"")
+            // an inch fraction that rounds up to a full foot rolls over
+            expect(formatImperial(toMM(23.99, 'inch'), { unit: 'feet' })).toBe("2'-0\"")
+            // 3000mm, past the feet threshold
+            expect(formatImperial(3000)).toBe("9'-10 1/8\"")
+        })
+
+        it('writes negative lengths with one sign in front', () =>
+        {
+            expect(formatImperial(toMM(-18.5, 'inch'), { unit: 'feet' })).toBe("-1'-6 1/2\"")
+            expect(formatImperial(toMM(-6.5, 'inch'), { unit: 'inch' })).toBe('-6 1/2"')
+        })
+
+        it('formats decimal feet and inches in engineering notation', () =>
+        {
+            expect(formatImperial(toMM(18.5, 'inch'), { unit: 'feet', notation: 'engineering' })).toBe("1.54'")
+            expect(formatImperial(toMM(6.5, 'inch'), { unit: 'inch', notation: 'engineering' })).toBe('6.5"')
+            expect(formatImperial(toMM(6.5, 'inch'), { unit: 'inch', notation: 'engineering', withUnit: false })).toBe('6.5')
+            expect(formatImperial(toMM(-18.5, 'inch'), { unit: 'feet', notation: 'engineering' })).toBe("-1.54'")
+        })
+
+        it('leaves the imperial notation alone for metric', () =>
+        {
+            expect(formatLength(470, 'metric', { notation: 'engineering' })).toBe('470 mm')
         })
 
         it('auto-picks unit when none given', () =>
@@ -188,6 +213,18 @@ describe('UnitConverter', () =>
             expect(formatImperial(1000)).toContain('"')
             // 10m → feet
             expect(formatImperial(10_000)).toContain("'")
+        })
+    })
+
+    describe('isLengthUnit', () =>
+    {
+        it('knows the length units, and nothing else', () =>
+        {
+            expect(isLengthUnit('mm')).toBe(true)
+            expect(isLengthUnit('feet')).toBe(true)
+            expect(isLengthUnit('€')).toBe(false)
+            expect(isLengthUnit('toString')).toBe(false) // not fooled by the prototype
+            expect(isLengthUnit(undefined)).toBe(false)
         })
     })
 

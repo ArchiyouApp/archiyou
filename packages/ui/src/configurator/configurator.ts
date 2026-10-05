@@ -4,7 +4,7 @@ import { SignalWatcher } from '@lit-labs/signals';
 
 import { createExecutionFailureResult, runScript, warmupWorker } from '@archiyou/editor/src/services/execution-service';
 import { setExecutionResult, setExecuting } from '@archiyou/editor/src/state/workspace';
-import { configuratorUnitSystem } from '@archiyou/editor/src/state/workspace';
+import { configuratorUnitSystemPick } from '@archiyou/editor/src/state/workspace';
 import { buildConfiguratorRequest, configuratorValueFor, setConfiguratorValue } from '@archiyou/editor/src/state/configurator';
 import { registerViewerParamStore } from '@archiyou/editor/src/state/viewer';
 import { syncConfiguratorParamsToUrl } from '@archiyou/editor/src/state/configurator-url';
@@ -26,9 +26,10 @@ export class PageConfigurator extends SignalWatcher(LitElement)
   // ── 1. Render ──
   override render()
   {
-    // Track the local display system so a switch triggers a re-run (dims/docs
-    // are formatted at execution time from request.unitSystem).
-    this._pendingUnitSystem = configuratorUnitSystem.get();
+    // Track the end-user's pick so a switch triggers a re-run (dims/docs are formatted at
+    // execution time). The pick, not the display system: that also moves when a run
+    // reports the model's units().
+    this._pendingUnitSystem = configuratorUnitSystemPick.get() ?? '';
     return html`
       <!-- One DOM for both layouts, so the viewer is never re-created: on wide
            screens the sheet is docked as the sidebar, on compact ones it slides

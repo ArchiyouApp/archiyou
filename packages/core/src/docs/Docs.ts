@@ -37,6 +37,7 @@ import type { PageOrientation, ScaleInput, ImageOptions, TextOptions,
         DocGraphicInputRect, DocGraphicInputCircle, DocGraphicInputOrthoLine,
         ContainerBlock, TitleBlockInput, LabelBlockOptions, InstructableOptions,
         DocSettings, DocUnits, DocData, DocSVGPage, ViewOptions } from './types'
+import type { UnitSystem } from '../units/UnitConverter'
 
 import { Document } from './Document'
 import { Instruct } from './instruct/Instruct'
@@ -66,6 +67,8 @@ export class Docs
     _docs:Array<Document> = []; // multiple Documents names (see them as 'files')
 
     _activeDoc:Document; // active Document instance
+
+    _runUnitSystem?:UnitSystem; // the run's system for documents (request.docUnitSystem), see Document.resolveUnitSystem()
 
     _instructs:Array<Instruct> = []; // instructables (see instruct/Instruct.ts)
 
@@ -150,6 +153,7 @@ export class Docs
     {
         this._docs = [];
         this._activeDoc = null;
+        this._runUnitSystem = undefined;
         this._instructs = [];
     }
 

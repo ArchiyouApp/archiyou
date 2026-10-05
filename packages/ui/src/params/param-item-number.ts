@@ -10,7 +10,7 @@ import './param-help.js';
 import type { ParamUIMode } from './param-item.js';
 import type { ScriptParam } from '@archiyou/editor/src/state/workspace';
 import { paramMin, paramMax, paramStep, paramValue } from '@archiyou/editor/src/state/workspace';
-import { scriptUnitSystem, configuratorUnitSystem } from '@archiyou/editor/src/state/workspace';
+import { scriptUnitSystem, configuratorUnitSystem, scriptUnitSystemOverride, configuratorUnitSystemPick } from '@archiyou/editor/src/state/workspace';
 
 import type { ModelUnits } from '@archiyou/core/src/modeler/types';
 import type { UnitSystem } from '@archiyou/core/src/units/UnitConverter';
@@ -198,8 +198,8 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
     // otherwise collapse the select-all into a caret.
     private _selectOnMouseUp = false;
 
-    // Tracks the display system so a Metric/Imperial switch can snap the value.
-    private _lastDisplaySystem: UnitSystem | null = null;
+    // Tracks the user's Metric/Imperial switch so flipping it can snap the value; '' is no pick.
+    private _lastUnitChoice: string | null = null;
 
     // ── 3. Lifecycle ──
 
@@ -224,13 +224,15 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
         }
 
         // 2. On a Metric/Imperial switch, snap the stored value to a nice number
-        // in the new system (25mm ⇄ 1") so the user always sees clean values.
-        const sys = this._displaySystem();
-        if (this._lastDisplaySystem !== null && sys !== this._lastDisplaySystem)
+        // in the new system (25mm ⇄ 1") so the user always sees clean values. Only on
+        // the user's switch: a run reporting the model's units() also moves the display
+        // system, and that must not rewrite the values the script was opened with.
+        const choice = this._unitChoice();
+        if (this._lastUnitChoice !== null && choice !== this._lastUnitChoice)
         {
-            this._snapToSystem(sys);
+            this._snapToSystem(this._displaySystem());
         }
-        this._lastDisplaySystem = sys;
+        this._lastUnitChoice = choice;
     }
 
     // ── 4. Behaviour ──
@@ -240,6 +242,12 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
     private _displaySystem(): UnitSystem
     {
         return this.context === 'configurator' ? configuratorUnitSystem.get() : scriptUnitSystem.get();
+    }
+
+    /** The user's own pick behind _displaySystem(), '' when it follows the model. */
+    private _unitChoice(): string
+    {
+        return (this.context === 'configurator' ? configuratorUnitSystemPick.get() : scriptUnitSystemOverride.get()) ?? '';
     }
 
     /** The unit the stored value/bounds are expressed in (the conversion anchor).

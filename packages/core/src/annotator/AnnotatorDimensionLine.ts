@@ -31,6 +31,7 @@ import { Type } from 'typebox'
 
 import { roundTo } from '../utils' // utils
 import { MM_PER_UNIT, toMM, formatLength } from '../units/UnitConverter'
+import type { AnnotationFormat } from './annotationLayer'
 import { DOC_DEFAULT_SVG_FONT_FAMILY, DOC_DIMENSION_LINES_TEXT_HEIGHT, DOC_DIMENSION_LINES_ARROW_SIZE,
     DOC_DIMENSION_LINES_LINE_WIDTH } from '../constants'
 import { svgXY, svgLine, svgLeader, svgArrow, svgTextLabel } from './svgPrimitives'
@@ -920,7 +921,8 @@ export class DimensionLine extends BaseAnnotation
         this.offsetLength = o?.offset // Can also be 0, only if undefined/null we do something
         this.offsetLength = (this.offsetLength === undefined || o?.offset === null) ? this._calculateAutoOffsetLength() : this.offsetLength;
 
-        this.units = o?.units || this.units;
+        // Given no unit, a dimension measures in the one the model is built in
+        this.units = o?.units || this.units || this._archiyou?.modeler?.units?.() || null;
         this.showUnits = o?.showUnits ?? this.showUnits;
         this.roundDecimals = o?.roundDecimals || this.roundDecimals;
         // TODO: more: color, linethickness etc.
@@ -1144,7 +1146,8 @@ export class DimensionLine extends BaseAnnotation
      *     NOTE: we need to transform from Archiyou coordinate system to the SVG one (flip y)
      */
     toSVG(options?:{ drawingSize?:number, unitsPerMm?:number,
-        projector?:{ point:(p:any) => {x:number, y:number, z:number}, normal?:{x:number, y:number, z:number} } }):string
+        projector?:{ point:(p:any) => {x:number, y:number, z:number}, normal?:{x:number, y:number, z:number} },
+        format?:AnnotationFormat }):string
     {   
         /*  Size the line weight, arrowheads and value text for the page.
 
@@ -1197,7 +1200,7 @@ export class DimensionLine extends BaseAnnotation
         // Convert the raw value (in this.units, the model unit) into the active
         // display system with an auto-picked unit + fractional inches. Always
         // labelled so the value is unambiguous when metric/imperial is toggled.
-        const dimText = this._formatValueText();
+        const dimText = this._formatValueText(options?.format);
 
         /*  A dimension shorter than its own value text has nowhere to put it: written at the
             middle it spills over both arrowheads and, with a backing box, hides the very
@@ -1314,12 +1317,17 @@ export class DimensionLine extends BaseAnnotation
 
     /** Formatted value text — shared by toSVG() and toDXF().
      *  Uses the active unit system (metric/imperial) when available, else falls
-     *  back to the rounded raw value with optional unit suffix. */
-    _formatValueText():string
+     *  back to the rounded raw value with optional unit suffix.
+     *
+     *  @param format the unit system of what the dimension is drawn in (a document), which
+     *      wins over the run's own (modeler.unitSystem()).
+     */
+    _formatValueText(format?:AnnotationFormat):string
     {
         const v = (typeof this.value === 'string') ? parseFloat(this.value) : this.value;
-        const system = this._archiyou?.modeler?.unitSystem?.();
-        const src = this.units;
+        const system = format?.unitSystem ?? this._archiyou?.modeler?.unitSystem?.();
+        // Only fromShape() fills in the model unit; a line made any other way measures in it all the same
+        const src = this.units ?? this._archiyou?.modeler?.units?.();
         if (system && src && (src as string) in MM_PER_UNIT && typeof v === 'number')
         {
             /*  A metric drawing writes bare numbers — the unit is stated once, in the title
@@ -1331,11 +1339,12 @@ export class DimensionLine extends BaseAnnotation
             /*  Auto-picking the "best" unit only makes sense when that unit is PRINTED:
                 1200mm reads well as "1.2 m", and as plain "1.2" it means nothing at all on a
                 drawing whose every other number is in millimeters. So with the unit hidden
-                the value stays in the model's own unit — which is the one the title block
-                names — and 1200 is written 1200. */
+                the value stays in one unit — a document's mm (format.unit), which its title
+                block names, else the model's own — and 1200 is written 1200. */
             return formatLength(toMM(v, src), system, {
                 withUnit,
-                unit: withUnit ? undefined : src,
+                notation: format?.notation,
+                unit: withUnit ? undefined : (format?.unit ?? src),
                 /*  `roundDecimals` was dead here — this branch runs whenever a unit system is
                     known, which is always, so `dim({ roundDecimals: 2 })` silently did
                     nothing. It applies to the bare model-unit value; with the unit printed the

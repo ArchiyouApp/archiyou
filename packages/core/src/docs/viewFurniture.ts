@@ -20,6 +20,7 @@ import type { ModelUnits } from '../modeler/types'
 import type { ResolvedScale } from './scale'
 import { escapeXml, SVG_TEXT_FONT_FAMILY } from './utils'
 import { MM_PER_UNIT, formatLength } from '../units/UnitConverter'
+import type { ImperialNotation } from '../units/UnitConverter'
 
 //// SIZES (millimeters on the page) ////
 
@@ -51,6 +52,7 @@ export interface FurnitureInput
     bar?:boolean|BarOptions
     modelUnits?:ModelUnits
     unitSystem?:'metric'|'imperial'
+    notation?:ImperialNotation
     /** True when the script asked for a scale, rather than the view fitting the drawing.
      *  A fitted drawing has no scale worth printing. */
     hasRequestedScale?:boolean
@@ -155,6 +157,7 @@ interface ResolvedBar
     style:'alternating'|'ticks'
     labels:boolean
     unitSystem?:'metric'|'imperial'
+    notation?:ImperialNotation
     modelUnits?:ModelUnits
 }
 
@@ -183,6 +186,7 @@ function normalizeBar(input:FurnitureInput):ResolvedBar|null
         style: options.style ?? 'alternating',
         labels: options.labels !== false,
         unitSystem: input.unitSystem,
+        notation: input.notation,
         modelUnits: options.units && options.units !== 'auto' ? options.units : input.modelUnits,
     };
 }
@@ -257,7 +261,7 @@ function formatBarLength(units:number, b:ResolvedBar):string
     const mmPerUnit = MM_PER_UNIT[b.modelUnits as ModelUnits];
     if(!(mmPerUnit > 0)){ return `${roundNice(units)}` }
 
-    return formatLength(units * mmPerUnit, b.unitSystem ?? 'metric', { withUnit: true });
+    return formatLength(units * mmPerUnit, b.unitSystem ?? 'metric', { withUnit: true, notation: b.notation });
 }
 
 //// SHARED ////

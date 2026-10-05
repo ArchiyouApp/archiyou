@@ -87,6 +87,7 @@ import { Make } from './Make';
 import { brepShapeToMeshup, meshupShapeToBrep, isBrepShape, DEFAULT_MESHING_QUALITY } from './brep/toMeshup';
 
 import { GLTF_ANIMATION_DURATION } from '../constants';
+import { systemOfUnit } from '../units/UnitConverter';
 
 // Union classes that combine meshup and brep
 type PointLike = meshup.PointLike // only use one
@@ -110,8 +111,8 @@ export class Modeler
     declare private _modules: ArchiyouModules
     private _units: ModelUnits
     // Display preference (metric/imperial) — presentation only, does not change
-    // geometry. Set from the execution request; read by dimension-line SVG etc.
-    private _unitSystem: 'metric'|'imperial' = 'metric'
+    // geometry. Set from the execution request; unset follows units(), see unitSystem()
+    private _unitSystem?: 'metric'|'imperial'
 
     declare private _scene: meshup.SceneNode
     declare private _activeLayer: meshup.SceneNode | null
@@ -418,11 +419,12 @@ export class Modeler
         return this._units;
     }
 
-    /** Display unit system (metric/imperial) — presentation preference only. */
+    /** Display unit system (metric/imperial) — presentation preference only. Unless a request
+     *  sets it, it is the system of the model's units(): inch or feet make it imperial. */
     unitSystem(s?:'metric'|'imperial'):'metric'|'imperial'
     {
         if(s){ this._unitSystem = s } // setter
-        return this._unitSystem;
+        return this._unitSystem ?? systemOfUnit(this._units);
     }
 
     //// ==== MODELING PRIMITIVES ==== ////

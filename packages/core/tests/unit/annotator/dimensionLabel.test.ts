@@ -279,4 +279,37 @@ describe('the number itself', () =>
     {
         expect(await valueOf(1200, {}, 'imperial')).toBe(`47 1/4"`)
     })
+
+    it('follows the unit system of what it is drawn in over the run\'s', async () =>
+    {
+        const { modeler } = await setup('metric')
+        const dim = (modeler.rect(3000, 100) as any).bbox().back().dim() as any
+
+        expect(dim._formatValueText()).toBe('3000')
+        expect(dim._formatValueText({ unitSystem: 'imperial' })).toBe(`9'-10 1/8"`)
+        expect(dim._formatValueText({ unitSystem: 'imperial', notation: 'engineering' })).toBe(`9.84'`)
+        expect(dim.toSVG({ drawingSize: 3000, format: { unitSystem: 'imperial' } })).toContain(`9'-10 1/8"`)
+    })
+
+    it('measures in the model unit when it was not given one', async () =>
+    {
+        const { modeler, annotator } = await setup('imperial')
+        modeler.units('inch')
+
+        const bare = annotator.dimensionLine([0, 0, 0], [96, 0, 0]) as any
+        expect(bare.units).toBe('inch')
+        expect(bare._formatValueText()).toBe(`8'-0"`)
+
+        // with options but no units: the schema used to fill in 'mm', and 42 inches read 1 5/8"
+        const withOptions = annotator.dimensionLine([0, 0, 0], [42, 0, 0], { offset: 6 }) as any
+        expect(withOptions.units).toBe('inch')
+        expect(withOptions._formatValueText()).toBe(`42"`)
+
+        // and so does what autoDim() makes
+        const before = annotator.getAnnotations().length
+        ;(modeler.rect(42, 20) as any).autoDim()
+        const auto = annotator.getAnnotations().slice(before) as any[]
+        expect(auto.length).toBeGreaterThan(0)
+        auto.forEach(a => expect(a.units).toBe('inch'))
+    })
 })

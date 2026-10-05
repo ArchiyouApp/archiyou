@@ -178,6 +178,7 @@ async function runOnServer(
     // Presentation only, but omitting it silently renders an imperial configurator
     // in metric — the server has no other way to know.
     unitSystem: request.unitSystem,
+    docUnitSystem: request.docUnitSystem,
   });
 
   if (!response.data)

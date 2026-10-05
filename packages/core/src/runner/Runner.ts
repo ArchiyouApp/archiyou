@@ -1443,7 +1443,11 @@ ${contextLines.join('\n')}
         // stays in the script's model unit (mm unless $modeler.units() is set);
         // dimension lines / doc SVG convert to metric/imperial for display.
         if (request.unitSystem) { scope._archiyou.modeler.unitSystem(request.unitSystem); }
+        // The unit the script is authored in; its own units() call, run after this, still wins
+        if (request.modelUnits) { scope._archiyou.modeler.units(request.modelUnits); }
         scope._archiyou.docs.reset(); // TODO: check after rename doc => docs
+        // Documents can show in another system than the run (set after reset(), which clears it)
+        if (request.docUnitSystem) { scope._archiyou.docs._runUnitSystem = request.docUnitSystem; }
         scope._archiyou.calc.reset();
         scope._archiyou.annotator?.reset(); // doesnt have it
         // beginRun registers the script identity so getManagedHandlesData() can detect
@@ -2258,6 +2262,11 @@ ${contextLines.join('\n')}
      *  - outputs    a request for fewer outputs must not be served the fuller result, and
      *               vice versa. Sorted: order carries no meaning.
      *  - kernel/units  the same code models differently under brep and mesh.
+     *  - modelUnits  the same numbers are other lengths in inches than in millimeters, and
+     *               every dimension and doc scale follows them.
+     *  - docUnitSystem  the documents' system for the run; their text follows it.
+     *
+     *  A document otherwise follows the model's units(), which the component's code sets.
      */
     _componentResultCacheKey(script:Script, request:RunnerScriptExecutionRequest):string
     {
@@ -2268,6 +2277,8 @@ ${contextLines.join('\n')}
             outputs: [...(request.outputs ?? [])].sort(),
             kernel: request.kernel ?? '',
             unitSystem: request.unitSystem ?? '',
+            modelUnits: request.modelUnits ?? '',
+            docUnitSystem: request.docUnitSystem ?? '',
         }));
     }
 

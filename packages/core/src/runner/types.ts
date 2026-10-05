@@ -13,7 +13,7 @@ import type { Script } from "../Script";
 import type { ScriptData, ScriptMeta, ScriptParamData,
     ScriptStatementResult } from "../execution/types";
 
-import type { ModelMode } from "../modeler/types"; // mesh or brep
+import type { ModelMode, ModelUnits } from "../modeler/types"; // mesh or brep
 import type { ArchiyouStateData } from "../types";
 
 
@@ -81,11 +81,23 @@ export interface RunnerScriptExecutionRequest
     preset?:string // TODO: preset - overrides param values
     variantId?:string // hash of param values for identifying unique requests - is filled in on submission
     mode?: 'main'|'component'
-    /** Display unit system (metric/imperial) — how dimension-line/doc SVG text
-     *  is formatted for this run. Editor sends the script's system; the
-     *  configurator sends the end-user's local choice. Presentation only;
-     *  geometry stays in the script's model unit. */
+    /** Display unit system (metric/imperial) — how dimension text, readouts and mass are
+     *  formatted for this run, documents excepted (see docUnitSystem). Unset follows the
+     *  system of the model's units(). The editor sends the file-bar override, the
+     *  configurator the end-user's choice. Presentation only; geometry stays in the
+     *  script's model unit. */
     unitSystem?: 'metric'|'imperial'
+    /** Display unit system for documents only: the editor's document tool shows a metric
+     *  model's documents in imperial and vice versa. Unset, documents follow the system of the
+     *  model's units() — not `unitSystem`, which is the display override for everything else.
+     *  Presentation only. */
+    docUnitSystem?: 'metric'|'imperial'
+    /** The unit the script's numbers are in (modeler.units()), for a script authored in
+     *  inches: `rect(48, 96)` is then a 4 by 8 foot sheet. Not a conversion — geometry keeps
+     *  the numbers the script wrote; dimensions, doc scales and exports read them in this
+     *  unit. Unlike `unitSystem`, which only decides how values are displayed. A script's own
+     *  units() call still wins. Default: the modeler's own (mm). */
+    modelUnits?: ModelUnits
 
     /** Execute the script statement-by-statement instead of as one block. A single
      *  failing statement then halts the run but keeps the model built so far (partial

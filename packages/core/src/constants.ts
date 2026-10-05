@@ -1,4 +1,7 @@
 import type { ExecutionRequestOutputFormatGLTFOptions } from "./execution/types";
+import type { UnitSystem } from "./units/UnitConverter";
+import { toMM } from "./units/UnitConverter";
+import type { PageSize } from "./docs/types";
 
 //// ENGINE VERSION ////
 
@@ -142,6 +145,36 @@ export const DOC_DIMENSION_LINES_LINE_WIDTH = 0.15; // in mm
 export const DOC_CONTAINER_TITLE_TEXT_HEIGHT = 6; // in mm
 export const DOC_CONTAINER_CAPTION_TEXT_HEIGHT = 3; // in mm
 export const DOC_CONTAINER_CAPTION_TEXT_PADDING_FACTOR = 2; // applied to text height
+/** Width and height of each page size in millimeters, landscape. ISO (A0-A7), then the US
+ *  sizes: Letter/Legal/Tabloid, ANSI A-E and ARCH A-E1, which are defined in inches. */
+const inchPage = (w:number, h:number) => ({ w: toMM(w, 'inch'), h: toMM(h, 'inch') });
+export const PAGE_SIZE_TO_WIDTH_HEIGHT_MM:Record<PageSize, { w:number, h:number }> = {
+    A0: { w : 1189, h:841 },
+    A1: { w : 841, h:594  },
+    A2: { w : 594, h:420  },
+    A3: { w : 420, h:297  },
+    A4: { w : 297, h:210  },
+    A5: { w : 210, h:148  },
+    A6: { w : 148 , h:105  },
+    A7: { w : 105, h:74  },
+    Letter: inchPage(11, 8.5),
+    Legal: inchPage(14, 8.5),
+    Tabloid: inchPage(17, 11),
+    ANSI_A: inchPage(11, 8.5),
+    ANSI_B: inchPage(17, 11),
+    ANSI_C: inchPage(22, 17),
+    ANSI_D: inchPage(34, 22),
+    ANSI_E: inchPage(44, 34),
+    ARCH_A: inchPage(12, 9),
+    ARCH_B: inchPage(18, 12),
+    ARCH_C: inchPage(24, 18),
+    ARCH_D: inchPage(36, 24),
+    ARCH_E: inchPage(48, 36),
+    ARCH_E1: inchPage(42, 30),
+}
+
+/** How a table writes model values when it is on no document (see Document.resolveUnitSystem()) */
+export const DOC_UNIT_SYSTEM_DEFAULT:UnitSystem = 'metric';
 
 //// GLTF ANIMATIONS ////
 

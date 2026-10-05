@@ -166,7 +166,7 @@ export class View extends Container
             // value text, a label's leader and text box
             marginMm: hasAnnotations ? annotationMarginMm(archiyou?.annotator, annotations) : 0,
             modelUnits: archiyou?.modeler?.units?.(),
-            unitSystem: archiyou?.modeler?.unitSystem?.(),
+            unitSystem: this._page?._doc?.resolveUnitSystem(),
             input: this._scale,
             name: this.name,
         });
@@ -182,7 +182,7 @@ export class View extends Container
                 extents, wMm, hMm,
                 marginMm: hasAnnotations ? annotationMarginMm(archiyou?.annotator, annotations) : 0,
                 modelUnits: archiyou?.modeler?.units?.(),
-                unitSystem: archiyou?.modeler?.unitSystem?.(),
+                unitSystem: this._page?._doc?.resolveUnitSystem(),
                 input: 'fit',
                 name: this.name,
             });
@@ -194,7 +194,7 @@ export class View extends Container
         this._resolvedScale = (zoom === 1)
             ? resolved
             : { ...resolved, ratio: resolved.ratio * zoom, unitsPerMm: resolved.unitsPerMm / zoom,
-                label: scaleLabel(resolved.ratio * zoom, archiyou?.modeler?.unitSystem?.()),
+                label: scaleLabel(resolved.ratio * zoom, this._page?._doc?.resolveUnitSystem()),
                 fitted: false };
 
         return this._resolvedScale;
@@ -224,6 +224,12 @@ export class View extends Container
                         all: this._forceAll,
                         scoped: this._svgScope(),
                         css: this._scopedCss(),
+                        // the document's unit system, which may differ from the run's; metric
+                        // documents write their bare numbers in mm, whatever the model unit
+                        format: {
+                            unitSystem: this._page?._doc?.resolveUnitSystem(),
+                            unit: 'mm',
+                        },
                         frame: scale.fitted
                                 ? undefined
                                 : { mode: 'scale', unitsPerMm: scale.unitsPerMm, wMm, hMm,
@@ -558,7 +564,7 @@ export class View extends Container
             caption: this._viewCaption ?? undefined,
             bar: this._viewBar ?? undefined,
             modelUnits: archiyou?.modeler?.units?.(),
-            unitSystem: archiyou?.modeler?.unitSystem?.(),
+            unitSystem: this._page?._doc?.resolveUnitSystem(),
             hasRequestedScale: this._scale !== undefined && this._scale !== 'fit',
         });
     }

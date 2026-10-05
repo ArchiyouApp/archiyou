@@ -31,6 +31,7 @@ import { syncCreate, syncSaveActive, syncSaveNow, syncDelete, flushPendingSave }
 
 const SCRIPT_STORAGE_KEY  = 'archiyou:editor:script';
 const SCRIPTS_STORAGE_KEY = 'archiyou:editor:scripts';
+const UNITS_FOLLOW_MODEL_KEY = 'archiyou:editor:units-follow-model';
 
 /** The canonical data payload for a fresh editor script. */
 function _freshScriptData(): Record<string, any>
@@ -91,6 +92,29 @@ function _loadPersistedScript(): Script
     return (loaded instanceof Script) ? loaded : _freshScript();
   }
   catch { return _freshScript(); }
+}
+
+/** Until October 2026 every script the editor opened was stamped `units: 'metric'`, which
+ *  now reads as a deliberate override of the model's own system (see state/units.ts).
+ *  Removed once per browser, before anything loads. 'imperial' was only ever picked by
+ *  hand, so it stays. */
+function _clearLegacyUnitStamps(): void
+{
+  try
+  {
+    if (localStorage.getItem(UNITS_FOLLOW_MODEL_KEY)) return;
+    const unstamp = (d: any) =>
+    {
+      if (d && typeof d === 'object' && d.units === 'metric') delete d.units;
+      return d;
+    };
+    const active = localStorage.getItem(SCRIPT_STORAGE_KEY);
+    if (active) localStorage.setItem(SCRIPT_STORAGE_KEY, JSON.stringify(unstamp(JSON.parse(active))));
+    const list = JSON.parse(localStorage.getItem(SCRIPTS_STORAGE_KEY) ?? 'null');
+    if (Array.isArray(list)) localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify(list.map(unstamp)));
+    localStorage.setItem(UNITS_FOLLOW_MODEL_KEY, '1');
+  }
+  catch { /* storage unavailable or unreadable – the loaders cope on their own */ }
 }
 
 /** Load the persisted scripts collection (best-effort: skips invalid entries). */
@@ -165,6 +189,7 @@ export const userState = computed<UserState>(() => {
 // Hydration: load collection first, then active, then ensure the active
 // script is represented in the collection (upsert by fileId in memory) so
 // the on-disk collection's possibly-stale twin gets corrected on next save.
+_clearLegacyUnitStamps();
 const _initialScripts = _loadPersistedScripts();
 const _initialActive  = _loadPersistedScript();
 

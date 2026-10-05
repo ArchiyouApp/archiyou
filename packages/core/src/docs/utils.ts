@@ -1,11 +1,27 @@
 import type { DocUnitsWithPerc, DocPathStyle, ContainerAlignment } from './types'
 import { isDocUnitsWithPerc } from './typeguards'
 import { isNumeric } from '../utils'
+import { MM_PER_UNIT } from '../units/UnitConverter'
 import { DOC_DEFAULT_SVG_FONT_FAMILY, DOC_TEXT_HEIGHT_TO_FONT_SIZE_FACTOR } from '../constants'
 
 // ─── SVG rendering constants ────────────────────────────────────────────────
 
 export const SVG_TEXT_FONT_FAMILY = DOC_DEFAULT_SVG_FONT_FAMILY;
+
+/** Points (typographic, 1/72 inch) per inch */
+export const PNT_PER_INCH = 72;
+
+/** Millimeters in one point */
+export const MM_PER_PNT = MM_PER_UNIT.inch / PNT_PER_INCH;
+
+/** Millimeters in one of each paper unit. The model units come from UnitConverter,
+ *  points are paper-only so they are added here. */
+const MM_PER_DOC_UNIT:Record<Exclude<DocUnitsWithPerc,'%'>, number> = {
+    mm: MM_PER_UNIT.mm,
+    cm: MM_PER_UNIT.cm,
+    inch: MM_PER_UNIT.inch,
+    pnt: MM_PER_PNT,
+}
 
 /** Convert a value between units of measure */
 export function convertValueFromToUnit(v:number, from:DocUnitsWithPerc, to:DocUnitsWithPerc, relativeToNum?:number):number
@@ -16,67 +32,27 @@ export function convertValueFromToUnit(v:number, from:DocUnitsWithPerc, to:DocUn
         v = parseFloat(v);
     }
 
-    const INCH_TO_MM = 25.4;
-    const MM_TO_INCH = 0.0393700787;
-    const INCH_TO_PNT = 72;
-
     if( typeof v !== 'number'){ console.warn(`utils::convertValueFromToUnit(): Please supply a number!`); return null; }
     
     if((from === '%' || to === '%') && !relativeToNum ){ console.warn(`utils::convertValueFromToUnit(): Converting from/to % is not supported without a number to which we relate to! Returned original`); return v; } 
     if(!isDocUnitsWithPerc(from) || !isDocUnitsWithPerc(to)){ console.warn(`utils::convertValueFromToUnit(): Please supply valid from/to units ('mm', 'cm', 'inch'). Got "${from}"=>"${to}". Returned original`); return v; } 
 
-    if(from === to)
-    {
-        return v;
-    }
-    else if(from === 'inch')
-    {
-        if(to === 'mm'){ return v*INCH_TO_MM }
-        if(to === 'cm'){ return v*INCH_TO_MM/10 }
-        if(to === 'pnt'){ return v*INCH_TO_PNT }
-        if(to === '%'){ return v/relativeToNum*100 }
-    }
-    else if(from === 'cm')
-    {
-        if(to === 'mm'){ return v*10 }
-        if(to === 'inch'){ return v*10*MM_TO_INCH }
-        if(to === 'pnt'){ return v/10*MM_TO_INCH*INCH_TO_PNT }
-        if(to === '%'){ return v/relativeToNum*100 }
-    }
-    else if(from === 'mm')
-    {
-        if(to === 'cm'){ return v/10 }
-        if(to === 'inch'){ return v*10*MM_TO_INCH }
-        if(to === 'pnt'){ return v*MM_TO_INCH*INCH_TO_PNT }
-        if(to === '%'){ return v/relativeToNum*100 }
-    }
-    else if(from === 'pnt')
-    {
-        if(to === 'mm'){ return v/INCH_TO_PNT*INCH_TO_MM }
-        if(to === 'cm'){ return v/INCH_TO_PNT*INCH_TO_MM/10 }
-        if(to === 'inch'){ return v/INCH_TO_PNT }
-        if(to === '%'){ return v/relativeToNum*100 }
-    }
-    else if(from === '%')
-    {
-        if(to === 'mm'){ return v/100*relativeToNum }
-        if(to === 'cm'){ return v/100*relativeToNum }
-        if(to === 'pnt'){ return v/100*relativeToNum }
-        if(to === 'inch'){ return v/100*relativeToNum }
-    }
+    if(from === to){ return v; }
+    // A percentage relates to a number in the other unit, so it only scales
+    if(to === '%'){ return v/relativeToNum*100 }
+    if(from === '%'){ return v/100*relativeToNum }
 
-    console.warn(`Doc::_convertValueFromToUnit(): Could not convert. Check values for from ("${from}") and to ("${to}")!`);
-    return null;
+    return v * MM_PER_DOC_UNIT[from] / MM_PER_DOC_UNIT[to];
 }
 
 export function pointsToMm(p:number):number
 {
-    return p*1/72*25.4;
+    return p*MM_PER_PNT;
 }
 
 export function mmToPoints(m:number):number
 {
-    return m/25.4*72
+    return m/MM_PER_PNT
 }
 
 /** Convert a size value with optional units to font points.

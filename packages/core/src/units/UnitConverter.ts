@@ -5,7 +5,7 @@
  * (`Modeler.units()`, default `mm`). This module converts raw numbers from that
  * source unit into a chosen unit *system* (metric or imperial) for display, and
  * formats them — auto-picking a sensible unit and, for imperial, using fractional
- * inches (e.g. `1' 6 1/2"`). It never mutates geometry; it is presentation-only.
+ * inches (e.g. `1'-6 1/2"`). It never mutates geometry; it is presentation-only.
  *
  * Reused by the annotator (dimension lines), docs (SVG/PDF), the 3D viewer and
  * the param UI, so it must stay free of any module/DOM dependencies.
@@ -14,6 +14,10 @@
 import type { ModelUnits } from '../modeler/types'
 
 export type UnitSystem = 'metric' | 'imperial'
+
+/** How imperial lengths are written. Architectural is US drafting: feet and fractional
+ *  inches (`6'-0"`, `1'-6 1/2"`). Engineering is decimal (`1.54'`, `6.5"`). */
+export type ImperialNotation = 'architectural' | 'engineering'
 
 // ─── Conversion table (millimetres per unit) ────────────────────────────────
 
@@ -34,6 +38,12 @@ export const MM_PER_UNIT: Record<ModelUnits, number> = {
 export const UNIT_SYSTEMS: Record<UnitSystem, ModelUnits[]> = {
     metric:   ['mm', 'cm', 'dm', 'm', 'km'],
     imperial: ['inch', 'feet', 'yd', 'mi'],
+}
+
+/** Whether a free-form unit (a metric's '€', a param's 'mm') is a length unit this converts. */
+export function isLengthUnit(unit: unknown): unit is ModelUnits
+{
+    return typeof unit === 'string' && Object.hasOwn(MM_PER_UNIT, unit);
 }
 
 /** Which system a unit belongs to. */
@@ -221,6 +231,8 @@ export interface FormatOpts extends PickUnitOpts
     metricDecimals?: number;
     /** Append the unit symbol/label (default true). */
     withUnit?: boolean;
+    /** Imperial notation (default 'architectural'). */
+    notation?: ImperialNotation;
 }
 
 /** Format a fractional-inch string like `6 1/2"`, `6"`, `1/2"`. */
@@ -234,32 +246,35 @@ function fractionToInchStr(f: InchFraction, withUnit: boolean): string
     return `${f.neg ? '-' : ''}${body}${sym}`;
 }
 
-/** Format a length (in mm) as imperial with fractional inches. */
+/** Format a length (in mm) as imperial: architectural (fractional inches, `1'-6 1/2"`)
+ *  or engineering (decimal, `1.54'`). */
 export function formatImperial(mm: number, opts: FormatOpts = {}): string
 {
     const withUnit = opts.withUnit !== false;
     const denom    = opts.fractionDenom ?? IMPERIAL_FRACTION_DENOM;
     const unit     = opts.unit ?? pickBestUnit(mm, 'imperial', opts);
+    const decimal  = opts.notation === 'engineering';
 
     if (unit === 'inch')
     {
-        return fractionToInchStr(toFraction(fromMM(mm, 'inch'), denom), withUnit);
+        return decimal
+            ? `${roundStr(fromMM(mm, 'inch'), 2)}${withUnit ? '"' : ''}`
+            : fractionToInchStr(toFraction(fromMM(mm, 'inch'), denom), withUnit);
     }
     if (unit === 'feet')
     {
+        if (decimal) { return `${roundStr(fromMM(mm, 'feet'), 2)}'`; }
+
         const neg        = mm < 0;
         const totalInch  = Math.abs(fromMM(mm, 'inch'));
         const feet       = Math.floor(totalInch / 12);
         const frac       = toFraction(totalInch - feet * 12, denom);
         // fraction may carry the inch remainder up to 12 → roll into feet
-        let ft = feet, inchWhole = frac.whole, inchNum = frac.num, inchDen = frac.den;
+        let ft = feet, inchWhole = frac.whole;
         if (inchWhole >= 12) { ft += Math.floor(inchWhole / 12); inchWhole = inchWhole % 12; }
-        const feetStr = `${neg ? '-' : ''}${ft}'`;
-        const inchPart: InchFraction = { whole: inchWhole, num: inchNum, den: inchDen, neg: false };
-        const inchStr = (inchWhole === 0 && inchNum === 0)
-            ? (withUnit ? '' : '')
-            : ' ' + fractionToInchStr(inchPart, withUnit);
-        return `${feetStr}${inchStr}`;
+        // Drafting writes the inches even when there are none: 6'-0", never a bare 6'
+        const inchPart: InchFraction = { whole: inchWhole, num: frac.num, den: frac.den, neg: false };
+        return `${neg ? '-' : ''}${ft}'-${fractionToInchStr(inchPart, withUnit)}`;
     }
     // yd / mi — decimal
     const v = fromMM(mm, unit);

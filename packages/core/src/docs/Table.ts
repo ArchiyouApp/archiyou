@@ -3,6 +3,9 @@ import type { ContainerData, ContainerContent, TableContainerOptions, PageSVGCon
 import type { DataRows, DataRowsColumnValue } from '../calc/types'
 import { convertSizeUnitsToFontPoints, convertTextHeightUnitsToFontPoints, pointsToMm, escapeXml, SVG_TEXT_FONT_FAMILY } from './utils'
 import { Color } from '@archiyou/meshup'
+import { isLengthUnit, formatFromUnit } from '../units/UnitConverter'
+import type { UnitSystem } from '../units/UnitConverter'
+import { DOC_UNIT_SYSTEM_DEFAULT } from '../constants'
 
 //// MAIN CLASS ////
 
@@ -43,6 +46,7 @@ export class Table extends Container
         this._setFontSize(options?.fontsize || this.DEFAULT_FONT_SIZE);
         this._setFontColor(options?.fontcolor || this.DEFAULT_FONT_COLOR);
         this._options.footer = options?.footer ?? [];
+        this._options.units = options?.units ?? {};
     }
 
     /** Set size of text in traditional 'points'. Real doc units (mm,cm,inch) are converted to points */
@@ -91,11 +95,11 @@ export class Table extends Container
             });
         };
 
-        drawRow(cols, 0, { bold: true, fill: TABLE_HEADER_FILL });
+        drawRow(cols.map(col => this._headerText(col)), 0, { bold: true, fill: TABLE_HEADER_FILL });
         rows.forEach((row, ri) =>
         {
             const rowY = (ri + 1) * rowHMm;
-            const vals = cols.map(col => String((row as Record<string, DataRowsColumnValue>)[col] ?? ''));
+            const vals = cols.map(col => this._cellText(col, (row as Record<string, DataRowsColumnValue>)[col]));
             drawRow(vals, rowY);
         });
 
@@ -109,11 +113,37 @@ export class Table extends Container
                 // thicker separating line spanning the full table width above this footer row
                 lines.push(`<line x1="0" y1="${fmt(rowY)}" x2="${fmt(wMm)}" y2="${fmt(rowY)}" stroke="black" stroke-width="${TABLE_BORDER_MM * 4}"/>`);
             }
-            const vals = cols.map(col => String(fRow.values?.[col] ?? ''));
+            const vals = cols.map(col => this._cellText(col, fRow.values?.[col]));
             drawRow(vals, rowY, { bold: fRow.bold !== false, fill: fRow.fill });
         });
 
         return `<g>${lines.join('')}</g>`;
+    }
+
+    /** A cell as text. A number in a column with a unit (see TableContainerOptions.units) is
+     *  written the imperial way when the document is imperial; metric keeps it as it is, in
+     *  the unit its header names. */
+    _cellText(col:string, val:any):string
+    {
+        const unit = this._options.units?.[col];
+        if(isLengthUnit(unit) && typeof val === 'number' && this._unitSystem() === 'imperial')
+        {
+            return formatFromUnit(val, unit, 'imperial');
+        }
+        return String(val ?? '');
+    }
+
+    /** A column header. A metric length column names its unit, which its cells leave out:
+     *  'length (mm)'. Imperial values carry their own marks. */
+    _headerText(col:string):string
+    {
+        const unit = this._options.units?.[col];
+        return (isLengthUnit(unit) && this._unitSystem() === 'metric') ? `${col} (${unit})` : col;
+    }
+
+    _unitSystem():UnitSystem
+    {
+        return this._page?._doc?.resolveUnitSystem() ?? DOC_UNIT_SYSTEM_DEFAULT;
     }
 
     //// OUTPUT: DATA ////

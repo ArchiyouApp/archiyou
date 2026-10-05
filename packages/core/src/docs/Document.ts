@@ -25,7 +25,7 @@
  */
 
 import { Docs } from './Docs'
-import { Page } from './Page'
+import { Page, PAGE_SIZES_TEXT } from './Page'
 import { Container } from './Container'
 import { View } from './View'
 import { Text } from './Text'
@@ -57,8 +57,10 @@ import { isDocUnits, isPercentageString, isValueWithUnitsString, isAnyPageContai
     isContainerPositionCoordAbs, isPageSize } from './typeguards'
 
 import { convertValueFromToUnit, escapeXml } from './utils'
-import { isNumeric } from '../utils'
+import { isNumeric, roundTo } from '../utils'
 import { DOC_DEFAULT_LOGO_URL } from '../constants'
+import { isLengthUnit, formatFromUnit, systemOfUnit } from '../units/UnitConverter'
+import type { UnitSystem } from '../units/UnitConverter'
 
 
 /** A document that is part of a Docs module instance.
@@ -68,7 +70,9 @@ export class Document
     //// SETTINGS ////
     DOC_DEFAULT_NAME = 'Document'; // default name for document
     DOC_UNITS_DEFAULT:DocUnits = 'mm'; // default document units
-    DOC_PAGE_SIZE_DEFAULT:PageSize = 'A4'; // default ISO page size (A0-A7)
+    DOC_UNITS_IMPERIAL_DEFAULT:DocUnits = 'inch'; // default document units for a model in inches or feet
+    DOC_PAGE_SIZE_DEFAULT:PageSize = 'A4'; // default page size
+    DOC_PAGE_SIZE_IMPERIAL_DEFAULT:PageSize = 'Letter'; // default page size for a model in inches or feet
     DOC_PAGE_ORIENTATION_DEFAULT:PageOrientation = 'landscape'; // default page orientation
     CONTENT_ALIGN_DEFAULT:ContainerAlignment = ['left', 'top'];
     TEXT_SIZE_DEFAULT = '10mm';
@@ -76,7 +80,7 @@ export class Document
     //// END SETTINGS
 
     _name:string; // name of document
-    _pageSize:PageSize; // ISO page size (A0-A7)
+    _pageSize:PageSize; // page size (A0-A7, Letter, ANSI_A-E, ARCH_A-E1 ...)
     _pageOrientation:PageOrientation;
     _units:DocUnits;
 
@@ -96,9 +100,11 @@ export class Document
         this._docs = doc; // reference to Docs module
         this._name = name;
 
-        this._pageSize = this.DOC_PAGE_SIZE_DEFAULT; // default page size
+        // the paper is in the model's system: Letter in inches for a model in inches or feet
+        const imperial = this._modelUnitSystem() === 'imperial';
+        this._pageSize = imperial ? this.DOC_PAGE_SIZE_IMPERIAL_DEFAULT : this.DOC_PAGE_SIZE_DEFAULT;
         this._pageOrientation = this.DOC_PAGE_ORIENTATION_DEFAULT; // default page orientation
-        this._units = this.DOC_UNITS_DEFAULT; // default document units
+        this._units = imperial ? this.DOC_UNITS_IMPERIAL_DEFAULT : this.DOC_UNITS_DEFAULT;
     }
 
     /** Add page to this document */
@@ -144,10 +150,26 @@ export class Document
         return this;
     }
 
-    /** Set general page ISO size (A0,A4 etc) for this doc */
+    /** The unit system this document writes model values in (dimensions, scale bar, titleblock,
+     *  table columns with units): the run's for documents if it has one (request.docUnitSystem,
+     *  the editor's document tool), else the system of the model's units(). Metric writes mm,
+     *  imperial inches and feet. */
+    resolveUnitSystem():UnitSystem
+    {
+        return this._docs?._runUnitSystem ?? this._modelUnitSystem();
+    }
+
+    /** The system of the units the model is built in: inch or feet make it imperial */
+    _modelUnitSystem():UnitSystem
+    {
+        return systemOfUnit(this._docs?._archiyou?.modeler?.units?.() ?? 'mm');
+    }
+
+    /** Set general page size for this doc: ISO (A0-A7), US (Letter, Legal, Tabloid),
+     *  ANSI (ANSI_A-ANSI_E) or architectural (ARCH_A-ARCH_E1) */
     pageSize(size:PageSize):this
     {
-        if(!isPageSize(size)){ throw new Error(`Document::pageSize: Invalid ISO page size. Use: A0, A4 etc!`);}
+        if(!isPageSize(size)){ throw new Error(`Document::pageSize: Invalid page size "${size}". Use: ${PAGE_SIZES_TEXT}`);}
         this._pageSize = size;
         return this;
     }
@@ -549,8 +571,11 @@ export class Document
      *
      *  Its texts are variables, to set later with set(): 'titleblock:title', 'titleblock:designer',
      *  'titleblock:designLicense', 'titleblock:manualLicense', 'titleblock:logoUrl',
-     *  'titleblock:version', 'titleblock:metrics' and 'titleblock:params'. With a titleblock
-     *  on more pages, set() changes all of them.
+     *  'titleblock:version', 'titleblock:units', 'titleblock:metrics' and 'titleblock:params'.
+     *  With a titleblock on more pages, set() changes all of them.
+     *
+     *  'titleblock:units' says what the drawing's bare numbers are in ('All dimensions in mm').
+     *  It is empty when the document is imperial: imperial values carry their own marks.
      */
     titleblock(data?:TitleBlockInput):this
     {
@@ -590,6 +615,14 @@ export class Document
             .pivot(1,0)
             .position([`${pageWidthMm-30}mm`, '6mm'] as ContainerPositionAbs)
             ._varAdd('titleblock:version');
+
+        // What the bare numbers on the drawing are in, right under the version
+        this.text(this._dimensionUnitNote(), { size: '2mm'})
+            .width(`${TITLE_BLOCK_NUM/2}mm`)
+            .height('3mm')
+            .pivot(1,0)
+            .position([`${pageWidthMm-30}mm`, '3mm'] as ContainerPositionAbs)
+            ._varAdd('titleblock:units');
 
         // Metric labelblock
         this.labelblock('metrics', this._getMetricSummary(), { y: '11mm', width: TITLEBLOCK_WIDTH, numTextLines: 2, vars: ['titleblock:metrics'] }); // TODO: dynamic param readout
@@ -636,7 +669,7 @@ export class Document
         // the lookup was always undefined and every titleblock read "no parameters".
         // Only the fields the summary needs — ScriptParam instances and plain wire data
         // (ScriptParamData) both satisfy this, so either source can be read the same way.
-        type ParamSummarySource = { name?:string, label?:string, default?:any, _value?:any };
+        type ParamSummarySource = { name?:string, label?:string, default?:any, _value?:any, units?:string };
 
         const paramManager = (this._docs._archiyou?.runner?.getActiveScope?.() as any)?._paramManager;
         const managedParams = paramManager?.getParams?.() as Array<ParamSummarySource>|undefined;
@@ -652,6 +685,7 @@ export class Document
                                     name: p?.name,
                                     label: p?.label,
                                     value: (p as any)?._value ?? p?.default,
+                                    units: p?.units,
                                 }))
 
         return paramsWithValues.map(p => {
@@ -668,7 +702,7 @@ export class Document
                 const paramNameParts = (this._splitStringRecurse([paramName], PARAM_SPLIT_CHARS) ?? []).filter(s => s.length > 0);
                 paramSummaryName = paramNameParts.slice(0,PARAM_NAME_MAXCHAR).reduce((agg,cur) => agg += cur[0].toUpperCase(), '');
             }
-            return `${paramSummaryName}${PARAM_IS_VALUE_CHAR}${this._formatMetricParamValue(p.value)}`;
+            return `${paramSummaryName}${PARAM_IS_VALUE_CHAR}${this._formatTitleBlockValue(p.value, p.units)}`;
         })
         .filter(Boolean)
         .join(PARAM_SEPERATOR_CHAR)
@@ -702,31 +736,65 @@ export class Document
                 const metricNameParts = (this._splitStringRecurse([metricName], METRIC_SPLIT_CHARS) ?? []).filter(s => s.length > 0);
                 metricSummaryName = metricNameParts.slice(0,METRIC_NAME_MAXCHAR).reduce((agg,cur) => agg += cur[0].toUpperCase(), '');
             }
-            return `${metricSummaryName}${METRIC_IS_VALUE_CHAR}${this._formatMetricParamValue(m.data as any)} ${m?.options?.unit ?? ''}`;
+            // an imperial length carries its marks, so the unit is not written after it
+            const unit = m?.options?.unit;
+            const unitText = this._isLengthWithMarks(unit) ? '' : ` ${unit ?? ''}`;
+            return `${metricSummaryName}${METRIC_IS_VALUE_CHAR}${this._formatTitleBlockValue(m.data, unit)}${unitText}`;
         })
         .filter(Boolean)
         .join(METRIC_SEPERATOR_CHAR)
     }
 
-    _formatMetricParamValue(v:string|number):string
+    /** A param or metric value, short enough for the titleblock.
+     *
+     *  A length (a number with a length unit, or a string like '1200mm') is written in the
+     *  document's unit system: imperial reformats it with its own marks (47 1/4", 9'-10 1/8"),
+     *  metric keeps it in the unit it came in, the one the rest of the drawing reads in.
+     *  Formatted lengths are never cut; other strings are.
+     *
+     *  @param sourceUnit the unit a numeric value is in. Anything not a length unit (€, kg)
+     *      leaves the value as it is.
+     */
+    _formatTitleBlockValue(v:any, sourceUnit?:string):string
     {
-        const MAX_LENGTH = 5;
-        const TRANSFORM_REPLACE_VALUES = {
-            true : 'yes',
-            false : 'no',
-            mm : '', // remove mm
+        const TITLE_BLOCK_VALUE_MAXCHAR = 8;
+
+        if(v === null || v === undefined){ return 'none' }
+        if(typeof v === 'boolean'){ return v ? 'yes' : 'no' }
+
+        // a number with its unit written after it: '1200mm', '123.456 mm'
+        const withUnit = (typeof v === 'string') ? v.trim().match(/^(-?[\d.]+)\s*([a-z]+)$/) : null;
+        if(withUnit && isNumeric(withUnit[1]) && isLengthUnit(withUnit[2]))
+        {
+            return this._formatTitleBlockValue(parseFloat(withUnit[1]), withUnit[2]);
+        }
+        if(typeof v === 'string' && ['true','false'].includes(v)){ return (v === 'true') ? 'yes' : 'no' }
+
+        if(typeof v === 'number')
+        {
+            if(isLengthUnit(sourceUnit) && this.resolveUnitSystem() === 'imperial')
+            {
+                return formatFromUnit(v, sourceUnit, 'imperial');
+            }
+            return String(roundTo(v, 2));
         }
 
-        let s = (typeof v !== 'string') ? (v?.toString() || 'none') : v;
-        Object.keys(TRANSFORM_REPLACE_VALUES)
-            .forEach((r,i) => {
-                if(s.includes(r))
-                {
-                    s = s.replace(r, TRANSFORM_REPLACE_VALUES[r]);
-                }
-            })
+        return String(v).slice(0, TITLE_BLOCK_VALUE_MAXCHAR);
+    }
 
-        return s.slice(0, MAX_LENGTH)
+    /** Whether a titleblock value was written with its own unit marks (imperial lengths are) */
+    _isLengthWithMarks(unit?:string):boolean
+    {
+        return isLengthUnit(unit) && this.resolveUnitSystem() === 'imperial';
+    }
+
+    /** What the drawing's bare numbers are in: its dimensions and the lengths in the
+     *  titleblock. Empty for imperial, where every value carries its own marks. */
+    _dimensionUnitNote():string
+    {
+        if(this.resolveUnitSystem() === 'imperial'){ return '' }
+        // whatever unit the model is in, see View: format.unit
+        return 'All dimensions in mm';
     }
 
     /** Get version in different contexts

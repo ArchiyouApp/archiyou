@@ -572,6 +572,8 @@ export class RunnerComponentImporter
         const request:RunnerScriptExecutionRequest = {
             kernel: parentRequest?.kernel ?? 'mesh',
             unitSystem: parentRequest?.unitSystem,
+            docUnitSystem: parentRequest?.docUnitSystem,
+            modelUnits: parentRequest?.modelUnits,
             script: script,
             component: this.label, // scope identifier
             params: this._params,

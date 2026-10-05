@@ -10,10 +10,12 @@ import '@awesome.me/webawesome/dist/components/select/select.js';
 import '@awesome.me/webawesome/dist/components/option/option.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '../../unit-switch.js';
 
-import { executionResult } from '@archiyou/editor/src/state/workspace';
-import { formatLength } from '@archiyou/core/src/units/UnitConverter';
+import { executionResult, docUnitSystem, setDocUnitSystem } from '@archiyou/editor/src/state/workspace';
+import { formatLength, systemOfUnit } from '@archiyou/core/src/units/UnitConverter';
 import type { UnitSystem } from '@archiyou/core/src/units/UnitConverter';
+import type { ModelUnits } from '@archiyou/core/src/modeler/types';
 
 import { PDFExporter } from '@archiyou/core/src/docs/PDFExporter';
 import type { DocSVGPage } from '@archiyou/core/src/docs/types';
@@ -95,6 +97,12 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
           ? html`<span class="doc-size">${this._formatDocSize()}</span>`
           : ''}
         <span class="spacer"></span>
+        <unit-switch
+          class="unit-switch"
+          title="Document units — Metric / Imperial. Follows the script's units() until you pick one"
+          .value=${docUnitSystem.get()}
+          @unit-system-change=${(e: CustomEvent<UnitSystem>) => setDocUnitSystem(e.detail)}
+        ></unit-switch>
         <wa-button
           class="pdf-btn"
           size="small"
@@ -288,11 +296,14 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
     this._docH = h;
   }
 
-  /** Format the cached document size (mm) per the active Metric/Imperial system. */
+  /** Format the cached document size (mm) in the system the shown documents were written in:
+   *  the run's document override, else the system of its model's units(). */
   private _formatDocSize(): string | null
   {
     if (this._docW === null || this._docH === null) return null;
-    const system = (executionResult.get()?.request?.unitSystem as UnitSystem) ?? 'metric';
+    const result = executionResult.get();
+    const system: UnitSystem = result?.request?.docUnitSystem
+      ?? systemOfUnit((result?.meta?.units as ModelUnits | undefined) ?? 'mm');
     const w = formatLength(this._docW, system, { withUnit: false });
     const h = formatLength(this._docH, system, { withUnit: true });
     return `${w} × ${h}`;
@@ -438,6 +449,7 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
     }
 
     .spacer { flex: 1; }
+    .unit-switch { flex-shrink: 0; }
     .reset-btn { flex-shrink: 0; }
     .pdf-btn { flex-shrink: 0; }
 

@@ -11,6 +11,7 @@ import { DOC_DEFAULT_SVG_FONT_FAMILY, DOC_TEXT_HEIGHT_TO_FONT_SIZE_FACTOR } from
 import { Modeler } from '../../../src/modeler/Modeler'
 import { Docs } from '../../../src/docs/Docs'
 import { pointsToMm, mmToPoints, imageAspectRatio } from '../../../src/docs/utils'
+import { isPageSize } from '../../../src/docs/typeguards'
 import { ShapeCollection as SmartShapeCollection } from '@archiyou/meshup'
 
 const TEST_OUTPUTS_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../../outputs/docs')
@@ -58,6 +59,41 @@ describe('Doc', () =>
 		expect(activeDoc?._units).toBe('cm')
 		expect(activeDoc?._pageSize).toBe('A3')
 		expect(activeDoc?._pageOrientation).toBe('portrait')
+	})
+
+	it('sizes a page in inches when the document is in inches', () =>
+	{
+		const { doc } = createDoc()
+
+		doc.create('inches')
+			.units('inch')
+			.page('sheet')
+
+		const page = doc.getDoc('inches')?._pages[0]
+
+		// A4 landscape is 297 x 210 mm
+		expect(page?._width).toBeCloseTo(11.69, 2)
+		expect(page?._height).toBeCloseTo(8.27, 2)
+	})
+
+	it('knows the US page sizes: Letter, ANSI and ARCH', async () =>
+	{
+		const { doc } = createDoc()
+
+		doc.create('letter').pageSize('Letter').page('sheet').text('Letter')
+		const letter = (await doc.getDoc('letter')!.toSVGPages())[0]
+		expect(letter.widthMm).toBeCloseTo(279.4, 6)
+		expect(letter.heightMm).toBeCloseTo(215.9, 6)
+
+		doc.create('arch').units('inch').pageSize('ARCH_D').page('sheet')
+		const arch = doc.getDoc('arch')!._pages[0]
+		expect(arch._width).toBeCloseTo(36, 9)
+		expect(arch._height).toBeCloseTo(24, 9)
+
+		expect(isPageSize('ANSI_A')).toBe(true)
+		expect(isPageSize('ANSI_A0')).toBe(false) // the old /A[0-7]$/ let this through
+		expect(isPageSize('toString')).toBe(false)
+		expect(() => doc.create('bad').pageSize('B5' as any)).toThrow(/Letter.*ARCH_A/)
 	})
 
 	it('creates pages and applies page-level settings on the active page', () =>
@@ -169,12 +205,61 @@ describe('Doc', () =>
 		const summaryDoc = doc.create('summaries')
 
 		expect(summaryDoc._splitStringRecurse(['beam-width value'], ['-', ' '])).toEqual(['beam', 'width', 'value'])
-		expect(summaryDoc._formatMetricParamValue('123.456mm')).toBe('123.4')
-		expect(summaryDoc._getMetricSummary()).toBe('BL:123.4 mm')
+		expect(summaryDoc._formatTitleBlockValue('123.456mm')).toBe('123.46')
+		expect(summaryDoc._getMetricSummary()).toBe('BL:123.46 mm')
 		expect(summaryDoc._getParamSummary()).toBe('BW:1200')
 		expect(summaryDoc._getVersion()).toBe('v2.3.4')
 		// Stamped at render time — the request carries no creation timestamp.
 		expect(summaryDoc._getVersionSummary()).toMatch(/^v2\.3\.4 at .+/)
+	})
+
+	it('writes lengths in the titleblock in the unit system of the document', () =>
+	{
+		const { doc } = createDoc({
+			calc: {
+				metrics()
+				{
+					return {
+						SIZE: { name: 'SIZE', data: 3000, options: { unit: 'mm' } },
+						COST: { name: 'COST', data: 45, options: { unit: '€' } },
+					}
+				},
+			},
+			runner: {
+				getActiveScope()
+				{
+					return {
+						_paramManager: {
+							getParams()
+							{
+								return [
+									{ name: 'WIDTH', _value: 1200, units: 'mm' },
+									{ name: 'LEGS', _value: 4 },
+									{ name: 'hammer', _value: 'hammer' },
+									{ name: 'OPEN', _value: true },
+								]
+							},
+						},
+					}
+				},
+			},
+		})
+
+		const metric = doc.create('metric')
+		expect(metric._getParamSummary()).toBe('W:1200 LEGS:4 H:hammer OPEN:yes')
+		expect(metric._getMetricSummary()).toBe('SIZE:3000 mm COST:45 €')
+		expect(metric._dimensionUnitNote()).toBe('All dimensions in mm')
+
+		doc._runUnitSystem = 'imperial' // as request.docUnitSystem sets it
+		const imperial = doc.create('imperial')
+		expect(imperial._getParamSummary()).toBe(`W:47 1/4" LEGS:4 H:hammer OPEN:yes`)
+		expect(imperial._getMetricSummary()).toBe(`SIZE:9'-10 1/8" COST:45 €`)
+		expect(imperial._dimensionUnitNote()).toBe('')
+
+		// long strings are cut, formatted lengths never are
+		expect(imperial._formatTitleBlockValue('a very long value')).toBe('a very l')
+		expect(imperial._formatTitleBlockValue(3000, 'mm')).toBe(`9'-10 1/8"`)
+		expect(imperial._formatTitleBlockValue(null)).toBe('none')
 	})
 
 	it('summarises "no metrics"/"no parameters" instead of throwing when there are none', () =>

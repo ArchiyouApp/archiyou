@@ -11,6 +11,7 @@ import type {
 import { Container } from "./Container"
 import { View } from "./View"
 import { isDataRows } from "../calc/typeguards"
+import { PAGE_SIZE_TO_WIDTH_HEIGHT_MM } from "../constants"
 
 
 export function isContainerHAlignment(o:any): o is ContainerHAlignment
@@ -89,7 +90,7 @@ export function isTextAreaAlign(o:any): o is TextAreaAlign
 export function isPageSize(o:any): o is PageSize
 {
     if(typeof o !== 'string'){ return false };
-    return o.match(/A[0-7]$/) !== null;
+    return Object.hasOwn(PAGE_SIZE_TO_WIDTH_HEIGHT_MM, o);
 }
 
 export function isPageOrientation(o:any): o is PageOrientation

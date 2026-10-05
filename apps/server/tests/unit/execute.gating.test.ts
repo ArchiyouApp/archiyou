@@ -282,3 +282,69 @@ describe('POST /scripts/published/execute — admin-validated scripts', () =>
         expect(getPublished).not.toHaveBeenCalled();
     });
 });
+
+describe('POST /scripts/published/execute — model units', () =>
+{
+    /** The app with an execution manager that records the request instead of running it */
+    async function withRecordingManager()
+    {
+        const execute = vi.fn(async () => ({ success: true, error: null, data: null }));
+        const instance = Fastify();
+        instance.decorate('executionManager', { execute } as any);
+        await instance.register(registerExecuteRoutes);
+        await instance.ready();
+        return { instance, execute };
+    }
+
+    it('hands the unit a script is authored in to the run', async () =>
+    {
+        config.execution.allowValidated = true;
+        getPublished.mockReturnValue(publishedScript(true));
+        const { instance, execute } = await withRecordingManager();
+
+        const res = await instance.inject({ method: 'POST', url: ROUTE, payload: { modelUnits: 'inch' } });
+
+        expect(res.statusCode).toBe(200);
+        expect((execute.mock.calls[0] as any)[0].modelUnits).toBe('inch');
+        await instance.close();
+    });
+
+    it("hands the documents' unit system to the run", async () =>
+    {
+        config.execution.allowValidated = true;
+        getPublished.mockReturnValue(publishedScript(true));
+        const { instance, execute } = await withRecordingManager();
+
+        const res = await instance.inject({ method: 'POST', url: ROUTE, payload: { docUnitSystem: 'imperial' } });
+
+        expect(res.statusCode).toBe(200);
+        expect((execute.mock.calls[0] as any)[0].docUnitSystem).toBe('imperial');
+        await instance.close();
+    });
+
+    it('refuses an unknown unit system for the documents with 400', async () =>
+    {
+        config.execution.allowValidated = true;
+        getPublished.mockReturnValue(publishedScript(true));
+        const { instance, execute } = await withRecordingManager();
+
+        const res = await instance.inject({ method: 'POST', url: ROUTE, payload: { docUnitSystem: 'nautical' } });
+
+        expect(res.statusCode).toBe(400);
+        expect(execute).not.toHaveBeenCalled();
+        await instance.close();
+    });
+
+    it('refuses a unit that is not a length with 400', async () =>
+    {
+        config.execution.allowValidated = true;
+        getPublished.mockReturnValue(publishedScript(true));
+        const { instance, execute } = await withRecordingManager();
+
+        const res = await instance.inject({ method: 'POST', url: ROUTE, payload: { modelUnits: 'furlong' } });
+
+        expect(res.statusCode).toBe(400);
+        expect(execute).not.toHaveBeenCalled();
+        await instance.close();
+    });
+});

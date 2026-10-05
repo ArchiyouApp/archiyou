@@ -47,6 +47,7 @@ import type { ModelUnits } from './types'
 import { detectExportFrame, drawnInPlane, isPlanFrame, planeTolerance, projectorFor, shapeBox,
     type ExportFrame, type ExportPlane } from './utils'
 import { annotationLayer, annotationMarginMm, collectAnnotations } from '../annotator/annotationLayer'
+import type { AnnotationFormat } from '../annotator/annotationLayer'
 import { isKernelShapeCollection } from './typeguards'
 
 //// TYPES ////
@@ -944,6 +945,9 @@ export interface RenderDrawingOptions
     css?: string
     units?: ModelUnits
     title?: string
+    /** How dimension values are written, when the drawing belongs to something with a unit
+     *  system of its own (a document). Unset follows the run: modeler.unitSystem(). */
+    format?: AnnotationFormat
 }
 
 /** Line weight on paper, in millimeters. A normal technical drawing weight. */
@@ -1000,6 +1004,7 @@ export function renderDrawingFromLayer(
             // it was drawn in so a view that re-draws its annotations per page still agrees
             // with line-work it serialized once.
             projector: isPlanFrame(geometry.frame ?? null) ? undefined : projectorFor(geometry.frame!),
+            format: options?.format,
         })
         annotated = annotations.elements.length > 0
         layers.push(annotations)
