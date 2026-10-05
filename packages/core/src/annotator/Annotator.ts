@@ -291,14 +291,28 @@ export class Annotator
         this.annotations = checkedAnnotations;
     }
 
-    /** Get all annotations in one Array. See interfaces like DimensionLineData */
+    /** The annotations the scene shows, as data. See interfaces like DimensionLineData.
+     *  One linked to a Shape shows only while that Shape is in the scene and visible, so the
+     *  dimension lines an isometry carries over leave with it when it is made tmp(). Drawings
+     *  are not affected: they take the annotations linked to the Shapes they draw. */
     getAnnotationsData():Array<AnnotationData> // TODO: more types
     {
-        // TODO: gather all annotations in one array?
-        let annotationsData = [];
-        annotationsData = annotationsData.concat(this.annotations.map(d => d.toData()));
+        return this.annotations
+            .filter(a => this._shownInScene((a as any).linkedTo))
+            .map(a => a.toData());
+    }
 
-        return annotationsData;
+    /** Whether annotations linked to `to` (a Shape, a collection, or nothing) show in the scene:
+     *  when linked to nothing, or when it or one of its Shapes is in the scene and not hidden.
+     *  A sub-shape handed out by an accessor (box.edges().first()) has no scene node of its own
+     *  but carries the scene it came from; tmp() and removeFromScene() clear both. */
+    _shownInScene(to:any):boolean
+    {
+        if(!to){ return true }
+        if(to.isShapeCollection?.()){ return to.toArray().some((s:any) => this._shownInScene(s)) }
+
+        const visible = to.style?.explicitData?.().visible ?? to._node?.effectiveStyle?.().visible;
+        return !!(to._node || to._scene) && visible !== false;
     }
 
     /** Reset annotations */

@@ -528,6 +528,32 @@ describe('Dimensions', () =>
 
             expect(svg.match(/class="dimensionline"/g)?.length).toBe(projectedOf(iso).length)
         })
+
+        it('leave the scene with a tmp() projection, but stay in its drawing', () =>
+        {
+            const box = dimensionedBox()
+            const inScene = annotator.getAnnotationsData().length
+            const iso = modeler.collection(box).iso().move(500).tmp() as any
+
+            expect(projectedOf(iso).length).toBeGreaterThan(0)
+            expect(annotator.getAnnotationsData().length).toBe(inScene)
+            expect(iso.toSVG().match(/class="dimensionline"/g)?.length).toBe(projectedOf(iso).length)
+        })
+    })
+
+    it('shows in the scene only while its Shape is in it and visible', () =>
+    {
+        const shown = () => annotator.getAnnotationsData().length
+        const [kept, hidden, temporary, removed] = [0, 1, 2, 3].map(() => modeler.box(100, 50, 20) as any)
+        ;[kept, hidden, temporary, removed].forEach(b => b.select('E||topfront').dim())
+        kept.edges().first().dim() // a sub-shape without a scene node of its own
+        annotator.dimensionLine([0, 0, 0], [100, 0, 0]) // linked to nothing
+        expect(shown()).toBe(6)
+
+        hidden.hide()
+        temporary.tmp()
+        removed.removeFromScene()
+        expect(shown()).toBe(3)
     })
 
 })
