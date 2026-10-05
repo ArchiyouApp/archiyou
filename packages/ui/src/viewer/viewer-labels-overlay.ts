@@ -271,7 +271,8 @@ export class ViewerLabelsOverlay extends LitElement
       --ay-label-color: var(--color-text, #1e293b);
       --ay-label-border-color: var(--color-border, #cbd5e1);
       --ay-label-border: 1px solid var(--ay-label-border-color);
-      --ay-label-radius: var(--radius-sm, 4px);
+      /* Fully rounded ends, like the dimension values */
+      --ay-label-radius: var(--wa-border-radius-pill, 9999px);
       --ay-label-padding: var(--space-xs, 4px) var(--space-sm, 8px);
       --ay-label-font-size: var(--text-xs, 0.75rem);
       --ay-label-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -339,10 +340,9 @@ export class ViewerLabelsOverlay extends LitElement
       user-select: none;
     }
 
-    /* Square corners. The rounded box the labels used to have is gone: it read as a tooltip
-       rather than as a drawing annotation, and it has no counterpart on the printed page. */
+    /* Rounded left and right, the same pill the dimension values sit in */
     .ay-label--rect {
-      border-radius: 0;
+      border-radius: var(--ay-label-radius);
     }
 
     /* The circled letter a manual numbers its parts with. aspect-ratio keeps it round as the
@@ -413,7 +413,7 @@ export class ViewerLabelsOverlay extends LitElement
     }
 
     /* Dimension values are pills, also while interactive or edited. After the rules above,
-       which give those states the square(ish) label radius. */
+       which give those states the label radius. */
     .ay-label--dimension,
     .ay-label--dimension.ay-label--interactive,
     .ay-label--dimension.ay-label--editing {
