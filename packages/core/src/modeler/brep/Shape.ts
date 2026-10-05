@@ -44,7 +44,8 @@ import { nodeToString, gridCounts } from '@archiyou/meshup'
 import { Style } from '@archiyou/meshup'
 import type { StyleData } from '@archiyou/meshup'
 import { Color } from '@archiyou/meshup'
-import { replaceInScene, activeLayerOf, sceneAdd, sceneCarry, sceneReplace, sceneUpdate } from '@archiyou/meshup'
+import { replaceInScene, activeLayerOf, sceneAdd, sceneCarry, sceneLayer, sceneReplace, sceneUpdate } from '@archiyou/meshup'
+import { Mesh } from '@archiyou/meshup'
 
 import { BaseAnnotation } from '../../annotator/AnnotatorBaseAnnotation'
 import { DimensionLine } from '../../annotator/AnnotatorDimensionLine'
@@ -5125,7 +5126,75 @@ export class Shape
     {
         return this.isometry(viewpoint, options)
     }
-    
+
+    /** Architectural section without adding it to the Scene - see section() */
+    _section(pivot:PointLike, normal:PointLike|string=[0,0,1], hiddenLines:boolean=false):AnyShapeCollection
+    {
+        // A direction or a side ('top', 'front', 'xy', ...), read as meshup Mesh.section() reads it
+        const isView = isPointLike(normal) || isSide(normal) || ['xy', 'yz', 'xz'].includes(normal as string);
+        const n = isView ? Mesh._resolveViewDirection(normal as any) : null;
+        const view = n ? new Vector(n.x, n.y, n.z) : null;
+        if(!isPointLike(pivot) || !view || !(view.length() > 1e-9))
+        {
+            throw new Error(`Shape::section(): Invalid plane. Give a point on it and its normal, like section([0,0,50], [0,0,1]), `
+                + `or a side as the normal: section([0,0,50], 'top')`);
+        }
+        view.normalize();
+
+        // Work in the drawing's own frame: the cut plane is z = 0, seen from +z, with world up (or +y
+        // when looking along z) as screen up. A section there is a plan from above, and what the
+        // projection draws needs no turning afterwards.
+        const upOnPlane = new Vector(0,0,1).subtracted(view.scaled(view.z));
+        const up = (upOnPlane.length() > 1e-6) ? upOnPlane.normalized() : new Vector(0,1,0);
+        const ocToFrame = new this._oc.gp_Trsf_1();
+        ocToFrame.SetTransformation_2(new this._oc.gp_Ax3_3(new Point(pivot)._toOcPoint(), view._toOcDir(), up.crossed(view)._toOcDir()));
+        const inFrame = new Shape();
+        inFrame._ocShape = new this._oc.BRepBuilderAPI_Transform_2(this._ocShape, ocToFrame, true).Shape();
+
+        // What lies beyond the cut, drawn as seen from the cut
+        const bounds = inFrame.bbox();
+        let drawing = new ShapeCollection();
+        if(bounds.min().z < -this._oc.SHAPE_TOLERANCE)
+        {
+            const [min, max] = [bounds.min(), bounds.max()];
+            const ocBeyondCut = new this._oc.BRepPrimAPI_MakeBox_4(
+                new Point(min.x - 1, min.y - 1, min.z - 1)._toOcPoint(), new Point(max.x + 1, max.y + 1, 0)._toOcPoint()).Shape();
+            const ocCommon = new this._oc.BRepAlgoAPI_Common_3(inFrame._ocShape, ocBeyondCut, new this._oc.Message_ProgressRange_1());
+            ocCommon.Build(new this._oc.Message_ProgressRange_1());
+            if(ocCommon.HasErrors())
+            {
+                console.warn('Shape::section(): Could not take the part beyond the cut: only the cut itself is drawn');
+            }
+            else if(new Shape()._fromOcShape(ocCommon.Shape()))
+            {
+                const beyond = new Shape();
+                beyond._ocShape = ocCommon.Shape();
+                drawing = beyond._project([0,0,1], hiddenLines) as ShapeCollection;
+            }
+        }
+
+        // The cut itself: where the plane meets the Shape
+        const ocCut = new this._oc.BRepAlgoAPI_Section_5(inFrame._ocShape, new this._oc.gp_Pln_1(), true); // the XY plane
+        const cut = new Shape()._fromOcShape(ocCut.Shape());
+        const cutEdges = cut ? new ShapeCollection(cut).toArray().filter(s => s.type === 'Edge') : [];
+        if(cutEdges.length){ drawing.addGroup('cut', new ShapeCollection(cutEdges)) } // one collection: a group per entity would keep only the last
+
+        return drawing.length ? drawing.moveToOrigin() as ShapeCollection : drawing;
+    }
+
+    /** Architectural section: cut this Shape with the plane through `pivot` perpendicular to
+     *  `normal` (a direction, or a side like 'top' or 'front'), and draw the cut and what lies
+     *  beyond it, as seen from the +normal side: the default [0,0,1] gives a floor plan, seen
+     *  from above. The drawing lies on XY with world up as screen up, centered on the origin, in
+     *  a 'section' layer. Groups: 'cut' (the outline of the cut), 'visible' and, with
+     *  `{ hiddenLines: true }`, 'hidden'. Same API as meshup Mesh.section(pivot, normal, options). */
+    @sceneLayer('section')
+    section(pivot:PointLike, normal:PointLike|string=[0,0,1], options?:ProjectionOptions):AnyShapeCollection
+    {
+        const o = projectionOptions(options, 'Shape.section(pivot, normal, options)');
+        return this._section(pivot, normal, !!o.hiddenLines);
+    }
+
     /** Take Dimensions associated with current Shape to the projected 2D shape
      *  NOTE: We can not yet associate dimensions with ShapeCollections, 
      *  so we link it to the specific Shape within this collection

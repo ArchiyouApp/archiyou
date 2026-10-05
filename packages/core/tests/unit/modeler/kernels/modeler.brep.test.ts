@@ -452,5 +452,61 @@ describe('Modeler — brep mode', () =>
             expect(edgesIn(box().elevation('front', { hiddenLines: true }), 'visible')).toBeGreaterThan(0)
             expect(box().isometry([-1, -1, 1]).length).toBeGreaterThan(0)
         })
+
+        describe('section(pivot, normal, options)', () =>
+        {
+            // A 10 box at the origin and a small marker box toward +x, +y and up
+            const boxAndMarker = () => m.collection(m.box(10, 10, 10), m.box(2, 2, 2).move(10, 10, 3)) as any
+            /** Where the marker lands in a drawing, as signs of x and y from the drawing's centre */
+            const markerIn = (drawing:any) =>
+            {
+                const marker = drawing.toArray().filter((e:any) => Math.max(e.bbox().width(), e.bbox().depth()) <= 2)
+                const [c, mc] = [drawing.bbox().center(), m.collection(...marker).bbox().center()]
+                return [Math.sign(Math.round(mc.x - c.x)), Math.sign(Math.round(mc.y - c.y))]
+            }
+
+            it('draws the cut and what lies beyond it, flat on XY: a plan seen from above', () =>
+            {
+                const plan = boxAndMarker().section([0, 0, 3])
+                expect(edgesIn(plan, 'cut')).toBe(8) // a square through each box
+                expect(edgesIn(plan, 'visible')).toBeGreaterThan(0)
+                expect(plan.group('hidden')).toBeFalsy()
+                expect(plan.bbox().height()).toBe(0)
+                expect(markerIn(plan)).toEqual([1, 1])
+            })
+
+            it('takes a side as the normal, with world up as screen up', () =>
+            {
+                expect(markerIn(boxAndMarker().section([0, 0, 0], 'front'))).toEqual([1, 1]) // +x right, +z up
+                expect(markerIn(boxAndMarker().section([0, 0, 0], 'left'))).toEqual([-1, 1]) // from -x: +y is to the left
+                expect(edgesIn(boxAndMarker().section([0, 0, 3], 'xy'), 'cut')).toBe(8)
+            })
+
+            it('draws only what lies beyond the cut, and the hidden lines when asked', () =>
+            {
+                const below = boxAndMarker().section([0, 0, 6]) // all of it beyond the cut: drawn, not cut
+                expect(edgesIn(below, 'cut')).toBe(0)
+                expect(below.length).toBeGreaterThan(0)
+                expect(boxAndMarker().section([0, 0, -6]).length).toBe(0) // all of it in front of the cut
+                expect(edgesIn(boxAndMarker().section([0, 0, 3], 'top', { hiddenLines: true }), 'hidden')).toBeGreaterThan(0)
+            })
+
+            it('of everything lands in a section layer, leaving the lines of other drawings out', () =>
+            {
+                m.box(10, 10, 10)
+                m.all().elevation('front') // lines lying flat at z = 0, below the cut
+                const plan = m.all().section([0, 0, 3]) as any
+                expect(edgesIn(plan, 'cut')).toBe(4)
+                expect(plan.length).toBe(8) // the cut square, and the box's top face seen beyond it
+                expect(plan.first().node().parent().name).toBe('section')
+            })
+
+            it('on a single shape, and refuses an invalid plane', () =>
+            {
+                expect(edgesIn((m.box(10, 10, 10) as any).section([0, 0, 0]), 'cut')).toBe(4)
+                expect(() => boxAndMarker().section([0, 0, 0], 'sideways')).toThrow(/Invalid plane/)
+                expect(() => boxAndMarker().section([0, 0, 0], 'top', true)).toThrow(/options object/)
+            })
+        })
     })
 })

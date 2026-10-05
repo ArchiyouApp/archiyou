@@ -1389,6 +1389,28 @@ import { getOc } from './index' // OC global getter
          return this._elevation(from, options);
       }
 
+      /** Shape API: Architectural section without adding it to the Scene - see section() */
+      _section(pivot:PointLike, normal:PointLike|string=[0,0,1], options?:ProjectionOptions):ShapeCollection
+      {
+         const o = projectionOptions(options, 'ShapeCollection.section(pivot, normal, options)');
+         // Only what has a surface to cut, as meshup sections only its Meshes: the lines of an
+         // earlier elevation lying in the scene stay out of it
+         const shapes = this._projectedShapes(o.includeHiddenShapes).filter(s => ['Face', 'Shell', 'Solid'].includes(s.type));
+         if(!shapes.length){ return new ShapeCollection() }
+         // Again: We are hacking the Shape class a bit here - to use Shape._section() on a compound
+         const tmpShape = new Shape();
+         tmpShape._ocShape = shapes.toOcCompound();
+         return tmpShape._section(pivot, normal, !!o.hiddenLines) as ShapeCollection;
+      }
+
+      /** Architectural section of the collection: cut it with the plane through `pivot`
+       *  perpendicular to `normal`, and draw the cut and what lies beyond it - see Shape.section().
+       *  Same API as meshup ShapeCollection.section(pivot, normal, options). */
+      section(pivot:PointLike, normal:PointLike|string=[0,0,1], options?:ProjectionOptions):ShapeCollection
+      {
+         return this._section(pivot, normal, options);
+      }
+
       /** Shape API: Isometric view from a corner of the ViewCube ('frontlefttop') or a direction,
        *  without adding it to the Scene. Options as isometry() */
       _isometry(viewpoint?:string|PointLike, options?:ProjectionOptions):ShapeCollection

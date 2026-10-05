@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-10-05 → (open) |
+| Dates | 2026-10-05 → 2026-10-05 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: direct questions about a tutorial script, each answered with its cause, then fixed) |
 | Human | Mark van der Net: wrote the prompts and the tutorial scripts that showed the problems, asked for the fixes and for section() on brep, reviewed the work, approved the commit messages |
@@ -87,8 +87,8 @@
 
 `help/tutorials/en/simple-table-more.md` put its starting code before the first `## `
 heading, so the help parser took it as the intro: one step, and the step's `js append` ran
-on an empty script. The agent added a `## Where we left off` heading. That line is part of
-the human's own tutorial work, staged and committed by the human, not in these commits.
+on an empty script. The agent added a `## Where we left off` heading. That one line went in
+with the human's own tutorial work, committed as plain work at the human's request (eaf002e).
 
 ### 2. Dimension lines of a tmp() projection (13:50)
 
@@ -125,9 +125,14 @@ for the human to decide.
 - Asked for the scene rule in their own words: a dimension line is shown only if it is tied
   to a visible, in-scene shape.
 - Asked for brep section() after the meshup fix ("OCE has it").
-- Asked for the work to be committed; the tutorial file stays the human's own commit.
+- Had the work committed, the tutorial as their own plain commit (eaf002e), the agent's
+  heading included.
 
 ## Commits
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| a50222a | Annotations of tmp() or hidden shapes stay out of the scene | "In this example script i use tmp() for the iso: "…" Still the dimension lines from the model to the iso are shown. Can you make it so that a dimension line is only shown if its tied to a visible/in scene shape?" |
+| meshup 6a7791e | ShapeCollection.section() lands in a 'section' scene layer | "In this example: "…" - can you check why section is not working?" |
+| meshup 9983d55 | ShapeCollection.section() hands brep shapes to brep | "Can you add section to the brep too? OCE has it." |
+| (this commit) | brep section(): the cut and what lies beyond it, as on meshup (+ meshup bump) | "Can you add section to the brep too? OCE has it." |
