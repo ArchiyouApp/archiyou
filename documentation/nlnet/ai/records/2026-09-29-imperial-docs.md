@@ -2,15 +2,24 @@
 
 | | |
 |---|---|
-| Dates | 2026-09-29 → (open) |
+| Dates | 2026-09-29 → 2026-10-05 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code in plan mode, then as agent |
-| Human | Mark van der Net: wrote the design plan (`plans/IMPERIAL_DOCS.md`) and the prompts, kept inches below ≈6'-6" (1200 mm reads 47 1/4"), asked for the work to stay uncommitted for review, reviewed plan and code |
+| Human | Mark van der Net: wrote the design plan (`plans/IMPERIAL_DOCS.md`) and the prompts, kept inches below ≈6'-6" (1200 mm reads 47 1/4"), asked for the work to stay uncommitted for review, reviewed plan and code, decided the unit model in review, approved the commit message |
 | Branch | `develop` |
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+```
+2026-09-29 21:21 +0200  Can you implement plan IMPERIAL_DOCS.md ? Please end with a example in local database for me to test.
+2026-09-29 21:52 +0200  Store the demo in the local database
+2026-10-05 11:31 +0200  ok, i did 1 and 2. Im reviewing the imperial docs addition. Some things: Can you add a imperial/metric switch in the doc tool header? I need to switch this to test
+2026-10-05 11:37 +0200  I need to be able to switch it independently from the main unit switch (in the file menu)
+2026-10-05 11:48 +0200  We need to make the unit system more consistent. The file-bar has the main switch, a code statement units('mm') defines the model units. I think model space unit system (metric/imperial) always defines doc unit systeem too. Let's think about it like this: the core of everything it the script - if any units like mm are defined with units('mm') the unit system (in our case metric) is set too. No override in the doc module. It simply takes over the metric (and default for docs is mm, for imperial its inch - so even when the user set units('feet') the docs are inches ). The unit system switch in the file-bar set its for the visual parts within the editor, the outputs etc. The doc has a seperate override to visualize whatever unit system model into the right unit output. Do we agree on this?
+2026-10-05 11:53 +0200  On your last remark: the file bar switch follows the units(..) statement in the script by default, unless the user overrides it in the UI.
+2026-10-05 12:11 +0200  yes, make imperial default Letter
+2026-10-05 12:18 +0200  Commit the imperial docs work under nlnet policy and close the record
+```
 
 ## Plan (agent output, reviewed by the human before implementation)
 
@@ -233,3 +242,4 @@ Decided in review. The script is the source of truth; everything else is a displ
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| `a7c27b2` | Imperial and metric documents, following the script's units() | Can you implement plan IMPERIAL_DOCS.md ? Please end with a example in local database for me to test. (amended in review, see the prompts of 2026-10-05) |
