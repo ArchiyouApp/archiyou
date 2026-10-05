@@ -110,3 +110,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-09-29 | [Metric / imperial unit system for the docs module](./records/2026-09-29-imperial-docs.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-10-01 | [TypeScript errors: the easy ones in core, ui and meshup](./records/2026-10-01-typescript-fixes.md) | Claude Sonnet 5.5 | develop (+ meshup main) | 2 (1 in meshup) |
 | 2026-10-05 | [Dimension lines follow their shapes out of the scene; section() in the scene and on brep](./records/2026-10-05-sections-scene-annotations.md) | Claude Opus 5.5 | develop (+ meshup main) | 4 (2 in meshup) |
+| 2026-10-01 | [Frontend release check: editor version and the CI compose check](./records/2026-10-01-frontend-release-check.md) | Claude Opus 5.5 | develop | 1 |

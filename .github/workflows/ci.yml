@@ -181,6 +181,14 @@ jobs:
         run: |
           # `config` renders and schema-checks; the mount source only has to exist.
           mkdir -p apps/editor/dist
+          # Both stacks read an `env_file: .env` (the dev one in apps/server), which
+          # is gitignored and so absent here; `config` fails on a missing env file.
+          # Not an empty one: `config` inlines the file and drops the `env_file` key,
+          # so the worker-secrets step below only sees the api's SERVER_JWT_SECRET if
+          # the file defines it. The example's placeholders do, and the files persist
+          # for the later steps.
+          cp .env.example .env
+          cp .env.example apps/server/.env
           # Prod stack, at the repo root (build context `.`).
           docker compose -f docker-compose.yml config >/dev/null
           # Dev helper: Redis only, no build (see README → Server-side execution).
