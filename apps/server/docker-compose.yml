@@ -5,7 +5,8 @@
 #   worker   — BullMQ execution worker (runs the archiyou-core Runner)
 #
 # Build context is the monorepo root (../..) so the @archiyou/core workspace dep resolves.
-# Run:  pnpm --filter @archiyou/server docker:dev   (or: docker compose up)
+# Run:  pnpm --filter @archiyou/server docker:dev   (or: docker compose --env-file ../../.env up)
+# The root .env is the one .env: --env-file points the ${...} interpolation at it.
 
 services:
   # Its own volume and its own database, entirely separate from the production stack
@@ -54,7 +55,7 @@ services:
     container_name: archiyou-api
     ports:
       - "4100:4100"
-    env_file: .env
+    env_file: ../../.env # the repository's one .env, at the root
     environment:
       - NODE_ENV=production
       - SERVER_PORT=4100

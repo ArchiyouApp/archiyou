@@ -1,6 +1,6 @@
 /**
- * config.ts — typed environment config. `dotenv/config` is imported in index.ts
- * before this module is used.
+ * config.ts — typed environment config. Each entry point imports ./env first, which
+ * loads the repository's one .env (at the root) before this module is used.
  *
  * Convention: the one frontend-facing setting is grouped under FRONTEND;
  * everything else is BACKEND and prefixed `SERVER_` in the environment.
@@ -292,77 +292,6 @@ export const config = {
   },
 
   /**
-   * Off-box backups to S3-compatible storage — see src/admin/backup.ts.
-   *
-   * NEVER invoked by the server process: this is read only by the standalone
-   * `pnpm admin:backup` script, run from the host crontab (apps/server/README → Backups).
-   * With no bucket configured the script exits 2 and nothing else changes.
-   *
-   * WHAT gets backed up is `backupTargets` at the bottom of this file, not these
-   * settings — this block is only about where the archive goes and how long it
-   * lives there.
-   *
-   * ⚠️  s3.secretAccessKey must never be logged. Do not console.log or
-   * JSON.stringify this object; the script logs a masked key id only.
-   */
-  backup: {
-    s3: {
-      /** Empty = real AWS S3. Otherwise the provider's S3 endpoint (R2/B2/Spaces/MinIO). */
-      endpoint: process.env.SERVER_BACKUP_S3_ENDPOINT ?? '',
-      region: process.env.SERVER_BACKUP_S3_REGION ?? 'us-east-1',
-      /** Empty = the feature is off; the script exits 2 rather than doing nothing quietly. */
-      bucket: process.env.SERVER_BACKUP_S3_BUCKET ?? '',
-      accessKeyId: process.env.SERVER_BACKUP_S3_ACCESS_KEY_ID ?? '',
-      secretAccessKey: process.env.SERVER_BACKUP_S3_SECRET_ACCESS_KEY ?? '',
-      /** Key prefix inside the bucket. Pruning is scoped to it, so two instances
-       *  sharing a bucket MUST use different prefixes or they delete each other's
-       *  backups. */
-      prefix: process.env.SERVER_BACKUP_S3_PREFIX ?? '',
-      /** Bucket in the path rather than the hostname — MinIO, usually Backblaze B2. */
-      forcePathStyle: process.env.SERVER_BACKUP_S3_FORCE_PATH_STYLE === 'true',
-      /** Since SDK v3.729 the default adds CRC32 checksum headers and `aws-chunked`
-       *  trailers, which several S3-compatible providers reject with a 400. Off by
-       *  default; set `when_supported` only if your provider demands them. */
-      checksums: process.env.SERVER_BACKUP_S3_CHECKSUMS ?? 'when_required',
-    },
-
-    /** Extra `name:path` targets, comma-separated — adds to `backupTargets` without
-     *  a code change. e.g. `uploads:./data/uploads,fonts:/srv/fonts`. */
-    extraPaths: process.env.SERVER_BACKUP_EXTRA_PATHS ?? '',
-    /** Target names to leave out of this deployment's backups, comma-separated. */
-    skip: (process.env.SERVER_BACKUP_SKIP ?? '')
-      .split(',')
-      .map((n) => n.trim())
-      .filter(Boolean),
-    /** Extra path patterns never included, on top of BACKUP_DEFAULT_EXCLUDES. */
-    exclude: (process.env.SERVER_BACKUP_EXCLUDE ?? '')
-      .split(',')
-      .map((p) => p.trim())
-      .filter(Boolean),
-    /** Abort if the targets total more than this uncompressed (default 2 GiB), so
-     *  adding a fat directory to the list fails loudly on the next run instead of
-     *  silently turning into a nightly multi-gigabyte upload. */
-    maxBytes: Number(process.env.SERVER_BACKUP_MAX_BYTES ?? 2 * 1024 * 1024 * 1024),
-
-    /** Delete older objects after a SUCCESSFUL upload. See selectPrunable() in
-     *  services/BackupService.ts for the safety rules — this is the only
-     *  destructive thing the script does. */
-    prune: process.env.SERVER_BACKUP_PRUNE !== 'false',
-    keepDays: Number(process.env.SERVER_BACKUP_KEEP_DAYS ?? 30),
-    /** The newest N are always retained, however old. Hard floor against a bad clock. */
-    minKeep: Number(process.env.SERVER_BACKUP_MIN_KEEP ?? 3),
-    /** Ceiling on deletions per run, so a parse or clock bug costs N objects rather
-     *  than the whole prefix. */
-    maxDelete: Number(process.env.SERVER_BACKUP_MAX_DELETE ?? 100),
-
-    /** Scratch space for the `pg_dump` snapshot. Must be on the persistent data volume —
-     *  the container's /tmp is unsized overlay fs. Cleaned up after every run. */
-    tmpDir: process.env.SERVER_BACKUP_TMP_DIR ?? './data/backup-tmp',
-    /** Whole-run wall-clock cap, so a stalled upload cannot overlap the next cron run. */
-    timeoutMs: Number(process.env.SERVER_BACKUP_TIMEOUT_MS ?? 900_000),
-  },
-
-  /**
    * Google Gemini, used to translate a published configurator's end-user-facing copy
    * into the locales in @archiyou/core's TRANSLATION_LOCALES.
    *
@@ -438,54 +367,6 @@ export const config = {
     (!isProduction && !/^postgres(ql)?:\/\//i.test(process.env.SERVER_DATABASE_URL ?? ''))
     || (process.env.SERVER_SEED_TEST_USER === 'true' && !!process.env.SERVER_TEST_USER_PASSWORD),
 };
-
-//// BACKUP TARGETS ////
-
-export type BackupTargetKind = 'postgres' | 'dir' | 'file';
-
-/** One declared thing to copy into a backup archive. */
-export interface BackupTarget {
-  /** Unique. Becomes the top-level directory inside the archive and the manifest
-   *  key, so it is a name, not a path — no slashes. */
-  name: string;
-  /** Source path, or — for a `postgres` target — the database URL to dump. Relative
-   *  paths resolve from apps/server, like every other path setting. */
-  path: string;
-  /** `postgres` → a consistent `pg_dump -Fc` snapshot (never a file copy);
-   *  `dir` → recursive walk; `file` → a single file. */
-  kind: BackupTargetKind;
-  /** Source missing: true = warn and carry on, false = fail the whole run. */
-  optional?: boolean;
-  /** Extra exclusions for a `dir` target, on top of BACKUP_DEFAULT_EXCLUDES. */
-  exclude?: string[];
-}
-
-/**
- * WHAT GETS BACKED UP. This list is the authoritative answer — add a line when a
- * new kind of durable asset appears and `pnpm admin:backup` needs no other change.
- * Anything not listed is treated as regenerable and will be LOST on host failure.
- *
- * Deliberately absent: `data/cache` (the legacy execution-result cache, LIBRARY_PATH
- * above) and `data/README.md`. Targets are enumerated rather than tarring `data/`
- * wholesale precisely so that "what is in a backup" is answerable by reading this.
- *
- * `SERVER_BACKUP_EXTRA_PATHS` adds targets without touching code;
- * `SERVER_BACKUP_SKIP` drops one for a particular deployment.
- *
- * ⚠️  A target outside the `server_data` volume must also be mounted into the `api`
- * container, or the script cannot see it in production. See apps/server/README → Backups.
- */
-export const backupTargets: BackupTarget[] = [
-  { name: 'db', path: config.databaseUrl, kind: 'postgres' },
-  { name: 'thumbnails', path: config.thumbnails.path, kind: 'dir', optional: true },
-];
-
-/**
- * Never included, whatever a `dir` target's path is. Matched as substrings against
- * the path relative to the target root. The database is not a directory walk any
- * more (it is a `pg_dump` stream), so this is only about stray editor/scratch files.
- */
-export const BACKUP_DEFAULT_EXCLUDES = ['.bak', '.tmp', 'backup-tmp/'];
 
 /** Any http(s) origin on the loopback host, whatever the port. */
 const LOCALHOST_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;

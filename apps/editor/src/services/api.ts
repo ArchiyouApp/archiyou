@@ -3,7 +3,7 @@
  *
  * - Auto-injects Bearer token from authService
  * - Base URL from SERVER_API_BASE_URL env var (set to the backend origin, e.g.
- *   http://localhost:4100 in dev — see apps/editor/.env). Defaults to '' (same origin).
+ *   http://localhost:4100 in dev — see the root .env). Defaults to '' (same origin).
  * - Throws ApiError on non-2xx responses
  */
 

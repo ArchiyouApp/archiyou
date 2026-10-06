@@ -20,7 +20,7 @@
 #
 # ⚠️  Postgres here is OPTIONAL. With no `SERVER_DATABASE_URL` the server runs PGlite —
 # Postgres compiled to WASM, in-process, same schema and migrations — so a fresh clone
-# needs none of this. Start this file and point apps/server/.env at it when you want a
+# needs none of this. Start this file and point the root .env at it when you want a
 # real server: psql, pg_dump, several processes sharing one database.
 #
 #     SERVER_DATABASE_URL=postgres://archiyou:archiyou@localhost:5432/archiyou

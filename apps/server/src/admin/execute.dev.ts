@@ -1,3 +1,4 @@
+import '../env'; // the root .env, before anything reads the environment
 import { Library } from '../execution/Library';
 import { ExecutionBroker } from '../execution/ExecutionBroker';
 import { ExecutionWorker } from '../execution/ExecutionWorker';
@@ -8,8 +9,6 @@ import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/typ
 
 import fs from 'fs';
 
-import { config as dotEnvConfig } from 'dotenv';
-dotEnvConfig();
 
 
 /**

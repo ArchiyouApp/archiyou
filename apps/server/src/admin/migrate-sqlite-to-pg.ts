@@ -32,7 +32,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import 'dotenv/config';
+import '../env';
 import Database from 'better-sqlite3';
 import { sql } from 'drizzle-orm';
 

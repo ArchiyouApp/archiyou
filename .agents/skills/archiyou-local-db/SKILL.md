@@ -16,7 +16,7 @@ or set that variable:
 | `memory://` | PGlite in RAM, gone when the process exits |
 
 > ⚠️  **Check which one before writing.** It is no longer one file per checkout. If
-> `apps/server/.env` points at a `postgres://` URL, "save a demo script" can mean
+> the root `.env` points at a `postgres://` URL, "save a demo script" can mean
 > saving it into a database other people — possibly production — read. `save-script.ts`
 > prints the target first; read the line rather than scrolling past it.
 

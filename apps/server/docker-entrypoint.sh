@@ -115,7 +115,7 @@ fi
 if [ "$should_build" = '1' ]; then
   # Sources whose change means a rebuild is due. Deliberately not $REPO itself:
   # that would walk .git, caddy/data (Caddy rewrites certs) and apps/server/data
-  # (thumbnails, logs and the backup scratch dir all change while the server runs),
+  # (thumbnails and logs change while the server runs),
   # so the build would never look up to date.
   sources=()
   for p in apps packages modules package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json; do
@@ -147,12 +147,11 @@ if [ "$should_build" = '1' ]; then
     # `env -i`: the build runs with an explicitly constructed environment, NOT
     # this container's. Two independent reasons, both load-bearing:
     #
-    #  1. SECRETS. apps/editor/vite.config.ts sets envPrefix ['VITE_','SERVER_'],
-    #     and this container is started with `env_file: .env` — so every
-    #     SERVER_* variable, SERVER_JWT_SECRET included, is visible to Vite and
-    #     inlinable into a bundle that ships to every browser. An allowlist is
-    #     the only safe way round that; a denylist would leak the next secret
-    #     someone adds to .env.
+    #  1. SECRETS. This container is started with `env_file: .env`, so every
+    #     SERVER_* variable, SERVER_JWT_SECRET included, is in its environment.
+    #     apps/editor/vite.config.ts only exposes VITE_* and SERVER_API_BASE_URL
+    #     to the bundle, and this allowlist keeps the rest out of the build's
+    #     environment as well: a second guard, not the only one.
     #  2. SERVER_API_BASE_URL must be /api (caddy strips that prefix before
     #     proxying, see Caddyfile). Vite reads it from the environment at BUILD
     #     time and inlines it, so it cannot be changed without rebuilding.

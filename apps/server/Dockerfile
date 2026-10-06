@@ -13,10 +13,9 @@
 #     Both the dependency and its toolchain go once the cutover has settled.
 FROM node:22-bookworm-slim
 
-# postgresql-client: `pg_dump`/`pg_restore` for `pnpm admin:backup`, and psql for
-# looking at the database from the api container. It comes from the PGDG repo rather
-# than Debian's, because pg_dump refuses a server newer than itself and bookworm ships
-# 15 against a postgres:17 server.
+# postgresql-client: psql (and pg_dump) for looking at the database from the api
+# container. It comes from the PGDG repo rather than Debian's, so the client matches
+# the postgres:17 server: bookworm ships 15, and pg_dump refuses a newer server.
 #
 # python3/make/g++ is the toolchain for better-sqlite3 (see above) — remove it with
 # that dependency.
@@ -42,7 +41,7 @@ ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 # `pnpm start` / `pnpm worker` resolve against apps/server/package.json. (From
 # the workspace root they fail: ERR_PNPM_NO_SCRIPT_OR_SERVER for start, and
 # ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL for worker.) This cwd is also what makes the
-# relative paths in .env — thumbnails, logs, backup scratch — land in apps/server/data.
+# relative paths in .env — thumbnails, logs — land in apps/server/data.
 WORKDIR /archiyou/apps/server
 
 ENV NODE_ENV=production
@@ -55,7 +54,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # config.execution), so running that as uid 0 makes an already-serious hole
 # worse.
 #
-# uid 1000 must be able to WRITE apps/server/data (thumbnails, logs, backup scratch).
+# uid 1000 must be able to WRITE apps/server/data (thumbnails, logs).
 # On the host:  sudo chown -R 1000:1000 apps/server/data
 # — or set `user:` in docker-compose.yml to the checkout's owner.
 USER node

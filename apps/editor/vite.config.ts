@@ -26,9 +26,11 @@ export default defineConfig(() => {
   const inputs = app ? { [app]: allInputs[app] } : allInputs;
 
   return {
-    // Expose SERVER_*-prefixed env vars to client code (in addition to the
-    // default VITE_*), so `import.meta.env.SERVER_API_BASE_URL` is available.
-    envPrefix: ['VITE_', 'SERVER_'],
+    // The repository's one .env, at the root, which also holds the server's secrets.
+    // So the browser gets VITE_* and exactly SERVER_API_BASE_URL — never a SERVER_
+    // prefix, which would put SERVER_JWT_SECRET and friends into the bundle.
+    envDir: path.resolve(import.meta.dirname, '../..'),
+    envPrefix: ['VITE_', 'SERVER_API_BASE_URL'],
 
     // Build-time constant; declared in src/vite-env.d.ts, read via settings.ts.
     define: {
@@ -88,9 +90,8 @@ export default defineConfig(() => {
 
     server: {
       port: 5173,
-      // Backend calls go directly to apps/server via SERVER_API_BASE_URL (see
-      // apps/editor/.env). The server enables CORS for local origins, so no dev
-      // proxy is needed.
+      // Backend calls go directly to apps/server via SERVER_API_BASE_URL (see the
+      // root .env). The server enables CORS for local origins, so no dev proxy is needed.
     },
   };
 });

@@ -8,7 +8,7 @@
 // The DB (script_versions, PostgreSQL) is the single source of truth for scripts; a
 // row is "published"/"shared" when that metadata column is set.
 
-import 'dotenv/config';
+import './env'; // the root .env, before anything reads the environment
 
 import Fastify from 'fastify';
 

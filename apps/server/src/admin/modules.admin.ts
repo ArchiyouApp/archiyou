@@ -26,7 +26,7 @@
  * the current directory before this script ever sees it.
  */
 
-import 'dotenv/config';
+import '../env';
 
 import { closeDb } from '../db/client';
 import { userService, normalizeModuleIds } from '../services/UserService';

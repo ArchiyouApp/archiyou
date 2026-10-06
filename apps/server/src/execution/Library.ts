@@ -16,7 +16,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import semver from 'semver'; // for version validation
-import { config as dotEnvConfig } from 'dotenv';
 
 import { LibraryConnector } from '@archiyou/core/src/runner/LibraryConnector';
 import { Script } from '@archiyou/core/src/Script';
@@ -53,8 +52,6 @@ export class Library
      */
     constructor(libPath?:string)
     {
-        // Load environment variables from .env file
-        dotEnvConfig();
         this.url = process.env.LIBRARY_URL || 'http://localhost:4100';
 
         // Resolve relative paths to absolute paths based on current script directory

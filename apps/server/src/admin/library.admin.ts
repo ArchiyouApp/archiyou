@@ -1,5 +1,6 @@
 /** Administration script for library */
 
+import '../env'; // the root .env, before anything reads the environment
 import { Library } from '../execution/Library';
 import { ExecutionManager } from '../execution/ExecutionManager'
 

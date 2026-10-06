@@ -111,16 +111,15 @@ pnpm dev:server                 # server only
 pnpm test                       # run all tests
 ```
 
-The editor's API base URL is baked in **at build time** — see
-`apps/editor/.env.example`.
+The editor's API base URL is baked in **at build time** — see `SERVER_API_BASE_URL`
+in `.env.example`.
 
 
 ## Configuration
 
 | File | Purpose |
 | --- | --- |
-| `.env.example` | every server variable, with security notes |
-| `apps/editor/.env.example` | the single editor build-time variable |
+| `.env.example` | every setting, for the server and the editor's build. Copy it to `.env` at the root: the one `.env` |
 
 ## Deploying
 

@@ -172,7 +172,7 @@ const TARGET = `${USER}@${HOST}`;
 /** Single-quote for the REMOTE shell. Arguments are ours, but a space must not split a word. */
 const sh = (s) => `'${String(s).replaceAll("'", `'\\''`)}'`;
 
-/** UTC, matching the archive names `pnpm admin:backup` writes. */
+/** UTC timestamp for a dump folder, like 20261006-135500. */
 const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
 
 const CONTROL = join(tmpdir(), `dbrem-${process.pid}.sock`);

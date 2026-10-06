@@ -137,18 +137,7 @@ arbitrary hosts.
       `127.0.0.1` only; developers reach it through `pnpm db tunnel` (ssh). Changing
       that line to `"5432:5432"` puts the whole script library on the public internet
       behind one password.
-- [ ] Off-box backups configured (`SERVER_BACKUP_S3_*`) and the cron line from
-      [apps/server/README → Backups](apps/server/README.md#backups) installed.
-      `pnpm admin:backup` takes a `pg_dump -Fc` inside PostgreSQL's own snapshot, so it
-      is safe against a live server and needs no downtime — but do **not** roll your own
-      by copying the `pg_data` volume out from under a running server: that is a torn
-      cluster, and it will not be obvious until you try to restore it.
-- [ ] Everything durable is actually on the list. `backupTargets` in
-      `apps/server/src/config.ts` decides what is archived; anything absent is
-      treated as regenerable and will be lost with the host.
-- [ ] The restore procedure run once, against a scratch copy. An untested restore
-      is not a backup.
-- [ ] Backup credentials scoped as tightly as your provider allows. The script
-      deletes old archives with the same key it uploads with, so a compromised
-      server can erase its own history; prefer `SERVER_BACKUP_PRUNE=false` plus a
-      bucket lifecycle rule and a write-only key where that is available.
+- [ ] Database backups arranged outside the app, with PostgreSQL's own tools
+      (`pg_dump -Fc` from the `postgres` container) or your host's snapshots. Do
+      **not** copy the `pg_data` volume out from under a running server: that is a
+      torn cluster, and it will not be obvious until you try to restore it.

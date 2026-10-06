@@ -131,7 +131,7 @@ services:
       # package whose node_modules are symlinks into ../../node_modules/.pnpm, and
       # pnpm needs the root package.json + pnpm-workspace.yaml + lockfile.
       # The container WORKDIR is /archiyou/apps/server, so the remaining relative
-      # paths (thumbnails, logs, backup scratch) resolve inside apps/server/data.
+      # paths (thumbnails, logs) resolve inside apps/server/data.
       - ./:/archiyou
     restart: unless-stopped
     security_opt:
@@ -202,7 +202,7 @@ services:
 volumes:
   redis_data:
     driver: local
-  # The script database. Back it up (`pnpm admin:backup` takes a pg_dump); a lost
+  # The script database. Back it up with pg_dump from the postgres container; a lost
   # volume is a lost library.
   pg_data:
     driver: local

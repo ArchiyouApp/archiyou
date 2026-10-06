@@ -37,7 +37,7 @@ For a real server locally:
 pnpm docker:dev     # postgres + redis on 127.0.0.1 (docker-compose.dev.yml)
 ```
 
-then put this in `apps/server/.env` (gitignored):
+then put this in the root `.env` (gitignored):
 
 ```
 SERVER_DATABASE_URL=postgres://archiyou:archiyou@localhost:5432/archiyou
@@ -70,20 +70,27 @@ The tests never read your `.env` for this: all of them set `memory://` explicitl
 
 ### Roles
 
-The api owns the schema; developers do not. Create the two roles once, on the server:
+The api owns the schema; developers do not. The api connects as `POSTGRES_USER`
+(`archiyou` unless `.env` says otherwise — see `SERVER_DATABASE_URL` in the root
+`docker-compose.yml`): the postgres image creates that role, and every table a
+migration creates belongs to it. Developers get a role of their own. Create it once,
+on the server, **after the first `db:migrate`** — the grants name tables and a schema
+that only exist from then on:
 
 ```sql
--- the api container: owns the tables, runs migrations
-CREATE ROLE archiyou_app LOGIN PASSWORD '…';
-ALTER DATABASE archiyou OWNER TO archiyou_app;
-
+-- docker compose exec postgres psql -U archiyou -d archiyou
 -- developers through the ssh tunnel: read and write rows, no DDL
 CREATE ROLE archiyou_dev LOGIN PASSWORD '…';
 GRANT CONNECT ON DATABASE archiyou TO archiyou_dev;
 GRANT USAGE ON SCHEMA public TO archiyou_dev;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO archiyou_dev;
-ALTER DEFAULT PRIVILEGES FOR ROLE archiyou_app IN SCHEMA public
+-- tables a later migration adds: the api's role creates those, so it is the one named
+ALTER DEFAULT PRIVILEGES FOR ROLE archiyou IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO archiyou_dev;
+-- the boot guard counts the applied migrations here; unreadable, it counts none
+-- and every dev server refuses to start, saying the database is behind
+GRANT USAGE ON SCHEMA drizzle TO archiyou_dev;
+GRANT SELECT ON drizzle."__drizzle_migrations" TO archiyou_dev;
 ```
 
 `archiyou_dev` cannot `ALTER TABLE`, so the boot guard above is a clear message
@@ -219,7 +226,7 @@ pnpm needs the root `package.json`, `pnpm-workspace.yaml` and lockfile. The
 containers' `WORKDIR` is `/archiyou/apps/server`, which is what makes `pnpm
 start` / `pnpm worker` resolve (from the workspace root they fail with
 `ERR_PNPM_NO_SCRIPT_OR_SERVER` and `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL`) and
-what makes the relative paths in `.env` — thumbnails, logs, backup scratch — land in
+what makes the relative paths in `.env` — thumbnails, logs — land in
 `apps/server/data`. That directory is written by uid 1000 (`USER node`):
 `chown -R 1000:1000 apps/server/data` on the host if the checkout is owned by someone
 else.
@@ -235,8 +242,9 @@ remove the pin — a rename orphans both the queue's persisted state and the scr
 database.
 
 **The scripts live in the `pg_data` volume**, not in the checkout. `apps/server/data/`
-in the checkout still holds the thumbnails, the logs and the backup scratch directory;
-back up both (see below) and never `git clean -x` the latter.
+in the checkout still holds the thumbnails and the logs. Back up the database with
+PostgreSQL's own tools (`pg_dump -Fc` from the `postgres` container), and never
+`git clean -x` the checkout.
 
 **5432 is published on `127.0.0.1` only.** That is the one line in
 `docker-compose.yml` not to "simplify": binding it to all interfaces puts the whole
@@ -250,134 +258,6 @@ process does not).
 
 Work through the checklist at the end of [SECURITY.md](../../SECURITY.md) before
 exposing an instance to the internet.
-
-### Backups
-
-`pnpm admin:backup` uploads one timestamped `tar.gz` to any S3-compatible bucket
-(AWS, Hetzner, Cloudflare R2, Backblaze B2, DigitalOcean Spaces, MinIO).
-
-**What is in it** is the `backupTargets` list in `apps/server/src/config.ts` — the
-PostgreSQL database and the thumbnails today. That list is the authoritative answer,
-and **anything not on it is treated as regenerable and will be lost on host failure**.
-When a new kind of durable asset appears, add a line there; the script needs no other
-change. `SERVER_BACKUP_EXTRA_PATHS=name:path,…` adds one without touching code.
-Deliberately excluded: `data/cache` (regenerable execution results).
-
-The database goes in as a `pg_dump -Fc` stream, taken inside PostgreSQL's own
-repeatable-read snapshot — safe against a live server, **no downtime**, and restorable
-one table at a time or into a scratch database. Every dump is read back with
-`pg_restore --list` before it is uploaded (a truncated archive fails here, not during
-a restore six months from now), and the archive's `MANIFEST.json` records the server
-version, which migration the database matches, and the exact row counts to compare
-against afterwards.
-
-This needs `pg_dump`, `pg_restore` and `psql` on `PATH`, at **least the server's major
-version** — `pg_dump` refuses to read a newer server. The `apps/server/Dockerfile`
-installs `postgresql-client-17` from the PGDG repository for exactly that reason;
-Debian's own package is too old for a `postgres:17` server.
-
-Configure the `SERVER_BACKUP_*` block in the root `.env` (see
-[`.env.example`](../../.env.example)), then **verify before scheduling**:
-
-```bash
-# from the repo root
-# what would be included, and where it would go
-docker compose exec api pnpm admin:backup --list
-# validates credentials, endpoint and checksum settings — writes nothing
-docker compose exec api pnpm admin:backup --dry
-# the real thing
-docker compose exec api pnpm admin:backup
-```
-
-Then schedule it from the **host** crontab (`crontab -e` as the user who owns the
-deploy):
-
-```cron
-MAILTO=you@example.com
-17 3 * * * cd /opt/archiyou && /usr/bin/docker compose exec -T api pnpm admin:backup >> /var/log/archiyou-backup.log 2>&1
-```
-
-Four things reliably go wrong here:
-
-- **`-T` is mandatory.** Cron has no TTY, and `exec` without it fails with
-  "the input device is not a TTY".
-- **`cd` into the repo root first.** Compose resolves `.env` and relative paths
-  from the compose file's directory; cron's working directory is `$HOME`.
-- **Use an absolute `/usr/bin/docker`.** Cron's `PATH` is minimal.
-- **A target must be visible inside the `api` container.** `exec` runs in the
-  already-running container, which has `env_file: .env` and the `server_data`
-  volume — so `SERVER_BACKUP_*` and `data/` are already there. A new asset path
-  *outside* that volume must also be mounted into the `api` service, or the
-  script cannot see it.
-
-If the stack may be down at that hour, use `run --rm -T api pnpm admin:backup`
-instead — same env and volume, in a throwaway container.
-
-Exit codes matter, because they are what reaches `MAILTO`:
-
-| Code | Meaning |
-|---|---|
-| `0` | Uploaded, and any pruning completed. |
-| `1` | **Backup failed — no new archive exists.** This is the one that should wake you. |
-| `2` | Misconfigured (missing bucket/credentials, unusable targets). Nothing was attempted. |
-| `3` | The archive is safe; only pruning failed. Look at it Monday. |
-
-**Retention.** After a *successful* upload, archives older than
-`SERVER_BACKUP_KEEP_DAYS` (default 30) are deleted. The pruner only ever touches
-keys matching its own exact `archiyou-YYYYMMDD-HHmmss.tar.gz` pattern under its
-own prefix, always keeps the newest `SERVER_BACKUP_MIN_KEEP` regardless of age,
-never empties the prefix, and never deletes more than
-`SERVER_BACKUP_MAX_DELETE` in one run. Instances sharing a bucket must use
-different `SERVER_BACKUP_S3_PREFIX` values or they will prune each other.
-
-Note the same credentials upload *and* delete, so a compromised server can erase
-its own history. If your provider supports lifecycle rules, the stronger setup is
-`SERVER_BACKUP_PRUNE=false` plus a bucket lifecycle rule and a write-only key.
-
-#### Restoring
-
-```bash
-# 1. fetch and inspect — this touches nothing
-aws s3 --endpoint-url "$ENDPOINT" cp "s3://$BUCKET/$PREFIX/archiyou-20260806-031500.tar.gz" .
-tar tzf archiyou-20260806-031500.tar.gz
-mkdir restore && tar xzf archiyou-20260806-031500.tar.gz -C restore --strip-components=1
-
-# 2. VERIFY BEFORE TOUCHING PRODUCTION — into a SCRATCH database, never the live one
-cat restore/MANIFEST.json     # targets, server version, migrations, row counts
-docker compose exec -T postgres pg_restore --list /dev/stdin < restore/db/archiyou.dump | head
-docker compose exec -T postgres psql -U archiyou -d postgres -c 'CREATE DATABASE restore_check;'
-docker compose exec -T postgres pg_restore -U archiyou -d restore_check --no-owner /dev/stdin \
-  < restore/db/archiyou.dump
-docker compose exec -T postgres psql -U archiyou -d restore_check \
-  -c 'select count(*) from users;' -c 'select count(*) from script_versions;'
-#    …compare those against MANIFEST.json → targets[db].rowCounts. Then drop it:
-docker compose exec -T postgres psql -U archiyou -d postgres -c 'DROP DATABASE restore_check;'
-
-# 3. the real restore. Stop the api so nothing writes while the database is replaced;
-#    postgres itself stays up, because it is what does the restoring.
-docker compose stop api worker
-
-# 4. replace the contents of the live database. --clean --if-exists drops each object
-#    before recreating it, so this is a replacement and not a merge with whatever is
-#    there now. -1 wraps it in one transaction: it either all lands or none of it does.
-docker compose exec -T postgres pg_restore -U archiyou -d archiyou \
-  --clean --if-exists --no-owner -1 /dev/stdin < restore/db/archiyou.dump
-
-# 5. the thumbnails are files in the checkout, not in the database
-rm -rf apps/server/data/thumbnails && cp -a restore/thumbnails apps/server/data/thumbnails
-sudo chown -R 1000:1000 apps/server/data/thumbnails
-
-# 6. back up
-docker compose start api worker
-```
-
-Step 2 is the part people skip and the part that matters: a dump that has never been
-restored is a hope, not a backup. `MANIFEST.json` carries the row counts precisely so
-that "did it all arrive" has an answer rather than a feeling. Do it against a scratch
-database once a quarter.
-
-`1000:1000` in step 5 is the `node` user the container runs as — root-owned thumbnail
-files leave the API unable to write new ones.
 
 ### Working on a copy of production
 

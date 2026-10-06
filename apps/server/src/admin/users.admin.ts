@@ -24,7 +24,7 @@
  *   pnpm admin:users --user <handle> --revoke-admin
  */
 
-import 'dotenv/config';
+import '../env';
 
 import { closeDb } from '../db/client';
 import { userService } from '../services/UserService';

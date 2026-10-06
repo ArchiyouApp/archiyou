@@ -537,7 +537,7 @@ replaces the search rather than adding to it, including when the path is wrong (
 not quietly corrected):
 
 ```bash
-# apps/server/.env — only when modules live outside the checkout
+# the root .env — only when modules live outside the checkout
 SERVER_MODULES_DIR=/srv/archiyou-modules,/srv/struct
 ```
 
