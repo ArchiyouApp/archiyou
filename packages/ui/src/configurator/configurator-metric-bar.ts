@@ -12,7 +12,7 @@ import './configurator-download-menu.js';
 import './configurator-order-form.js';
 import '../projects/add-to-project-menu.js';
 
-import { editorScript, executing as scriptExecuting, executionResult, userState, buildConfiguratorRequest } from '@archiyou/editor/src/state/workspace';
+import { editorScript, executing as scriptExecuting, executionResult, userState, buildConfiguratorRequest, deliveryTokenFromUrl } from '@archiyou/editor/src/state/workspace';
 import { configuratorLocale } from '@archiyou/editor/src/state/locale';
 import type { ConfigurationInput } from '@archiyou/editor/src/services/projects';
 import { isDownload, isProduct } from '@archiyou/editor/src/services/fulfillment';
@@ -64,11 +64,11 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
           </div>
         ` : nothing}
 
-        ${this._products().length ? html`
+        ${this._canOrder() ? html`
           <div class="download-wrap">
-            <button id="order-btn" class="download-btn" title="Order this design">
-              <wa-icon library="lucide" name="shopping-cart"></wa-icon>
-              <span>${this._orderLabel()}</span>
+            <button id="order-btn" class="download-btn" title=${this._delivery ? 'Send your changes back' : 'Order this design'}>
+              <wa-icon library="lucide" name=${this._delivery ? 'send' : 'shopping-cart'}></wa-icon>
+              <span>${this._delivery ? 'Send changes' : this._orderLabel()}</span>
             </button>
           </div>
         ` : nothing}
@@ -101,7 +101,7 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
         </wa-popover>
       ` : nothing}
 
-      ${this._products().length ? html`
+      ${this._canOrder() ? html`
         <wa-popover
           class="download-popover"
           for="order-btn"
@@ -110,7 +110,7 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
           without-arrow
           @wa-after-hide=${this._resetOrderForm}
         >
-          <configurator-order-form ?preview=${this.preview}></configurator-order-form>
+          <configurator-order-form ?preview=${this.preview} deliveryToken=${this._delivery ?? ''}></configurator-order-form>
         </wa-popover>
       ` : nothing}
 
@@ -246,6 +246,16 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
   private _hasDownloads(): boolean
   {
     return this.preview || (editorScript.get()?.published?.fulfillments ?? []).some(isDownload);
+  }
+
+  /** Opened from a delivery's "Adjust this design": the order button sends the changes
+   *  back to that delivery's professional instead. */
+  private readonly _delivery = deliveryTokenFromUrl();
+
+  /** An order button: for a product, or for changes to a delivered design. */
+  private _canOrder(): boolean
+  {
+    return (!this.preview && !!this._delivery) || this._products().length > 0;
   }
 
   /** The products this configurator can be ordered as ("Order product"). */

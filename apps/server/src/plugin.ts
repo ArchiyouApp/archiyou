@@ -38,7 +38,7 @@ import { ValidationError } from './validate';
 import { UserError, userService } from './services/UserService';
 import { ScriptStoreError } from './services/ScriptStore';
 import { FeedbackStoreError } from './services/FeedbackStore';
-import { ProjectStoreError } from './services/ProjectStore';
+import { ProjectStoreError, projectStore } from './services/ProjectStore';
 import { translationQueue } from './translation/TranslationQueue';
 
 const EXECUTION_INIT_TIMEOUT_MS = 5000;
@@ -198,6 +198,19 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
     moduleHost.watch();
     fastify.addHook('onClose', async () => { moduleHost.close(); });
   }
+
+  // Project activity (opens, downloads, responses) is kept config.events.retentionDays and
+  // then forgotten: purged now and once a day. Never in the way of booting.
+  const purgeEvents = () =>
+  {
+    projectStore.purgeEvents()
+      .then((n) => { if (n) console.log(`🧹 Forgot ${n} project event(s) older than ${config.events.retentionDays} days.`); })
+      .catch((err) => console.warn('⚠️  Purging old project activity failed:', (err as Error).message));
+  };
+  purgeEvents();
+  const purgeTimer = setInterval(purgeEvents, 24 * 60 * 60 * 1000);
+  purgeTimer.unref();
+  fastify.addHook('onClose', async () => { clearInterval(purgeTimer); });
 
   fastify.get('/health', async () => ({ status: 'healthy', timestamp: new Date().toISOString() }));
 

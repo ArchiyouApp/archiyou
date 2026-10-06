@@ -102,7 +102,7 @@ beforeAll(async () =>
   const { userService } = await import('../../src/services/UserService');
   ({ projectStore } = await import('../../src/services/ProjectStore'));
   ({ emailService } = await import('../../src/services/EmailService'));
-  for (const name of ['pro', 'carol', 'busy'])
+  for (const name of ['pro', 'carol', 'busy', 'adjuster'])
   {
     await userService.register(`${name}@example.com`, 'password123', name);
     await userService.markEmailVerified((await userService.findByUsername(name))!.id);
@@ -332,5 +332,82 @@ describe('another author\'s configurator', () =>
     expect((await upload(p.id, delivery.id, 'stool.glb', GLB)).statusCode).toBe(200);
     expect((await upload(p.id, delivery.id, 'stool.pdf', PDF)).statusCode).toBe(422);
     expect((await upload(p.id, delivery.id, 'stool.xlsx', XLSX)).statusCode).toBe(422);
+  });
+});
+
+describe('adjusting a delivered design', () =>
+{
+  /** A project whose v1 is the professional's own published configurator, and a sent
+   *  delivery of it. A professional of their own, clear of the send caps of the tests above. */
+  const SUB = 'adjuster';
+
+  async function deliveredConfigurator(allowAdjust: boolean)
+  {
+    const { scriptStore } = await import('../../src/services/ScriptStore');
+    const file = await scriptStore.create(SUB, script('bench'));
+    const published = await scriptStore.publish(SUB, file.fileId as string, script('bench', {
+      version: '2.0.0',
+      published: { public: true, fulfillments: [] },
+    }));
+    const created = (await call('POST', '/projects', {
+      title: 'Bench for Jan',
+      client: { email: 'jan@example.com', name: 'Jan de Vries' },
+      configuration: { script: published, values: { WIDTH: 1600 } },
+    }, SUB)).json().data;
+    const p = { id: created.id as string, configurationId: created.configurations[0].id as string, sub: SUB };
+    const delivery = await draft(p, { allowAdjust });
+    const sentDelivery = (await call('POST', `/projects/${p.id}/deliveries/${delivery.id}/send`, undefined, SUB)).json().data;
+    return { p, published: published as { id: string }, token: (sentDelivery.link as string).split('/d/')[1] };
+  }
+
+  const sendChanges = (over: Record<string, unknown>) =>
+    app.inject({ method: 'POST', url: '/orders', payload: { values: { WIDTH: 1800 }, message: 'A bit longer', ...over } });
+
+  it('opens the configurator at the delivered values, with the link', async () =>
+  {
+    const { token } = await deliveredConfigurator(true);
+    const view = (await visit(`/d/${token}`)).json().data;
+    expect(view.adjustPath).toBe(`/configurators/adjuster/bench:2.0.0?WIDTH=1600&delivery=${token}`);
+  });
+
+  it('brings the changes back as a new configuration of the same project', async () =>
+  {
+    const mail = vi.spyOn(emailService, 'sendAdjustRequested');
+    const { p, published, token } = await deliveredConfigurator(true);
+
+    expect((await sendChanges({ versionId: published.id, deliveryToken: token })).statusCode).toBe(201);
+    // The same changes again (a double click) are the same configuration
+    expect((await sendChanges({ versionId: published.id, deliveryToken: token })).statusCode).toBe(201);
+
+    const project = (await call('GET', `/projects/${p.id}`, undefined, SUB)).json().data;
+    expect(project.configurations).toHaveLength(2);
+    expect(project.configurations[0]).toMatchObject({ rev: 2, origin: 'adjust', values: { WIDTH: 1800 }, message: 'A bit longer' });
+    expect(project.events[0]).toMatchObject({ type: 'adjust.requested', actor: 'client', meta: { changed: ['WIDTH'], rev: 2 } });
+    expect(mail).toHaveBeenCalledTimes(1);
+    expect(mail.mock.calls[0][1]).toMatchObject({ clientName: 'Jan de Vries', changed: ['WIDTH'], rev: 2 });
+    mail.mockRestore();
+  });
+
+  it('only for the delivered configurator, and only when allowed', async () =>
+  {
+    const { published: other } = await deliveredConfigurator(true);
+    const { token } = await deliveredConfigurator(true);
+    expect((await sendChanges({ versionId: other.id, deliveryToken: token })).statusCode).toBe(404);
+
+    const closed = await deliveredConfigurator(false);
+    expect((await visit(`/d/${closed.token}`)).json().data.adjustPath).toBeNull();
+    expect((await sendChanges({ versionId: closed.published.id, deliveryToken: closed.token })).statusCode).toBe(404);
+  });
+
+  it('records the client opening the configurator, once a day, and nothing else', async () =>
+  {
+    const { p, token } = await deliveredConfigurator(true);
+    const report = (type: string) => app.inject({ method: 'POST', url: `/d/${token}/events`, payload: { type }, headers: { 'user-agent': 'client-browser' } });
+    expect((await report('adjust.opened')).statusCode).toBe(204);
+    expect((await report('adjust.opened')).statusCode).toBe(204);
+    expect((await report('delivery.accepted')).statusCode).toBe(422);
+
+    const events = (await call('GET', `/projects/${p.id}`, undefined, SUB)).json().data.events.filter((e: { type: string }) => e.type === 'adjust.opened');
+    expect(events).toHaveLength(1);
   });
 });

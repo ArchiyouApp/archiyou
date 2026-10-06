@@ -6,6 +6,11 @@
  *   GET  /d/:token                     the delivery's page: DeliveryView
  *   GET  /d/:token/files/:name         one of its files; ?download=1 to save it
  *   POST /d/:token/respond             { response: accepted | declined | changes, note? }
+ *   POST /d/:token/events              { type: 'adjust.opened' } — the only thing a client page reports
+ *
+ * With a `deliveryToken`, POST /orders is a client sending back a delivered design they
+ * adjusted in the configurator ("Adjust this design"): no contact details needed, it goes
+ * to the delivery's project as a new configuration.
  *
  * An order of a configurator's product fulfillment becomes a request in its author's
  * Projects. Public and anonymous, so it is rate limited per IP and per configurator,
@@ -18,10 +23,10 @@
  * hash (visitorOf), not an identifier that lasts.
  */
 
-import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { Type } from 'typebox';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { Type, type Static } from 'typebox';
 
-import type { DeliveryView } from '@archiyou/types';
+import { projectLabel, type DeliveryView } from '@archiyou/types';
 
 import type { ScriptPublishedFulfillmentData } from '@archiyou/core/src/ScriptSchema';
 
@@ -40,22 +45,26 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const OrderSchema = Type.Object({
   versionId: Type.String({ minLength: 1, maxLength: 100 }),
-  fulfillment: Type.String({ minLength: 1, maxLength: 200 }),
+  fulfillment: Type.Optional(Type.String({ maxLength: 200 })),
   values: Type.Optional(Type.Union([Type.Record(Type.String(), Type.Unknown()), Type.Null()])),
   unitSystem: Type.Optional(Type.Union([Type.Literal('metric'), Type.Literal('imperial'), Type.Null()])),
   lang: optionalText(10),
-  contact: Type.Object({
+  contact: Type.Optional(Type.Object({
     email: Type.String({ minLength: 3, maxLength: 254 }),
     name: optionalText(200),
     phone: optionalText(50),
     company: optionalText(200),
-  }),
+  })),
   message: optionalText(TEXT_MAX),
   /** A PNG of the configured model, base64. */
   thumbnail: optionalText(Math.ceil(config.thumbnails.maxBytes * 4 / 3) + 4),
   /** Honeypot. */
   website: optionalText(500),
+  /** Changes to a delivered design: the delivery's link token. */
+  deliveryToken: optionalText(100),
 });
+
+const EventSchema = Type.Object({ type: Type.Literal('adjust.opened') });
 
 const RespondSchema = Type.Object({
   response: Type.Union([Type.Literal('accepted'), Type.Literal('declined'), Type.Literal('changes')]),
@@ -86,6 +95,48 @@ async function clientVisitor(request: FastifyRequest, professional: string): Pro
   return visitorOf(request.ip, String(request.headers['user-agent'] ?? ''));
 }
 
+/**
+ * POST /orders with a delivery token: the client's adjusted design goes back to the
+ * delivery's project. Only for the configurator version that was delivered.
+ */
+async function receiveAdjustment(body: Static<typeof OrderSchema>, reply: FastifyReply)
+{
+  const row = await projectStore.deliveryByToken(body.deliveryToken ?? '');
+  const script = row ? await scriptStore.findAnyVersionById(body.versionId) : null;
+  if (!row || !script)
+  {
+    reply.code(404);
+    return { success: false, error: 'This design cannot be changed here' };
+  }
+  const { configuration, changed, duplicate } = await projectStore.receiveAdjustment(row, {
+    script, values: body.values, unitSystem: body.unitSystem, lang: body.lang, message: body.message,
+  });
+
+  if (!duplicate)
+  {
+    if (body.thumbnail)
+    {
+      const url = await thumbnailStore.write(row.professional, row.projectId, configuration.id, Buffer.from(body.thumbnail, 'base64'), 'adjust');
+      if (url) await projectStore.setConfigurationThumbnail(row.professional, row.projectId, configuration.id, url);
+    }
+    const professional = await userService.findByUsername(row.professional);
+    const project = await projectStore.getProject(row.professional, row.projectId).catch(() => null);
+    if (professional && project)
+    {
+      await emailService.sendAdjustRequested(professional.email, {
+        clientName: row.recipientName || row.recipientEmail || 'Your client',
+        project: `${projectLabel(project.number)} ${project.title}`,
+        rev: configuration.rev,
+        changed,
+        message: body.message?.trim() || null,
+        link: `${config.frontendUrl.replace(/\/+$/, '')}/projects/${row.projectId}`,
+      });
+    }
+  }
+  reply.code(201);
+  return { success: true, data: { received: true } };
+}
+
 /** The product fulfillment a published version offers under this name, or null. */
 function productOf(published: { fulfillments?: ScriptPublishedFulfillmentData[] } | null | undefined, name: string)
 {
@@ -105,7 +156,8 @@ export async function registerClientRoutes(fastify: FastifyInstance): Promise<vo
       reply.code(201);
       return accepted;
     }
-    if (!EMAIL.test(body.contact.email.trim()))
+    if (body.deliveryToken) return receiveAdjustment(body, reply);
+    if (!body.contact || !EMAIL.test(body.contact.email.trim()))
     {
       reply.code(422);
       return { success: false, error: 'Please give a valid email address' };
@@ -114,7 +166,7 @@ export async function registerClientRoutes(fastify: FastifyInstance): Promise<vo
     // Only a published version that offers this product, whose author has a confirmed
     // address. Anything else is the same 404, so nothing can be learned from probing.
     const script = await scriptStore.findAnyVersionById(body.versionId);
-    const product = script?.version ? productOf(script.published, body.fulfillment) : null;
+    const product = script?.version ? productOf(script.published, body.fulfillment ?? '') : null;
     const author = product && script?.author ? await userService.findByUsername(script.author) : undefined;
     if (!script || !product || !author || author.emailVerifiedAt === null)
     {
@@ -122,13 +174,14 @@ export async function registerClientRoutes(fastify: FastifyInstance): Promise<vo
       return { success: false, error: 'This configurator does not take orders' };
     }
 
+    const contact = body.contact!;
     const { project, configuration, duplicate } = await projectStore.receiveOrder({
       script,
       fulfillment: product.name,
       values: body.values,
       unitSystem: body.unitSystem,
       lang: body.lang,
-      contact: { ...body.contact, email: body.contact.email.trim() },
+      contact: { ...contact, email: contact.email.trim() },
       message: body.message,
     }, config.ordersPerConfiguratorPerDay);
 
@@ -143,9 +196,9 @@ export async function registerClientRoutes(fastify: FastifyInstance): Promise<vo
       await emailService.sendOrderReceived(author.email, {
         product: product.name,
         configurator: `${script.name}:${script.version}`,
-        clientName: body.contact.name?.trim() || null,
-        clientEmail: body.contact.email.trim(),
-        clientPhone: body.contact.phone?.trim() || null,
+        clientName: contact.name?.trim() || null,
+        clientEmail: contact.email.trim(),
+        clientPhone: contact.phone?.trim() || null,
         message: body.message?.trim() || null,
         link: `${config.frontendUrl.replace(/\/+$/, '')}/projects/${project.id}`,
       });
@@ -191,7 +244,7 @@ export async function registerClientRoutes(fastify: FastifyInstance): Promise<vo
       response: delivery.response,
       responseNote: delivery.responseNote,
       responseAt: delivery.responseAt,
-      adjustPath: null,
+      adjustPath: await projectStore.adjustPath(row),
     };
     reply.header('Cache-Control', 'private, no-store');
     return { success: true, data: view };
@@ -232,6 +285,22 @@ export async function registerClientRoutes(fastify: FastifyInstance): Promise<vo
       return reply.send(file.stream);
     },
   );
+
+  // The client opened the configurator from the delivery. Nothing else is reported from a
+  // client's browser: opens and downloads are counted by the routes that serve them.
+  fastify.post<TokenParams>('/d/:token/events', viewing, async (request, reply) =>
+  {
+    parse(EventSchema, request.body);
+    const row = await projectStore.deliveryByToken(request.params.token);
+    if (!row)
+    {
+      reply.code(404);
+      return { success: false, error: 'This link does not exist' };
+    }
+    const visitor = await clientVisitor(request, row.professional);
+    if (visitor) await projectStore.recordAdjustOpened(row, visitor);
+    reply.code(204);
+  });
 
   fastify.post<TokenParams>('/d/:token/respond', { config: { rateLimit: config.respondRateLimit } }, async (request, reply) =>
   {

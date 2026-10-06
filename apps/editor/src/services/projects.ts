@@ -323,17 +323,27 @@ export async function respondToDelivery(token: string, response: DeliveryRespons
   await api.post(`/d/${encodeURIComponent(token)}/respond`, { response, note });
 }
 
+/** The client opened the configurator from a delivery ("Adjust this design"). Best effort:
+ *  the professional seeing it is nice, the client's page never waits for it. */
+export function reportAdjustOpened(token: string): void
+{
+  api.post(`/d/${encodeURIComponent(token)}/events`, { type: 'adjust.opened' })
+    .catch((err) => console.warn('projects: could not report the adjust page:', err));
+}
+
 //// ORDERS ////
 
 /** A visitor's order of a configurator's product (POST /orders, public). */
 export interface OrderInput
 {
   versionId: string;
-  fulfillment: string;
+  /** The ordered product; empty for changes to a delivery. */
+  fulfillment?: string;
   values: Record<string, unknown>;
   unitSystem?: 'metric' | 'imperial' | null;
   lang?: string | null;
-  contact: { email: string; name?: string | null; phone?: string | null };
+  /** Not needed for changes to a delivery: the link says who it is. */
+  contact?: { email: string; name?: string | null; phone?: string | null };
   message?: string | null;
   /** Honeypot: people never see it, so it stays empty. */
   website?: string;

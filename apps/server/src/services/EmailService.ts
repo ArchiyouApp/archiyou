@@ -147,6 +147,30 @@ export class EmailService {
     });
   }
 
+  /** The client adjusted a delivered design in the configurator and sent the changes. */
+  async sendAdjustRequested(to: string, adjustment: {
+    clientName: string;
+    project: string;
+    rev: number;
+    changed: string[];
+    message: string | null;
+    link: string;
+  }): Promise<void> {
+    await this.send({
+      to,
+      subject: `${adjustment.clientName} sent changes to ${adjustment.project}`,
+      html: renderEmail({
+        subject: `Changes from ${adjustment.clientName}`,
+        text: `${adjustment.clientName} adjusted the design you sent and sent it back. It is v${adjustment.rev} in ${adjustment.project}.`,
+        details: [['Changed', adjustment.changed.join(', ') || 'nothing (sent as it was)']],
+        quote: adjustment.message,
+        buttonText: 'Open the project',
+        buttonLink: adjustment.link,
+      }),
+      devNote: `project: ${adjustment.link}`,
+    });
+  }
+
   /** Low-level send. Never throws to callers — a failed/absent send must not leak
    *  whether an account exists (forgot-password always answers 200). */
   private async send({ to, subject, html, replyTo, devNote }: Message): Promise<void> {

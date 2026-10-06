@@ -112,6 +112,28 @@ export function visitorOf(ip: string, userAgent: string, day = new Date().toISOS
   return createHash('sha256').update(`${config.jwtSecret}|${day}|${ip}|${userAgent}`).digest('hex').slice(0, 32);
 }
 
+/**
+ * The query string that opens a configurator at `values`: only the values that differ
+ * from what it opens with (a param's saved `_value`, else its default), each written the
+ * way the configurator reads it back (apps/editor/src/state/configurator-url.ts — kept in
+ * step with its `serialize`).
+ */
+export function configuratorQuery(script: ScriptData, values: Record<string, unknown>): string
+{
+  const query = new URLSearchParams();
+  Object.entries(script.params ?? {}).forEach(([name, param]) =>
+  {
+    const value = values[name];
+    const opening = param._value ?? param.default;
+    if (value === undefined || JSON.stringify(value) === JSON.stringify(opening)) return;
+    const text = param.type === 'number-ranges' && Array.isArray(value) ? value.join(',')
+      : param.type === 'list' || param.type === 'object' ? JSON.stringify(value)
+      : String(value);
+    query.set(name, text);
+  });
+  return query.toString();
+}
+
 /** A visitor's order of a product fulfillment (POST /orders). */
 export interface NewOrder
 {
@@ -926,6 +948,80 @@ export class ProjectStore
       type, actor: 'client', deliveryId: row.id, meta: { number: row.number, note: answered.responseNote },
     });
     return answered;
+  }
+
+  //// ADJUSTING A DELIVERED DESIGN ////
+
+  /** The configurator a sent delivery may be adjusted in, at its values, carrying the
+   *  delivery's token — or null when the professional did not allow it, or the design did
+   *  not come from a published configurator. */
+  async adjustPath(row: DeliveryRow): Promise<string | null>
+  {
+    if (!row.allowAdjust || row.status !== 'sent' || !row.token) return null;
+    const configuration = await this.configurationRow(row.professional, row.projectId, row.configurationId).catch(() => null);
+    const source = configuration ? rowToConfiguration(configuration).configurator : null;
+    if (!configuration || !source) return null;
+    const path = `/configurators/${encodeURIComponent(source.author)}/${encodeURIComponent(source.name)}:${encodeURIComponent(source.version)}`;
+    const query = configuratorQuery(configuration.script, configuration.values);
+    return `${path}?${query ? `${query}&` : ''}delivery=${encodeURIComponent(row.token)}`;
+  }
+
+  /**
+   * The client adjusted a delivered design in the configurator and sent it back: a new
+   * configuration (origin 'adjust') in the delivery's project, for the professional who
+   * sent it. Only for the configurator version that was delivered — the link cannot be used
+   * to put other scripts into someone's project. The same changes again within
+   * ORDER_DEDUPE_MS return the first.
+   */
+  async receiveAdjustment(
+    row: DeliveryRow,
+    input: { script: ScriptData; values?: Record<string, unknown> | null; unitSystem?: 'metric' | 'imperial' | null; lang?: string | null; message?: string | null },
+  ): Promise<{ configuration: ConfigurationData; changed: string[]; duplicate: boolean }>
+  {
+    if (row.status !== 'sent' || !row.allowAdjust) throw new ProjectStoreError('not_found', 'This design cannot be changed here');
+    const delivered = await this.configurationRow(row.professional, row.projectId, row.configurationId);
+    if (!input.script.id || input.script.id !== delivered.sourceVersionId)
+    {
+      throw new ProjectStoreError('not_found', 'This design cannot be changed here');
+    }
+    const { values } = snapshotOf(input.script, input.values);
+    const changed = Object.keys(values).filter((name) => JSON.stringify(values[name]) !== JSON.stringify(delivered.values[name]));
+
+    const [latest] = await db.select().from(configurations)
+      .where(and(eq(configurations.projectId, row.projectId), eq(configurations.sourceDeliveryId, row.id),
+        gt(configurations.created, new Date(Date.now() - ORDER_DEDUPE_MS))))
+      .orderBy(desc(configurations.rev)).limit(1);
+    if (latest && JSON.stringify(latest.values) === JSON.stringify(values))
+    {
+      return { configuration: rowToConfiguration(latest), changed, duplicate: true };
+    }
+
+    const configuration = await this.addConfiguration(row.professional, row.projectId, {
+      script: input.script,
+      values,
+      unitSystem: input.unitSystem,
+      lang: input.lang,
+      sourceVersionId: input.script.id,
+      sourceDeliveryId: row.id,
+      message: input.message,
+    }, 'adjust', { event: false });
+    await this.addEvent(row.professional, row.projectId, {
+      type: 'adjust.requested',
+      actor: 'client',
+      deliveryId: row.id,
+      configurationId: configuration.id,
+      meta: { number: row.number, rev: configuration.rev, changed },
+    });
+    return { configuration, changed, duplicate: false };
+  }
+
+  /** The client opened the configurator from the delivery: once per visitor and day. */
+  async recordAdjustOpened(row: DeliveryRow, visitor: string): Promise<void>
+  {
+    if (row.status !== 'sent' || !row.allowAdjust || await this.seenToday(row, 'adjust.opened', visitor)) return;
+    await this.addEvent(row.professional, row.projectId, {
+      type: 'adjust.opened', actor: 'client', deliveryId: row.id, visitor, meta: { number: row.number },
+    });
   }
 
   //// ORDERS ////

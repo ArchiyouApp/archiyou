@@ -35,7 +35,7 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
       return html`
         <div class="sent">
           <wa-icon library="lucide" name="circle-check"></wa-icon>
-          <p><strong>Sent.</strong> ${author} will get back to you at ${this._email.trim()}.</p>
+          <p><strong>Sent.</strong> ${this.changes ? 'Your changes are on their way.' : `${author} will get back to you at ${this._email.trim()}.`}</p>
         </div>`;
     }
 
@@ -45,7 +45,7 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
       <form @submit=${this._submit}>
         <div class="header">${this.changes ? 'Send your changes' : 'Order this design'}</div>
 
-        ${products.length > 1
+        ${products.length > 1 && !this.changes
           ? html`
             <fieldset class="products">
               <legend>Product</legend>
@@ -58,7 +58,7 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
                   ${p.description ? html`<span class="product-description">${p.description}</span>` : nothing}
                 </label>`)}
             </fieldset>`
-          : chosen?.description || chosen?.price
+          : !this.changes && (chosen?.description || chosen?.price)
             ? html`
               <p class="about">
                 ${chosen.description ?? ''}
@@ -66,24 +66,27 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
               </p>`
             : nothing}
 
-        <label class="field">
-          <span>Name</span>
-          <input type="text" autocomplete="name" maxlength="200" .value=${this._name}
-            @input=${(e: Event) => { this._name = (e.target as HTMLInputElement).value; }}>
-        </label>
-        <label class="field">
-          <span>Email <span class="required">*</span></span>
-          <input type="email" autocomplete="email" required maxlength="254" .value=${this._email}
-            @input=${(e: Event) => { this._email = (e.target as HTMLInputElement).value; this._error = ''; }}>
-        </label>
-        <label class="field">
-          <span>Phone</span>
-          <input type="tel" autocomplete="tel" maxlength="50" .value=${this._phone}
-            @input=${(e: Event) => { this._phone = (e.target as HTMLInputElement).value; }}>
-        </label>
+        ${this.changes
+          ? html`<p class="about">The design as it is on screen now goes back to whoever sent it to you.</p>`
+          : html`
+            <label class="field">
+              <span>Name</span>
+              <input type="text" autocomplete="name" maxlength="200" .value=${this._name}
+                @input=${(e: Event) => { this._name = (e.target as HTMLInputElement).value; }}>
+            </label>
+            <label class="field">
+              <span>Email <span class="required">*</span></span>
+              <input type="email" autocomplete="email" required maxlength="254" .value=${this._email}
+                @input=${(e: Event) => { this._email = (e.target as HTMLInputElement).value; this._error = ''; }}>
+            </label>
+            <label class="field">
+              <span>Phone</span>
+              <input type="tel" autocomplete="tel" maxlength="50" .value=${this._phone}
+                @input=${(e: Event) => { this._phone = (e.target as HTMLInputElement).value; }}>
+            </label>`}
         <label class="field">
           <span>Message</span>
-          <textarea rows="3" maxlength="2000" placeholder="Anything ${author} should know?"
+          <textarea rows="3" maxlength="2000" placeholder=${this.changes ? 'What did you change, and why?' : `Anything ${author} should know?`}
             .value=${this._message}
             @input=${(e: Event) => { this._message = (e.target as HTMLTextAreaElement).value; }}></textarea>
         </label>
@@ -94,10 +97,10 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
         ${this._error ? html`<p class="error" role="alert">${this._error}</p>` : nothing}
         ${this.preview ? html`<p class="note">Preview: orders arrive once this configurator is published.</p>` : nothing}
 
-        <button class="send" type="submit" ?disabled=${this._sending || this.preview || !this._email.trim()}>
+        <button class="send" type="submit" ?disabled=${this._sending || this.preview || (!this.changes && !this._email.trim())}>
           ${this._sending ? 'Sending…' : this.changes ? 'Send changes' : 'Send order'}
         </button>
-        <p class="privacy">${author} receives your details and this design to answer you.</p>
+        ${this.changes ? nothing : html`<p class="privacy">${author} receives your details and this design to answer you.</p>`}
       </form>
     `;
   }
@@ -105,8 +108,8 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
   // ── 2. Properties, State ──
   /** In the editor's configurator preview: show the form, send nothing. */
   @property({ type: Boolean }) preview = false;
-  /** The client came from a delivery's "Adjust this design" (phase 4): their changes go
-   *  back to the professional who sent it, by this token. */
+  /** The client came from a delivery's "Adjust this design": their changes go back to the
+   *  professional who sent it, by this token, and no contact details are asked. */
   @property({ type: String }) deliveryToken = '';
 
   @state() private _product = '';
@@ -160,14 +163,17 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
     {
       await sendOrder({
         versionId: script.id,
-        fulfillment: product?.name ?? '',
         values: request.params ?? {},
         unitSystem: request.unitSystem ?? null,
         lang: configuratorLocale.get(),
-        contact: { email: this._email.trim(), name: this._name.trim() || null, phone: this._phone.trim() || null },
         message: this._message.trim() || null,
         website: this._website,
-        ...(this.deliveryToken ? { deliveryToken: this.deliveryToken } : {}),
+        ...(this.changes
+          ? { deliveryToken: this.deliveryToken }
+          : {
+            fulfillment: product?.name ?? '',
+            contact: { email: this._email.trim(), name: this._name.trim() || null, phone: this._phone.trim() || null },
+          }),
       });
       this._sent = true;
     }

@@ -29,7 +29,14 @@ import { configuratorParams, configuratorValues, configuratorValueFor } from './
 
 /** Query keys the configurator itself owns; never treated as a param. Params are
  *  matched by name anyway, but a script is free to call a param LANG. */
-const RESERVED_KEYS = ['lang'];
+const RESERVED_KEYS = ['lang', 'delivery'];
+
+/** `?delivery=<token>`: the configurator was opened from a delivery's "Adjust this design"
+ *  (plans/PROJECTS.md). The client's changes then go back to that delivery's project. */
+export function deliveryTokenFromUrl(search: string = window.location.search): string | null
+{
+  return new URLSearchParams(search).get('delivery') || null;
+}
 
 //// CODEC (pure — see tests/configurator-url.test.ts) ////
 

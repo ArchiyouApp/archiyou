@@ -27,9 +27,10 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@archiyou/ui/configurator/configurator.js';
 
 import { openSharedScript } from '../state/workspace';
-import { applyConfiguratorParamsFromQuery } from '../state/configurator-url';
+import { applyConfiguratorParamsFromQuery, deliveryTokenFromUrl } from '../state/configurator-url';
 import { applyLocaleFromQuery } from '../state/locale';
 import { fetchPublishedScriptVersion } from '../services/publishing.js';
+import { reportAdjustOpened } from '../services/projects.js';
 import { setServerExecutionTarget, type ServerExecutionTarget } from '../services/execution-service.js';
 
 @customElement('page-published-configurator')
@@ -91,6 +92,9 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
       // after the script is loaded (its params are what type the raw strings) and
       // before <page-configurator> mounts, so the first run is already the right one.
       applyConfiguratorParamsFromQuery(window.location.search);
+      // Opened from a delivery's "Adjust this design": the professional sees that it was
+      const delivery = deliveryTokenFromUrl();
+      if (delivery) reportAdjustOpened(delivery);
       this._status = 'ready';
     }
     catch (err)
