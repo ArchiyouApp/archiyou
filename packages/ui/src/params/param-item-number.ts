@@ -13,6 +13,8 @@ import { paramMin, paramMax, paramStep, paramValue } from '@archiyou/editor/src/
 import { scriptUnitSystem, configuratorUnitSystem, scriptUnitSystemOverride, configuratorUnitSystemPick } from '@archiyou/editor/src/state/workspace';
 
 import type { ModelUnits } from '@archiyou/core/src/modeler/types';
+import type { TranslatorFn } from '@archiyou/core/src/i18n/resolve';
+import { paramLabelKey, paramDescriptionKey } from '@archiyou/core/src/i18n/keys';
 import type { UnitSystem } from '@archiyou/core/src/units/UnitConverter';
 import {
     MM_PER_UNIT, UNIT_SYSTEMS, convert, systemOfUnit, pickBestUnit,
@@ -102,8 +104,8 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
                     @dragstart=${(e: DragEvent) => e.stopPropagation()}
                 >
                     <div class="pres-top">
-                        <span class="pres-label">${this.param?.label || this.param?.name}</span>
-                        <param-help .text=${this.param?.description ?? ''}></param-help>
+                        <span class="pres-label">${this.t(paramLabelKey(this.param?.name ?? ''), this.param?.label || this.param?.name || '')}</span>
+                        <param-help .text=${this.t(paramDescriptionKey(this.param?.name ?? ''), this.param?.description ?? '')}></param-help>
                         <span class="pres-spacer"></span>
                         ${frac}
                         ${numUnit}
@@ -186,6 +188,10 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
      *  here; without it a preset could change the value with no visible effect.
      *  `undefined` → fall back to the param's own value. */
     @property({ attribute: false }) value: number | undefined = undefined;
+
+    /** Translates the label row in presentation mode, which this control draws itself
+     *  (param-item stands back for it). The authoring row always shows the source. */
+    @property({ attribute: false }) t: TranslatorFn = (_key, fallback) => fallback;
 
     @state() private _value = 0;
     @state() private _focused = false;

@@ -12,13 +12,13 @@ import type { ScriptData } from '../../../src/ScriptSchema'
 import { Script } from '../../../src/Script'
 import { ScriptParamType, type ScriptParamData } from '../../../src/execution/types'
 
-import { extractTranslatableStrings } from '../../../src/i18n/extract'
+import { extractTranslatableStrings, metricLabelsInCode } from '../../../src/i18n/extract'
 import { hashStrings } from '../../../src/i18n/hash'
 import {
     makeTranslator, availableLocales, scriptSourceLocale, translationsAreStale,
 } from '../../../src/i18n/resolve'
 import {
-    encodeKeySegment, paramLabelKey, presetKey, paramOptionKey, groupKey,
+    encodeKeySegment, paramLabelKey, presetKey, paramOptionKey, groupKey, metricKey,
 } from '../../../src/i18n/keys'
 import {
     TRANSLATION_LOCALES, LOCALE_LABELS, targetLocalesFor, baseLocale, DEFAULT_SOURCE_LOCALE,
@@ -143,18 +143,33 @@ describe('extractTranslatableStrings', () =>
         expect(strings[paramLabelKey('DEPTH')]).toBe('DEPTH')
     })
 
-    it('skips hidden params and purely numeric or symbolic strings', () =>
+    it('skips purely numeric or symbolic strings', () =>
     {
         const { strings } = extractTranslatableStrings(script({
             params: {
-                SECRET: param({ label: 'Secret', visible: false }),
                 COUNT:  param({ label: '100' }),
                 RATIO:  param({ label: '±' }),
             },
         } as Partial<ScriptData>))
-        expect(strings[paramLabelKey('SECRET')]).toBeUndefined()
         expect(strings[paramLabelKey('COUNT')]).toBeUndefined()
         expect(strings[paramLabelKey('RATIO')]).toBeUndefined()
+    })
+
+    it('translates hidden params too — a behaviour can show them at run time', () =>
+    {
+        const { strings } = extractTranslatableStrings(script({
+            params: { OVERHANG_FRONT: param({ label: 'Overhang front', visible: false }) },
+        } as Partial<ScriptData>))
+        expect(strings[paramLabelKey('OVERHANG_FRONT')]).toBe('Overhang front')
+    })
+
+    it('reads metric names from the code, since metrics only exist once it runs', () =>
+    {
+        const { strings } = extractTranslatableStrings(script({
+            code: "metric('area (net)', a, { unit: 'm2' });\ncalc.metric(\"price (DIY)\", Math.round(p(1, 2)) + 'k', { unit: 'EUR' })",
+        } as Partial<ScriptData>))
+        expect(strings[metricKey('area (net)')]).toBe('area (net)')
+        expect(strings[metricKey('price (DIY)')]).toBe('price (DIY)')
     })
 
     it('escapes dots in free-form preset and group names', () =>
@@ -167,6 +182,26 @@ describe('extractTranslatableStrings', () =>
 
         const { strings } = extractTranslatableStrings(script({ presets: { 'v1.2': {} } } as Partial<ScriptData>))
         expect(strings['presets.v1%2E2']).toBe('v1.2')
+    })
+})
+
+describe('metricLabelsInCode', () =>
+{
+    it('takes the label option over the name, as the metric card shows it', () =>
+    {
+        expect(metricLabelsInCode("metric('w', f(')'), { unit: 'kg', label: 'Weight 😀' }); metric('after', 1)"))
+            .toEqual(['Weight 😀', 'after'])
+    })
+
+    it('leaves out names built at run time', () =>
+    {
+        expect(metricLabelsInCode('metric(name, 1); metric(`Bay ${i}`, 2); metric(`fixed`, 3)')).toEqual(['fixed'])
+    })
+
+    it('finds nothing in code without metrics', () =>
+    {
+        expect(metricLabelsInCode('box(100)')).toEqual([])
+        expect(metricLabelsInCode(undefined)).toEqual([])
     })
 })
 

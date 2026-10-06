@@ -64,9 +64,15 @@ function uniqueViolation(e: unknown): string | null {
   return hit ? hit.constraint ?? '' : null;
 }
 
-/** `published` with `validated` forced off, whatever the caller sent. */
-function unvalidated(published: ScriptData['published']): ScriptData['published'] {
-  return published ? { ...published, validated: false } : null;
+/** `published` without the state only the server writes, whatever the caller sent:
+ *  `validated` forced off, and no `translations`. Translations are made by the server's
+ *  translation job and belong to the published version they were made for; a copy sent
+ *  back with a save is out of date the moment the job runs again. */
+function withoutServerState(published: ScriptData['published']): ScriptData['published']
+{
+  if (!published) return null;
+  const { translations: _translations, ...rest } = published;
+  return { ...rest, validated: false };
 }
 
 type ParamRecord = NonNullable<ScriptData['params']>;
@@ -155,8 +161,9 @@ export class ScriptStore {
       // server-side execution. That is also the right semantics: an insert is a new
       // (fileId, version) carrying new `code`, which nobody has reviewed yet. Only
       // setValidated() turns it on; updatePublishedVersion() carries an existing one
-      // forward, because editing metadata leaves `code` untouched.
-      published: unvalidated(data.published),
+      // forward, because editing metadata leaves `code` untouched. `translations` are
+      // dropped for the same reason: only setTranslations() writes them.
+      published: withoutServerState(data.published),
       shared: opts.shared,
       // Server-authoritative, like `shared`: a client's `thumbnail` is ignored on every
       // insert. Only setThumbnail()/setFileThumbnail() write a URL (after the file exists),
@@ -448,7 +455,9 @@ export class ScriptStore {
    *  the one write path that must NOT reset it (unlike toRow(), which forces it off on
    *  every insert): `code` is untouched here, so an admin's review still stands, and the
    *  owner editing their own title must not knock their configurator off server-side
-   *  execution — nor be able to grant it. */
+   *  execution — nor be able to grant it. The stored `translations` are carried forward
+   *  the same way: the route queues a translation job, which rewrites them when the
+   *  edit changed the text (setTranslations). */
   async updatePublishedVersion(author: string, versionId: string, published: ScriptData['published']): Promise<ScriptData> {
     const [row] = await db
       .select()
@@ -457,7 +466,9 @@ export class ScriptStore {
       .limit(1);
     if (!row) throw new ScriptStoreError('not_found', `Version ${versionId} not found`);
     const stored = (row.published ?? null) as ScriptData['published'];
-    const next = published ? { ...published, validated: stored?.validated === true } : null;
+    const next = published
+      ? { ...withoutServerState(published), validated: stored?.validated === true, ...(stored?.translations ? { translations: stored.translations } : {}) }
+      : null;
     const now = new Date();
     await db.update(scriptVersions)
       .set({ published: next, updated: now })
@@ -482,6 +493,26 @@ export class ScriptStore {
       .set({ published: next })
       .where(eq(scriptVersions.id, versionId));
     return this.rowToData({ ...row, published: next as ScriptVersionRow['published'] });
+  }
+
+  /** Store the translations of one published version (ownership-checked). The translation
+   *  job is the only caller: every other write path drops what a client sends.
+   *
+   *  Like setValidated() this does NOT touch `updated`: new translations are not a
+   *  content edit and must not reshuffle the "newest first" ordering of any list. */
+  async setTranslations(author: string, versionId: string, translations: NonNullable<ScriptData['published']>['translations']): Promise<void>
+  {
+    const [row] = await db
+      .select()
+      .from(scriptVersions)
+      .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
+      .limit(1);
+    if (!row) throw new ScriptStoreError('not_found', `Version ${versionId} not found`);
+    const stored = (row.published ?? null) as ScriptData['published'];
+    if (!stored) throw new ScriptStoreError('invalid', `Version ${versionId} is not published`);
+    await db.update(scriptVersions)
+      .set({ published: { ...stored, translations } as ScriptVersionRow['published'] })
+      .where(eq(scriptVersions.id, versionId));
   }
 
   /** One version by id from ANY author, or null. The admin review screen
@@ -743,7 +774,7 @@ export class ScriptStore {
       && json(row.tags ?? []) === json(data.tags ?? [])
       && json(row.params) === json(data.params ?? null)
       && json(row.presets) === json(data.presets ?? null)
-      && json(row.published) === json(unvalidated(data.published));
+      && json(row.published) === json(withoutServerState(data.published));
   }
 
   /** Share a file: append a new row carrying a concrete semver + the ScriptShared

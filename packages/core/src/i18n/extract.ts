@@ -23,7 +23,7 @@ import { hashStrings } from './hash'
 import {
     TITLE_KEY, DESCRIPTION_KEY, DETAILS_KEY,
     paramLabelKey, paramDescriptionKey, paramOptionKey,
-    groupKey, presetKey, fulfillmentNameKey, fulfillmentDescriptionKey,
+    groupKey, presetKey, metricKey, fulfillmentNameKey, fulfillmentDescriptionKey,
 } from './keys'
 
 export interface ExtractedStrings
@@ -76,8 +76,9 @@ export function extractTranslatableStrings(data: ScriptData): ExtractedStrings
     for (const [name, param] of Object.entries(params))
     {
         if (!param || typeof param !== 'object') continue
-        // Hidden params are never rendered, so translating them is wasted budget.
-        if ((param as { visible?: boolean }).visible === false) continue
+        // Hidden params are translated too: a behaviour can show one at run time (a house
+        // whose per-side overhangs appear once "same overhangs" is switched off), and the
+        // stored definition cannot tell those apart from params that never show.
 
         // `label` defaults to `name` when unset, so fall back explicitly — otherwise a
         // param that never customised its label would silently stay untranslated.
@@ -103,6 +104,10 @@ export function extractTranslatableStrings(data: ScriptData): ExtractedStrings
     const presetNames = published?.presets ?? Object.keys(presets)
     for (const name of presetNames) put(strings, presetKey(name), name)
 
+    // ── Metrics ──
+    // Metrics only exist once the script runs, so their names are read from the code.
+    metricLabelsInCode(data.code).forEach(label => put(strings, metricKey(label), label))
+
     // ── Fulfillments ──
     const fulfillments = published?.fulfillments ?? []
     fulfillments.forEach((f, i) =>
@@ -113,4 +118,52 @@ export function extractTranslatableStrings(data: ScriptData): ExtractedStrings
     })
 
     return { strings, sourceHash: hashStrings(strings) }
+}
+
+/**
+ * The text of every `metric('Floor area', …)` call in the code: its name, or its `label`
+ * option when that is written out, which is what the metric card shows instead.
+ *
+ * Read from the source because metrics only exist once the script runs, and a published
+ * version is translated without running it. Literal names cover the scripts in use; a
+ * name built at run time (a variable, a template with `${…}`) is not found, and that
+ * metric shows as written.
+ */
+export function metricLabelsInCode(code: string | undefined): Array<string>
+{
+    if (!code) return []
+    return Array.from(code.matchAll(/\bmetric\s*\(/g)).flatMap((call) =>
+    {
+        const args = callArguments(code, (call.index ?? 0) + call[0].length)
+        const name = args.match(/^\s*(['"`])((?:\\.|(?!\1).)*)\1\s*,/s)
+        const label = args.match(/\blabel\s*:\s*(['"`])((?:\\.|(?!\1).)*)\1/s)
+        const text = (label ?? name)?.[2]
+        return (text && !text.includes('${')) ? [text] : []
+    })
+}
+
+/** Longest argument list read for one call; a metric call is a line or two. */
+const MAX_CALL_LENGTH = 2000
+
+/** The source between an opening parenthesis (`start` is just after it) and the one that
+ *  closes it, stepping over strings so a `)` inside one does not end the call. */
+function callArguments(code: string, start: number): string
+{
+    interface Scan { depth: number; quote: string | null; escaped: boolean; end: number }
+    // split(''), not Array.from(): `i` must count UTF-16 units, as slice() does
+    const scan = code.slice(start, start + MAX_CALL_LENGTH).split('').reduce<Scan>((s, char, i) =>
+    {
+        if (s.end >= 0) return s
+        if (s.quote)
+        {
+            if (s.escaped) return { ...s, escaped: false }
+            if (char === '\\') return { ...s, escaped: true }
+            return (char === s.quote) ? { ...s, quote: null } : s
+        }
+        if (char === '"' || char === "'" || char === '`') return { ...s, quote: char }
+        if (char === '(') return { ...s, depth: s.depth + 1 }
+        if (char === ')') return (s.depth === 0) ? { ...s, end: i } : { ...s, depth: s.depth - 1 }
+        return s
+    }, { depth: 0, quote: null, escaped: false, end: -1 })
+    return code.slice(start, start + (scan.end >= 0 ? scan.end : MAX_CALL_LENGTH))
 }

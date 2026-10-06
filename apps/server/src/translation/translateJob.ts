@@ -100,7 +100,7 @@ export async function runTranslateJob(data: TranslateJobData): Promise<Translate
 }
 
 /**
- * Merge translations onto the version's CURRENT published metadata.
+ * Store translations on the version, next to its CURRENT published metadata.
  *
  * Returns false when the source strings no longer hash to `expectedHash`, i.e. the copy
  * changed under us and this result is about text that no longer exists.
@@ -115,6 +115,6 @@ async function writeTranslations(
   if (!fresh?.published) return false;
   if (extractTranslatableStrings(fresh).sourceHash !== expectedHash) return false;
 
-  await scriptStore.updatePublishedVersion(author, versionId, { ...fresh.published, translations });
+  await scriptStore.setTranslations(author, versionId, translations);
   return true;
 }

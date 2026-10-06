@@ -18,6 +18,7 @@
     "admin:import-cadscripts": "tsx src/admin/import-cadscripts.ts",
     "admin:migrate-sqlite": "tsx src/admin/migrate-sqlite-to-pg.ts",
     "admin:modules": "tsx src/admin/modules.admin.ts",
+    "admin:translations": "tsx src/admin/translations.admin.ts",
     "admin:users": "tsx src/admin/users.admin.ts",
     "docker:dev": "docker compose -f docker-compose.yml --env-file ../../.env up --force-recreate",
     "test": "vitest run ./tests/unit/",

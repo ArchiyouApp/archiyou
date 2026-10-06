@@ -1,5 +1,8 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+
+import '@awesome.me/webawesome/dist/components/switch/switch.js';
+import type WaSwitch from '@awesome.me/webawesome/dist/components/switch/switch.js';
 
 import type { ParamUIMode } from './param-item.js';
 import type { ScriptParam } from '@archiyou/editor/src/state/workspace';
@@ -12,16 +15,15 @@ export class ParamItemBoolean extends LitElement
 
     override render()
     {
+        // The editor shows the value as the script reads it; a configurator visitor has the
+        // label row above and the switch itself, so no "true"/"false" to translate.
+        const presentation = this.mode === 'presentation';
         return html`
-            <label class="wrap">
-                <input
-                    type="checkbox"
-                    class="checkbox"
-                    .checked=${this._checked}
-                    @change=${this._onChange}
-                />
-                <span class="label">${this._checked ? 'true' : 'false'}</span>
-            </label>
+            <wa-switch
+                size=${presentation ? 'medium' : 'small'}
+                .checked=${this._checked}
+                @change=${this._onChange}
+            >${presentation ? nothing : (this._checked ? 'true' : 'false')}</wa-switch>
         `;
     }
 
@@ -60,7 +62,7 @@ export class ParamItemBoolean extends LitElement
 
     private _onChange(e: Event)
     {
-        this._checked = (e.target as HTMLInputElement).checked;
+        this._checked = (e.target as WaSwitch).checked;
         this.dispatchEvent(new CustomEvent('param-value-change', {
             detail:   { name: this.param.name, value: this._checked },
             bubbles:  true,
@@ -73,40 +75,27 @@ export class ParamItemBoolean extends LitElement
     static override styles = css`
         :host { display: block; }
 
-        .wrap
-        {
-            display:     flex;
-            align-items: center;
-            gap:         6px;
-            cursor:      pointer;
-        }
-
-        .checkbox
-        {
-            width:       14px;
-            height:      14px;
-            cursor:      pointer;
-            flex-shrink: 0;
-            accent-color: var(--color-primary);
-        }
-
-        /* Presentation mode (configurator): a touch bigger for end users. */
-        :host([mode="presentation"]) .checkbox { width: 16px; height: 16px; }
-        :host([mode="presentation"]) .label { color: var(--color-text); }
-
-        /* Fingers: the whole label row is the target, and the box is visible at a glance. */
-        @media (pointer: coarse)
-        {
-            .wrap     { min-height: var(--hit-min); }
-            .checkbox { width: 20px; height: 20px; }
-        }
-
-        .label
+        wa-switch::part(label)
         {
             font-family: var(--font-sans);
             font-size:   var(--text-sm);
             color:       var(--color-text-muted);
             user-select: none;
+        }
+
+        /* Fingers: a row tall enough to hit, and a switch to match. The switch lays
+           itself out as a column (its hint goes underneath), so this centres it
+           vertically in the taller row. */
+        @media (pointer: coarse)
+        {
+            wa-switch
+            {
+                min-height:      var(--hit-min);
+                justify-content: center;
+                --width:         2.75em;
+                --height:        1.5em;
+                --thumb-size:    1.25em;
+            }
         }
     `;
 }

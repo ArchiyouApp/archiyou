@@ -8,6 +8,7 @@ import { configuratorUnitSystemPick } from '@archiyou/editor/src/state/workspace
 import { buildConfiguratorRequest, configuratorValueFor, setConfiguratorValue } from '@archiyou/editor/src/state/configurator';
 import { registerViewerParamStore } from '@archiyou/editor/src/state/viewer';
 import { syncConfiguratorParamsToUrl } from '@archiyou/editor/src/state/configurator-url';
+import { refreshPreviewTranslations, clearPreviewTranslations } from '@archiyou/editor/src/state/locale';
 import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
 import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
@@ -105,6 +106,13 @@ export class PageConfigurator extends SignalWatcher(LitElement)
       });
   }
 
+  override firstUpdated()
+  {
+    // In the editor the script is the working copy, which carries no translations: show
+    // the published version's, fetched now so the latest set is the one previewed.
+    if (this.preview) void refreshPreviewTranslations();
+  }
+
   override updated()
   {
     // Local unit-system flip → re-run so dimension/doc text reformats.
@@ -126,6 +134,7 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     this._unregisterParamStore?.();
     this._unregisterParamStore = null;
     if (this._paramExecTimeout !== null) clearTimeout(this._paramExecTimeout);
+    if (this.preview) clearPreviewTranslations();
   }
 
   // ── 4. Behaviour & Methods ──

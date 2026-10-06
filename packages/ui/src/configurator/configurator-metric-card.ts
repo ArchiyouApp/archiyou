@@ -4,6 +4,8 @@ import { customElement, property } from 'lit/decorators.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 import type { Metric } from '@archiyou/core/src/calc/types';
+import type { TranslatorFn } from '@archiyou/core/src/i18n/resolve';
+import { metricKey } from '@archiyou/core/src/i18n/keys';
 import { METRIC_DEFAULT_ICON } from '@archiyou/core/src/constants';
 import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
@@ -19,7 +21,7 @@ export class ConfiguratorMetricCard extends LitElement
     const icon  = metric.options?.icon ?? METRIC_DEFAULT_ICON;
     const pre   = metric.options?.pre  ?? '';
     const unit  = metric.options?.unit ?? '';
-    const label = metric.label || metric.name;
+    const label = this.t(metricKey(metric.label || metric.name), metric.label || metric.name);
     const value = metric.data;
 
     return html`
@@ -38,6 +40,8 @@ export class ConfiguratorMetricCard extends LitElement
 
   // ── 2. Properties ──
   @property({ attribute: false }) metric: Metric | null = null;
+  /** The configurator's translator; the metric's own text when there is none. */
+  @property({ attribute: false }) t: TranslatorFn = (_key, fallback) => fallback;
 
   // ── 5. Styles ──
   static override styles = css`

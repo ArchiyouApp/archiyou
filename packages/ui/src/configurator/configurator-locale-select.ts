@@ -4,9 +4,11 @@
  * Only rendered when the configurator actually carries more than one language. A picker
  * offering languages that would silently fall back to the original is worse than none.
  *
- * The script's own source language leads the list and is marked "(original)": machine
- * translation is good enough to ship but not good enough to pass off as authored copy,
- * and a reader who notices an odd phrase should be able to see the author's own words.
+ * Options show the language code (NL, FR), which keeps the picker small in the header;
+ * the native name is the option's tooltip. The script's own source language leads the
+ * list and its tooltip says "(original)": machine translation is good enough to ship but
+ * not good enough to pass off as authored copy, and a reader who notices an odd phrase
+ * should be able to find the author's own words.
  */
 
 import { LitElement, html, css, nothing } from 'lit';
@@ -40,8 +42,9 @@ export class ConfiguratorLocaleSelect extends SignalWatcher(LitElement)
           @change=${(e: Event) => setConfiguratorLocale((e.target as HTMLSelectElement).value)}
         >
           ${locales.map(locale => html`
-            <option value=${locale} ?selected=${locale === active}>
-              ${localeLabel(locale)}${locale === source ? ' (original)' : ''}
+            <option value=${locale} ?selected=${locale === active}
+              title=${`${localeLabel(locale)}${locale === source ? ' (original)' : ''}`}>
+              ${locale.toUpperCase()}
             </option>`)}
         </select>
       </label>

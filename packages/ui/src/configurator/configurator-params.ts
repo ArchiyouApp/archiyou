@@ -153,10 +153,10 @@ export class ConfiguratorParams extends SignalWatcher(LitElement)
 
     switch (p.type)
     {
-      case 'number':  return html`<param-item-number  .param=${p} .value=${v} mode="presentation" context="configurator"></param-item-number>`;
+      case 'number':  return html`<param-item-number  .param=${p} .value=${v} .t=${translate.get()} mode="presentation" context="configurator"></param-item-number>`;
       case 'boolean': return html`<param-item-boolean .param=${p} .value=${v} mode="presentation"></param-item-boolean>`;
       case 'text':    return html`<param-item-text    .param=${p} .value=${v} mode="presentation"></param-item-text>`;
-      case 'options': return html`<param-item-options .param=${p} .value=${v} mode="presentation"></param-item-options>`;
+      case 'options': return html`<param-item-options .param=${p} .value=${v} .t=${translate.get()} mode="presentation"></param-item-options>`;
       case 'list':    return isObjectListParam(p)
                         ? html`<param-item-object-list .param=${p} .value=${v} .t=${translate.get()} mode="presentation"></param-item-object-list>`
                         : html`<param-item-list        .param=${p} .value=${v} mode="presentation"></param-item-list>`;

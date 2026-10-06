@@ -319,3 +319,55 @@ describe('publish is never affected by translation', () => {
     expect(stored.published?.title).toBe('Boekenkast');
   });
 });
+
+describe('translations are the server\'s, never the client\'s', () => {
+  const FORGED = {
+    sourceLocale: 'en', sourceHash: 'forged', generated: '2020-01-01T00:00:00.000Z',
+    locales: { de: { title: 'Gefälscht' } },
+  };
+
+  /** A published version with a translation set the job wrote. */
+  async function translated(name: string) {
+    const ids = await publishDutch(name);
+    await store.setTranslations(AUTHOR, ids.versionId, {
+      sourceLocale: 'nl', sourceHash: 'real', generated: '2026-10-06T12:00:00.000Z',
+      locales: { en: { title: 'Bookshelf' } },
+    });
+    return ids;
+  }
+
+  it('drops a set sent with a save — a working copy carries none', async () => {
+    const { fileId } = await translated('save-drops');
+    const saved = await store.saveVersion(AUTHOR, fileId, {
+      name: 'save-drops', code: 'const a = 2;', published: { public: true, title: 'Boekenkast', translations: FORGED },
+    } as Record<string, unknown>, { checkpoint: true });
+    expect(saved.published?.translations).toBeFalsy();
+    expect(saved.published?.title).toBe('Boekenkast');
+  });
+
+  it('drops a set sent with a publish — the job makes them', async () => {
+    const fileId = (await store.create(AUTHOR, { name: 'publish-drops', code: 'const a = 1;' } as Record<string, unknown>)).fileId as string;
+    const stored = await store.publish(AUTHOR, fileId, {
+      name: 'publish-drops', code: 'const a = 1;', version: '1.0.0', published: { public: true, translations: FORGED },
+    } as Record<string, unknown>);
+    expect(stored.published?.translations).toBeFalsy();
+  });
+
+  it('keeps the stored set through an in-place edit, whatever the client sends', async () => {
+    const { versionId } = await translated('edit-keeps');
+    const before = (await store.findVersionById(AUTHOR, versionId))!;
+    await store.updatePublishedVersion(AUTHOR, versionId, { ...before.published, title: 'Kast', translations: FORGED });
+    const after = await store.findVersionById(AUTHOR, versionId);
+    expect(after?.published?.title).toBe('Kast');
+    expect(after?.published?.translations?.sourceHash).toBe('real');
+  });
+
+  it('stores a set without moving the version up "newest first" lists', async () => {
+    const { versionId } = await publishDutch('no-reshuffle');
+    const before = (await store.findVersionById(AUTHOR, versionId))!;
+    await store.setTranslations(AUTHOR, versionId, { ...FORGED, sourceHash: 'x' });
+    const after = (await store.findVersionById(AUTHOR, versionId))!;
+    expect(after.published?.translations?.locales.de.title).toBe('Gefälscht');
+    expect(after.updated).toEqual(before.updated);
+  });
+});

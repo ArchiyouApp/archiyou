@@ -11,6 +11,7 @@ import './configurator-metric-card.js';
 import './configurator-download-menu.js';
 
 import { editorScript, executing as scriptExecuting, executionResult } from '@archiyou/editor/src/state/workspace';
+import { translate } from '@archiyou/editor/src/state/locale';
 import type { Metric } from '@archiyou/core/src/calc/types';
 import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
@@ -37,7 +38,7 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
               ? html`<span class="empty"><wa-spinner style="font-size:0.9em"></wa-spinner></span>`
               : ''
             : metrics.map(m => html`
-                <configurator-metric-card .metric=${m}></configurator-metric-card>
+                <configurator-metric-card .metric=${m} .t=${translate.get()}></configurator-metric-card>
               `)
           }
         </div>

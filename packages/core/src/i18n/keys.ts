@@ -78,6 +78,16 @@ export function presetKey(presetName: string): string
     return `presets.${encodeKeySegment(presetName)}`
 }
 
+//// METRIC KEYS ////
+
+/** Display name of a metric — `calc.metric('Floor area', …)`. Keyed by the text shown
+ *  (its label, else its name), like presets: a metric only exists once the script runs,
+ *  so the text is all a translation can be found by. */
+export function metricKey(label: string): string
+{
+    return `metrics.${encodeKeySegment(label)}`
+}
+
 //// FULFILLMENT KEYS ////
 
 /** Fulfillments are an ordered list with no stable id, so they are keyed by index.
