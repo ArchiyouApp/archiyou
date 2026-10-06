@@ -27,6 +27,13 @@ export class MainMenu extends SignalWatcher(LitElement)
       <!-- sections -->
       <div class="sections">
         <wa-button
+          id="btn-browser"
+          appearance="plain"
+          @click=${() => Router.go('/browser')}
+        ><wa-icon library="lucide" name="layout-grid" label="File browser"></wa-icon></wa-button>
+        <wa-tooltip for="btn-browser" placement=${this._tipPlacement()}>${msg('File browser')}</wa-tooltip>
+
+        <wa-button
           id="btn-code"
           appearance="plain"
           class=${this._active === 'code' ? 'active' : ''}

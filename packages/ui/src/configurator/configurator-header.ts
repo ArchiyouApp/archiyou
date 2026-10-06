@@ -136,6 +136,11 @@ export class ConfiguratorHeader extends SignalWatcher(LitElement)
       height: 40px;
       object-fit: contain;
       border-radius: var(--radius-sm, 4px);
+      /* At 40px the thin, colored lines of the drawing wash out. Filters run on the
+         downscaled image: grayscale, then contrast darkens the lines while white faces
+         stay white ((brightness - 0.5) * contrast = 0.5). Keep the slope (brightness *
+         contrast) moderate: steeper loses the anti-aliasing and the lines turn jagged. */
+      filter: grayscale(1) brightness(0.6) contrast(5);
     }
 
     .titles

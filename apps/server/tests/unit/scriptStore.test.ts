@@ -381,6 +381,31 @@ describe('ScriptStore.listPublishedConfigurators', () => {
   });
 });
 
+/**
+ * A param's `_value` is whatever the author's editor held when they published. The
+ * configurator opens on `_value ?? default`, so it must not survive publishing — a
+ * preset's `_value` is the preset itself and must.
+ */
+describe('ScriptStore publish param values', () => {
+  it('stores params without their editor value, and keeps preset values', async () => {
+    const fileId = await newFile('slider-left-behind');
+    const data = await store.publish(AUTHOR, fileId, payload({
+      name: 'slider-left-behind',
+      version: '0.1',
+      published: { public: true, fulfillments: [] },
+      params: { WIDTH: { type: 'number', name: 'WIDTH', schema: {}, default: 4000, _value: 6630 } },
+      presets: { wide: { WIDTH: { type: 'number', name: 'WIDTH', schema: {}, default: 4000, _value: 8000 } } },
+    } as Partial<ScriptData>));
+
+    const stored = await store.getPublished(AUTHOR, 'slider-left-behind', '0.1');
+    [data, stored].forEach((script) => {
+      expect(script?.params?.WIDTH?.default).toBe(4000);
+      expect(script?.params?.WIDTH).not.toHaveProperty('_value');
+      expect(script?.presets?.wide?.WIDTH?._value).toBe(8000);
+    });
+  });
+});
+
 describe('ScriptStore create', () => {
   it('refuses to create a script that already exists, as a conflict (409) and not a version clash', async () => {
     // The editor sends a create for a file it does not know is on the server (its load-time

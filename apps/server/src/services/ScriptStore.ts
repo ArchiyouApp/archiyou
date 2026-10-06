@@ -69,6 +69,19 @@ function unvalidated(published: ScriptData['published']): ScriptData['published'
   return published ? { ...published, validated: false } : null;
 }
 
+type ParamRecord = NonNullable<ScriptData['params']>;
+
+/** Params without their run-time `_value`: the value the author's editor happened to
+ *  hold. A configurator opens on `_value ?? default`, so publishing it would make the
+ *  author's last slider positions the configurator's starting point. Presets keep
+ *  theirs — there `_value` IS the preset. */
+function withoutRuntimeValues(params: ParamRecord | undefined): ParamRecord | undefined {
+  if (!params) return params;
+  return Object.fromEntries(
+    Object.entries(params).map(([name, { _value, ...param }]) => [name, param]),
+  ) as ParamRecord;
+}
+
 export class ScriptStore {
   /** Autosaves within this window of the latest row's `created` overwrite that row
    *  instead of appending one (see saveVersion). Public so tests can set it to 0. */
@@ -751,12 +764,18 @@ export class ScriptStore {
   /** Publish a file: append a new row carrying a concrete semver + the published
    *  metadata (both read from the payload). Ownership-checked; the unique
    *  (fileId, version) index rejects re-publishing an already-used version.
-   *  The file's current shared state is preserved on the new row. */
+   *  The file's current shared state is preserved on the new row, and params are
+   *  stored without their editor `_value`, so the configurator opens on the defaults. */
   async publish(author: string, fileId: string, payload: unknown): Promise<ScriptData> {
     await this.latestRow(author, fileId); // ownership gate (throws not_found)
-    const data = this.normalize(payload);
-    if (!data.version) throw new ScriptStoreError('invalid', 'Publish requires a version');
-    if (!data.published) throw new ScriptStoreError('invalid', 'Publish requires published metadata');
+    const normalized = this.normalize(payload);
+    if (!normalized.version) throw new ScriptStoreError('invalid', 'Publish requires a version');
+    if (!normalized.published) throw new ScriptStoreError('invalid', 'Publish requires published metadata');
+    const data: ScriptData = {
+      ...normalized,
+      params: withoutRuntimeValues(normalized.params),
+      published: { ...normalized.published, params: withoutRuntimeValues(normalized.published.params) },
+    };
     const id = uuid4();
     const now = new Date();
     const shared = await this.currentShared(author, fileId); // preserve the file's shared state
