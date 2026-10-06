@@ -41,7 +41,7 @@ export async function runTranslateJob(data: TranslateJobData): Promise<Translate
   const { author, versionId, fileId, force } = data;
 
   // 1. The version may have been deleted or un-published since the job was queued.
-  const script = scriptStore.findVersionById(author, versionId);
+  const script = await scriptStore.findVersionById(author, versionId);
   if (!script) return skip(versionId, 'version no longer exists');
   if (!script.published) return skip(versionId, 'version is no longer published');
 
@@ -52,9 +52,9 @@ export async function runTranslateJob(data: TranslateJobData): Promise<Translate
   // 3. Have we already paid for exactly this text? Reuse costs zero model calls, which
   //    is what makes a version bump with unchanged copy free.
   if (!force) {
-    const existing = scriptStore.findTranslationsByHash(author, fileId, sourceHash, data.sourceLocale);
+    const existing = await scriptStore.findTranslationsByHash(author, fileId, sourceHash, data.sourceLocale);
     if (existing) {
-      const written = writeTranslations(author, versionId, sourceHash, existing);
+      const written = await writeTranslations(author, versionId, sourceHash, existing);
       return written
         ? { status: 'reused', locales: Object.keys(existing.locales).length, sourceLocale: existing.sourceLocale }
         : skip(versionId, 'source changed before reused translations could be stored');
@@ -87,7 +87,7 @@ export async function runTranslateJob(data: TranslateJobData): Promise<Translate
   //    metadata during the seconds this job ran, and blind-writing a stale `published`
   //    object would silently revert their edit. If the copy moved on, drop the result:
   //    that edit already queued a newer job.
-  const stored = writeTranslations(author, versionId, sourceHash, {
+  const stored = await writeTranslations(author, versionId, sourceHash, {
     sourceLocale,
     sourceHash,
     generated: new Date().toISOString(),
@@ -105,16 +105,16 @@ export async function runTranslateJob(data: TranslateJobData): Promise<Translate
  * Returns false when the source strings no longer hash to `expectedHash`, i.e. the copy
  * changed under us and this result is about text that no longer exists.
  */
-function writeTranslations(
+async function writeTranslations(
   author: string,
   versionId: string,
   expectedHash: string,
-  translations: NonNullable<NonNullable<ReturnType<typeof scriptStore.findVersionById>>['published']>['translations'],
-): boolean {
-  const fresh = scriptStore.findVersionById(author, versionId);
+  translations: NonNullable<NonNullable<Awaited<ReturnType<typeof scriptStore.findVersionById>>>['published']>['translations'],
+): Promise<boolean> {
+  const fresh = await scriptStore.findVersionById(author, versionId);
   if (!fresh?.published) return false;
   if (extractTranslatableStrings(fresh).sourceHash !== expectedHash) return false;
 
-  scriptStore.updatePublishedVersion(author, versionId, { ...fresh.published, translations });
+  await scriptStore.updatePublishedVersion(author, versionId, { ...fresh.published, translations });
   return true;
 }

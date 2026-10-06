@@ -20,7 +20,6 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 
-import Database from 'better-sqlite3';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { BackupTarget } from '../../src/config';
@@ -30,16 +29,50 @@ import {
   buildArchive,
   buildManifest,
   collectTarget,
+  databaseNameOf,
   inspectSnapshot,
   normalizePrefix,
   objectKeyFor,
   parseBackupKey,
+  redactUrl,
   resolveTargets,
   runBackup,
   selectPrunable,
   snapshotDatabase,
 } from '../../src/services/BackupService';
+import type { PostgresTools } from '../../src/services/BackupService';
 import type { BackupObject, BackupStore } from '../../src/services/S3Backend';
+
+/** The database URL every `postgres` target in this file points at. */
+const DB_URL = 'postgres://u:p@db.example:5432/archiyou';
+
+/**
+ * A stand-in for pg_dump/pg_restore/psql.
+ *
+ * The real ones are exercised by the CI job that runs this suite against a postgres
+ * service; here they are stubbed so every branch — a dump that fails, an archive that
+ * will not list, a database with no migrations — is reachable without a server, and
+ * so the suite stays runnable on a laptop with no PostgreSQL installed.
+ */
+function fakeTools(over: Partial<PostgresTools> & { rows?: Record<string, number> } = {}): PostgresTools {
+  return {
+    dump: over.dump ?? (async (_url, destPath) => {
+      writeFileSync(destPath, 'PGDMP fake custom-format dump\n'.repeat(20));
+    }),
+    // Already filtered, as the real `list()` returns it: pg_restore's leading
+    // `;` comment lines are not archive entries.
+    list: over.list ?? (async () => [
+      '215; 1259 16385 TABLE public users archiyou',
+      '216; 1259 16390 TABLE public script_versions archiyou',
+      '3350; 0 16385 TABLE DATA public users archiyou',
+    ]),
+    stats: over.stats ?? (async () => ({
+      serverVersion: '17.2',
+      migrations: { count: 4, latestCreatedAt: 9 },
+      rowCounts: over.rows ?? { users: 2, script_versions: 7 },
+    })),
+  };
+}
 
 let ROOT: string;
 
@@ -79,29 +112,47 @@ describe('resolveTargets', () => {
   };
 
   const declared: BackupTarget[] = [
-    { name: 'db', path: './data/app.db', kind: 'sqlite' },
+    { name: 'db', path: DB_URL, kind: 'postgres' },
     { name: 'thumbnails', path: './data/thumbnails', kind: 'dir', optional: true },
   ];
 
   const base = '/srv/app';
-  const present = { '/srv/app/data/app.db': 'file' as const, '/srv/app/data/thumbnails': 'dir' as const };
+  const present = { '/srv/app/data/thumbnails': 'dir' as const };
 
-  it('resolves relative paths against baseDir and merges the default excludes', () => {
+  it('leaves a database URL alone and resolves file paths against baseDir', () => {
     const { targets } = resolveTargets({ targets: declared, baseDir: base, probe: probe(present) });
 
-    expect(targets.map((t) => t.path)).toEqual(['/srv/app/data/app.db', '/srv/app/data/thumbnails']);
-    expect(targets[0].exclude).toContain('-wal');
-    expect(targets[0].exclude).toContain('-shm');
+    // The database target's "path" is a connection URL: resolving it against baseDir
+    // would turn it into a nonsense filesystem path that nothing could stat.
+    expect(targets.map((t) => t.path)).toEqual([DB_URL, '/srv/app/data/thumbnails']);
+    expect(targets[0].present).toBe(true);
+    expect(targets[1].exclude).toContain('.bak');
+    expect(targets[1].exclude).toContain('backup-tmp/');
   });
 
-  it('appends the global env excludes to every target', () => {
+  it('refuses a database target that is not a PostgreSQL server', () => {
+    // pg_dump cannot read PGlite, and shipping an archive with no database in it
+    // would be far worse than failing here.
+    expect(() =>
+      resolveTargets({
+        targets: [{ name: 'db', path: 'pglite://./data/pgdata', kind: 'postgres' }],
+        baseDir: base,
+        probe: probe({}),
+      }),
+    ).toThrow(/needs a PostgreSQL server/);
+  });
+
+  it('appends the global env excludes to every target that is walked', () => {
     const { targets } = resolveTargets({
       targets: declared,
       baseDir: base,
       exclude: ['.png'],
       probe: probe(present),
     });
-    expect(targets.every((t) => t.exclude.includes('.png'))).toBe(true);
+    // Exclusions are about a directory walk; the database target is a pg_dump stream
+    // with nothing to exclude from, and carries none.
+    expect(targets.filter((t) => t.kind !== 'postgres').every((t) => t.exclude.includes('.png'))).toBe(true);
+    expect(targets.find((t) => t.kind === 'postgres')?.exclude).toEqual([]);
   });
 
   it('adds SERVER_BACKUP_EXTRA_PATHS targets, inferring the kind from disk', () => {
@@ -179,7 +230,11 @@ describe('resolveTargets', () => {
 
   it('fails when a REQUIRED target is missing', () => {
     expect(() =>
-      resolveTargets({ targets: declared, baseDir: base, probe: probe({ '/srv/app/data/thumbnails': 'dir' }) }),
+      resolveTargets({
+        targets: [...declared, { name: 'fonts', path: './data/fonts', kind: 'dir' }],
+        baseDir: base,
+        probe: probe(present),
+      }),
     ).toThrow(/required but its source does not exist/);
   });
 
@@ -187,7 +242,7 @@ describe('resolveTargets', () => {
     const { targets, warnings } = resolveTargets({
       targets: declared,
       baseDir: base,
-      probe: probe({ '/srv/app/data/app.db': 'file' }),
+      probe: probe({}),
     });
 
     expect(warnings).toHaveLength(1);
@@ -409,105 +464,91 @@ describe('selectPrunable', () => {
   });
 });
 
-//// SNAPSHOT CONSISTENCY ////
+//// SNAPSHOT ////
 
 describe('snapshotDatabase', () => {
-  it('captures committed WAL state, excludes an open transaction, and leaves no sidecars', async () => {
-    const dir = join(ROOT, 'sqlite');
+  it('writes the dump pg_dump produced, and nothing else', async () => {
+    const dir = join(ROOT, 'pgdump');
     mkdirSync(dir, { recursive: true });
-    const dbPath = join(dir, 'live.db');
+    const dest = join(dir, 'snap.dump');
 
-    // A live, WAL-mode database — writes stay in -wal until a checkpoint.
-    const live = new Database(dbPath);
-    live.pragma('journal_mode = WAL');
-    live.exec('create table notes (id integer primary key, body text)');
-    const insert = live.prepare('insert into notes (body) values (?)');
-    for (let i = 0; i < 500; i++) insert.run(`committed ${i}`);
+    const seen: Array<[string, string]> = [];
+    await snapshotDatabase(DB_URL, dest, fakeTools({
+      dump: async (url, path) => { seen.push([url, path]); writeFileSync(path, 'PGDMP'); },
+    }));
 
-    // This is the whole point: most of the state is NOT in the .db file.
-    expect(existsSync(`${dbPath}-wal`)).toBe(true);
-
-    // A second connection holding an open write transaction while we snapshot.
-    const writer = new Database(dbPath);
-    writer.exec('begin immediate');
-    writer.prepare('insert into notes (body) values (?)').run('UNCOMMITTED');
-
-    const snapPath = join(dir, 'snap.db');
-    await snapshotDatabase(dbPath, snapPath);
-
-    writer.exec('rollback');
-    writer.close();
-    live.close();
-
-    // Standalone the moment it is written — a stale sidecar next to a restored
-    // file is how a restore becomes a second incident.
-    expect(existsSync(`${snapPath}-wal`)).toBe(false);
-    expect(existsSync(`${snapPath}-shm`)).toBe(false);
-
-    const snap = new Database(snapPath, { readonly: true });
-    expect(snap.pragma('integrity_check', { simple: true })).toBe('ok');
-    expect((snap.prepare('select count(*) as n from notes').get() as { n: number }).n).toBe(500);
-    expect(snap.prepare(`select 1 from notes where body = 'UNCOMMITTED'`).get()).toBeUndefined();
-    snap.close();
-
-    // ...and still standalone after being opened. A WAL-mode copy would have grown
-    // sidecars just from that read, which is what makes archiving only the .db a
-    // silent data-loss bug rather than an obvious one.
-    expect(existsSync(`${snapPath}-wal`)).toBe(false);
-    expect(existsSync(`${snapPath}-shm`)).toBe(false);
+    expect(seen).toEqual([[DB_URL, dest]]);
+    expect(existsSync(dest)).toBe(true);
   });
 
-  it('proves the .db alone is complete, isolated from any sidecar', async () => {
-    const dir = join(ROOT, 'sqlite-isolated');
-    mkdirSync(dir, { recursive: true });
-    const dbPath = join(dir, 'live.db');
+  it('fails loudly, WITHOUT the password, when pg_dump cannot connect', async () => {
+    await expect(
+      snapshotDatabase(DB_URL, join(ROOT, 'never.dump'), fakeTools({
+        dump: async () => { throw new Error('connection to server failed'); },
+      })),
+    ).rejects.toThrow(/pg_dump of .* failed/);
 
-    const live = new Database(dbPath);
-    live.pragma('journal_mode = WAL');
-    live.exec('create table t (id integer primary key)');
-    for (let i = 0; i < 2000; i++) live.exec('insert into t default values');
-    // Uncheckpointed: most of this state is in -wal, not in the .db file.
-    expect(existsSync(`${dbPath}-wal`)).toBe(true);
-
-    const snapPath = join(dir, 'snap.db');
-    await snapshotDatabase(dbPath, snapPath);
-    live.close();
-
-    // Move the snapshot somewhere else entirely, leaving anything beside it behind.
-    const isolated = join(dir, 'isolated.db');
-    copyFileSync(snapPath, isolated);
-    const iso = new Database(isolated, { readonly: true });
-    expect((iso.prepare('select count(*) as n from t').get() as { n: number }).n).toBe(2000);
-    iso.close();
+    // The URL carries the database password, and a backup failure is exactly the
+    // kind of thing that gets pasted into a chat window.
+    await expect(
+      snapshotDatabase(DB_URL, join(ROOT, 'never.dump'), fakeTools({
+        dump: async () => { throw new Error('nope'); },
+      })),
+    ).rejects.toThrow(/\*\*\*/);
+    await expect(
+      snapshotDatabase(DB_URL, join(ROOT, 'never.dump'), fakeTools({
+        dump: async () => { throw new Error('nope'); },
+      })),
+    ).rejects.not.toThrow(/:p@/);
   });
+});
 
-  it('fails loudly rather than creating an empty database at a mistyped path', async () => {
-    await expect(snapshotDatabase(join(ROOT, 'does-not-exist.db'), join(ROOT, 'out.db'))).rejects.toThrow(
-      /SQLite snapshot .* failed/,
-    );
-    expect(existsSync(join(ROOT, 'out.db'))).toBe(false);
-  });
-
-  it('reports migrations and row counts from the snapshot', async () => {
-    const dir = join(ROOT, 'sqlite-stats');
+describe('inspectSnapshot', () => {
+  const dumpAt = (name: string): string => {
+    const dir = join(ROOT, 'inspect');
     mkdirSync(dir, { recursive: true });
-    const dbPath = join(dir, 'live.db');
+    const path = join(dir, name);
+    writeFileSync(path, 'PGDMP'.repeat(50));
+    return path;
+  };
 
-    const live = new Database(dbPath);
-    live.exec('create table users (id integer primary key)');
-    live.exec('create table __drizzle_migrations (id integer primary key, hash text, created_at integer)');
-    live.exec(`insert into __drizzle_migrations (hash, created_at) values ('a', 100), ('b', 200)`);
-    live.exec('insert into users default values');
-    live.close();
+  it('reports the server version, dump entries, migrations and row counts', async () => {
+    const stats = await inspectSnapshot(dumpAt('ok.dump'), DB_URL, fakeTools());
 
-    const snapPath = join(dir, 'snap.db');
-    await snapshotDatabase(dbPath, snapPath);
-    const stats = inspectSnapshot(snapPath);
-
-    expect(stats.integrityCheck).toBe('ok');
-    expect(stats.migrations).toEqual({ count: 2, latestCreatedAt: 200 });
-    expect(stats.rowCounts.users).toBe(1);
+    expect(stats.serverVersion).toBe('17.2');
+    expect(stats.dumpEntries).toBe(3);          // the ';' comment line is not an entry
+    expect(stats.migrations).toEqual({ count: 4, latestCreatedAt: 9 });
+    expect(stats.rowCounts).toEqual({ users: 2, script_versions: 7 });
     expect(stats.bytes).toBeGreaterThan(0);
+  });
+
+  it('refuses a dump pg_restore cannot read', async () => {
+    // A truncated upload must fail here, not six months from now during a restore.
+    await expect(
+      inspectSnapshot(dumpAt('corrupt.dump'), DB_URL, fakeTools({
+        list: async () => { throw new Error('input file appears to be a text format dump'); },
+      })),
+    ).rejects.toThrow(/pg_restore could not read the dump/);
+  });
+
+  it('refuses a dump with no entries at all', async () => {
+    await expect(
+      inspectSnapshot(dumpAt('empty.dump'), DB_URL, fakeTools({ list: async () => [] })),
+    ).rejects.toThrow(/listed no entries/);
+  });
+});
+
+describe('redactUrl / databaseNameOf', () => {
+  it('strips the password and keeps everything else', () => {
+    expect(redactUrl(DB_URL)).toBe('postgres://u:***@db.example:5432/archiyou');
+    expect(redactUrl('postgres://db.example:5432/archiyou')).toBe('postgres://db.example:5432/archiyou');
+    expect(redactUrl('not a url')).toBe('(unparseable database URL)');
+  });
+
+  it('names the dump after the database', () => {
+    expect(databaseNameOf(DB_URL)).toBe('archiyou');
+    expect(databaseNameOf('postgres://h/')).toBe('database');
+    expect(databaseNameOf('nonsense')).toBe('database');
   });
 });
 
@@ -523,6 +564,7 @@ describe('buildArchive', () => {
     const out = join(ROOT, `out-${Math.abs(hash(JSON.stringify([targets, opts.only, opts.skip])))}.tar.gz`);
     const result = await runBackup({
       targets: resolved,
+      tools: fakeTools(),
       prefix: 'prod',
       tmpDir: join(ROOT, 'tmp'),
       maxBytes: 1024 * 1024 * 1024,
@@ -546,12 +588,9 @@ describe('buildArchive', () => {
       'data/thumbnails/mark/f2/v2-def.svg': '<svg/>',
       'data/config.json': '{}',
     });
-    const db = join(base, 'data/app.db');
-    new Database(db).exec('create table t (id integer)');
-
     const { entries: got } = await archiveOf(
       [
-        { name: 'db', path: db, kind: 'sqlite' },
+        { name: 'db', path: DB_URL, kind: 'postgres' },
         { name: 'thumbnails', path: join(base, 'data/thumbnails'), kind: 'dir' },
         { name: 'config', path: join(base, 'data/config.json'), kind: 'file' },
       ],
@@ -561,7 +600,8 @@ describe('buildArchive', () => {
     expect(got.sort()).toEqual(
       [
         'archiyou-20260806-031500/MANIFEST.json',
-        'archiyou-20260806-031500/db/app.db',
+        // named after the database, so a restore reads db/archiyou.dump
+        'archiyou-20260806-031500/db/archiyou.dump',
         'archiyou-20260806-031500/thumbnails/mark/f1/v1-abc.svg',
         'archiyou-20260806-031500/thumbnails/mark/f2/v2-def.svg',
         'archiyou-20260806-031500/config/config.json',
@@ -569,14 +609,11 @@ describe('buildArchive', () => {
     );
   });
 
-  it('excludes sqlite sidecars, .bak copies and the scratch dir from a dir target', async () => {
+  it('excludes .bak copies and the scratch dir from a dir target', async () => {
     const base = tree('archive-excludes', {
       'data/keep.svg': '<svg/>',
-      'data/app.db': 'x',
-      'data/app.db-wal': 'x',
-      'data/app.db-shm': 'x',
-      'data/app.db.bak.20260707': 'x',
-      'data/backup-tmp/run-abc/snap.db': 'x',
+      'data/keep.svg.bak.20260707': 'x',
+      'data/backup-tmp/run-abc/snap.dump': 'x',
       'data/cache/result.json': '{}',
     });
 
@@ -586,24 +623,19 @@ describe('buildArchive', () => {
     );
 
     expect(got).toContain('archiyou-20260806-031500/data/keep.svg');
-    expect(got).toContain('archiyou-20260806-031500/data/app.db');
-    expect(got.some((e) => e.includes('-wal') || e.includes('-shm'))).toBe(false);
     expect(got.some((e) => e.includes('.bak'))).toBe(false);
+    // The scratch directory holds this run's own pg_dump output; archiving it would
+    // put the dump in twice, and a previous run's leftovers with it.
     expect(got.some((e) => e.includes('backup-tmp'))).toBe(false);
     expect(got.some((e) => e.includes('cache/'))).toBe(false);
   });
 
   it('records what the archive contains in the manifest', async () => {
     const base = tree('archive-manifest', { 'data/thumbnails/a.svg': '<svg/>' });
-    const db = join(base, 'data/app.db');
-    const live = new Database(db);
-    live.exec('create table users (id integer primary key)');
-    live.exec('insert into users default values');
-    live.close();
 
     const { result } = await archiveOf(
       [
-        { name: 'db', path: db, kind: 'sqlite' },
+        { name: 'db', path: DB_URL, kind: 'postgres' },
         { name: 'thumbnails', path: join(base, 'data/thumbnails'), kind: 'dir' },
       ],
       base,
@@ -611,9 +643,12 @@ describe('buildArchive', () => {
 
     expect(result.manifest.stem).toBe('archiyou-20260806-031500');
     expect(result.manifest.createdAt).toBe('2026-08-06T03:15:00.000Z');
+    expect(result.manifest.serverVersion).toBe('17.2');
     const dbEntry = result.manifest.targets.find((t) => t.name === 'db');
-    expect(dbEntry).toMatchObject({ kind: 'sqlite', files: 1, integrityCheck: 'ok' });
-    expect(dbEntry?.rowCounts?.users).toBe(1);
+    expect(dbEntry).toMatchObject({ kind: 'postgres', files: 1, dumpEntries: 3 });
+    expect(dbEntry?.rowCounts?.users).toBe(2);
+    // A manifest travels off-box; the connection password must not travel with it.
+    expect(dbEntry?.sourcePath).toBe('postgres://u:***@db.example:5432/archiyou');
     expect(result.manifest.targets.find((t) => t.name === 'thumbnails')).toMatchObject({ kind: 'dir', files: 1 });
   });
 
@@ -805,10 +840,13 @@ describe('buildManifest', () => {
     const manifest = buildManifest(
       [
         {
-          target: { name: 'db', kind: 'sqlite', path: '/x/app.db', optional: false, exclude: [], present: true },
-          files: [{ from: '/tmp/snap.db', to: 'app.db', bytes: 300 }],
+          target: { name: 'db', kind: 'postgres', path: DB_URL, optional: false, exclude: [], present: true },
+          files: [{ from: '/tmp/snap.dump', to: 'archiyou.dump', bytes: 300 }],
           bytes: 300,
-          sqlite: { integrityCheck: 'ok', migrations: { count: 4, latestCreatedAt: 9 }, rowCounts: { users: 2 }, bytes: 300 },
+          postgres: {
+            serverVersion: '17.2', dumpEntries: 12,
+            migrations: { count: 4, latestCreatedAt: 9 }, rowCounts: { users: 2 }, bytes: 300,
+          },
           skipped: false,
         },
         {
@@ -819,11 +857,10 @@ describe('buildManifest', () => {
         },
       ],
       at('2026-08-06T03:15:00Z'),
-      '3.53.2',
     );
 
     expect(manifest.totalBytes).toBe(300);
-    expect(manifest.sqliteVersion).toBe('3.53.2');
+    expect(manifest.serverVersion).toBe('17.2');
     expect(manifest.targets[0].migrations).toEqual({ count: 4, latestCreatedAt: 9 });
     expect(manifest.targets[1].skipped).toBe(true);
   });
@@ -831,7 +868,7 @@ describe('buildManifest', () => {
 
 describe('buildArchive stream', () => {
   it('emits a gzip stream (magic bytes 1f 8b)', async () => {
-    const manifest = buildManifest([], at('2026-08-06T03:15:00Z'), '3.53.2');
+    const manifest = buildManifest([], at('2026-08-06T03:15:00Z'));
     const stream = buildArchive([], manifest);
     const chunks: Buffer[] = [];
     for await (const c of stream) chunks.push(c as Buffer);
@@ -843,25 +880,20 @@ describe('buildArchive stream', () => {
 //// collectTarget ////
 
 describe('collectTarget', () => {
-  it('archives the SNAPSHOT of a sqlite target, never the live file', async () => {
-    const base = tree('collect-sqlite', {});
-    const dbPath = join(base, 'live.db');
-    const live = new Database(dbPath);
-    live.pragma('journal_mode = WAL');
-    live.exec('create table t (id integer primary key)');
-    for (let i = 0; i < 200; i++) live.exec('insert into t default values');
-
+  it('archives the pg_dump output, written into the scratch directory', async () => {
+    const base = tree('collect-pg', {});
     const tmp = join(ROOT, 'collect-tmp');
     mkdirSync(tmp, { recursive: true });
 
-    const { targets } = resolveTargets({ targets: [{ name: 'db', path: dbPath, kind: 'sqlite' }], baseDir: base });
-    const collected = await collectTarget(targets[0], tmp);
-    live.close();
+    const { targets } = resolveTargets({ targets: [{ name: 'db', path: DB_URL, kind: 'postgres' }], baseDir: base });
+    const collected = await collectTarget(targets[0], tmp, fakeTools({ rows: { t: 200 } }));
 
     expect(collected.files).toHaveLength(1);
-    expect(collected.files[0].from).not.toBe(dbPath); // the snapshot, not the live file
+    // The dump lands in the run's scratch directory, which is cleaned up afterwards —
+    // nothing is ever read from, or written to, the database's own storage.
     expect(collected.files[0].from.startsWith(tmp)).toBe(true);
-    expect(collected.files[0].to).toBe('live.db'); // but named as the original inside the archive
-    expect(collected.sqlite?.rowCounts.t).toBe(200);
+    expect(collected.files[0].to).toBe('archiyou.dump');
+    expect(collected.postgres?.rowCounts.t).toBe(200);
+    expect(collected.postgres?.serverVersion).toBe('17.2');
   });
 });

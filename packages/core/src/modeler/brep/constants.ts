@@ -49,7 +49,11 @@ export const SCRIPT_OUTPUT_DOC_FORMATS = ['json','pdf','svg'] // see types: Scri
 
 //// MESH SETTINGS
 
-export const MESHING_MAX_DEVIATION = 0.1;
+export const MESHING_MAX_DEVIATION = 0.1; // absolute, in model units: only when a caller asks for it
+/** Default meshing deviation, as a fraction of the size of each Face and Edge: every curve gets
+ *  the same number of segments whatever its size. An absolute deviation (MESHING_MAX_DEVIATION)
+ *  made a 1 m sphere 50k triangles and 2 seconds of meshing. */
+export const MESHING_RELATIVE_DEFLECTION = 0.005;
 export const MESHING_ANGULAR_DEFLECTION = 0.5;
 export const MESHING_MINIMUM_POINTS = 2;
 export const MESHING_TOLERANCE = 1e-6;

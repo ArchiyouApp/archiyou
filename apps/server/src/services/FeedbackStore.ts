@@ -64,8 +64,8 @@ function rowToData(row: FeedbackRow): FeedbackData {
 }
 
 export class FeedbackStore {
-  create(input: NewFeedback): FeedbackData {
-    const row = db.insert(feedback).values({
+  async create(input: NewFeedback): Promise<FeedbackData> {
+    const [row] = await db.insert(feedback).values({
       id: uuid4(),
       message: input.message.trim().slice(0, FEEDBACK_MAX_LENGTH),
       scriptId: input.scriptId ?? null,
@@ -75,14 +75,15 @@ export class FeedbackStore {
       scriptVersion: input.scriptVersion ?? null,
       url: input.url ?? null,
       username: input.username ?? null,
-      // Explicit: the column default, unixepoch() * 1000, only has whole seconds.
+      // Explicit rather than leaning on the column default, so the timestamp is the
+      // one this process saw rather than the database server's clock.
       created: new Date(),
-    }).returning().get();
+    }).returning();
     return rowToData(row);
   }
 
-  list(opts: { q?: string; starred?: boolean; sort?: FeedbackSort; limit?: number; offset?: number } = {}):
-    { total: number; items: FeedbackData[] } {
+  async list(opts: { q?: string; starred?: boolean; sort?: FeedbackSort; limit?: number; offset?: number } = {}):
+    Promise<{ total: number; items: FeedbackData[] }> {
     const filters = [];
     if (opts.starred !== undefined) filters.push(eq(feedback.starred, opts.starred));
     if (opts.q) {
@@ -94,7 +95,9 @@ export class FeedbackStore {
     }
     const where = filters.length ? and(...filters) : undefined;
 
-    const total = db.select({ n: sql<number>`count(*)` }).from(feedback).where(where).get()?.n ?? 0;
+    // .mapWith(Number): count() is bigint, which the driver returns as a string.
+    const totalRows = await db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(feedback).where(where);
+    const total = totalRows[0]?.n ?? 0;
 
     const order =
       opts.sort === 'oldest' ? [asc(feedback.created)] :
@@ -102,24 +105,25 @@ export class FeedbackStore {
       opts.sort === 'script' ? [asc(feedback.scriptAuthor), asc(feedback.scriptName), desc(feedback.created)] :
       [desc(feedback.created)];
 
-    const items = db.select().from(feedback).where(where)
+    const items = (await db.select().from(feedback).where(where)
       .orderBy(...order, asc(feedback.id))
       .limit(opts.limit ?? 50)
       .offset(opts.offset ?? 0)
-      .all()
-      .map(rowToData);
+    ).map(rowToData);
     return { total, items };
   }
 
-  setStarred(id: string, starred: boolean): FeedbackData {
-    const row = db.update(feedback).set({ starred }).where(eq(feedback.id, id)).returning().get();
+  async setStarred(id: string, starred: boolean): Promise<FeedbackData> {
+    const [row] = await db.update(feedback).set({ starred }).where(eq(feedback.id, id)).returning();
     if (!row) throw new FeedbackStoreError('not_found', `Feedback ${id} not found`);
     return rowToData(row);
   }
 
-  delete(id: string): void {
-    const res = db.delete(feedback).where(eq(feedback.id, id)).run();
-    if (res.changes === 0) throw new FeedbackStoreError('not_found', `Feedback ${id} not found`);
+  async delete(id: string): Promise<void> {
+    // RETURNING rather than a driver-specific row count: node-postgres and PGlite report
+    // that differently, and "did anything match" is the only thing this needs to know.
+    const deleted = await db.delete(feedback).where(eq(feedback.id, id)).returning({ id: feedback.id });
+    if (deleted.length === 0) throw new FeedbackStoreError('not_found', `Feedback ${id} not found`);
   }
 }
 

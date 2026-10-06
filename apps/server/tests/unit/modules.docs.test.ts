@@ -65,9 +65,12 @@ const auth = (sub: string) => ({ authorization: `Bearer ${tokenFor(sub)}` });
 const HUGE = 'x'.repeat(300 * 1024);
 
 beforeAll(async () => {
-  process.env.SERVER_DATABASE_FILE = join(mkdtempSync(join(tmpdir(), 'ay-docs-')), 'test.db');
+  // A fresh, empty PGlite database in this process — Postgres, same schema and
+  // migrations as the server, nothing to install. Set explicitly (never left to a
+  // developer's .env) so the suite can never reach a shared database.
+  process.env.SERVER_DATABASE_URL = 'memory://';
   const { runMigrations } = await import('../../src/db/migrate');
-  runMigrations();
+  await runMigrations();
 
   ({ userService } = await import('../../src/services/UserService'));
   ({ moduleHost } = await import('../../src/modules/ModuleHost'));
@@ -79,7 +82,7 @@ beforeAll(async () => {
   moduleHost.load(modulesDir);
 
   await userService.register('nobody@example.com', 'password123', 'nobody');
-  userService.setModules('nobody', []);
+  await userService.setModules('nobody', []);
 
   app = await buildApp();
 });
@@ -105,7 +108,7 @@ describe('GET /modules/:id/docs', () => {
     expect((await app.inject({ method: 'GET', url: '/modules/example/docs' })).statusCode).toBe(200);
 
     const locked = await app.inject({ method: 'GET', url: '/modules/example/docs', headers: auth('nobody') });
-    expect(userService.hasModule('nobody', 'example')).toBe(false);
+    expect(await userService.hasModule('nobody', 'example')).toBe(false);
     expect(locked.statusCode).toBe(200);
   });
 

@@ -6,7 +6,7 @@
  */
 
 import bcrypt from 'bcryptjs';
-import { and, eq, like, ne, or, sql } from 'drizzle-orm';
+import { and, eq, ilike, ne, or, sql } from 'drizzle-orm';
 
 import { uuid4 } from '@archiyou/core/src/utils';
 import type { PublicUser } from '@archiyou/types';
@@ -17,6 +17,11 @@ import { config } from '../config';
 import { ALL_MODULES, grantsAllModules } from '../modules/entitlements';
 
 const BCRYPT_ROUNDS = 10;
+
+/** The one row of a `.limit(1)` query, or undefined. Postgres has no `.get()`. */
+async function first<T>(query: PromiseLike<T[]>): Promise<T | undefined> {
+  return (await query)[0];
+}
 
 export class UserError extends Error {
   constructor(
@@ -76,16 +81,16 @@ export function normalizeModuleIds(value: unknown): string[] {
 export { ALL_MODULES, grantsAllModules };
 
 export class UserService {
-  findByEmail(email: string): UserRow | undefined {
-    return db.select().from(users).where(eq(users.email, email.trim().toLowerCase())).get();
+  async findByEmail(email: string): Promise<UserRow | undefined> {
+    return first(db.select().from(users).where(eq(users.email, email.trim().toLowerCase())).limit(1));
   }
 
-  findByUsername(username: string): UserRow | undefined {
-    return db.select().from(users).where(eq(users.username, username.toLowerCase())).get();
+  async findByUsername(username: string): Promise<UserRow | undefined> {
+    return first(db.select().from(users).where(eq(users.username, username.toLowerCase())).limit(1));
   }
 
-  findById(id: string): UserRow | undefined {
-    return db.select().from(users).where(eq(users.id, id)).get();
+  async findById(id: string): Promise<UserRow | undefined> {
+    return first(db.select().from(users).where(eq(users.id, id)).limit(1));
   }
 
   /**
@@ -103,51 +108,54 @@ export class UserService {
    *    person you want to share with) and removes the probe.
    *  - **The result never carries the address**, see toDirectoryUser.
    */
-  search(query: string, excludeUsername: string, limit = 10): PublicUser[] {
+  async search(query: string, excludeUsername: string, limit = 10): Promise<PublicUser[]> {
     const raw = query.trim().toLowerCase();
     if (raw.length === 0) return [];
     const substring = `%${raw}%`;
-    const rows = db
+    const rows = await db
       .select()
       .from(users)
       .where(
         and(
           ne(users.username, excludeUsername.toLowerCase()),
           or(
-            like(users.username, substring),
-            like(sql`lower(${users.name})`, substring),
+            // ilike, not like: Postgres LIKE is case-sensitive and SQLite's was not, so a
+            // plain `like` here would quietly stop matching "Alice" for a query of "ali".
+            // `username` is stored lowercase; `name` is not, hence the lower() on it.
+            ilike(users.username, substring),
+            ilike(sql`lower(${users.name})`, substring),
             eq(sql`lower(${users.email})`, raw),
           ),
         ),
       )
-      .limit(limit)
-      .all();
+      .limit(limit);
     return rows.map(toDirectoryUser);
   }
 
   /** Turn an email/name into a unique lowercase handle. */
-  private deriveUsername(email: string, name?: string): string {
+  private async deriveUsername(email: string, name?: string): Promise<string> {
     const base =
       (name || email.split('@')[0] || 'user')
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '')
         .slice(0, 20) || 'user';
-    if (!this.findByUsername(base)) return base;
+    if (!(await this.findByUsername(base))) return base;
+    let candidate = base;
     let i = 2;
-    while (this.findByUsername(`${base}${i}`)) i++;
-    return `${base}${i}`;
+    do { candidate = `${base}${i++}`; } while (await this.findByUsername(candidate));
+    return candidate;
   }
 
   /** Register a new account. Throws UserError('email_taken') on conflict. */
   async register(email: string, password: string, name?: string): Promise<UserRow> {
     const normalized = email.trim().toLowerCase();
-    if (this.findByEmail(normalized)) {
+    if (await this.findByEmail(normalized)) {
       throw new UserError('email_taken', 'An account with this email already exists');
     }
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const row: UserRow = {
       id: uuid4(),
-      username: this.deriveUsername(normalized, name),
+      username: await this.deriveUsername(normalized, name),
       email: normalized,
       passwordHash,
       name: name ?? null,
@@ -161,7 +169,7 @@ export class UserService {
       // which needs a shell on the box.
       isAdmin: false,
     };
-    db.insert(users).values(row).run();
+    await db.insert(users).values(row);
     return row;
   }
 
@@ -170,7 +178,7 @@ export class UserService {
    *  UserError('invalid_credentials') on failure. */
   async login(identifier: string, password: string): Promise<UserRow> {
     const id = identifier.trim();
-    const user = this.findByEmail(id) ?? this.findByUsername(id);
+    const user = (await this.findByEmail(id)) ?? (await this.findByUsername(id));
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       throw new UserError('invalid_credentials', 'Invalid email or password');
     }
@@ -181,30 +189,29 @@ export class UserService {
    *  the hash also invalidates any outstanding reset links (see routes/auth.ts). */
   async setPassword(userId: string, newPassword: string): Promise<void> {
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-    db.update(users).set({ passwordHash }).where(eq(users.id, userId)).run();
+    await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
   }
 
   /** Mark an address confirmed. Idempotent: following a verification link twice
    *  is harmless, and the first timestamp is kept. */
-  markEmailVerified(userId: string): void {
-    db.update(users)
+  async markEmailVerified(userId: string): Promise<void> {
+    await db.update(users)
       .set({ emailVerifiedAt: new Date() })
-      .where(and(eq(users.id, userId), sql`${users.emailVerifiedAt} IS NULL`))
-      .run();
+      .where(and(eq(users.id, userId), sql`${users.emailVerifiedAt} IS NULL`));
   }
 
   /** Module ids this account may use. Returns [] for an unknown handle, so a
    *  stale token can never widen access. */
-  getModules(username: string): string[] {
-    const user = this.findByUsername(username);
+  async getModules(username: string): Promise<string[]> {
+    const user = await this.findByUsername(username);
     return user ? normalizeModuleIds(user.modules) : [];
   }
 
   /** Is this account entitled to one specific module? The single question every
    *  gated route asks. */
-  hasModule(username: string | null | undefined, moduleId: string): boolean {
+  async hasModule(username: string | null | undefined, moduleId: string): Promise<boolean> {
     if (!username) return false;
-    const owned = this.getModules(username);
+    const owned = await this.getModules(username);
     return grantsAllModules(owned) || owned.includes(moduleId);
   }
 
@@ -215,19 +222,19 @@ export class UserService {
    *  alongside it would grant nothing extra, and keeping them would leave a list
    *  that looks meaningful but is not — revoking one of them would change
    *  nothing. */
-  setModules(username: string, moduleIds: string[]): string[] | null {
-    const user = this.findByUsername(username);
+  async setModules(username: string, moduleIds: string[]): Promise<string[] | null> {
+    const user = await this.findByUsername(username);
     if (!user) return null;
     const ids = normalizeModuleIds(moduleIds);
     const next = grantsAllModules(ids) ? [ALL_MODULES] : [...new Set(ids)].sort();
-    db.update(users).set({ modules: next }).where(eq(users.id, user.id)).run();
+    await db.update(users).set({ modules: next }).where(eq(users.id, user.id));
     return next;
   }
 
   /** Grant modules, keeping existing ones. Returns the new list, or null for an
    *  unknown handle. */
-  grantModules(username: string, moduleIds: string[]): string[] | null {
-    const current = this.findByUsername(username);
+  async grantModules(username: string, moduleIds: string[]): Promise<string[] | null> {
+    const current = await this.findByUsername(username);
     if (!current) return null;
     return this.setModules(username, [...normalizeModuleIds(current.modules), ...moduleIds]);
   }
@@ -238,8 +245,8 @@ export class UserService {
    *  named ids to remove. Pass `'*'` to drop the wildcard itself, or use
    *  setModules to replace it with an explicit list. The admin CLI says so out
    *  loud, because a silent no-op reads exactly like a successful revoke. */
-  revokeModules(username: string, moduleIds: string[]): string[] | null {
-    const current = this.findByUsername(username);
+  async revokeModules(username: string, moduleIds: string[]): Promise<string[] | null> {
+    const current = await this.findByUsername(username);
     if (!current) return null;
     const drop = new Set(moduleIds);
     return this.setModules(username, normalizeModuleIds(current.modules).filter((m) => !drop.has(m)));
@@ -249,41 +256,53 @@ export class UserService {
    *  token can never widen access. Read per request by requireAdmin — never trusted
    *  from a JWT claim, because tokens live 7 days with no revocation list and a
    *  mistaken grant has to be undoable now, not next week. */
-  isAdmin(username: string | null | undefined): boolean {
+  async isAdmin(username: string | null | undefined): Promise<boolean> {
     if (!username) return false;
-    return this.findByUsername(username)?.isAdmin === true;
+    return (await this.findByUsername(username))?.isAdmin === true;
   }
 
   /** Grant or revoke operator rights. Returns the stored value, or null for an
    *  unknown handle. Reachable only from `pnpm admin:users` — deliberately NOT
    *  exposed over HTTP, so admin cannot be handed out by anyone who merely has it. */
-  setAdmin(username: string, isAdmin: boolean): boolean | null {
-    const user = this.findByUsername(username);
+  async setAdmin(username: string, isAdmin: boolean): Promise<boolean | null> {
+    const user = await this.findByUsername(username);
     if (!user) return null;
-    db.update(users).set({ isAdmin }).where(eq(users.id, user.id)).run();
+    await db.update(users).set({ isAdmin }).where(eq(users.id, user.id));
     return isAdmin;
   }
 
+  /** Every account, for the `pnpm admin:modules --list` overview. Deliberately
+   *  not reachable over HTTP — /users/search is the only route that reads other
+   *  people's rows, and it narrows what it returns (see toDirectoryUser). */
+  async listAll(): Promise<UserRow[]> {
+    return db.select().from(users);
+  }
+
+  /** How many accounts exist — the context line on `pnpm admin:users --list`. */
+  async countAll(): Promise<number> {
+    // .mapWith(Number): count() is bigint, which the driver returns as a string.
+    const rows = await db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(users);
+    return rows[0]?.n ?? 0;
+  }
+
   /** Every operator account, for `pnpm admin:users --list`. */
-  listAdmins(): UserRow[] {
-    return db.select().from(users).where(eq(users.isAdmin, true)).all();
+  async listAdmins(): Promise<UserRow[]> {
+    return db.select().from(users).where(eq(users.isAdmin, true));
   }
 
   /** Ensure the .env test user exists (idempotent — runs on boot). */
   async seedTestUser(): Promise<void> {
     const t = config.testUser;
-    if (this.findByEmail(t.email) || this.findByUsername(t.username)) return;
+    if ((await this.findByEmail(t.email)) || (await this.findByUsername(t.username))) return;
     const passwordHash = await bcrypt.hash(t.password, BCRYPT_ROUNDS);
-    db.insert(users)
-      .values({
-        id: uuid4(),
-        username: t.username,
-        email: t.email.toLowerCase(),
-        passwordHash,
-        name: t.name,
-        createdAt: new Date(),
-      })
-      .run();
+    await db.insert(users).values({
+      id: uuid4(),
+      username: t.username,
+      email: t.email.toLowerCase(),
+      passwordHash,
+      name: t.name,
+      createdAt: new Date(),
+    });
     console.log(`👤 Seeded test user "${t.email}" (handle: ${t.username})`);
   }
 }

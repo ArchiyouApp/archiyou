@@ -30,4 +30,13 @@ regexes = [
   # Documented example values.
   '''change-me-to-a-long-random-string''',
   '''test1234''',
+  # The DEV-ONLY PostgreSQL credential. docker-compose.dev.yml starts a container
+  # published on 127.0.0.1 with archiyou/archiyou, and the docs, drizzle.config.ts
+  # fallback and CI job all name it. Production reads POSTGRES_PASW from the
+  # gitignored .env; nothing here unlocks anything off the machine it runs on.
+  '''postgres://archiyou:archiyou@''',
+  # The backup tests' fixture URL, which exists precisely to prove the password is
+  # redacted out of manifests and error messages.
+  '''postgres://u:p@db\.example''',
+  '''POSTGRES_PASSWORD=\$\{POSTGRES_PASW''',
 ]

@@ -64,7 +64,7 @@ export class Shell extends Shape
         }   
     }
 
-    _fromOcShell(ocShell:any):Shell // TODO: OC typing
+    _fromOcShell(ocShell:any, round:boolean=true):Shell // TODO: OC typing
     {
         if (ocShell && (ocShell instanceof this._oc.TopoDS_Shell || ocShell instanceof this._oc.TopoDS_Shape) && !ocShell.IsNull())
         {
@@ -75,7 +75,7 @@ export class Shell extends Shape
             ocShell = this._makeSpecificOcShape(ocShell, 'Shell');
             this._ocShape = ocShell;
             this._ocId = this._hashcode();
-            this.round(); // round to tolerance
+            if (round){ this.round(); } // round to tolerance
             targetOcForGarbageCollection(this, this._ocShape);
 
             return this;

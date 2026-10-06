@@ -18,7 +18,7 @@ import { signal, computed } from '@lit-labs/signals';
 
 import { parseHelpDoc, codeAt, hasCode, resolveHelpPath, type HelpDoc } from '@archiyou/ui/editor/help/help-content.js';
 import { indexApi, lookupAt, type ApiIndex, type ApiLookup, type ApiEntry } from '@archiyou/ui/editor/help/help-reference.js';
-import { createNewScript, updateScriptName } from './core';
+import { createNewScript, updateScriptName, openScript, scripts } from './core';
 import { scriptParams, deleteParam } from './editor';
 
 //// SETTINGS ////
@@ -159,8 +159,11 @@ export function helpDocPath(entry: HelpEntry, href: string): string | null
   return [helpLocale.get(), entry.locale, DEFAULT_LOCALE].some(l => FILES.has(`${l}/${path}`)) ? path : null;
 }
 
-/** Open a help document in the player at its first step. A tutorial (a document
- *  with code) gets a new script of its own, so the user's work is never overwritten.
+/** Open a help document in the player at its first step. A tutorial (a document with
+ *  code) works in a script of its own, `tutorial-<name>`, so the reader's own work is
+ *  never overwritten. One script per tutorial, reused every time it is opened: playing
+ *  a tutorial twice would otherwise leave a copy behind in the workspace each time.
+ *  Its own previous state is overwritten — a tutorial is a scratch pad.
  *  Returns false when the document does not exist. */
 export async function openHelpDoc(path: string): Promise<boolean>
 {
@@ -169,9 +172,18 @@ export async function openHelpDoc(path: string): Promise<boolean>
 
   if (hasCode(entry.doc))
   {
-    createNewScript();
-    updateScriptName(`tutorial-${path.split('/').pop()}`);
-    // The start script's own parameters would show up next to the tutorial's
+    const name = `tutorial-${path.split('/').pop()}`;
+    // "My Scripts" only ever holds the reader's own scripts (a shared one from another
+    // user is never archived into it), so a match here is always writable.
+    const existing = scripts.get().find(s => s.name === name);
+
+    if (existing) openScript(existing.fileId);
+    else
+    {
+      createNewScript();
+      updateScriptName(name);
+    }
+    // Parameters of the script as it was would show up next to the tutorial's
     scriptParams.get().forEach(p => deleteParam(p.name));
   }
 

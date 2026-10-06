@@ -147,7 +147,7 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
       reply.code(401).send({ success: false, error: 'Unauthorized' });
       return;
     }
-    if (!userService.isAdmin(request.user.sub)) {
+    if (!(await userService.isAdmin(request.user.sub))) {
       reply.code(403).send({ success: false, error: 'Admin only', code: 'not_admin' });
     }
   });

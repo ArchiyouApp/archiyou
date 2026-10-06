@@ -16,5 +16,7 @@ overrides:
 allowBuilds:
   '@vaadin/vaadin-usage-statistics': false
   esbuild: false
-  # native module — needs its build script to compile the SQLite binding
+  # native module — needs its build script to compile the SQLite binding. Kept only
+  # for the one-off SQLite→Postgres import (apps/server/src/admin/migrate-sqlite-to-pg.ts);
+  # remove both together once the cutover has settled.
   better-sqlite3: true

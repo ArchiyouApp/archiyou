@@ -4,7 +4,7 @@
  * Deliberately dependency-free. Both sides of the entitlement check need it:
  * UserService (which owns the column) and ModuleHost (which builds the catalog),
  * and ModuleHost must stay importable without opening the database — its unit
- * test scans a temp directory and touches no SQLite file.
+ * test scans a temp directory and connects to nothing.
  */
 
 /**

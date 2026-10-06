@@ -1,8 +1,9 @@
 # Production stack for the combined Archiyou server.
-#   caddy   — TLS reverse proxy (auto HTTPS) → api
-#   redis   — queue backend (password-protected; set REDIS_PASW in .env)
-#   api     — combined API (/api editor backend + / library + /execute)
-#   worker  — BullMQ execution worker (inert until .env opens an execution gate)
+#   caddy    — TLS reverse proxy (auto HTTPS) → api
+#   postgres — the script database (the single source of truth for scripts)
+#   redis    — queue backend (password-protected; set REDIS_PASW in .env)
+#   api      — combined API (/api editor backend + / library + /execute)
+#   worker   — BullMQ execution worker (inert until .env opens an execution gate)
 #
 # Lives at the monorepo root because it deploys the whole monorepo, not just
 # apps/server: it builds from the root context and serves apps/editor/dist.
@@ -36,6 +37,40 @@ services:
     networks:
       - archiyou-network
 
+  # The script database. This is the instance developers also connect to (through an
+  # ssh tunnel — see apps/server/README → Database), which is the whole point of moving
+  # off a per-checkout SQLite file.
+  #
+  # ⚠️  Published on the LOOPBACK interface only. 5432 must never be reachable from the
+  # internet: the ssh tunnel is the access path, and `127.0.0.1:` is what makes docker
+  # refrain from opening the port in the host firewall. Do not "simplify" it to "5432:5432".
+  postgres:
+    image: postgres:17
+    container_name: archiyou-postgres
+    # No env_file: this container needs three variables, and handing it the whole .env
+    # would put SERVER_JWT_SECRET and the Mailgun key inside the database container for
+    # no reason. Compose still reads `.env` for the ${...} below.
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-archiyou}
+      - POSTGRES_PASSWORD=${POSTGRES_PASW}
+      - POSTGRES_DB=${POSTGRES_DB:-archiyou}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      # -U/-d explicitly: pg_isready otherwise defaults to the `postgres` role and
+      # database, which this image does not create when POSTGRES_USER is set.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-archiyou} -d ${POSTGRES_DB:-archiyou}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - archiyou-network
+
   redis:
     image: redis:7-alpine
     container_name: archiyou-redis
@@ -66,7 +101,10 @@ services:
       - SERVER_REDIS_HOST=redis
       - SERVER_REDIS_PORT=6379
       - SERVER_REDIS_PASSWORD=${REDIS_PASW}
-      - SERVER_DATABASE_FILE=./data/archiyou.db
+      # The script database. A postgres:// URL means the real server above; anything
+      # else (or nothing) would fall back to in-process PGlite, which is a development
+      # convenience and NOT what a deployment wants.
+      - SERVER_DATABASE_URL=postgres://${POSTGRES_USER:-archiyou}:${POSTGRES_PASW}@postgres:5432/${POSTGRES_DB:-archiyou}
       # Read by the entrypoint's build step and inlined into the editor bundle
       # at build time (it cannot be changed afterwards without a rebuild). /api
       # matches the prefix caddy strips in the Caddyfile; set an absolute URL
@@ -81,6 +119,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     volumes:
       # The image ships no code (see apps/server/Dockerfile): the whole monorepo
       # checkout is mounted, so a deploy is `git pull` + `docker compose restart`.
@@ -90,8 +130,8 @@ services:
       # It must be the repo ROOT, not just apps/server — apps/server is a workspace
       # package whose node_modules are symlinks into ../../node_modules/.pnpm, and
       # pnpm needs the root package.json + pnpm-workspace.yaml + lockfile.
-      # The container WORKDIR is /archiyou/apps/server, so
-      # SERVER_DATABASE_FILE=./data/archiyou.db resolves to apps/server/data.
+      # The container WORKDIR is /archiyou/apps/server, so the remaining relative
+      # paths (thumbnails, logs, backup scratch) resolve inside apps/server/data.
       - ./:/archiyou
     restart: unless-stopped
     security_opt:
@@ -142,7 +182,8 @@ services:
     volumes:
       # Same code mount as api. Read-only: the worker runs untrusted user scripts and
       # has no reason to write to the checkout — it takes jobs from Redis and returns
-      # results there, never touching the SQLite DB.
+      # results there, never touching the database. It is given no SERVER_DATABASE_URL
+      # and no database credentials at all; CI asserts that (scripts/check-worker-env.py).
       - ./:/archiyou:ro
     depends_on:
       redis:
@@ -161,7 +202,9 @@ services:
 volumes:
   redis_data:
     driver: local
-  server_data:
+  # The script database. Back it up (`pnpm admin:backup` takes a pg_dump); a lost
+  # volume is a lost library.
+  pg_data:
     driver: local
 
 networks:

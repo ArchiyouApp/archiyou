@@ -89,7 +89,7 @@ export async function registerAdminRoutes(fastify: FastifyInstance): Promise<voi
     const limit = Math.min(Number(request.query.limit ?? 50) || 50, 200);
     const offset = Math.max(Number(request.query.offset ?? 0) || 0, 0);
 
-    const { total, configurators } = scriptStore.listPublishedConfigurators({ author, validated, q, limit, offset });
+    const { total, configurators } = await scriptStore.listPublishedConfigurators({ author, validated, q, limit, offset });
     return { success: true, total, limit, offset, data: configurators };
   });
 
@@ -99,7 +99,7 @@ export async function registerAdminRoutes(fastify: FastifyInstance): Promise<voi
     '/admin/configurators/:versionId',
     adminOnly,
     async (request, reply) => {
-      const script = scriptStore.findAnyVersionById(request.params.versionId);
+      const script = await scriptStore.findAnyVersionById(request.params.versionId);
       if (!script) {
         reply.code(404);
         return { success: false, error: `Version ${request.params.versionId} not found` };
@@ -114,7 +114,7 @@ export async function registerAdminRoutes(fastify: FastifyInstance): Promise<voi
     adminOnly,
     async (request, reply) => {
       const { validated } = parse(SetValidatedSchema, request.body);
-      const stored = scriptStore.setValidated(request.params.versionId, validated);
+      const stored = await scriptStore.setValidated(request.params.versionId, validated);
       request.log.info(
         { versionId: request.params.versionId, script: `${stored.author}/${stored.name}:${stored.version}`,
           validated, by: request.user.sub },
@@ -142,17 +142,17 @@ export async function registerAdminRoutes(fastify: FastifyInstance): Promise<voi
     const limit = Math.min(Number(request.query.limit ?? 50) || 50, 200);
     const offset = Math.max(Number(request.query.offset ?? 0) || 0, 0);
 
-    const { total, items } = feedbackStore.list({ q, starred, sort: (sort || undefined) as FeedbackSort | undefined, limit, offset });
+    const { total, items } = await feedbackStore.list({ q, starred, sort: (sort || undefined) as FeedbackSort | undefined, limit, offset });
     return { success: true, total, limit, offset, data: items };
   });
 
   fastify.put<{ Params: { id: string } }>('/admin/feedback/:id/starred', adminOnly, async (request) => {
     const { starred } = parse(SetStarredSchema, request.body);
-    return { success: true, data: feedbackStore.setStarred(request.params.id, starred) };
+    return { success: true, data: await feedbackStore.setStarred(request.params.id, starred) };
   });
 
   fastify.delete<{ Params: { id: string } }>('/admin/feedback/:id', adminOnly, async (request) => {
-    feedbackStore.delete(request.params.id);
+    await feedbackStore.delete(request.params.id);
     request.log.info({ feedbackId: request.params.id, by: request.user.sub }, 'admin: feedback deleted');
     return { success: true };
   });

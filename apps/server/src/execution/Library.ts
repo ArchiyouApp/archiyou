@@ -701,8 +701,8 @@ export class Library
      *  `create` makes the author/script directories when they are absent, instead of
      *  reporting "not found". Only writeResultCache passes it, and it has to: this
      *  tree used to be created as a side effect of the library storing scripts on
-     *  disk, but scripts live in SQLite now, so for a script that has never been run
-     *  on this box nothing here exists yet. Without it the first run of every script
+     *  disk, but scripts live in the database now, so for a script that has never been
+     *  run on this box nothing here exists yet. Without it the first run of every script
      *  fails to cache, and — before the existsSync guard below — the first run failed
      *  outright with ENOENT from readdirSync.
      */

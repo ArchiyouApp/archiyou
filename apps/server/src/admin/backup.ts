@@ -5,8 +5,11 @@
  * `backupTargets` in src/config.ts — that list, not this file, is the answer to
  * "what is backed up"), then prunes archives older than the retention window.
  *
- * The SQLite database is snapshotted with SQLite's online backup API, so this is
- * safe to run against a live server and needs no manual WAL checkpoint.
+ * The database goes in as a `pg_dump -Fc` stream, taken inside PostgreSQL's own
+ * repeatable-read snapshot — so this is safe to run against a live server, needs no
+ * downtime, and produces an archive you can restore one table at a time. It needs
+ * `pg_dump`/`pg_restore`/`psql` on PATH, at least the server's major version (the
+ * Dockerfile installs postgresql-client-17).
  *
  * Scheduling lives in the host crontab, not here — see apps/server/README → Backups.
  *

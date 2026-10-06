@@ -89,7 +89,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance): Promise<void
   // reveals whether an account exists for the address.
   fastify.post('/auth/forgot-password', throttled, async (request) => {
     const { email } = parse(ForgotPasswordRequestSchema, request.body);
-    const user = userService.findByEmail(email);
+    const user = await userService.findByEmail(email);
     if (user) {
       const token = fastify.jwt.sign(
         { sub: user.id, type: 'reset', pfp: pwFingerprint(user.passwordHash) },
@@ -112,7 +112,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance): Promise<void
       throw new UserError('invalid_token', 'This reset link is invalid or has expired');
     }
 
-    const user = claims.type === 'reset' ? userService.findById(claims.sub) : undefined;
+    const user = claims.type === 'reset' ? await userService.findById(claims.sub) : undefined;
     // pfp mismatch ⇒ the link was already used or superseded by a newer password.
     if (!user || claims.pfp !== pwFingerprint(user.passwordHash)) {
       throw new UserError('invalid_token', 'This reset link is invalid or has expired');
@@ -135,15 +135,15 @@ export async function registerAuthRoutes(fastify: FastifyInstance): Promise<void
     }
 
     // `type` is what stops a session or reset token being replayed here.
-    const user = claims.type === 'verify' ? userService.findById(claims.sub) : undefined;
+    const user = claims.type === 'verify' ? await userService.findById(claims.sub) : undefined;
     // Bound to the address: if the account's email changed after the link was
     // issued, the stale link must not confirm the new address.
     if (!user || claims.email !== user.email) {
       throw new UserError('invalid_token', 'This verification link is invalid or has expired');
     }
 
-    userService.markEmailVerified(user.id);
-    const updated = userService.findById(user.id) ?? user;
+    await userService.markEmailVerified(user.id);
+    const updated = (await userService.findById(user.id)) ?? user;
     // Return a fresh session token so the client picks up emailVerified: true.
     return issue(fastify, updated);
   });
@@ -155,7 +155,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance): Promise<void
     '/auth/resend-verification',
     { preHandler: fastify.authenticate, config: { rateLimit: config.authRateLimit } },
     async (request, reply) => {
-      const user = userService.findByUsername(request.user.sub);
+      const user = await userService.findByUsername(request.user.sub);
       if (!user) return reply.code(404).send({ success: false, error: 'User not found' });
       if (user.emailVerifiedAt !== null) return { success: true, alreadyVerified: true };
       await sendVerification(fastify, user);
@@ -167,7 +167,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance): Promise<void
   fastify.post('/auth/logout', async () => ({ success: true }));
 
   fastify.get('/auth/me', { preHandler: fastify.authenticate }, async (request, reply) => {
-    const user = userService.findByUsername(request.user.sub);
+    const user = await userService.findByUsername(request.user.sub);
     if (!user) return reply.code(404).send({ success: false, error: 'User not found' });
     return toPublicUser(user);
   });

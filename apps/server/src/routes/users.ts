@@ -18,7 +18,7 @@ export async function registerUserRoutes(fastify: FastifyInstance): Promise<void
     async (request) => {
       const q = (request.query.q ?? '').trim();
       if (q.length === 0) return { success: true, data: [] };
-      return { success: true, data: userService.search(q, request.user.sub) };
+      return { success: true, data: await userService.search(q, request.user.sub) };
     },
   );
 }

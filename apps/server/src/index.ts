@@ -5,20 +5,23 @@
 //   /scripts/{published,shared}/*    public libraries (DB-backed)
 //   /scripts/published/execute/*     server-side execution (Redis/BullMQ; `pnpm worker`)
 //
-// The DB (script_versions) is the single source of truth for scripts; a row is
-// "published"/"shared" when that metadata column is set.
+// The DB (script_versions, PostgreSQL) is the single source of truth for scripts; a
+// row is "published"/"shared" when that metadata column is set.
 
 import 'dotenv/config';
 
 import Fastify from 'fastify';
 
 import { config } from './config';
-import { runMigrations } from './db/migrate';
+import { describeDatabase } from './db/client';
+import { migrateOnBoot } from './db/migrate';
 import { userService } from './services/UserService';
 import { serverApiPlugin } from './plugin';
 
 async function main(): Promise<void> {
-  runMigrations();               // idempotent: brings the SQLite file up to the latest schema
+  // Brings our own PGlite database up to the latest schema; against a shared
+  // PostgreSQL server it verifies instead of migrating (see migrateOnBoot).
+  await migrateOnBoot();
 
   // Dev convenience account — never seeded in production unless explicitly asked
   // for with a real password (see config.seedTestUser).
@@ -42,6 +45,7 @@ async function main(): Promise<void> {
   await app.register(serverApiPlugin);
 
   await app.listen({ port: config.port, host: '0.0.0.0' });
+  console.log(`🗄️  Database: ${describeDatabase()}`);
   console.log(`🚀 Archiyou server on http://localhost:${config.port}  →  /auth + /scripts/{user,published,shared}`);
 }
 

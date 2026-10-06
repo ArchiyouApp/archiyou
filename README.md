@@ -67,7 +67,7 @@ Here are the most important components:
 
 * **Editor** - [`apps/editor`](./apps/editor/) - The web interface in which to create and publish CAD scripts
 * **Configurator** - [`packages/ui/src/configator`](./packages/ui/con) - This allows end-users to configure a parametric model. Configurators can be embedded inside other websites like a Youtube video. Please note that it's served together with the rest of the stack.
-* **Server** - [`apps/server`](./apps/server/) - The entire backend for the Archiyou platform which serves the Editor to persist and manage scripts and execute scripts on the backend. `Fastify, BullMQ, SQLite, Drizzle ORM, Redis`
+* **Server** - [`apps/server`](./apps/server/) - The entire backend for the Archiyou platform which serves the Editor to persist and manage scripts and execute scripts on the backend. `Fastify, BullMQ, PostgreSQL, Drizzle ORM, Redis`
 * **Core** - [`packages/core`](./packages/core) - The core modeling for executing CAD script to create models with styling, hierarchy, calculations and documentation. We use two kernels: [`Meshup`](https://github.com/ArchiyouApp/meshup) (mesh based: speed) and a BREP one based on `OpenCascade` (slow but advanced). 
 * **UI** - [`packages/ui`](./packages/ui) - All UI components that make up the editor and configurator. `Lit, WebAwesome`
 * **Extendability**: Look at [`modules`](./modules) - *work in progress*
@@ -89,9 +89,15 @@ pnpm dev            # editor on :5173, server on :4100
 
 Already cloned without `--recursive`? Run `git submodule update --init --recursive`.
 
-No configuration is needed for development: the server creates its SQLite
-database on first run, seeds a `test` / `test1234` account, and logs
-password-reset and verification emails to the console instead of sending them.
+No configuration is needed for development: the server runs PostgreSQL **inside its
+own process** on first start (PGlite — Postgres compiled to WASM, under
+`apps/server/data/pgdata`), migrates it, seeds a `test` / `test1234` account, and logs
+password-reset and verification emails to the console instead of sending them. Nothing
+to install, no container to start.
+
+Point `SERVER_DATABASE_URL` at a real server when you want one — `pnpm docker:dev`
+starts Postgres and Redis on loopback for exactly that. See
+[apps/server/README → Database](./apps/server/README.md#database).
 
 You do **not** need a Rust toolchain to build — all WASM artifacts are committed.
 Rust is only required to rebuild a kernel (`pnpm build:wasm`).
@@ -177,13 +183,12 @@ to 403ing every execution request, and the worker goes back to idling.
 
 #### Working on it locally
 
-No image build, no containers except Redis — the worker runs straight out of your
-working directory via `tsx`, so an edit to `apps/server` or `packages/core` is picked up
-on save:
+No image build, and the worker runs straight out of your working directory via `tsx`,
+so an edit to `apps/server` or `packages/core` is picked up on save:
 
 ```bash
 pnpm build:meshup   # once — the worker loads the mesh kernel from packages/meshup/dist
-pnpm docker:dev     # Redis (the only piece that needs a container)
+pnpm docker:dev     # Redis (the queue), and Postgres if you want one
 pnpm dev:worker     # the execution worker, from source, in watch mode
 pnpm dev            # editor + API, in another terminal
 ```
@@ -191,12 +196,17 @@ pnpm dev            # editor + API, in another terminal
 `docker:*` scripts run containers, `dev:*` scripts run code from your working tree —
 so an edit to `apps/server` or `packages/core` is live on the next run. Set
 `SERVER_EXECUTION_VALIDATED=1` in your `.env` too, or the API will refuse to enqueue
-anything. `pnpm docker:dev:down` stops Redis when you are finished.
+anything. `pnpm docker:dev:down` stops both containers when you are finished.
+
+Redis is the one piece the execution pipeline genuinely needs a container for. Postgres
+is optional — with no `SERVER_DATABASE_URL` the server runs PGlite in-process (see
+[apps/server/README → Database](./apps/server/README.md#database)) — but it comes up in
+the same command when you do want `psql` and `pg_dump`.
 
 If you would rather run the whole thing in containers — to rehearse a deployment rather
-than to work on the code — `apps/server/docker-compose.yml` starts api + redis + worker
-that way (`pnpm --filter @archiyou/server docker:dev`). It builds the monorepo image and
-runs a full editor build first, so expect minutes, not seconds.
+than to work on the code — `apps/server/docker-compose.yml` starts api + postgres +
+redis + worker that way (`pnpm --filter @archiyou/server docker:dev`). It builds the
+monorepo image and runs a full editor build first, so expect minutes, not seconds.
 
 There is no build step to run: The Docker stack uses the code in the monorepo, installs dependencies, sets up the workspaces and builds the web app. A fresh deploy is as simple as:
 

@@ -46,7 +46,7 @@ export async function registerFeedbackRoutes(fastify: FastifyInstance): Promise<
       return { success: false, error: 'Feedback message is empty' };
     }
     const username = await optionalUser(request);
-    const stored = feedbackStore.create({ ...body, username });
+    const stored = await feedbackStore.create({ ...body, username });
     reply.code(201);
     return { success: true, data: { id: stored.id } };
   });

@@ -2,7 +2,7 @@
 
 The entire backend for the Archiyou platform: it serves the [Editor](../editor/),
 persists and manages scripts, and executes scripts on the backend.
-`Fastify, BullMQ, SQLite, Drizzle ORM, Redis`
+`Fastify, BullMQ, PostgreSQL, Drizzle ORM, Redis`
 
 It runs from source via `tsx` — there is no build step for this package.
 
@@ -10,33 +10,109 @@ It runs from source via `tsx` — there is no build step for this package.
 pnpm dev:server                 # from the repo root, server only on :4100
 ```
 
-No configuration is needed for development: the server creates its SQLite
-database on first run, seeds a `test` / `test1234` account, and logs
-password-reset and verification emails to the console instead of sending them.
-Every server variable is documented in the repo-root [`.env.example`](../../.env.example).
+No configuration is needed for development: the server brings up its own database
+on first run (see [Database](#database) below), seeds a `test` / `test1234` account,
+and logs password-reset and verification emails to the console instead of sending
+them. Every server variable is documented in the repo-root
+[`.env.example`](../../.env.example).
+
+## Database
+
+PostgreSQL, and `SERVER_DATABASE_URL` picks how you get it:
+
+| `SERVER_DATABASE_URL` | what runs |
+|---|---|
+| *unset* | **PGlite** under `./data/pgdata` — PostgreSQL compiled to WASM, in this process |
+| `postgres://…` | a real PostgreSQL server |
+| `memory://` | PGlite in RAM; what every test file sets for itself |
+
+PGlite is the same Postgres: same SQL, same schema, same migrations, one connection
+and nothing to install. It is what makes `git clone && pnpm dev` work with no
+container and no configuration, and it is why connecting to a database that other
+people also use is always something you did on purpose.
+
+For a real server locally:
+
+```bash
+pnpm docker:dev     # postgres + redis on 127.0.0.1 (docker-compose.dev.yml)
+```
+
+then put this in `apps/server/.env` (gitignored):
+
+```
+SERVER_DATABASE_URL=postgres://archiyou:archiyou@localhost:5432/archiyou
+# PGlite seeds the dev account for free; on a postgres:// URL it takes an explicit yes
+SERVER_SEED_TEST_USER=true
+SERVER_TEST_USER_PASSWORD=test1234
+```
+
+`pnpm --filter @archiyou/server db:migrate` creates the schema. After that, `psql`,
+`pg_dump` and everything else work as usual.
+
+### Two guards, because the database can be shared
+
+Against a `postgres://` URL the server deliberately behaves differently from the way
+it does on its own PGlite copy:
+
+- **It will not migrate it.** `pnpm dev` used to migrate whatever it opened, which
+  against a shared instance means a checkout sitting on a feature branch silently
+  changing production's schema. A development process now compares the applied
+  migrations with this checkout's and **refuses to start** if they differ, naming
+  which side is ahead. `NODE_ENV=production` (the api container) still migrates on
+  boot, as the deploy needs; so does anything on PGlite.
+- **It will not seed the test user.** `test` / `test1234` are publicly known
+  credentials and `test` is a plausible author handle; every dev machine writing that
+  account into the central database is not a thing to leave on. Set
+  `SERVER_SEED_TEST_USER=true` **and** `SERVER_TEST_USER_PASSWORD` to opt in.
+
+The tests never read your `.env` for this: all of them set `memory://` explicitly, so
+`pnpm test` cannot reach a database that matters however yours is configured.
+
+### Roles
+
+The api owns the schema; developers do not. Create the two roles once, on the server:
+
+```sql
+-- the api container: owns the tables, runs migrations
+CREATE ROLE archiyou_app LOGIN PASSWORD '…';
+ALTER DATABASE archiyou OWNER TO archiyou_app;
+
+-- developers through the ssh tunnel: read and write rows, no DDL
+CREATE ROLE archiyou_dev LOGIN PASSWORD '…';
+GRANT CONNECT ON DATABASE archiyou TO archiyou_dev;
+GRANT USAGE ON SCHEMA public TO archiyou_dev;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO archiyou_dev;
+ALTER DEFAULT PRIVILEGES FOR ROLE archiyou_app IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO archiyou_dev;
+```
+
+`archiyou_dev` cannot `ALTER TABLE`, so the boot guard above is a clear message
+rather than the only thing standing between a branch and production's schema.
 
 The rest of this document is about running it in production.
 
 ## Deploying
 
 The repo-root `docker-compose.yml` is a complete single-host deployment: Caddy
-(automatic HTTPS) in front of the API, Redis, and the built editor served as
-static files. The BullMQ execution worker is part of that stack
+(automatic HTTPS) in front of the API, PostgreSQL, Redis, and the built editor served
+as static files. The BullMQ execution worker is part of that stack
 too, though it does nothing until an execution gate is opened in `.env` — see
 "Server-side execution" in the root README. The compose file lives at the root rather
 than in `apps/server/`
 because it deploys the whole monorepo — it builds from the root context and
-mounts `apps/editor/dist`. For local development there are two options. `docker-compose.dev.yml` at the repo root
-is Redis alone, no image build: `pnpm docker:dev` starts it, then `pnpm dev` and
+mounts `apps/editor/dist`. For local development there are two options.
+`docker-compose.dev.yml` at the repo root is postgres + redis, no image build:
+`pnpm docker:dev` starts them, then `pnpm dev` and
 `pnpm dev:worker` run the API and the execution worker straight from source — use this
-to work on the code. This directory's own `docker-compose.yml` instead runs api + redis
-+ worker in containers (`pnpm --filter @archiyou/server docker:dev`), building the image
-and the editor first — use that to rehearse a deployment.
+to work on the code. This directory's own `docker-compose.yml` instead runs api +
+postgres + redis + worker in containers (`pnpm --filter @archiyou/server docker:dev`),
+building the image and the editor first — use that to rehearse a deployment.
 
 ```bash
 # 1. configure the deployment
 cp .env.example .env
-#    set SERVER_JWT_SECRET (openssl rand -base64 48), FRONTEND_URL, REDIS_PASW
+#    set SERVER_JWT_SECRET (openssl rand -base64 48), FRONTEND_URL,
+#    REDIS_PASW and POSTGRES_PASW (both: openssl rand -base64 32)
 
 # 2. point the hostnames in Caddyfile at your domain, then:
 pnpm docker:prod          # == docker compose up -d
@@ -119,8 +195,8 @@ installs when `node_modules/.pnpm` is absent (first deploy) or when
 `pnpm-lock.yaml` is newer than the stamp it drops at
 `node_modules/.archiyou-install-stamp` (a `git pull` changed dependencies).
 Otherwise it is a no-op and startup is immediate. Installing inside the image
-also means `better-sqlite3` — a native module — is compiled against the exact
-Node that loads it.
+also means `better-sqlite3` — a native module, kept only for the one-off
+SQLite→Postgres import — is compiled against the exact Node that loads it.
 
 That install — and the build that follows it — writes into the mounted checkout
 as uid 1000 (`USER node`), so the checkout must be writable by it: `sudo chown
@@ -143,29 +219,34 @@ pnpm needs the root `package.json`, `pnpm-workspace.yaml` and lockfile. The
 containers' `WORKDIR` is `/archiyou/apps/server`, which is what makes `pnpm
 start` / `pnpm worker` resolve (from the workspace root they fail with
 `ERR_PNPM_NO_SCRIPT_OR_SERVER` and `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL`) and
-what makes `SERVER_DATABASE_FILE=./data/archiyou.db` land in `apps/server/data`.
-That directory is written by uid 1000 (`USER node`): `chown -R 1000:1000
-apps/server/data` on the host if the checkout is owned by someone else.
+what makes the relative paths in `.env` — thumbnails, logs, backup scratch — land in
+`apps/server/data`. That directory is written by uid 1000 (`USER node`):
+`chown -R 1000:1000 apps/server/data` on the host if the checkout is owned by someone
+else.
 
-Both `env_file:` and `${REDIS_PASW}` interpolation resolve relative to the
-compose file, so the `.env` belongs at the **repo root**. A missing one is quiet,
-not loud: `${REDIS_PASW}` becomes an empty string and Redis starts with
-`--requirepass ""`.
+Both `env_file:` and `${REDIS_PASW}` / `${POSTGRES_PASW}` interpolation resolve
+relative to the compose file, so the `.env` belongs at the **repo root**. A missing one
+is quiet, not loud: `${REDIS_PASW}` becomes an empty string and Redis starts with
+`--requirepass ""`, and the `postgres` container refuses to initialise at all.
 
-The compose project is pinned to `name: archiyou`, so the `redis_data` volume
-keeps the same name regardless of what the checkout directory is called. Don't
-remove the pin — a rename orphans the queue's persisted state.
+The compose project is pinned to `name: archiyou`, so the `redis_data` and `pg_data`
+volumes keep the same names regardless of what the checkout directory is called. Don't
+remove the pin — a rename orphans both the queue's persisted state and the script
+database.
 
-**The SQLite database is a plain host directory now, not a Docker volume**: it
-lives at `apps/server/data/` in the checkout, via the code mount. Back that
-directory up (see below) and never `git clean -x` it. The `server_data` volume
-is still declared in `docker-compose.yml` but nothing mounts it — the
-volume-based restore recipe further down applies only to deployments that
-predate the bind mount.
+**The scripts live in the `pg_data` volume**, not in the checkout. `apps/server/data/`
+in the checkout still holds the thumbnails, the logs and the backup scratch directory;
+back up both (see below) and never `git clean -x` the latter.
+
+**5432 is published on `127.0.0.1` only.** That is the one line in
+`docker-compose.yml` not to "simplify": binding it to all interfaces puts the whole
+script library on the internet behind one password. Developers reach it through
+`pnpm db tunnel` (ssh), below.
 
 One host serves the editor and proxies `/api/*` to the server, so there is no
 cross-origin traffic and CORS never applies. Database migrations run
-automatically on boot.
+automatically on boot (in production; see [Database](#database) for why a dev
+process does not).
 
 Work through the checklist at the end of [SECURITY.md](../../SECURITY.md) before
 exposing an instance to the internet.
@@ -175,20 +256,25 @@ exposing an instance to the internet.
 `pnpm admin:backup` uploads one timestamped `tar.gz` to any S3-compatible bucket
 (AWS, Hetzner, Cloudflare R2, Backblaze B2, DigitalOcean Spaces, MinIO).
 
-**What is in it** is the `backupTargets` list in `apps/server/src/config.ts` —
-the SQLite database and the thumbnail SVGs today. That list is the authoritative
-answer, and **anything not on it is treated as regenerable and will be lost on
-host failure**. When a new kind of durable asset appears, add a line there; the
-script needs no other change. `SERVER_BACKUP_EXTRA_PATHS=name:path,…` adds one
-without touching code. Deliberately excluded: `data/cache` (regenerable execution
-results) and the SQLite `-wal`/`-shm` sidecars.
+**What is in it** is the `backupTargets` list in `apps/server/src/config.ts` — the
+PostgreSQL database and the thumbnails today. That list is the authoritative answer,
+and **anything not on it is treated as regenerable and will be lost on host failure**.
+When a new kind of durable asset appears, add a line there; the script needs no other
+change. `SERVER_BACKUP_EXTRA_PATHS=name:path,…` adds one without touching code.
+Deliberately excluded: `data/cache` (regenerable execution results).
 
-The database is snapshotted with SQLite's online backup API, so this is safe to
-run against a live server and needs **no manual WAL checkpoint** — the archived
-file is fully checkpointed and self-contained. Every snapshot is opened and
-`PRAGMA integrity_check`ed before it is uploaded, and the archive's
-`MANIFEST.json` records what it contained, which migration the database matches,
-and the row counts.
+The database goes in as a `pg_dump -Fc` stream, taken inside PostgreSQL's own
+repeatable-read snapshot — safe against a live server, **no downtime**, and restorable
+one table at a time or into a scratch database. Every dump is read back with
+`pg_restore --list` before it is uploaded (a truncated archive fails here, not during
+a restore six months from now), and the archive's `MANIFEST.json` records the server
+version, which migration the database matches, and the exact row counts to compare
+against afterwards.
+
+This needs `pg_dump`, `pg_restore` and `psql` on `PATH`, at **least the server's major
+version** — `pg_dump` refuses to read a newer server. The `apps/server/Dockerfile`
+installs `postgresql-client-17` from the PGDG repository for exactly that reason;
+Debian's own package is too old for a `postgres:17` server.
 
 Configure the `SERVER_BACKUP_*` block in the root `.env` (see
 [`.env.example`](../../.env.example)), then **verify before scheduling**:
@@ -256,89 +342,89 @@ aws s3 --endpoint-url "$ENDPOINT" cp "s3://$BUCKET/$PREFIX/archiyou-20260806-031
 tar tzf archiyou-20260806-031500.tar.gz
 mkdir restore && tar xzf archiyou-20260806-031500.tar.gz -C restore --strip-components=1
 
-# 2. VERIFY BEFORE TOUCHING PRODUCTION
-cat restore/MANIFEST.json     # which targets it holds; `migrations` must match this code
-sqlite3 restore/db/archiyou.db "PRAGMA integrity_check;"
-sqlite3 restore/db/archiyou.db "select count(*) from users; select count(*) from script_versions;"
+# 2. VERIFY BEFORE TOUCHING PRODUCTION — into a SCRATCH database, never the live one
+cat restore/MANIFEST.json     # targets, server version, migrations, row counts
+docker compose exec -T postgres pg_restore --list /dev/stdin < restore/db/archiyou.dump | head
+docker compose exec -T postgres psql -U archiyou -d postgres -c 'CREATE DATABASE restore_check;'
+docker compose exec -T postgres pg_restore -U archiyou -d restore_check --no-owner /dev/stdin \
+  < restore/db/archiyou.dump
+docker compose exec -T postgres psql -U archiyou -d restore_check \
+  -c 'select count(*) from users;' -c 'select count(*) from script_versions;'
+#    …compare those against MANIFEST.json → targets[db].rowCounts. Then drop it:
+docker compose exec -T postgres psql -U archiyou -d postgres -c 'DROP DATABASE restore_check;'
 
-# 3. stop the stack so nothing holds the database file (from the repo root)
-docker compose down
+# 3. the real restore. Stop the api so nothing writes while the database is replaced;
+#    postgres itself stays up, because it is what does the restoring.
+docker compose stop api worker
 
-# 4. write each target back to its declared path inside the volume.
-#    The volume is `archiyou_server_data`, not `server_data` — compose prefixes
-#    it with the project name (`name: archiyou`). Naming it wrong here does not
-#    error; docker just creates an empty volume and the restore silently no-ops.
-#    Confirm with: docker volume ls | grep server_data
-docker run --rm -v archiyou_server_data:/data -v "$PWD/restore:/restore:ro" alpine sh -c '
-  cp /restore/db/archiyou.db /data/archiyou.db &&
-  rm -f /data/archiyou.db-wal /data/archiyou.db-shm &&
-  rm -rf /data/thumbnails && cp -a /restore/thumbnails /data/thumbnails &&
-  chown -R 1000:1000 /data'
+# 4. replace the contents of the live database. --clean --if-exists drops each object
+#    before recreating it, so this is a replacement and not a merge with whatever is
+#    there now. -1 wraps it in one transaction: it either all lands or none of it does.
+docker compose exec -T postgres pg_restore -U archiyou -d archiyou \
+  --clean --if-exists --no-owner -1 /dev/stdin < restore/db/archiyou.dump
 
-# 5. back up
-docker compose up -d
+# 5. the thumbnails are files in the checkout, not in the database
+rm -rf apps/server/data/thumbnails && cp -a restore/thumbnails apps/server/data/thumbnails
+sudo chown -R 1000:1000 apps/server/data/thumbnails
+
+# 6. back up
+docker compose start api worker
 ```
 
-Step 4's `rm -f *-wal *-shm` is not optional: the restored file is already
-checkpointed, and leaving the *previous* database's WAL beside it is how a
-restore turns into a second incident. `1000:1000` is the `node` user the
-container runs as — a root-owned database file breaks the API on boot.
+Step 2 is the part people skip and the part that matters: a dump that has never been
+restored is a hope, not a backup. `MANIFEST.json` carries the row counts precisely so
+that "did it all arrive" has an answer rather than a feeling. Do it against a scratch
+database once a quarter.
 
-Run steps 1–2 against a scratch directory once a quarter. An untested restore is
-not a backup.
+`1000:1000` in step 5 is the `node` user the container runs as — root-owned thumbnail
+files leave the API unable to write new ones.
 
 ### Working on a copy of production
 
-`pnpm dbdownload` (from the repo root) copies the live database onto this
-machine over SSH — no S3 credentials, no docker exec, nothing installed on the
-server. It is the mirror image of `admin:backup`: that one runs *on* the server
-and pushes an archive off-box; this one runs on a laptop and overwrites the
-*local* `apps/server/data/archiyou.db`.
+`pnpm db` (from the repo root) is how a developer machine reaches the central
+database over SSH — no S3 credentials, nothing installed on the server. Two commands:
 
 ```bash
-pnpm dbdownload           # asks for server, username, password
-pnpm dbdownload --dry     # connect, confirm the file is there, change nothing
-pnpm dbdownload --help    # every answer also has a flag
+pnpm db tunnel            # forward the remote 5432 to localhost and hold it open
+pnpm db dump              # pg_dump -Fc on the server → apps/server/data/db-backups/<stamp>/
+pnpm db --help            # every answer also has a flag
 ```
 
-**Nothing is configured up front and no credential is ever stored.** It asks for
-the server, your username and the database path; the *password* is asked for by
-`ssh` itself, so this script never sees it — it cannot land in a file, in `ps`
-output, or in the environment. There is deliberately no key-file setting and no
-`.env` block. You are asked **once**: the first connection is an ssh
-ControlMaster and every later command and transfer rides the same authenticated
-socket, which is closed on the way out. (Where ssh can already authenticate by
-itself — agent or `~/.ssh/config` — it just does not ask.) The non-secret
-answers are remembered in the gitignored `apps/server/data/.dbdownload.json`, so
-the next run is three Enters.
+**`tunnel`** is what you want most of the time. Leave it running, and in another shell
+point `SERVER_DATABASE_URL` at `localhost:5432`: the dev server, `psql`, `pnpm
+test:parity` and anything else then work against the real library. 5432 is published on
+the server's loopback interface only, so this is the access path, not a shortcut past
+one. Remember what you are connected to — the two guards under
+[Database](#two-guards-because-the-database-can-be-shared) stop the schema and the test
+user from being changed, and nothing stops the rest.
 
-The remote path it asks for is `<deploy dir>/apps/server/data/archiyou.db` — the
-database is a plain file in the bind-mounted checkout (see
-`docker-compose.yml` → api), not a docker volume.
+**`dump`** takes a `pg_dump -Fc` inside the server's `postgres` container (so the
+client version always matches) and streams it straight into
+`apps/server/data/db-backups/<stamp>/`, keeping the newest `--keep` (default 5). It
+verifies the `PGDMP` header before claiming success, so a file full of an ssh error
+message is reported rather than kept. Restore it wherever you like:
 
-Two things it guarantees:
+```bash
+docker exec -i archiyou-dev-postgres psql -U archiyou -d archiyou -c 'create database scratch;'
+docker exec -i archiyou-dev-postgres pg_restore -U archiyou -d scratch --no-owner \
+  < apps/server/data/db-backups/<stamp>/archiyou.dump
+```
 
-- **The remote read is consistent.** The snapshot is taken with `sqlite3
-  <db> ".backup"` — SQLite's online backup API — so it is safe against a running
-  server, needs no WAL checkpoint, and is `PRAGMA integrity_check`ed on the
-  server before a byte is transferred. The temporary snapshot is always deleted,
-  including when the download fails. *If the server has no `sqlite3` binary* the
-  script falls back to copying the live database plus its `-wal` and warns
-  loudly; `apt install sqlite3` there is the fix.
-- **The local database is never lost.** Whatever is in `apps/server/data/` is
-  copied to `apps/server/data/db-backups/<stamp>/` (database *and* its
-  `-wal`/`-shm`) before anything is replaced, and the newest `--keep` (default
-  10) of those are retained. Restore one with
-  `cp apps/server/data/db-backups/<stamp>/* apps/server/data/`.
+**Nothing is configured up front and no credential is ever stored.** It asks for the
+server and your username; the *password* is asked for by `ssh` itself, so this script
+never sees it — it cannot land in a file, in `ps` output, or in the environment. There
+is deliberately no key-file setting and no `.env` block. For `dump` you are asked
+**once**: the first connection is an ssh ControlMaster and every later command rides
+the same authenticated socket, which is closed on the way out. (Where ssh can already
+authenticate by itself — agent or `~/.ssh/config` — it just does not ask.) The
+non-secret answers are remembered in the gitignored
+`apps/server/data/.db-remote.json`, so the next run is two Enters.
 
-The swap only happens after the download has landed and been checked, so a
-failed run leaves the working database exactly as it was. The old `-wal`/`-shm`
-are deleted as part of the swap for the same reason step 4 of the restore recipe
-does it. **Stop the dev server first** — replacing the file underneath an open
-connection is how you get a corrupt one.
+Neither command writes to the remote database, and `dump` writes nothing outside
+`db-backups/`.
 
-Remember what you are pulling down: this is production data, including user
-records. Treat the copy — and the backups directory — accordingly.
+Remember what you are reaching: this is production data, including user records. Treat
+the tunnel, the copies and the backups directory accordingly.
 
 ### Why a script has no thumbnail
 

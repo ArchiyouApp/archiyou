@@ -7,13 +7,9 @@
  * released version, or the share menu prefills a version that already exists and
  * the next share is rejected by the unique (fileId, version) index.
  *
- * Runs against a throwaway SQLite file (SERVER_DATABASE_FILE is set before the
- * db client module is imported).
+ * Runs against a throwaway in-process PGlite database (SERVER_DATABASE_URL is set
+ * to memory:// before the db client module is imported).
  */
-
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 
@@ -37,14 +33,17 @@ function payload(over: Partial<ScriptData> = {}): Record<string, unknown> {
 }
 
 /** A file with one saved (unversioned) version; returns its fileId. */
-function newFile(name = 'thing'): string {
-  return store.create(AUTHOR, payload({ name })).fileId as string;
+async function newFile(name = 'thing'): Promise<string> {
+  return (await store.create(AUTHOR, payload({ name }))).fileId as string;
 }
 
 beforeAll(async () => {
-  process.env.SERVER_DATABASE_FILE = join(mkdtempSync(join(tmpdir(), 'ay-scriptstore-')), 'test.db');
+  // A fresh, empty PGlite database in this process — Postgres, same schema and
+  // migrations as the server, nothing to install. Set explicitly (never left to a
+  // developer's .env) so the suite can never reach a shared database.
+  process.env.SERVER_DATABASE_URL = 'memory://';
   const { runMigrations } = await import('../../src/db/migrate');
-  runMigrations();
+  await runMigrations();
   const mod = await import('../../src/services/ScriptStore');
   store = mod.scriptStore;
   ScriptStoreError = mod.ScriptStoreError;
@@ -53,94 +52,89 @@ beforeAll(async () => {
 });
 
 describe('ScriptStore sharing', () => {
-  it('resolves the latest SHARED script to the released version, not a later working copy', () => {
-    const fileId = newFile('latest-release');
-    store.share(AUTHOR, fileId, payload({ name: 'latest-release', version: '0.1', shared: SHARED }));
+  it('resolves the latest SHARED script to the released version, not a later working copy', async () => {
+    const fileId = await newFile('latest-release');
+    await store.share(AUTHOR, fileId, payload({ name: 'latest-release', version: '0.1', shared: SHARED }));
     // An ordinary save after sharing: inherits `shared`, has no version, and is
     // the newest row of the file.
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'latest-release', code: 'const a = 2;' }));
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'latest-release', code: 'const a = 2;' }));
 
-    const latest = store.getShared(AUTHOR, 'latest-release');
+    const latest = await store.getShared(AUTHOR, 'latest-release');
     expect(latest?.version).toBe('0.1');
-    expect(store.getSharedVersions(AUTHOR, 'latest-release')).toEqual(['0.1']);
+    expect(await store.getSharedVersions(AUTHOR, 'latest-release')).toEqual(['0.1']);
   });
 
-  it('lists the released version in the shared library, not the working copy', () => {
-    const fileId = newFile('listed');
-    store.share(AUTHOR, fileId, payload({ name: 'listed', version: '0.1', shared: SHARED }));
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'listed' }));
+  it('lists the released version in the shared library, not the working copy', async () => {
+    const fileId = await newFile('listed');
+    await store.share(AUTHOR, fileId, payload({ name: 'listed', version: '0.1', shared: SHARED }));
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'listed' }));
 
-    const listed = store.listSharedPublic().find((s) => s.name === 'listed');
+    const listed = (await store.listSharedPublic()).find((s) => s.name === 'listed');
     expect(listed?.version).toBe('0.1');
-    expect(store.listSharedByAuthor(AUTHOR).find((s) => s.name === 'listed')?.version).toBe('0.1');
+    expect((await store.listSharedByAuthor(AUTHOR)).find((s) => s.name === 'listed')?.version).toBe('0.1');
   });
 
-  it('picks the highest released version as latest', () => {
-    const fileId = newFile('multi');
-    store.share(AUTHOR, fileId, payload({ name: 'multi', version: '0.1', shared: SHARED }));
-    store.share(AUTHOR, fileId, payload({ name: 'multi', version: '0.2', shared: SHARED }));
+  it('picks the highest released version as latest', async () => {
+    const fileId = await newFile('multi');
+    await store.share(AUTHOR, fileId, payload({ name: 'multi', version: '0.1', shared: SHARED }));
+    await store.share(AUTHOR, fileId, payload({ name: 'multi', version: '0.2', shared: SHARED }));
 
-    expect(store.getShared(AUTHOR, 'multi')?.version).toBe('0.2');
-    expect(store.getSharedVersions(AUTHOR, 'multi')).toEqual(['0.2', '0.1']);
-    expect(store.getShared(AUTHOR, 'multi', '0.1')?.version).toBe('0.1');
+    expect((await store.getShared(AUTHOR, 'multi'))?.version).toBe('0.2');
+    expect(await store.getSharedVersions(AUTHOR, 'multi')).toEqual(['0.2', '0.1']);
+    expect((await store.getShared(AUTHOR, 'multi', '0.1'))?.version).toBe('0.1');
   });
 
-  it('still serves the unversioned working copy under :dev', () => {
-    const fileId = newFile('devtag');
-    store.share(AUTHOR, fileId, payload({ name: 'devtag', version: '0.1', shared: { ...SHARED, dev: true } }));
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'devtag', code: 'const a = 3;' }));
+  it('still serves the unversioned working copy under :dev', async () => {
+    const fileId = await newFile('devtag');
+    await store.share(AUTHOR, fileId, payload({ name: 'devtag', version: '0.1', shared: { ...SHARED, dev: true } }));
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'devtag', code: 'const a = 3;' }));
 
-    const dev = store.getShared(AUTHOR, 'devtag', 'dev');
+    const dev = await store.getShared(AUTHOR, 'devtag', 'dev');
     expect(dev?.version).toBeNull();
     expect(dev?.code).toBe('const a = 3;');
   });
 
-  it('rejects re-using a version of the same file (shared or published)', () => {
-    const fileId = newFile('collide');
-    store.share(AUTHOR, fileId, payload({ name: 'collide', version: '0.1', shared: SHARED }));
+  it('rejects re-using a version of the same file (shared or published)', async () => {
+    const fileId = await newFile('collide');
+    await store.share(AUTHOR, fileId, payload({ name: 'collide', version: '0.1', shared: SHARED }));
 
-    expect(() =>
+    await expect(
       store.share(AUTHOR, fileId, payload({ name: 'collide', version: '0.1', shared: SHARED })),
-    ).toThrow(/already exists/);
+    ).rejects.toThrow(/already exists/);
 
     // Publishing under a version the file already shared collides too — the
     // menus must offer a version taken from the whole file, not one library.
-    const err = (() => {
-      try {
-        store.publish(
-          AUTHOR,
-          fileId,
-          payload({ name: 'collide', version: '0.1', published: { public: true, fulfillments: [] } }),
-        );
-        return null;
-      } catch (e) {
-        return e;
-      }
-    })();
+    const err = await store
+      .publish(
+        AUTHOR,
+        fileId,
+        payload({ name: 'collide', version: '0.1', published: { public: true, fulfillments: [] } }),
+      )
+      .then(() => null, (e) => e);
     expect(err).toBeInstanceOf(ScriptStoreError);
   });
 
-  it('reports every version of a file (both libraries) via listVersions', () => {
-    const fileId = newFile('history');
-    store.share(AUTHOR, fileId, payload({ name: 'history', version: '0.1', shared: SHARED }));
-    store.publish(
+  it('reports every version of a file (both libraries) via listVersions', async () => {
+    const fileId = await newFile('history');
+    await store.share(AUTHOR, fileId, payload({ name: 'history', version: '0.1', shared: SHARED }));
+    await store.publish(
       AUTHOR,
       fileId,
       payload({ name: 'history', version: '0.2', published: { public: true, fulfillments: [] } }),
     );
 
-    const versions = store.listVersions(AUTHOR, fileId).map((v) => v.version);
+    const versions = (await store.listVersions(AUTHOR, fileId)).map((v) => v.version);
     expect(versions).toContain('0.1');
     expect(versions).toContain('0.2');
     expect(versions).toContain(null); // the initial working copy
   });
 
-  it('falls back to the newest working copy for a file that has no release', () => {
-    const fileId = newFile('unreleased');
-    store.setShared(AUTHOR, fileId, SHARED);
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'unreleased', code: 'const a = 9;' }));
+  it('falls back to the newest working copy for a file that has no release', async () => {
+    const fileId = await newFile('unreleased');
+    await store.setShared(AUTHOR, fileId, SHARED);
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'unreleased', code: 'const a = 9;' }));
 
-    const latest = store.getShared(AUTHOR, 'unreleased');
+    const latest = await store.getShared(AUTHOR, 'unreleased');
     expect(latest?.version).toBeNull();
     expect(latest?.code).toBe('const a = 9;');
   });
@@ -156,51 +150,51 @@ describe('ScriptStore rename fallback', () => {
   const tick = () => new Promise((r) => setTimeout(r, 5));
 
   it('resolves an old name to the latest version of the renamed file (own scripts)', async () => {
-    const fileId = newFile('oldwall');
+    const fileId = await newFile('oldwall');
     await tick();
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'newwall', code: 'const renamed = 1;' }));
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'newwall', code: 'const renamed = 1;' }));
 
-    const byOld = store.getFileByName(AUTHOR, 'OldWall');
+    const byOld = await store.getFileByName(AUTHOR, 'OldWall');
     expect(byOld.fileId).toBe(fileId);
     expect(byOld.name).toBe('newwall');
     expect(byOld.code).toBe('const renamed = 1;');
-    expect(store.getFileByName(AUTHOR, 'newwall').fileId).toBe(fileId);
+    expect((await store.getFileByName(AUTHOR, 'newwall')).fileId).toBe(fileId);
   });
 
   it('prefers a file currently holding the name over one renamed away from it', async () => {
-    const renamedId = newFile('taken');
+    const renamedId = await newFile('taken');
     await tick();
-    store.saveVersion(AUTHOR, renamedId, payload({ name: 'moved' }));
+    await store.saveVersion(AUTHOR, renamedId, payload({ name: 'moved' }));
     await tick();
-    const currentId = newFile('taken');
+    const currentId = await newFile('taken');
 
-    expect(store.getFileByName(AUTHOR, 'taken').fileId).toBe(currentId);
+    expect((await store.getFileByName(AUTHOR, 'taken')).fileId).toBe(currentId);
   });
 
-  it('throws not_found for a name no script ever had', () => {
-    expect(() => store.getFileByName(AUTHOR, 'never-existed')).toThrow(ScriptStoreError);
+  it('throws not_found for a name no script ever had', async () => {
+    await expect(store.getFileByName(AUTHOR, 'never-existed')).rejects.toThrow(ScriptStoreError);
   });
 
   it('serves the latest SHARED release of a renamed file under its old name', async () => {
-    const fileId = newFile('oldbeam');
+    const fileId = await newFile('oldbeam');
     await tick();
-    store.share(AUTHOR, fileId, payload({ name: 'oldbeam', version: '0.1', shared: SHARED }));
+    await store.share(AUTHOR, fileId, payload({ name: 'oldbeam', version: '0.1', shared: SHARED }));
     await tick();
-    store.share(AUTHOR, fileId, payload({ name: 'newbeam', version: '0.2', code: 'const v = 2;', shared: SHARED }));
+    await store.share(AUTHOR, fileId, payload({ name: 'newbeam', version: '0.2', code: 'const v = 2;', shared: SHARED }));
 
-    const latest = store.getShared(AUTHOR, 'oldbeam');
+    const latest = await store.getShared(AUTHOR, 'oldbeam');
     expect(latest?.version).toBe('0.2');
     expect(latest?.name).toBe('newbeam');
-    expect(store.getShared(AUTHOR, 'oldbeam', '0.1')?.name).toBe('oldbeam');
-    expect(store.getSharedVersions(AUTHOR, 'oldbeam')).toEqual(['0.2', '0.1']);
+    expect((await store.getShared(AUTHOR, 'oldbeam', '0.1'))?.name).toBe('oldbeam');
+    expect(await store.getSharedVersions(AUTHOR, 'oldbeam')).toEqual(['0.2', '0.1']);
   });
 
   it('resolves an old name that was only ever used for unshared working copies', async () => {
-    const fileId = newFile('oldpost');
+    const fileId = await newFile('oldpost');
     await tick();
-    store.share(AUTHOR, fileId, payload({ name: 'newpost', version: '0.1', shared: SHARED }));
+    await store.share(AUTHOR, fileId, payload({ name: 'newpost', version: '0.1', shared: SHARED }));
 
-    expect(store.getShared(AUTHOR, 'oldpost')?.name).toBe('newpost');
+    expect((await store.getShared(AUTHOR, 'oldpost'))?.name).toBe('newpost');
   });
 });
 
@@ -218,9 +212,9 @@ describe('ScriptStore validated flag', () => {
   const PUBLISHED = { public: true, fulfillments: [] };
 
   /** A published version owned by AUTHOR; returns its row id. */
-  function newPublished(name: string, over: Record<string, unknown> = {}): string {
-    const fileId = newFile(name);
-    const data = store.publish(
+  async function newPublished(name: string, over: Record<string, unknown> = {}): Promise<string> {
+    const fileId = await newFile(name);
+    const data = await store.publish(
       AUTHOR,
       fileId,
       payload({ name, version: '0.1', published: { ...PUBLISHED, ...over } }),
@@ -228,15 +222,15 @@ describe('ScriptStore validated flag', () => {
     return data.id as string;
   }
 
-  it('ignores a client trying to publish itself as validated', () => {
-    const id = newPublished('self-validate', { validated: true });
-    expect(store.findVersionById(AUTHOR, id)?.published?.validated).toBe(false);
+  it('ignores a client trying to publish itself as validated', async () => {
+    const id = await newPublished('self-validate', { validated: true });
+    expect((await store.findVersionById(AUTHOR, id))?.published?.validated).toBe(false);
   });
 
-  it('ignores a client trying to share itself as validated', () => {
+  it('ignores a client trying to share itself as validated', async () => {
     // share() goes through the same toRow() funnel, so it must be closed too.
-    const fileId = newFile('share-validate');
-    const data = store.share(
+    const fileId = await newFile('share-validate');
+    const data = await store.share(
       AUTHOR,
       fileId,
       payload({
@@ -249,92 +243,92 @@ describe('ScriptStore validated flag', () => {
     expect(data.published?.validated).toBe(false);
   });
 
-  it('reports validated as an explicit false, never undefined', () => {
+  it('reports validated as an explicit false, never undefined', async () => {
     // Callers gate execution on this, so `undefined` vs `false` must not be a
     // distinction any of them has to make.
-    const id = newPublished('explicit-false');
-    expect(store.findVersionById(AUTHOR, id)?.published?.validated).toBe(false);
+    const id = await newPublished('explicit-false');
+    expect((await store.findVersionById(AUTHOR, id))?.published?.validated).toBe(false);
   });
 
-  it('setValidated turns it on and back off', () => {
-    const id = newPublished('toggle');
-    expect(store.setValidated(id, true).published?.validated).toBe(true);
-    expect(store.findVersionById(AUTHOR, id)?.published?.validated).toBe(true);
-    expect(store.setValidated(id, false).published?.validated).toBe(false);
+  it('setValidated turns it on and back off', async () => {
+    const id = await newPublished('toggle');
+    expect((await store.setValidated(id, true)).published?.validated).toBe(true);
+    expect((await store.findVersionById(AUTHOR, id))?.published?.validated).toBe(true);
+    expect((await store.setValidated(id, false)).published?.validated).toBe(false);
   });
 
-  it('setValidated does not touch `updated`', () => {
+  it('setValidated does not touch `updated`', async () => {
     // Validating is not a content edit: it must not reshuffle "newest first" ordering.
-    const id = newPublished('no-reorder');
-    const before = store.findVersionById(AUTHOR, id)?.updated;
-    store.setValidated(id, true);
-    expect(store.findVersionById(AUTHOR, id)?.updated).toBe(before);
+    const id = await newPublished('no-reorder');
+    const before = (await store.findVersionById(AUTHOR, id))?.updated;
+    await store.setValidated(id, true);
+    expect((await store.findVersionById(AUTHOR, id))?.updated).toBe(before);
   });
 
-  it('setValidated refuses a version that is not published', () => {
-    const fileId = newFile('unpublished');
-    const working = store.listVersions(AUTHOR, fileId)[0].id;
-    expect(() => store.setValidated(working, true)).toThrow(ScriptStoreError);
+  it('setValidated refuses a version that is not published', async () => {
+    const fileId = await newFile('unpublished');
+    const working = (await store.listVersions(AUTHOR, fileId))[0].id;
+    await expect(store.setValidated(working, true)).rejects.toThrow(ScriptStoreError);
   });
 
-  it('preserves validated across an owner metadata edit', () => {
-    const id = newPublished('metadata-edit');
-    store.setValidated(id, true);
-    const edited = store.updatePublishedVersion(AUTHOR, id, {
+  it('preserves validated across an owner metadata edit', async () => {
+    const id = await newPublished('metadata-edit');
+    await store.setValidated(id, true);
+    const edited = await store.updatePublishedVersion(AUTHOR, id, {
       ...PUBLISHED,
       title: 'a new title',
     });
     expect(edited.published?.validated).toBe(true);
   });
 
-  it('an owner cannot clear validated by editing metadata', () => {
-    const id = newPublished('cannot-clear');
-    store.setValidated(id, true);
-    const edited = store.updatePublishedVersion(AUTHOR, id, { ...PUBLISHED, validated: false });
+  it('an owner cannot clear validated by editing metadata', async () => {
+    const id = await newPublished('cannot-clear');
+    await store.setValidated(id, true);
+    const edited = await store.updatePublishedVersion(AUTHOR, id, { ...PUBLISHED, validated: false });
     expect(edited.published?.validated).toBe(true);
   });
 
-  it('an owner cannot grant validated by editing metadata', () => {
-    const id = newPublished('cannot-grant');
-    const edited = store.updatePublishedVersion(AUTHOR, id, { ...PUBLISHED, validated: true });
+  it('an owner cannot grant validated by editing metadata', async () => {
+    const id = await newPublished('cannot-grant');
+    const edited = await store.updatePublishedVersion(AUTHOR, id, { ...PUBLISHED, validated: true });
     expect(edited.published?.validated).toBe(false);
   });
 
-  it('a newly published version starts unvalidated even when an earlier one is validated', () => {
+  it('a newly published version starts unvalidated even when an earlier one is validated', async () => {
     // The core reason validation is per-version: republishing ships new code.
-    const fileId = newFile('bump');
-    const v1 = store.publish(
+    const fileId = await newFile('bump');
+    const v1 = await store.publish(
       AUTHOR, fileId,
       payload({ name: 'bump', version: '0.1', published: PUBLISHED }),
     );
-    store.setValidated(v1.id as string, true);
+    await store.setValidated(v1.id as string, true);
 
-    const v2 = store.publish(
+    const v2 = await store.publish(
       AUTHOR, fileId,
       payload({ name: 'bump', version: '0.2', code: 'const evil = 1;', published: PUBLISHED }),
     );
     expect(v2.published?.validated).toBe(false);
-    expect(store.findVersionById(AUTHOR, v1.id as string)?.published?.validated).toBe(true);
+    expect((await store.findVersionById(AUTHOR, v1.id as string))?.published?.validated).toBe(true);
   });
 });
 
 describe('ScriptStore.listPublishedConfigurators', () => {
   const PUBLIC = { public: true, fulfillments: [] };
 
-  it('spans authors and filters on the validated flag', () => {
-    const mine = store.publish(
-      AUTHOR, newFile('admin-list-a'),
+  it('spans authors and filters on the validated flag', async () => {
+    const mine = await store.publish(
+      AUTHOR, await newFile('admin-list-a'),
       payload({ name: 'admin-list-a', version: '0.1', published: PUBLIC }),
     );
-    store.create('someoneelse', payload({ name: 'admin-list-b' }));
-    store.setValidated(mine.id as string, true);
+    await store.create('someoneelse', payload({ name: 'admin-list-b' }));
+    await store.setValidated(mine.id as string, true);
 
-    const versionIds = (list: ReturnType<ScriptStore['listPublishedConfigurators']>) =>
+    const versionIds = (list: Awaited<ReturnType<ScriptStore['listPublishedConfigurators']>>) =>
       list.configurators.flatMap((c) => c.versions.map((v) => v.id));
 
-    expect(versionIds(store.listPublishedConfigurators({ validated: true }))).toContain(mine.id);
+    expect(versionIds(await store.listPublishedConfigurators({ validated: true }))).toContain(mine.id);
 
-    const unvalidated = store.listPublishedConfigurators({ validated: false });
+    const unvalidated = await store.listPublishedConfigurators({ validated: false });
     expect(versionIds(unvalidated)).not.toContain(mine.id);
     // Rows predating the feature have no `validated` key at all; `IS NOT 1` must
     // still count them as unvalidated rather than dropping them from the list.
@@ -342,20 +336,20 @@ describe('ScriptStore.listPublishedConfigurators', () => {
   });
 
   it('groups versions per file, newest version first, and orders files by their latest update', async () => {
-    const older = newFile('admin-group-older');
-    store.publish(AUTHOR, older, payload({ name: 'admin-group-older', version: '0.1', published: PUBLIC }));
+    const older = await newFile('admin-group-older');
+    await store.publish(AUTHOR, older, payload({ name: 'admin-group-older', version: '0.1', published: PUBLIC }));
     // A minute back, so the order does not hang on two publishes landing in one millisecond
     const { db } = await import('../../src/db/client');
     const { scriptVersions } = await import('../../src/db/schema');
     const { eq } = await import('drizzle-orm');
-    db.update(scriptVersions).set({ updated: new Date(Date.now() - 60_000) })
-      .where(eq(scriptVersions.fileId, older)).run();
+    await db.update(scriptVersions).set({ updated: new Date(Date.now() - 60_000) })
+      .where(eq(scriptVersions.fileId, older));
 
-    const grouped = newFile('admin-group');
-    const v1 = store.publish(AUTHOR, grouped, payload({ name: 'admin-group', version: '0.9', published: PUBLIC }));
-    const v2 = store.publish(AUTHOR, grouped, payload({ name: 'admin-group', version: '0.10', published: PUBLIC }));
+    const grouped = await newFile('admin-group');
+    const v1 = await store.publish(AUTHOR, grouped, payload({ name: 'admin-group', version: '0.9', published: PUBLIC }));
+    const v2 = await store.publish(AUTHOR, grouped, payload({ name: 'admin-group', version: '0.10', published: PUBLIC }));
 
-    const { configurators } = store.listPublishedConfigurators({ q: 'admin-group' });
+    const { configurators } = await store.listPublishedConfigurators({ q: 'admin-group' });
     expect(configurators.map((c) => c.fileId)).toEqual([grouped, older]);
     expect(configurators[0].name).toBe('admin-group');
     expect(configurators[0].versions.map((v) => v.id)).toEqual([v2.id, v1.id]); // semver, not string order
@@ -363,38 +357,38 @@ describe('ScriptStore.listPublishedConfigurators', () => {
   });
 
   it('leaves out published rows without a version', async () => {
-    const fileId = newFile('admin-unversioned');
+    const fileId = await newFile('admin-unversioned');
     const { db } = await import('../../src/db/client');
     const { scriptVersions } = await import('../../src/db/schema');
     const { eq } = await import('drizzle-orm');
-    db.update(scriptVersions).set({ published: PUBLIC as ScriptData['published'] })
-      .where(eq(scriptVersions.fileId, fileId)).run();
+    await db.update(scriptVersions).set({ published: PUBLIC as ScriptData['published'] })
+      .where(eq(scriptVersions.fileId, fileId));
 
-    const { configurators } = store.listPublishedConfigurators({ q: 'admin-unversioned' });
+    const { configurators } = await store.listPublishedConfigurators({ q: 'admin-unversioned' });
     expect(configurators).toEqual([]);
   });
 
-  it('filters by author and pages by file, with a total independent of the limit', () => {
-    const all = store.listPublishedConfigurators({ author: AUTHOR });
+  it('filters by author and pages by file, with a total independent of the limit', async () => {
+    const all = await store.listPublishedConfigurators({ author: AUTHOR });
     expect(all.configurators.length).toBeGreaterThan(1);
     expect(all.total).toBe(all.configurators.length);
 
-    const paged = store.listPublishedConfigurators({ author: AUTHOR, limit: 1 });
+    const paged = await store.listPublishedConfigurators({ author: AUTHOR, limit: 1 });
     expect(paged.configurators).toHaveLength(1);
     expect(paged.total).toBe(all.total);
 
-    expect(store.listPublishedConfigurators({ author: 'nobody' }).total).toBe(0);
+    expect((await store.listPublishedConfigurators({ author: 'nobody' })).total).toBe(0);
   });
 });
 
 describe('ScriptStore create', () => {
-  it('refuses to create a script that already exists, as a conflict (409) and not a version clash', () => {
+  it('refuses to create a script that already exists, as a conflict (409) and not a version clash', async () => {
     // The editor sends a create for a file it does not know is on the server (its load-time
     // pull did not run). That used to fail as 'invalid' with "Version null already exists",
     // which the editor could not tell from a real problem and dropped the save.
-    const first = store.create(AUTHOR, payload({ name: 'created-twice' }));
+    const first = await store.create(AUTHOR, payload({ name: 'created-twice' }));
     try {
-      store.create(AUTHOR, payload({ name: 'created-twice', id: first.id, fileId: first.fileId }));
+      await store.create(AUTHOR, payload({ name: 'created-twice', id: first.id, fileId: first.fileId }));
       expect.unreachable('a second create with the same id must throw');
     } catch (e) {
       expect(e).toBeInstanceOf(ScriptStoreError);
@@ -416,94 +410,94 @@ describe('ScriptStore autosave merging', () => {
   afterEach(() => { store.coalesceMs = 0; });
 
   it('merges saves inside the window into one row', async () => {
-    const fileId = newFile('merged');
-    const [first] = store.listVersions(AUTHOR, fileId);
+    const fileId = await newFile('merged');
+    const [first] = await store.listVersions(AUTHOR, fileId);
     await tick();
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'merged', code: 'const a = 2;' }));
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'merged', code: 'const a = 2;' }));
     await tick();
-    const saved = store.saveVersion(AUTHOR, fileId, payload({ name: 'merged', code: 'const a = 3;\nconst b = 4;' }));
+    const saved = await store.saveVersion(AUTHOR, fileId, payload({ name: 'merged', code: 'const a = 3;\nconst b = 4;' }));
 
-    const versions = store.listVersions(AUTHOR, fileId);
+    const versions = await store.listVersions(AUTHOR, fileId);
     expect(versions).toHaveLength(1);
     expect(versions[0].id).toBe(first.id);
     expect(versions[0].created).toBe(first.created);
     expect(versions[0].updated).toBeGreaterThan(first.updated);
     expect(versions[0].lines).toBe(2);
     expect(saved.id).toBe(first.id);
-    expect(store.getFile(AUTHOR, fileId).code).toBe('const a = 3;\nconst b = 4;');
+    expect((await store.getFile(AUTHOR, fileId)).code).toBe('const a = 3;\nconst b = 4;');
   });
 
   it('appends a row once the window has passed', async () => {
     store.coalesceMs = 20;
-    const fileId = newFile('windowed');
+    const fileId = await newFile('windowed');
     await tick(30);
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'windowed', code: 'const a = 2;' }));
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'windowed', code: 'const a = 2;' }));
 
-    expect(store.listVersions(AUTHOR, fileId)).toHaveLength(2);
+    expect(await store.listVersions(AUTHOR, fileId)).toHaveLength(2);
   });
 
   it('appends on a rename, and the old name still resolves', async () => {
-    const fileId = newFile('before-rename');
+    const fileId = await newFile('before-rename');
     await tick();
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'after-rename' }));
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'after-rename' }));
 
-    expect(store.listVersions(AUTHOR, fileId).map((v) => v.name)).toEqual(['after-rename', 'before-rename']);
-    expect(store.getFileByName(AUTHOR, 'before-rename').fileId).toBe(fileId);
+    expect((await store.listVersions(AUTHOR, fileId)).map((v) => v.name)).toEqual(['after-rename', 'before-rename']);
+    expect((await store.getFileByName(AUTHOR, 'before-rename')).fileId).toBe(fileId);
   });
 
   it('always appends a checkpoint', async () => {
-    const fileId = newFile('checkpointed');
+    const fileId = await newFile('checkpointed');
     await tick();
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'checkpointed', code: 'const restored = 1;' }), { checkpoint: true });
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'checkpointed', code: 'const restored = 1;' }), { checkpoint: true });
 
-    expect(store.listVersions(AUTHOR, fileId)).toHaveLength(2);
+    expect(await store.listVersions(AUTHOR, fileId)).toHaveLength(2);
   });
 
   it('never overwrites a shared or published version', async () => {
-    const fileId = newFile('released');
-    store.share(AUTHOR, fileId, payload({ name: 'released', version: '0.1', shared: SHARED }));
+    const fileId = await newFile('released');
+    await store.share(AUTHOR, fileId, payload({ name: 'released', version: '0.1', shared: SHARED }));
     await tick();
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'released', code: 'const a = 2;' }));
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'released', code: 'const a = 2;' }));
     await tick();
-    store.publish(AUTHOR, fileId, payload({ name: 'released', version: '0.2', published: { public: true, fulfillments: [] } }));
+    await store.publish(AUTHOR, fileId, payload({ name: 'released', version: '0.2', published: { public: true, fulfillments: [] } }));
     await tick();
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'released', code: 'const a = 3;' }));
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'released', code: 'const a = 3;' }));
 
-    const versions = store.listVersions(AUTHOR, fileId).map((v) => v.version);
+    const versions = (await store.listVersions(AUTHOR, fileId)).map((v) => v.version);
     expect(versions).toEqual([null, '0.2', null, '0.1', null]);
-    expect(store.getShared(AUTHOR, 'released', '0.1')?.code).toBe('const a = 1;');
-    expect(store.getPublished(AUTHOR, 'released', '0.2')?.code).toBe('const a = 1;');
+    expect((await store.getShared(AUTHOR, 'released', '0.1'))?.code).toBe('const a = 1;');
+    expect((await store.getPublished(AUTHOR, 'released', '0.2'))?.code).toBe('const a = 1;');
   });
 
   it('merges working copies that carry published metadata', async () => {
     // After publishing, the editor keeps `published` on its script, so every autosave
     // carries it. Those rows are still unversioned working copies.
-    const fileId = newFile('republished');
-    store.publish(AUTHOR, fileId, payload({ name: 'republished', version: '0.1', published: { public: true, fulfillments: [] } }));
+    const fileId = await newFile('republished');
+    await store.publish(AUTHOR, fileId, payload({ name: 'republished', version: '0.1', published: { public: true, fulfillments: [] } }));
     await tick();
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'republished', code: 'const a = 2;', published: { public: true, fulfillments: [] } }));
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'republished', code: 'const a = 2;', published: { public: true, fulfillments: [] } }));
     await tick();
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'republished', code: 'const a = 3;', published: { public: true, fulfillments: [] } }));
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'republished', code: 'const a = 3;', published: { public: true, fulfillments: [] } }));
 
-    expect(store.listVersions(AUTHOR, fileId).map((v) => v.version)).toEqual([null, '0.1', null]);
+    expect((await store.listVersions(AUTHOR, fileId)).map((v) => v.version)).toEqual([null, '0.1', null]);
   });
 
   it('writes nothing for a save that changes nothing, even after the window', async () => {
     store.coalesceMs = 20;
-    const fileId = newFile('unchanged');
-    const [before] = store.listVersions(AUTHOR, fileId);
+    const fileId = await newFile('unchanged');
+    const [before] = await store.listVersions(AUTHOR, fileId);
     await tick(30);
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'unchanged' }));
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'unchanged' }));
 
-    expect(store.listVersions(AUTHOR, fileId)).toEqual([before]);
+    expect(await store.listVersions(AUTHOR, fileId)).toEqual([before]);
   });
 
   it('keeps the thumbnail on a merged row', async () => {
-    const fileId = newFile('pictured');
-    store.setFileThumbnail(AUTHOR, fileId, '/thumbs/pictured.png');
+    const fileId = await newFile('pictured');
+    await store.setFileThumbnail(AUTHOR, fileId, '/thumbs/pictured.png');
     await tick();
-    store.saveVersion(AUTHOR, fileId, payload({ name: 'pictured', code: 'const a = 2;' }));
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'pictured', code: 'const a = 2;' }));
 
-    expect(store.getFile(AUTHOR, fileId).thumbnail).toBe('/thumbs/pictured.png');
+    expect((await store.getFile(AUTHOR, fileId)).thumbnail).toBe('/thumbs/pictured.png');
   });
 });

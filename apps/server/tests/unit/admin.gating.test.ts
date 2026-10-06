@@ -13,9 +13,6 @@
  * is exactly wrong for a review queue, so acting on somebody else's script has to
  * keep working.
  */
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
@@ -29,9 +26,9 @@ let userService: typeof import('../../src/services/UserService').userService;
 let scriptStore: typeof import('../../src/services/ScriptStore').scriptStore;
 
 /** A published version owned by `author`; returns its row id. */
-function publish(author: string, name: string, version = '0.1'): string {
-  const fileId = scriptStore.create(author, { name, code: 'box(10,10,10);' }).fileId as string;
-  const data = scriptStore.publish(author, fileId, {
+async function publish(author: string, name: string, version = '0.1'): Promise<string> {
+  const fileId = (await scriptStore.create(author, { name, code: 'box(10,10,10);' })).fileId as string;
+  const data = await scriptStore.publish(author, fileId, {
     name, version, code: 'box(10,10,10);',
     published: { public: true, fulfillments: [] },
   } as unknown as Record<string, unknown>);
@@ -46,7 +43,7 @@ async function buildApp(): Promise<FastifyInstance> {
   instance.decorate('requireAdmin', async (request: FastifyRequest, reply: FastifyReply) => {
     try { await request.jwtVerify(); }
     catch { reply.code(401).send({ success: false, error: 'Unauthorized' }); return; }
-    if (!userService.isAdmin(request.user.sub)) {
+    if (!(await userService.isAdmin(request.user.sub))) {
       reply.code(403).send({ success: false, error: 'Admin only', code: 'not_admin' });
     }
   });
@@ -64,26 +61,29 @@ const auth = (sub: string) => ({ authorization: `Bearer ${tokenFor(sub)}` });
 let aliceScript: string;
 
 beforeAll(async () => {
-  process.env.SERVER_DATABASE_FILE = join(mkdtempSync(join(tmpdir(), 'ay-admin-')), 'test.db');
+  // A fresh, empty PGlite database in this process — Postgres, same schema and
+  // migrations as the server, nothing to install. Set explicitly (never left to a
+  // developer's .env) so the suite can never reach a shared database.
+  process.env.SERVER_DATABASE_URL = 'memory://';
   const { runMigrations } = await import('../../src/db/migrate');
-  runMigrations();
+  await runMigrations();
 
   ({ userService } = await import('../../src/services/UserService'));
   ({ scriptStore } = await import('../../src/services/ScriptStore'));
 
   await userService.register('root@example.com', 'password123', 'root');
   await userService.register('alice@example.com', 'password123', 'alice');
-  userService.setAdmin('root', true);
+  await userService.setAdmin('root', true);
 
-  aliceScript = publish('alice', 'chair');
+  aliceScript = await publish('alice', 'chair');
 
   app = await buildApp();
 });
 
-beforeEach(() => {
-  userService.setAdmin('root', true);
-  userService.setAdmin('alice', false);
-  scriptStore.setValidated(aliceScript, false);
+beforeEach(async () => {
+  await userService.setAdmin('root', true);
+  await userService.setAdmin('alice', false);
+  await scriptStore.setValidated(aliceScript, false);
 });
 
 afterAll(async () => { await app.close(); });
@@ -122,7 +122,7 @@ describe('admin routes — the gate', () => {
     // no revocation list, so a baked-in claim would outlive the withdrawal by a week.
     const token = auth('root');
     expect((await app.inject({ method: 'GET', url: '/admin/configurators', headers: token })).statusCode).toBe(200);
-    userService.setAdmin('root', false);
+    await userService.setAdmin('root', false);
     expect((await app.inject({ method: 'GET', url: '/admin/configurators', headers: token })).statusCode).toBe(403);
   });
 });
@@ -136,7 +136,7 @@ describe('admin routes — validating a configurator', () => {
     });
     expect(on.statusCode).toBe(200);
     expect((on.json().data as ScriptData).published?.validated).toBe(true);
-    expect(scriptStore.findAnyVersionById(aliceScript)?.published?.validated).toBe(true);
+    expect((await scriptStore.findAnyVersionById(aliceScript))?.published?.validated).toBe(true);
 
     const off = await app.inject({
       method: 'PUT', url: `/admin/configurators/${aliceScript}/validated`,
@@ -152,7 +152,7 @@ describe('admin routes — validating a configurator', () => {
       payload: { validated: true }, headers: auth('alice'),
     });
     expect(res.statusCode).toBe(403);
-    expect(scriptStore.findAnyVersionById(aliceScript)?.published?.validated).toBe(false);
+    expect((await scriptStore.findAnyVersionById(aliceScript))?.published?.validated).toBe(false);
   });
 
   it('422s a body that is not a boolean', async () => {
@@ -201,7 +201,7 @@ describe('admin routes — the review list', () => {
   });
 
   it('filters on validated', async () => {
-    scriptStore.setValidated(aliceScript, true);
+    await scriptStore.setValidated(aliceScript, true);
     const yes = await app.inject({
       method: 'GET', url: '/admin/configurators?validated=true', headers: auth('root'),
     });

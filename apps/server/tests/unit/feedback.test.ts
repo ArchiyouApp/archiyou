@@ -2,9 +2,6 @@
  * tests/unit/feedback.test.ts — visitor feedback: the public POST /feedback route and
  * the operator-only list/star/delete routes under /admin/feedback.
  */
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
@@ -21,7 +18,7 @@ async function buildApp(): Promise<FastifyInstance> {
   instance.decorate('requireAdmin', async (request: FastifyRequest, reply: FastifyReply) => {
     try { await request.jwtVerify(); }
     catch { reply.code(401).send({ success: false, error: 'Unauthorized' }); return; }
-    if (!userService.isAdmin(request.user.sub)) {
+    if (!(await userService.isAdmin(request.user.sub))) {
       reply.code(403).send({ success: false, error: 'Admin only', code: 'not_admin' });
     }
   });
@@ -44,15 +41,18 @@ const list = async (query = '') =>
   (await app.inject({ method: 'GET', url: `/admin/feedback${query}`, headers: auth('root') })).json();
 
 beforeAll(async () => {
-  process.env.SERVER_DATABASE_FILE = join(mkdtempSync(join(tmpdir(), 'ay-feedback-')), 'test.db');
+  // A fresh, empty PGlite database in this process — Postgres, same schema and
+  // migrations as the server, nothing to install. Set explicitly (never left to a
+  // developer's .env) so the suite can never reach a shared database.
+  process.env.SERVER_DATABASE_URL = 'memory://';
   process.env.SERVER_FEEDBACK_RATE_LIMIT = '1000';
   const { runMigrations } = await import('../../src/db/migrate');
-  runMigrations();
+  await runMigrations();
 
   ({ userService } = await import('../../src/services/UserService'));
   await userService.register('root@example.com', 'password123', 'root');
   await userService.register('alice@example.com', 'password123', 'alice');
-  userService.setAdmin('root', true);
+  await userService.setAdmin('root', true);
 
   app = await buildApp();
 });

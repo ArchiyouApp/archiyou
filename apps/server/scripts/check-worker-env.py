@@ -17,7 +17,12 @@ import sys
 
 import yaml
 
-FORBIDDEN_SUBSTRINGS = ('JWT', 'MAILGUN', 'ADMIN_PASSWORD')
+# DATABASE_URL and POSTGRES_* matter as much as the signing key now that the scripts
+# live in a shared PostgreSQL instance rather than a file the worker never opened: a
+# compromised script reading those out of process.env owns every user's library, not
+# just this container. The worker takes jobs off Redis and returns results there; it has
+# never needed the database and must not be able to reach it.
+FORBIDDEN_SUBSTRINGS = ('JWT', 'MAILGUN', 'ADMIN_PASSWORD', 'DATABASE_URL', 'POSTGRES')
 
 
 def main() -> int:

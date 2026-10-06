@@ -48,7 +48,8 @@ async function optionalUser(request: FastifyRequest): Promise<string | null> {
 
 /** Bind the ScriptStore accessors for a library kind. The shared `list` returns
  *  only community shares (no `onlyUsers`); restricted shares surface via the
- *  authed `/scripts/shared/with-me` route. */
+ *  authed `/scripts/shared/with-me` route. Every thunk returns a promise — the
+ *  store is async — so its four consumers below all await. */
 function accessors(kind: LibraryKind) {
   return kind === 'published'
     ? {
@@ -77,7 +78,7 @@ function registerKind(fastify: FastifyInstance, kind: LibraryKind): void {
       { preHandler: fastify.authenticate },
       async (request, reply): Promise<GetResponse> => {
         try {
-          return { success: true, data: scriptStore.listSharedWithUser(request.user.sub) };
+          return { success: true, data: await scriptStore.listSharedWithUser(request.user.sub) };
         } catch (error) {
           return fail(reply, 500, `Failed to load shared-with-me scripts: ${(error as Error).message}`);
         }
@@ -88,7 +89,7 @@ function registerKind(fastify: FastifyInstance, kind: LibraryKind): void {
   // All scripts in this library.
   fastify.get(base, async (_request, reply): Promise<GetResponse> => {
     try {
-      return { success: true, data: a.list() };
+      return { success: true, data: await a.list() };
     } catch (error) {
       return fail(reply, 500, `Failed to load ${kind} scripts: ${(error as Error).message}`);
     }
@@ -97,7 +98,7 @@ function registerKind(fastify: FastifyInstance, kind: LibraryKind): void {
   // By author.
   fastify.get<{ Params: { user: string } }>(`${base}/:user`, async (request, reply): Promise<GetResponse> => {
     try {
-      return { success: true, data: a.byAuthor(request.params.user) };
+      return { success: true, data: await a.byAuthor(request.params.user) };
     } catch (error) {
       return fail(reply, 500, `Failed to load ${kind} scripts for ${request.params.user}: ${(error as Error).message}`);
     }
@@ -108,7 +109,7 @@ function registerKind(fastify: FastifyInstance, kind: LibraryKind): void {
     `${base}/:user/:scriptName/versions`,
     async (request, reply): Promise<GetResponse> => {
       try {
-        return { success: true, data: a.versions(request.params.user, request.params.scriptName) };
+        return { success: true, data: await a.versions(request.params.user, request.params.scriptName) };
       } catch (error) {
         return fail(reply, 500, `Failed to get versions for "${request.params.user}/${request.params.scriptName}": ${(error as Error).message}`);
       }
@@ -132,7 +133,7 @@ function registerKind(fastify: FastifyInstance, kind: LibraryKind): void {
               ? semver.valid(semver.coerce(version)) ?? undefined
               : undefined;
 
-        const script = a.get(user, scriptName, resolved);
+        const script = await a.get(user, scriptName, resolved);
         if (!script) {
           return fail(reply, 404, `Script "${user}/${scriptName}:${version ?? 'latest'}" not found in ${kind}`);
         }

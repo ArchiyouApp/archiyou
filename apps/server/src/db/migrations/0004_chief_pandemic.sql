@@ -1,1 +1,0 @@
-ALTER TABLE `users` ADD `modules` text DEFAULT '[]' NOT NULL;

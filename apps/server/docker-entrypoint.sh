@@ -115,7 +115,8 @@ fi
 if [ "$should_build" = '1' ]; then
   # Sources whose change means a rebuild is due. Deliberately not $REPO itself:
   # that would walk .git, caddy/data (Caddy rewrites certs) and apps/server/data
-  # (SQLite writes on every request), so the build would never look up to date.
+  # (thumbnails, logs and the backup scratch dir all change while the server runs),
+  # so the build would never look up to date.
   sources=()
   for p in apps packages modules package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json; do
     [ -e "$REPO/$p" ] && sources+=("$REPO/$p")

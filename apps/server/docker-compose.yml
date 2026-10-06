@@ -1,12 +1,35 @@
 # Development stack for the combined Archiyou server.
-#   redis   — queue backend for server-side execution
-#   api     — combined API (/api editor backend + / library + /execute); runs DB migrations on boot
-#   worker  — BullMQ execution worker (runs the archiyou-core Runner)
+#   postgres — the script database
+#   redis    — queue backend for server-side execution
+#   api      — combined API (/api editor backend + / library + /execute); runs DB migrations on boot
+#   worker   — BullMQ execution worker (runs the archiyou-core Runner)
 #
 # Build context is the monorepo root (../..) so the @archiyou/core workspace dep resolves.
 # Run:  pnpm --filter @archiyou/server docker:dev   (or: docker compose up)
 
 services:
+  # Its own volume and its own database, entirely separate from the production stack
+  # at the repo root. Published on the loopback interface so psql works from the host.
+  postgres:
+    image: postgres:17
+    container_name: archiyou-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-archiyou}
+      - POSTGRES_PASSWORD=${POSTGRES_PASW:-archiyou}
+      - POSTGRES_DB=${POSTGRES_DB:-archiyou}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-archiyou} -d ${POSTGRES_DB:-archiyou}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - archiyou-network
+
   redis:
     image: redis:7-alpine
     container_name: archiyou-redis
@@ -37,7 +60,7 @@ services:
       - SERVER_PORT=4100
       - SERVER_REDIS_HOST=redis
       - SERVER_REDIS_PORT=6379
-      - SERVER_DATABASE_FILE=./data/archiyou.db
+      - SERVER_DATABASE_URL=postgres://${POSTGRES_USER:-archiyou}:${POSTGRES_PASW:-archiyou}@postgres:5432/${POSTGRES_DB:-archiyou}
       # Where the worker reaches this API, stamped into every execution job so a
       # server-side run can resolve $$import() assets, $$component('./name') and
       # gated module bundles. Internal network name, not a public URL.
@@ -45,8 +68,11 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     volumes:
-      # SQLite DB + execution result cache persist here.
+      # Thumbnails, logs and the execution result cache persist here. The scripts
+      # themselves live in the postgres volume.
       - server_data:/repo/apps/server/data
     restart: unless-stopped
     networks:
@@ -82,6 +108,8 @@ services:
 
 volumes:
   redis_data:
+    driver: local
+  pg_data:
     driver: local
   server_data:
     driver: local

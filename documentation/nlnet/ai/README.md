@@ -112,3 +112,5 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-10-05 | [Dimension lines follow their shapes out of the scene; section() in the scene and on brep](./records/2026-10-05-sections-scene-annotations.md) | Claude Opus 5.5 | develop (+ meshup main) | 4 (2 in meshup) |
 | 2026-10-01 | [Frontend release check: editor version and the CI compose check](./records/2026-10-01-frontend-release-check.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-10-05 | [Viewer labels with fully rounded ends](./records/2026-10-05-viewer-label-pills.md) | Claude Opus 5.5 | develop | 1 |
+| 2026-09-21 | [SQLite → PostgreSQL for apps/server](./records/2026-09-23-sqlite-to-postgres.md) | Claude Fable 5.1 (plan), Claude Opus 5 (implementation) | pg (merged into develop) | 6 |
+| 2026-09-23 | [Kernel performance: brep naming and meshing, per-run overhead, editor double run](./records/2026-09-23-brep-performance.md) | Claude Opus 5.5 | pg (merged into develop) | 3 |

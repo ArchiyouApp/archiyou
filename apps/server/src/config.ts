@@ -53,9 +53,24 @@ export const config = {
   /** Lazy: only the API process touches this, so the worker can run without it. */
   get jwtSecret(): string { return jwtSecret(); },
 
-  /** The SQLite file, unresolved. db/client.ts resolves it and opens it; the
-   *  backup target list below points at it. Relative to apps/server. */
-  databaseFile: process.env.SERVER_DATABASE_FILE ?? './data/archiyou.db',
+  /**
+   * Where the script database lives. Postgres either way — the URL only picks the
+   * driver (db/client.ts opens it):
+   *
+   *   postgres://… | postgresql://…   a real PostgreSQL server: the container in
+   *                                   docker-compose, or the central instance through
+   *                                   an ssh tunnel.
+   *   memory://                       PGlite in RAM, gone with the process. What every
+   *                                   test file sets, explicitly, so a developer's .env
+   *                                   can never point the suite at a shared database.
+   *   pglite://<dir> | unset          PGlite on disk under <dir>, relative to apps/server.
+   *
+   * PGlite is PostgreSQL compiled to WASM, running inside this process: the same
+   * dialect, the same schema and the same migrations, with nothing to install. That is
+   * the default precisely so that connecting to a database other people also use is
+   * always a deliberate act, never something a checkout does on its own.
+   */
+  databaseUrl: process.env.SERVER_DATABASE_URL ?? 'pglite://./data/pgdata',
 
   /**
    * Browser origins allowed to call this API. `frontendUrl` is always included;
@@ -340,7 +355,7 @@ export const config = {
      *  than the whole prefix. */
     maxDelete: Number(process.env.SERVER_BACKUP_MAX_DELETE ?? 100),
 
-    /** Scratch space for SQLite snapshots. Must be on the persistent data volume —
+    /** Scratch space for the `pg_dump` snapshot. Must be on the persistent data volume —
      *  the container's /tmp is unsized overlay fs. Cleaned up after every run. */
     tmpDir: process.env.SERVER_BACKUP_TMP_DIR ?? './data/backup-tmp',
     /** Whole-run wall-clock cap, so a stalled upload cannot overlap the next cron run. */
@@ -414,22 +429,29 @@ export const config = {
    * production it requires both an explicit opt-in and a real password, so the
    * default credentials can never reach a live instance.
    */
-  seedTestUser: !isProduction
+  seedTestUser:
+    // On PGlite the database belongs to this checkout alone, so seeding it is free.
+    // Against a shared Postgres it is not: every dev machine would otherwise write
+    // `test` / `test1234` — publicly known credentials, and `test` is a plausible
+    // author handle — into the database production reads. There it takes the same
+    // explicit opt-in production has always needed.
+    (!isProduction && !/^postgres(ql)?:\/\//i.test(process.env.SERVER_DATABASE_URL ?? ''))
     || (process.env.SERVER_SEED_TEST_USER === 'true' && !!process.env.SERVER_TEST_USER_PASSWORD),
 };
 
 //// BACKUP TARGETS ////
 
-export type BackupTargetKind = 'sqlite' | 'dir' | 'file';
+export type BackupTargetKind = 'postgres' | 'dir' | 'file';
 
 /** One declared thing to copy into a backup archive. */
 export interface BackupTarget {
   /** Unique. Becomes the top-level directory inside the archive and the manifest
    *  key, so it is a name, not a path — no slashes. */
   name: string;
-  /** Source path. Relative paths resolve from apps/server, like every other path setting. */
+  /** Source path, or — for a `postgres` target — the database URL to dump. Relative
+   *  paths resolve from apps/server, like every other path setting. */
   path: string;
-  /** `sqlite` → consistent snapshot via SQLite's online backup API (never a file copy);
+  /** `postgres` → a consistent `pg_dump -Fc` snapshot (never a file copy);
    *  `dir` → recursive walk; `file` → a single file. */
   kind: BackupTargetKind;
   /** Source missing: true = warn and carry on, false = fail the whole run. */
@@ -454,18 +476,16 @@ export interface BackupTarget {
  * container, or the script cannot see it in production. See apps/server/README → Backups.
  */
 export const backupTargets: BackupTarget[] = [
-  { name: 'db', path: config.databaseFile, kind: 'sqlite' },
+  { name: 'db', path: config.databaseUrl, kind: 'postgres' },
   { name: 'thumbnails', path: config.thumbnails.path, kind: 'dir', optional: true },
 ];
 
 /**
- * Never included, whatever a target's path is. Matched as substrings against the
- * path relative to the target root.
- *
- * The SQLite sidecars matter most: a snapshot is fully checkpointed and standalone,
- * and shipping a stale `-wal` next to it is how a restore becomes a second incident.
+ * Never included, whatever a `dir` target's path is. Matched as substrings against
+ * the path relative to the target root. The database is not a directory walk any
+ * more (it is a `pg_dump` stream), so this is only about stray editor/scratch files.
  */
-export const BACKUP_DEFAULT_EXCLUDES = ['-wal', '-shm', '-journal', '.bak', '.tmp', 'backup-tmp/'];
+export const BACKUP_DEFAULT_EXCLUDES = ['.bak', '.tmp', 'backup-tmp/'];
 
 /** Any http(s) origin on the loopback host, whatever the port. */
 const LOCALHOST_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;

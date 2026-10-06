@@ -31,7 +31,7 @@
     "test:core": "pnpm --filter @archiyou/core test",
     "test:meshup": "pnpm --filter @archiyou/meshup test",
     "lockfile:public": "node scripts/lockfile-public.mjs",
-    "dbdownload": "node scripts/db-download.mjs",
+    "db": "node scripts/db-remote.mjs",
     "localize:extract": "lit-localize extract",
     "localize:build": "lit-localize build",
     "dev:modules": "concurrently -n build,app -c cyan,green \"turbo watch build --filter=./modules/**\" \"turbo dev --filter=@archiyou/editor --filter=@archiyou/server\""

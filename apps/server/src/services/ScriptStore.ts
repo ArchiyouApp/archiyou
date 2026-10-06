@@ -48,6 +48,22 @@ export interface VersionMeta {
   updated: number;
 }
 
+/**
+ * The constraint a PostgreSQL unique-constraint violation (SQLSTATE 23505) hit:
+ * `script_versions_pkey` for a row id that exists, `sv_file_version` for a taken
+ * (fileId, version). '' when the driver did not name it, null for any other error.
+ *
+ * Read off `cause` as well as the error itself: Drizzle 0.45 wraps driver errors in a
+ * DrizzleQueryError whose own `code` is not the SQLSTATE. Miss that and a duplicate
+ * (fileId, version) — the ordinary "you already published 1.2.0" — stops being a 400
+ * and becomes a 500.
+ */
+function uniqueViolation(e: unknown): string | null {
+  const hit = [e, (e as { cause?: unknown } | null)?.cause]
+    .find((err) => (err as { code?: unknown } | null)?.code === '23505') as { constraint?: string } | undefined;
+  return hit ? hit.constraint ?? '' : null;
+}
+
 /** `published` with `validated` forced off, whatever the caller sent. */
 function unvalidated(published: ScriptData['published']): ScriptData['published'] {
   return published ? { ...published, validated: false } : null;
@@ -139,42 +155,56 @@ export class ScriptStore {
   }
 
   /** All rows for one file owned by `author`, newest first. */
-  private fileRows(author: string, fileId: string): ScriptVersionRow[] {
+  private async fileRows(author: string, fileId: string): Promise<ScriptVersionRow[]> {
     return db
       .select()
       .from(scriptVersions)
       .where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)))
-      .orderBy(desc(scriptVersions.updated))
-      .all();
+      .orderBy(desc(scriptVersions.updated));
   }
 
-  private latestRow(author: string, fileId: string): ScriptVersionRow {
-    const rows = this.fileRows(author, fileId);
+  private async latestRow(author: string, fileId: string): Promise<ScriptVersionRow> {
+    // Deliberately NOT fileRows(): this is the ownership gate on every write path and
+    // only ever reads rows[0]. Over a network that difference is a whole file's `code`
+    // columns on every save.
+    const rows = await db
+      .select()
+      .from(scriptVersions)
+      .where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)))
+      .orderBy(desc(scriptVersions.updated))
+      .limit(1);
     if (rows.length === 0) throw new ScriptStoreError('not_found', `Script ${fileId} not found`);
     return rows[0];
   }
 
-  /** Reduce rows (newest first) to the latest per fileId. */
-  private latestPerFile(rows: ScriptVersionRow[]): ScriptVersionRow[] {
-    const seen = new Set<string>();
-    const out: ScriptVersionRow[] = [];
-    for (const r of rows) {
-      if (seen.has(r.fileId)) continue;
-      seen.add(r.fileId);
-      out.push(r);
-    }
-    return out;
+  /** The distinct script names this author has ever used, lowercased — the skip
+   *  list for `pnpm admin:import-cadscripts`. Names live on each version row, so
+   *  this deliberately spans the whole history and not just the latest rows. */
+  async listNamesForAuthor(author: string): Promise<Set<string>> {
+    const rows = await db
+      .selectDistinct({ name: scriptVersions.name })
+      .from(scriptVersions)
+      .where(eq(scriptVersions.author, author.toLowerCase()));
+    return new Set(rows.map((r) => (r.name ?? '').toLowerCase()).filter(Boolean));
   }
 
-  /** All of a user's scripts, latest version each, as ScriptData[]. */
-  listForUser(author: string): ScriptData[] {
-    const rows = db
-      .select()
+  /** All of a user's scripts, latest version each, as ScriptData[].
+   *
+   *  DISTINCT ON does the per-file reduction in the database. This used to load EVERY
+   *  version row — `code` included — and dedupe in JS, which for the largest author here
+   *  is ~14 MB over the wire to return well under one. Invisible against an embedded
+   *  file; not against a server. */
+  async listForUser(author: string): Promise<ScriptData[]> {
+    const rows = await db
+      .selectDistinctOn([scriptVersions.fileId])
       .from(scriptVersions)
       .where(eq(scriptVersions.author, author))
-      .orderBy(desc(scriptVersions.updated))
-      .all();
-    return this.latestPerFile(rows).map((r) => this.rowToData(r));
+      // DISTINCT ON needs its expression to lead the ORDER BY; `updated` within the group
+      // is what picks the latest row of each file. The list order is restored below.
+      .orderBy(scriptVersions.fileId, desc(scriptVersions.updated));
+    return rows
+      .sort((a, b) => b.updated.getTime() - a.updated.getTime())
+      .map((r) => this.rowToData(r));
   }
 
   //// PUBLISHED + SHARED LIBRARY ////
@@ -212,11 +242,11 @@ export class ScriptStore {
   }
 
   /** All rows in a library (col non-null), optionally by author, latest per file. */
-  private libraryList(col: AnyColumn, author?: string): ScriptData[] {
+  private async libraryList(col: AnyColumn, author?: string): Promise<ScriptData[]> {
     const cond = author
       ? and(eq(scriptVersions.author, author.toLowerCase()), isNotNull(col))
       : isNotNull(col);
-    const rows = db.select().from(scriptVersions).where(cond).orderBy(desc(scriptVersions.updated)).all();
+    const rows = await db.select().from(scriptVersions).where(cond).orderBy(desc(scriptVersions.updated));
     return this.latestReleasePerFile(rows).map((r) => this.rowToData(r));
   }
 
@@ -230,56 +260,62 @@ export class ScriptStore {
    *       references keep resolving to that same file.
    *  With `col`, only files that have rows in that library count. Case-insensitive,
    *  like library URLs. */
-  resolveFileIdByName(author: string, name: string, col?: AnyColumn): string | null {
+  async resolveFileIdByName(author: string, name: string, col?: AnyColumn): Promise<string | null> {
     const a = author.toLowerCase();
-    const named = db
+    const named = await db
       .select({ fileId: scriptVersions.fileId })
       .from(scriptVersions)
       .where(and(eq(scriptVersions.author, a), sql`lower(${scriptVersions.name}) = ${name.toLowerCase()}`))
-      .orderBy(desc(scriptVersions.updated))
-      .all();
+      .orderBy(desc(scriptVersions.updated));
 
-    const candidates = [...new Set(named.map((r) => r.fileId))].filter(
-      (fileId) =>
-        !col ||
-        db
-          .select({ id: scriptVersions.id })
-          .from(scriptVersions)
-          .where(and(eq(scriptVersions.author, a), eq(scriptVersions.fileId, fileId), isNotNull(col)))
-          .get() !== undefined,
-    );
+    const files = [...new Set(named.map((r) => r.fileId))]; // most recently named first
+    if (files.length === 0) return null;
+
+    // With a library column, keep only the files that have a row in that library.
+    // One query over all the candidates rather than one per candidate inside a
+    // filter — the same answer, but a fixed number of round trips.
+    const inLibrary = !col
+      ? null
+      : new Set(
+          (await db
+            .selectDistinct({ fileId: scriptVersions.fileId })
+            .from(scriptVersions)
+            .where(and(eq(scriptVersions.author, a), inArray(scriptVersions.fileId, files), isNotNull(col)))
+          ).map((r) => r.fileId),
+        );
+    const candidates = inLibrary ? files.filter((fileId) => inLibrary.has(fileId)) : files;
     if (candidates.length === 0) return null;
 
-    const current = candidates.find((fileId) => this.fileRows(a, fileId)[0]?.name?.toLowerCase() === name.toLowerCase());
-    return current ?? candidates[0];
+    const heads = await Promise.all(candidates.map(async (fileId) => (await this.fileRows(a, fileId))[0]));
+    const current = heads.findIndex((r) => r?.name?.toLowerCase() === name.toLowerCase());
+    return current === -1 ? candidates[0] : candidates[current];
   }
 
   /** All rows in a library for an author/name (any version), newest first.
    *  Rename-aware (see resolveFileIdByName): an old name yields the rows of the file
    *  that carried it, including the versions saved under its new name. */
-  private libraryRows(col: AnyColumn, author: string, name: string): ScriptVersionRow[] {
+  private async libraryRows(col: AnyColumn, author: string, name: string): Promise<ScriptVersionRow[]> {
     const a = author.toLowerCase();
-    const fileId = this.resolveFileIdByName(a, name, col);
+    const fileId = await this.resolveFileIdByName(a, name, col);
     if (!fileId) return [];
     return db
       .select()
       .from(scriptVersions)
       .where(and(eq(scriptVersions.author, a), eq(scriptVersions.fileId, fileId), isNotNull(col)))
-      .orderBy(desc(scriptVersions.updated))
-      .all();
+      .orderBy(desc(scriptVersions.updated));
   }
 
   /** Version strings for a library author/name, latest (semver) first. */
-  private libraryVersions(col: AnyColumn, author: string, name: string): string[] {
-    return this.libraryRows(col, author, name)
+  private async libraryVersions(col: AnyColumn, author: string, name: string): Promise<string[]> {
+    return (await this.libraryRows(col, author, name))
       .map((r) => r.version)
       .filter((v): v is string => !!v)
       .sort((a, b) => semver.rcompare(semver.coerce(a) ?? '0.0.0', semver.coerce(b) ?? '0.0.0'));
   }
 
   /** A specific library script by author/name(/version). No version ⇒ latest. */
-  private libraryGet(col: AnyColumn, author: string, name: string, version?: string): ScriptData | null {
-    const rows = this.libraryRows(col, author, name);
+  private async libraryGet(col: AnyColumn, author: string, name: string, version?: string): Promise<ScriptData | null> {
+    const rows = await this.libraryRows(col, author, name);
     if (rows.length === 0) return null;
 
     if (version) {
@@ -295,19 +331,18 @@ export class ScriptStore {
   }
 
   // Published library
-  listPublished(): ScriptData[] { return this.libraryList(scriptVersions.published); }
-  listPublishedByAuthor(author: string): ScriptData[] { return this.libraryList(scriptVersions.published, author); }
-  getPublishedVersions(author: string, name: string): string[] { return this.libraryVersions(scriptVersions.published, author, name); }
-  getPublished(author: string, name: string, version?: string): ScriptData | null { return this.libraryGet(scriptVersions.published, author, name, version); }
+  listPublished(): Promise<ScriptData[]> { return this.libraryList(scriptVersions.published); }
+  listPublishedByAuthor(author: string): Promise<ScriptData[]> { return this.libraryList(scriptVersions.published, author); }
+  getPublishedVersions(author: string, name: string): Promise<string[]> { return this.libraryVersions(scriptVersions.published, author, name); }
+  getPublished(author: string, name: string, version?: string): Promise<ScriptData | null> { return this.libraryGet(scriptVersions.published, author, name, version); }
 
   /** Every published version owned by `author` (NOT deduped per file — powers the
    *  "manage configurators" list), newest semver first (tiebreak newest updated). */
-  listPublishedVersionsForAuthor(author: string): ScriptData[] {
-    const rows = db
+  async listPublishedVersionsForAuthor(author: string): Promise<ScriptData[]> {
+    const rows = await db
       .select()
       .from(scriptVersions)
-      .where(and(eq(scriptVersions.author, author.toLowerCase()), isNotNull(scriptVersions.published)))
-      .all();
+      .where(and(eq(scriptVersions.author, author.toLowerCase()), isNotNull(scriptVersions.published)));
     return rows
       .map((r) => this.rowToData(r))
       .sort((a, b) => this.compareNewestVersionFirst(a, b));
@@ -333,22 +368,22 @@ export class ScriptStore {
    *
    *  The filters apply per version, so a file shows only its matching versions.
    *  `validated` filtering is done in SQL against the JSON blob so the LIMIT is applied by
-   *  SQLite: json_extract returns 1 for a JSON `true`, and `IS NOT 1` is what also catches
-   *  rows predating the feature, where the key is simply absent. `q` matches the script
-   *  name or the author handle. */
-  listPublishedConfigurators(opts: {
+   *  the database. `IS NOT TRUE` rather than `= false` is what also catches rows predating
+   *  the feature, where the key is simply absent and `->>` yields NULL. `q` matches the
+   *  script name or the author handle. */
+  async listPublishedConfigurators(opts: {
     author?: string;
     validated?: boolean;
     q?: string;
     limit?: number;
     offset?: number;
-  } = {}): { total: number; configurators: PublishedConfigurator[] } {
+  } = {}): Promise<{ total: number; configurators: PublishedConfigurator[] }> {
     const filters = [isNotNull(scriptVersions.published), isNotNull(scriptVersions.version)];
     if (opts.author) filters.push(eq(scriptVersions.author, opts.author.toLowerCase()));
     if (opts.validated === true) {
-      filters.push(sql`json_extract(${scriptVersions.published}, '$.validated') = 1`);
+      filters.push(sql`(${scriptVersions.published}->>'validated')::boolean IS TRUE`);
     } else if (opts.validated === false) {
-      filters.push(sql`json_extract(${scriptVersions.published}, '$.validated') IS NOT 1`);
+      filters.push(sql`(${scriptVersions.published}->>'validated')::boolean IS NOT TRUE`);
     }
     if (opts.q) {
       const like = `%${opts.q.toLowerCase()}%`;
@@ -356,14 +391,16 @@ export class ScriptStore {
     }
     const where = and(...filters);
 
-    const total = db
-      .select({ n: sql<number>`count(distinct ${scriptVersions.fileId})` })
+    // .mapWith(Number): Postgres counts are bigint, which the driver hands back as a
+    // string. `total` is a number on the wire and must stay one.
+    const totalRows = await db
+      .select({ n: sql<number>`count(distinct ${scriptVersions.fileId})`.mapWith(Number) })
       .from(scriptVersions)
-      .where(where)
-      .get()?.n ?? 0;
+      .where(where);
+    const total = totalRows[0]?.n ?? 0;
 
-    const latest = sql<number>`max(${scriptVersions.updated})`;
-    const page = db
+    const latest = sql`max(${scriptVersions.updated})`;
+    const page = (await db
       .select({ fileId: scriptVersions.fileId })
       .from(scriptVersions)
       .where(where)
@@ -371,16 +408,15 @@ export class ScriptStore {
       .orderBy(desc(latest), scriptVersions.fileId)
       .limit(opts.limit ?? 50)
       .offset(opts.offset ?? 0)
-      .all()
-      .map((r) => r.fileId);
+    ).map((r) => r.fileId);
     if (page.length === 0) return { total, configurators: [] };
 
     const byFile = new Map<string, ScriptData[]>(page.map((fileId) => [fileId, []]));
-    db.select()
+    (await db
+      .select()
       .from(scriptVersions)
       .where(and(where, inArray(scriptVersions.fileId, page)))
-      .all()
-      .forEach((r) => byFile.get(r.fileId)?.push(this.rowToData(r)));
+    ).forEach((r) => byFile.get(r.fileId)?.push(this.rowToData(r)));
 
     const configurators = page.map((fileId) => {
       const versions = (byFile.get(fileId) ?? []).sort((a, b) => this.compareNewestVersionFirst(a, b));
@@ -400,20 +436,19 @@ export class ScriptStore {
    *  every insert): `code` is untouched here, so an admin's review still stands, and the
    *  owner editing their own title must not knock their configurator off server-side
    *  execution — nor be able to grant it. */
-  updatePublishedVersion(author: string, versionId: string, published: ScriptData['published']): ScriptData {
-    const row = db
+  async updatePublishedVersion(author: string, versionId: string, published: ScriptData['published']): Promise<ScriptData> {
+    const [row] = await db
       .select()
       .from(scriptVersions)
       .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
-      .get();
+      .limit(1);
     if (!row) throw new ScriptStoreError('not_found', `Version ${versionId} not found`);
     const stored = (row.published ?? null) as ScriptData['published'];
     const next = published ? { ...published, validated: stored?.validated === true } : null;
     const now = new Date();
-    db.update(scriptVersions)
+    await db.update(scriptVersions)
       .set({ published: next, updated: now })
-      .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
-      .run();
+      .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())));
     return this.rowToData({ ...row, published: next as ScriptVersionRow['published'], updated: now });
   }
 
@@ -424,16 +459,15 @@ export class ScriptStore {
    *
    *  Like stampThumbnail() this does NOT touch `updated`: validating is not a content edit
    *  and must not reshuffle the "newest first" ordering of any list. */
-  setValidated(versionId: string, validated: boolean): ScriptData {
-    const row = db.select().from(scriptVersions).where(eq(scriptVersions.id, versionId)).get();
+  async setValidated(versionId: string, validated: boolean): Promise<ScriptData> {
+    const [row] = await db.select().from(scriptVersions).where(eq(scriptVersions.id, versionId)).limit(1);
     if (!row) throw new ScriptStoreError('not_found', `Version ${versionId} not found`);
     const stored = (row.published ?? null) as ScriptData['published'];
     if (!stored) throw new ScriptStoreError('invalid', `Version ${versionId} is not published`);
     const next = { ...stored, validated };
-    db.update(scriptVersions)
+    await db.update(scriptVersions)
       .set({ published: next })
-      .where(eq(scriptVersions.id, versionId))
-      .run();
+      .where(eq(scriptVersions.id, versionId));
     return this.rowToData({ ...row, published: next as ScriptVersionRow['published'] });
   }
 
@@ -441,20 +475,20 @@ export class ScriptStore {
    *  (routes/admin.ts) is the only caller: every other read here is deliberately
    *  scoped to its owner, so this stays separate rather than making `author`
    *  optional on findVersionById and inviting an accidental unscoped read. */
-  findAnyVersionById(versionId: string): ScriptData | null {
-    const row = db.select().from(scriptVersions).where(eq(scriptVersions.id, versionId)).get();
+  async findAnyVersionById(versionId: string): Promise<ScriptData | null> {
+    const [row] = await db.select().from(scriptVersions).where(eq(scriptVersions.id, versionId)).limit(1);
     return row ? this.rowToData(row) : null;
   }
 
   /** One version by id, or null. Unlike getVersion() this needs no fileId and never
    *  throws — the translation job looks up a row that may have been deleted or
    *  un-published while it was running. */
-  findVersionById(author: string, versionId: string): ScriptData | null {
-    const row = db
+  async findVersionById(author: string, versionId: string): Promise<ScriptData | null> {
+    const [row] = await db
       .select()
       .from(scriptVersions)
       .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
-      .get();
+      .limit(1);
     return row ? this.rowToData(row) : null;
   }
 
@@ -467,21 +501,20 @@ export class ScriptStore {
    * Matching on `sourceLocale` too matters: correcting a mis-detected source language
    * must produce a fresh translation, not silently reuse the wrong one.
    */
-  findTranslationsByHash(
+  async findTranslationsByHash(
     author: string,
     fileId: string,
     sourceHash: string,
     sourceLocale?: string,
-  ): NonNullable<ScriptData['published']>['translations'] | null {
-    const rows = db
-      .select()
+  ): Promise<NonNullable<ScriptData['published']>['translations'] | null> {
+    const rows = await db
+      .select({ published: scriptVersions.published })
       .from(scriptVersions)
       .where(and(
         eq(scriptVersions.fileId, fileId),
         eq(scriptVersions.author, author.toLowerCase()),
         isNotNull(scriptVersions.published),
-      ))
-      .all();
+      ));
 
     for (const row of rows) {
       const translations = (row.published as ScriptData['published'])?.translations;
@@ -496,30 +529,29 @@ export class ScriptStore {
 
   /** Un-publish a single version: clear its `published` metadata (the version row
    *  and any working/shared state are kept). Ownership-checked by row id + author. */
-  unpublishVersion(author: string, versionId: string): void {
-    const row = db
-      .select()
+  async unpublishVersion(author: string, versionId: string): Promise<void> {
+    const [row] = await db
+      .select({ id: scriptVersions.id })
       .from(scriptVersions)
       .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
-      .get();
+      .limit(1);
     if (!row) throw new ScriptStoreError('not_found', `Version ${versionId} not found`);
-    db.update(scriptVersions)
+    await db.update(scriptVersions)
       .set({ published: null })
-      .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
-      .run();
+      .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())));
   }
 
   // Shared library
-  listShared(): ScriptData[] { return this.libraryList(scriptVersions.shared); }
-  listSharedByAuthor(author: string): ScriptData[] { return this.libraryList(scriptVersions.shared, author); }
-  getSharedVersions(author: string, name: string): string[] { return this.libraryVersions(scriptVersions.shared, author, name); }
+  listShared(): Promise<ScriptData[]> { return this.libraryList(scriptVersions.shared); }
+  listSharedByAuthor(author: string): Promise<ScriptData[]> { return this.libraryList(scriptVersions.shared, author); }
+  getSharedVersions(author: string, name: string): Promise<string[]> { return this.libraryVersions(scriptVersions.shared, author, name); }
 
   /** One shared script by author/name. No version ⇒ latest; "dev" ⇒ the latest
    *  row (incl. the unversioned working copy) but only when its shared metadata
    *  has `dev` enabled. Enforces nothing about onlyUsers — callers must gate. */
-  getShared(author: string, name: string, version?: string): ScriptData | null {
+  async getShared(author: string, name: string, version?: string): Promise<ScriptData | null> {
     if (version === 'dev') {
-      const rows = this.libraryRows(scriptVersions.shared, author, name); // newest first
+      const rows = await this.libraryRows(scriptVersions.shared, author, name); // newest first
       const row = rows[0];
       return row && (row.shared as ScriptShared | null)?.dev ? this.rowToData(row) : null;
     }
@@ -527,19 +559,18 @@ export class ScriptStore {
   }
 
   /** All shared files (latest released version each) whose shared metadata carries the row. */
-  private sharedLatestPerFile(): ScriptVersionRow[] {
-    const rows = db
+  private async sharedLatestPerFile(): Promise<ScriptVersionRow[]> {
+    const rows = await db
       .select()
       .from(scriptVersions)
       .where(isNotNull(scriptVersions.shared))
-      .orderBy(desc(scriptVersions.updated))
-      .all();
+      .orderBy(desc(scriptVersions.updated));
     return this.latestReleasePerFile(rows);
   }
 
   /** Community-shared scripts: shared with no `onlyUsers` restriction. */
-  listSharedPublic(): ScriptData[] {
-    return this.sharedLatestPerFile()
+  async listSharedPublic(): Promise<ScriptData[]> {
+    return (await this.sharedLatestPerFile())
       .filter((r) => {
         const only = (r.shared as ScriptShared | null)?.onlyUsers;
         return !only || only.length === 0;
@@ -548,9 +579,9 @@ export class ScriptStore {
   }
 
   /** Scripts shared specifically with `username` (present in `onlyUsers`). */
-  listSharedWithUser(username: string): ScriptData[] {
+  async listSharedWithUser(username: string): Promise<ScriptData[]> {
     const u = username.toLowerCase();
-    return this.sharedLatestPerFile()
+    return (await this.sharedLatestPerFile())
       .filter((r) => {
         const only = (r.shared as ScriptShared | null)?.onlyUsers;
         return !!only && only.some((id) => id.toLowerCase() === u);
@@ -569,20 +600,20 @@ export class ScriptStore {
     return script.author?.toLowerCase() === u || only.some((id) => id.toLowerCase() === u);
   }
 
-  getFile(author: string, fileId: string): ScriptData {
-    return this.rowToData(this.latestRow(author, fileId));
+  async getFile(author: string, fileId: string): Promise<ScriptData> {
+    return this.rowToData(await this.latestRow(author, fileId));
   }
 
   /** Latest version of the author's own file that has — or used to have — `name`.
    *  Lets a `$component('./oldname')` survive a rename. */
-  getFileByName(author: string, name: string): ScriptData {
-    const fileId = this.resolveFileIdByName(author, name);
+  async getFileByName(author: string, name: string): Promise<ScriptData> {
+    const fileId = await this.resolveFileIdByName(author, name);
     if (!fileId) throw new ScriptStoreError('not_found', `No script named "${name}"`);
     return this.getFile(author, fileId);
   }
 
-  listVersions(author: string, fileId: string): VersionMeta[] {
-    const rows = this.fileRows(author, fileId);
+  async listVersions(author: string, fileId: string): Promise<VersionMeta[]> {
+    const rows = await this.fileRows(author, fileId);
     if (rows.length === 0) throw new ScriptStoreError('not_found', `Script ${fileId} not found`);
     return rows.map((r) => ({
       id: r.id,
@@ -594,33 +625,40 @@ export class ScriptStore {
     }));
   }
 
-  getVersion(author: string, fileId: string, versionId: string): ScriptData {
-    const row = db
+  async getVersion(author: string, fileId: string, versionId: string): Promise<ScriptData> {
+    const [row] = await db
       .select()
       .from(scriptVersions)
       .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)))
-      .get();
+      .limit(1);
     if (!row) throw new ScriptStoreError('not_found', `Version ${versionId} not found`);
     return this.rowToData(row);
   }
 
   /** The file's current shared metadata (from its latest row), or null. */
-  private currentShared(author: string, fileId: string): ScriptShared | null {
-    const rows = this.fileRows(author, fileId);
-    return rows.length > 0 ? (rows[0].shared ?? null) : null;
+  private async currentShared(author: string, fileId: string): Promise<ScriptShared | null> {
+    const [row] = await db
+      .select({ shared: scriptVersions.shared })
+      .from(scriptVersions)
+      .where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)))
+      .orderBy(desc(scriptVersions.updated))
+      .limit(1);
+    return row?.shared ?? null;
   }
 
-  /** Insert a row, translating a unique-constraint hit (fileId, version) into an 'invalid' error. */
-  private insertRow(row: NewScriptVersionRow): void {
+  /** Insert a row, translating a unique-constraint hit into an error: a row id that exists
+   *  into 'conflict' (the file was created before), a taken (fileId, version) into 'invalid'. */
+  private async insertRow(row: NewScriptVersionRow): Promise<void> {
     try {
-      db.insert(scriptVersions).values(row).run();
+      await db.insert(scriptVersions).values(row);
     } catch (e) {
+      const constraint = uniqueViolation(e);
       // A row id that exists means the file was created before: the caller should save a
       // version of it (PUT) instead. The other unique index is (file_id, version).
-      if (e instanceof Error && /UNIQUE constraint failed: script_versions\.id\b/i.test(e.message)) {
+      if (constraint === 'script_versions_pkey') {
         throw new ScriptStoreError('conflict', `Script ${row.fileId} already exists: save a new version of it instead`);
       }
-      if (e instanceof Error && /UNIQUE constraint failed/i.test(e.message)) {
+      if (constraint !== null) {
         throw new ScriptStoreError('invalid', `Version "${row.version}" already exists for this file`);
       }
       throw e;
@@ -628,14 +666,14 @@ export class ScriptStore {
   }
 
   /** Create a new file (first version). `author` is server-authoritative. */
-  create(author: string, payload: unknown): ScriptData {
+  async create(author: string, payload: unknown): Promise<ScriptData> {
     const data = this.normalize(payload);
     const fileId = data.fileId ?? uuid4();
     const id = data.id ?? uuid4();
     const now = new Date();
     // reset-on-save: a fresh file/version starts unversioned (null).
     const row = this.toRow(data, author, { id, fileId, version: null, shared: null, thumbnail: null, now });
-    this.insertRow(row);
+    await this.insertRow(row);
     return this.rowToData({ ...row, created: now, updated: now } as ScriptVersionRow);
   }
 
@@ -652,8 +690,8 @@ export class ScriptStore {
    *      row to keep resolving `$component('./oldname')`.
    *  `checkpoint` always appends: a restore is its own row. The merged row keeps its id,
    *  `created`, `shared` and thumbnail. A save that changes nothing writes nothing. */
-  saveVersion(author: string, fileId: string, payload: unknown, opts: { checkpoint?: boolean } = {}): ScriptData {
-    const latest = this.latestRow(author, fileId); // ownership gate (throws not_found)
+  async saveVersion(author: string, fileId: string, payload: unknown, opts: { checkpoint?: boolean } = {}): Promise<ScriptData> {
+    const latest = await this.latestRow(author, fileId); // ownership gate (throws not_found)
     const data = this.normalize(payload);
     const now = new Date();
     const shared = latest.shared ?? null; // versions inherit the file's shared state
@@ -672,13 +710,13 @@ export class ScriptStore {
       && latest.name === (data.name ?? null);
     if (merge) {
       const { created: _created, ...content } = this.toRow(data, author, { id: latest.id, fileId, version: null, shared, thumbnail, now });
-      db.update(scriptVersions).set(content).where(eq(scriptVersions.id, latest.id)).run();
+      await db.update(scriptVersions).set(content).where(eq(scriptVersions.id, latest.id));
       return this.rowToData({ ...content, created: latest.created } as ScriptVersionRow);
     }
 
     // reset-on-save: each new version resets the version to null.
     const row = this.toRow(data, author, { id: uuid4(), fileId, version: null, shared, thumbnail, now });
-    this.insertRow(row);
+    await this.insertRow(row);
     return this.rowToData({ ...row, created: now, updated: now } as ScriptVersionRow);
   }
 
@@ -698,15 +736,15 @@ export class ScriptStore {
   /** Share a file: append a new row carrying a concrete semver + the ScriptShared
    *  metadata (both read from the payload). Ownership-checked; the unique
    *  (fileId, version) index rejects re-sharing an already-shared version. */
-  share(author: string, fileId: string, payload: unknown): ScriptData {
-    this.latestRow(author, fileId); // ownership gate (throws not_found)
+  async share(author: string, fileId: string, payload: unknown): Promise<ScriptData> {
+    await this.latestRow(author, fileId); // ownership gate (throws not_found)
     const data = this.normalize(payload);
     if (!data.version) throw new ScriptStoreError('invalid', 'Share requires a version');
     if (!data.shared) throw new ScriptStoreError('invalid', 'Share requires shared metadata');
     const id = uuid4();
     const now = new Date();
     const row = this.toRow(data, author, { id, fileId, version: data.version, shared: data.shared, thumbnail: null, now });
-    this.insertRow(row);
+    await this.insertRow(row);
     return this.rowToData({ ...row, created: now, updated: now } as ScriptVersionRow);
   }
 
@@ -714,59 +752,57 @@ export class ScriptStore {
    *  metadata (both read from the payload). Ownership-checked; the unique
    *  (fileId, version) index rejects re-publishing an already-used version.
    *  The file's current shared state is preserved on the new row. */
-  publish(author: string, fileId: string, payload: unknown): ScriptData {
-    this.latestRow(author, fileId); // ownership gate (throws not_found)
+  async publish(author: string, fileId: string, payload: unknown): Promise<ScriptData> {
+    await this.latestRow(author, fileId); // ownership gate (throws not_found)
     const data = this.normalize(payload);
     if (!data.version) throw new ScriptStoreError('invalid', 'Publish requires a version');
     if (!data.published) throw new ScriptStoreError('invalid', 'Publish requires published metadata');
     const id = uuid4();
     const now = new Date();
-    const shared = this.currentShared(author, fileId); // preserve the file's shared state
+    const shared = await this.currentShared(author, fileId); // preserve the file's shared state
     const row = this.toRow(data, author, { id, fileId, version: data.version, shared, thumbnail: null, now });
-    this.insertRow(row);
+    await this.insertRow(row);
     return this.rowToData({ ...row, created: now, updated: now } as ScriptVersionRow);
   }
 
   /**
    * Stamp a version's thumbnail URL (ownership-checked). Separate from publish()/share()
-   * because the URL embeds the version id, which those generate internally — and because
-   * writing the file is async while this store is synchronous (better-sqlite3). The route
-   * inserts first, writes the file, then calls this; a failure to write simply leaves the
-   * column null and the publish itself is already committed.
+   * because the URL embeds the version id, which those generate internally, and because a
+   * picture must never be able to fail a publish. The route inserts first, writes the file,
+   * then calls this; a failure to write simply leaves the column null and the publish
+   * itself is already committed.
    *
    * Deliberately does NOT touch `updated`: stamping a thumbnail is not a content edit and
    * must not reshuffle "newest first" list ordering.
    */
-  setThumbnail(author: string, versionId: string, thumbnail: string | null): void {
-    db.update(scriptVersions)
+  async setThumbnail(author: string, versionId: string, thumbnail: string | null): Promise<void> {
+    await db.update(scriptVersions)
       .set({ thumbnail })
-      .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())))
-      .run();
+      .where(and(eq(scriptVersions.id, versionId), eq(scriptVersions.author, author.toLowerCase())));
   }
 
   /** Stamp the WORKING copy's thumbnail: the file's latest row, whichever that is by now
    *  (ownership-checked through latestRow). The editor regenerates this in the background
    *  after a run and cannot know the latest row id — saves append rows it never hears
    *  back from — so it addresses the file. saveVersion() carries the URL forward. */
-  setFileThumbnail(author: string, fileId: string, thumbnail: string | null): ScriptData {
-    const latest = this.latestRow(author, fileId);
-    this.setThumbnail(author, latest.id, thumbnail);
+  async setFileThumbnail(author: string, fileId: string, thumbnail: string | null): Promise<ScriptData> {
+    const latest = await this.latestRow(author, fileId);
+    await this.setThumbnail(author, latest.id, thumbnail);
     return this.rowToData({ ...latest, thumbnail });
   }
 
   /** Set/clear sharing metadata on all versions of a file (ownership-checked). */
-  setShared(author: string, fileId: string, shared: ScriptShared | null): void {
-    this.latestRow(author, fileId); // ownership gate
-    db.update(scriptVersions)
+  async setShared(author: string, fileId: string, shared: ScriptShared | null): Promise<void> {
+    await this.latestRow(author, fileId); // ownership gate
+    await db.update(scriptVersions)
       .set({ shared })
-      .where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)))
-      .run();
+      .where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)));
   }
 
   /** Delete a file and all its versions (ownership-checked). */
-  deleteFile(author: string, fileId: string): void {
-    this.latestRow(author, fileId); // ownership gate
-    db.delete(scriptVersions).where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author))).run();
+  async deleteFile(author: string, fileId: string): Promise<void> {
+    await this.latestRow(author, fileId); // ownership gate
+    await db.delete(scriptVersions).where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, author)));
   }
 }
 
