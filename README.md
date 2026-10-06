@@ -91,7 +91,7 @@ Already cloned without `--recursive`? Run `git submodule update --init --recursi
 
 No configuration is needed for development: the server runs PostgreSQL **inside its
 own process** on first start (PGlite — Postgres compiled to WASM, under
-`apps/server/data/pgdata`), migrates it, seeds a `test` / `test1234` account, and logs
+`apps/server/data/pglite`), migrates it, seeds a `test` / `test1234` account, and logs
 password-reset and verification emails to the console instead of sending them. Nothing
 to install, no container to start.
 

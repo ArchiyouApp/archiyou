@@ -25,6 +25,12 @@
 #
 #     SERVER_DATABASE_URL=postgres://archiyou:archiyou@localhost:5432/archiyou
 #
+# Its data lives in the checkout, in apps/server/data/pgdata (ignored by git), so it is
+# where you can see it and survives `docker:dev:down`. The container runs as your own
+# user, so those files stay yours rather than root's or the image's uid 999. `docker:dev`
+# creates the directory first: one Docker made itself would be owned by root, and
+# Postgres would not start. With a uid other than 1000, export UID and GID first.
+#
 # Both services are published on the loopback interface only. The credentials below are
 # deliberately trivial and deliberately local: this database holds your scratch library,
 # and nothing outside your machine can reach it.
@@ -35,6 +41,7 @@ services:
   postgres:
     image: postgres:17
     container_name: archiyou-dev-postgres
+    user: "${UID:-1000}:${GID:-1000}"
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-archiyou}
       - POSTGRES_PASSWORD=${POSTGRES_PASW:-archiyou}
@@ -42,7 +49,7 @@ services:
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - ./apps/server/data/pgdata:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-archiyou} -d ${POSTGRES_DB:-archiyou}"]
@@ -64,9 +71,3 @@ services:
       interval: 2s
       timeout: 3s
       retries: 10
-
-volumes:
-  # Survives `docker compose down`; remove it with `docker compose -f docker-compose.dev.yml down -v`
-  # when you want an empty library back.
-  pg_data:
-    driver: local

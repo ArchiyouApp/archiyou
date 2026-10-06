@@ -16,7 +16,7 @@
  *   --new-version         append a version to the existing file of that name
  *                         instead of creating a new file
  *   --db <url>            override the database (else SERVER_DATABASE_URL, else the
- *                         PGlite directory apps/server/data/pgdata)
+ *                         PGlite directory apps/server/data/pglite)
  *
  * ⚠️  It PRINTS THE TARGET DATABASE before writing. The database is no longer one file
  * per checkout: a postgres:// URL may well be the shared instance, where "save a demo
@@ -74,7 +74,7 @@ const serverDir = join(root, 'apps', 'server');
 const dbOverride = flag('db');
 if (dbOverride) process.env.SERVER_DATABASE_URL = dbOverride;
 
-process.chdir(serverDir); // config resolves ./data/pgdata from here
+process.chdir(serverDir); // config resolves ./data/pglite from here
 
 // Dynamic imports: these must happen AFTER the chdir above. Note they are addressed
 // by absolute path — this file lives outside any package, so a bare specifier like

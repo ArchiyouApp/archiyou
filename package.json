@@ -23,7 +23,7 @@
     "commit:ai": "node scripts/ai-commit.mjs",
     "docker:prod": "docker compose up -d",
     "docker:prod:down": "docker compose down",
-    "docker:dev": "docker compose -f docker-compose.dev.yml up -d --wait",
+    "docker:dev": "mkdir -p apps/server/data/pgdata && docker compose -f docker-compose.dev.yml up -d --wait",
     "docker:dev:down": "docker compose -f docker-compose.dev.yml down",
     "build:wasm": "turbo build:wasm",
     "build:meshup": "pnpm --filter @archiyou/meshup build",

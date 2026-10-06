@@ -11,7 +11,7 @@ or set that variable:
 
 | `SERVER_DATABASE_URL` | what you get |
 |---|---|
-| unset | PGlite under `./data/pgdata` — Postgres in-process, this checkout's own |
+| unset | PGlite under `./data/pglite` — Postgres in-process, this checkout's own |
 | `postgres://…` | a real server: the dev container, **or the shared instance** |
 | `memory://` | PGlite in RAM, gone when the process exits |
 

@@ -70,7 +70,7 @@ export const config = {
    * the default precisely so that connecting to a database other people also use is
    * always a deliberate act, never something a checkout does on its own.
    */
-  databaseUrl: process.env.SERVER_DATABASE_URL ?? 'pglite://./data/pgdata',
+  databaseUrl: process.env.SERVER_DATABASE_URL ?? 'pglite://./data/pglite',
 
   /**
    * Browser origins allowed to call this API. `frontendUrl` is always included;

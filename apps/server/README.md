@@ -22,7 +22,7 @@ PostgreSQL, and `SERVER_DATABASE_URL` picks how you get it:
 
 | `SERVER_DATABASE_URL` | what runs |
 |---|---|
-| *unset* | **PGlite** under `./data/pgdata` — PostgreSQL compiled to WASM, in this process |
+| *unset* | **PGlite** under `./data/pglite` — PostgreSQL compiled to WASM, in this process |
 | `postgres://…` | a real PostgreSQL server |
 | `memory://` | PGlite in RAM; what every test file sets for itself |
 

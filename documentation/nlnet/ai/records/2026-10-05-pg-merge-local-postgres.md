@@ -2,15 +2,19 @@
 
 | | |
 |---|---|
-| Dates | 2026-10-05 → (open) |
+| Dates | 2026-10-05 → 2026-10-06 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: the first prompt asked for a diagnosis, the second gave the steps) |
 | Human | Mark van der Net: wrote the prompts, decided to merge `pg` and to move the local database to PostgreSQL in Docker on a bind mount |
 | Branch | `develop`, merging `pg` |
-| Session transcript | kept locally; the prompts are reproduced in full below |
+| Session transcript | two sessions, kept locally; the prompts of this work are reproduced in full below (the last one from the session that committed it) |
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+```
+2026-10-05 14:35 +0200  If I do a tutorial it saves a these versions in my workspace. Its a lot of clutter. See my archiyou/simple-table-more scripts. I thought we fixed this already, but saving only one tutorial script. Please check and come up with a solution
+2026-10-05 21:31 +0200  Merge the pg work into the develop branch. Migrate the current database (sqlite) (backup before) into a local postgres database on docker. Use a mounted volume that maps to local directory apps/server/data/pgdata (if not already there). Please test if everything works afterwards. Present me with a worker server that I can test.
+2026-10-06 10:31 +0200  Can you commit the pg merge?
+```
 
 ## Work (agent output; no separate plan)
 
@@ -96,9 +100,13 @@ The database schema was not changed on `develop`, so `pg`'s migrations stand as 
 - Chose to merge `pg` rather than port the single tutorial fix.
 - Asked for a backup before the migration, and for the Docker volume at
   `apps/server/data/pgdata`.
+- Had the merge committed from another session on 2026-10-06, after the first session had
+  moved on to other work. That session reran the server tests on the result (320 passed)
+  and committed the merge as staged, and the bind mount after it.
 
 ## Commits
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
-| (this commit) | (merge) | "Merge the pg work into the develop branch. …" |
+| 6622495 | Merge branch 'pg' into develop | "Merge the pg work into the develop branch. …" |
+| (this commit) | Dev Postgres on a bind mount; PGlite moves to data/pglite | "Merge the pg work into the develop branch. … Use a mounted volume that maps to local directory apps/server/data/pgdata …" |

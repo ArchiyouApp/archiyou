@@ -135,7 +135,7 @@ describe('resolveTargets', () => {
     // would be far worse than failing here.
     expect(() =>
       resolveTargets({
-        targets: [{ name: 'db', path: 'pglite://./data/pgdata', kind: 'postgres' }],
+        targets: [{ name: 'db', path: 'pglite://./data/pglite', kind: 'postgres' }],
         baseDir: base,
         probe: probe({}),
       }),
