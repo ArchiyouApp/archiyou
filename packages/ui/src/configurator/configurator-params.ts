@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
+import { localized, msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tab-group/tab-group.js';
@@ -30,6 +31,7 @@ import { groupKey } from '@archiyou/core/src/i18n/keys';
 
 import type { ScriptParam, ParamValueChangeDetail, ParamEntryRef } from '@archiyou/editor/src/state/workspace';
 
+@localized()
 @customElement('configurator-params')
 export class ConfiguratorParams extends SignalWatcher(LitElement)
 {
@@ -46,7 +48,7 @@ export class ConfiguratorParams extends SignalWatcher(LitElement)
     return html`
       <div class="header" @click=${this._toggleCollapse}>
         <wa-icon library="lucide" name="sliders-horizontal"></wa-icon>
-        <span class="title">Parameters</span>
+        <span class="title">${msg('Parameters')}</span>
         <span class="spacer"></span>
         <wa-icon library="lucide" name=${collapsed ? 'chevron-down' : 'chevron-up'}></wa-icon>
       </div>
@@ -57,7 +59,7 @@ export class ConfiguratorParams extends SignalWatcher(LitElement)
             ? this._renderGroup('main', params)
             : html`
                 <wa-tab-group>
-                  ${groups.map(g => html`<wa-tab panel=${g}>${translate.get()(groupKey(g), g)}</wa-tab>`)}
+                  ${groups.map(g => html`<wa-tab panel=${g}>${this._groupLabel(g)}</wa-tab>`)}
                   ${groups.map(g => html`
                     <wa-tab-panel name=${g}>
                       ${this._renderGroup(g, params)}
@@ -67,7 +69,7 @@ export class ConfiguratorParams extends SignalWatcher(LitElement)
               `
           }
           ${params.length === 0
-            ? html`<div class="empty">No parameters defined</div>`
+            ? html`<div class="empty">${msg('No parameters defined')}</div>`
             : nothing
           }
         </div>
@@ -107,6 +109,14 @@ export class ConfiguratorParams extends SignalWatcher(LitElement)
   }
 
   // ── 4. Behaviour & Methods ──
+
+  /** A group's tab caption. 'main' is where params without a group land: a name the
+   *  author never wrote, so it is the app's to translate, not the content's. */
+  private _groupLabel(group: string): string
+  {
+    return translate.get()(groupKey(group), group === 'main' ? msg('Main') : group);
+  }
+
   private _groups(params: ScriptParam[]): string[]
   {
     const seen = new Set<string>();

@@ -5,14 +5,15 @@
  *  - Provides the router outlet (<main id="outlet">)
  *  - Initialises @vaadin/router in firstUpdated()
  *  - Applies system dark-theme preference on startup
- *  - Initialises @lit/localize
+ *
+ * The chrome locale is not set here: the editor stays in the source locale, and the
+ * configurator sets its own from its language picker (i18n/locale-config.ts).
  */
 
 import { LitElement, html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { initRouter } from './router.js';
 import { applyStoredTheme } from '../../styles/dark-theme.js';
-import { setLocale, detectLocale } from '../../i18n/locale-config.js';
 
 @customElement('app-shell')
 export class AppShell extends LitElement
@@ -27,9 +28,6 @@ export class AppShell extends LitElement
   override firstUpdated()
   {
     applyStoredTheme();
-
-    // Initialise locale (best-effort — locale modules may not exist until lit-localize build)
-    setLocale(detectLocale()).catch(() => {/* source locale, no module needed */});
 
     // NO kernel warmup here. This runs before the router has resolved anything, so
     // warming up would download ~26MB of CAD kernel on EVERY page — including a

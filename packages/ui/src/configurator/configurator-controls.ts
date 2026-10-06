@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
+import { localized, msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
@@ -12,6 +13,7 @@ import '../unit-switch.js';
 import { configuratorUnitSystem, setConfiguratorUnitSystem } from '@archiyou/editor/src/state/workspace';
 import type { UnitSystem } from '@archiyou/core/src/units/UnitConverter';
 
+@localized()
 @customElement('configurator-controls')
 export class ConfiguratorControls extends SignalWatcher(LitElement)
 {
@@ -28,10 +30,9 @@ export class ConfiguratorControls extends SignalWatcher(LitElement)
           @unit-system-change=${(e: CustomEvent<UnitSystem>) => setConfiguratorUnitSystem(e.detail)}
         ></unit-switch>
         <span class="unit-spacer"></span>
-        <span id="unit-help" class="unit-help" tabindex="0" role="button" aria-label="About units"><wa-icon library="lucide" name="circle-help"></wa-icon></span>
+        <span id="unit-help" class="unit-help" tabindex="0" role="button" aria-label=${msg('About units')}><wa-icon library="lucide" name="circle-help"></wa-icon></span>
         <wa-tooltip for="unit-help" placement="bottom">
-          Choose how measurements are shown for you. Metric uses millimetres (mm); Imperial uses inches (in).
-          This is your local preference and does not change the script.
+          ${msg('Choose how measurements are shown for you. Metric uses millimetres (mm); Imperial uses inches (in). This is your local preference and does not change the script.')}
         </wa-tooltip>
       </div>
       <configurator-presets></configurator-presets>

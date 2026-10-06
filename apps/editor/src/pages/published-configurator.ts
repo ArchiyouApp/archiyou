@@ -18,6 +18,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
+import { localized, msg, str } from '@lit/localize';
 import { type RouterLocation } from '@vaadin/router';
 
 import type { ScriptData } from '@archiyou/core/src/execution/types';
@@ -28,17 +29,21 @@ import '@archiyou/ui/configurator/configurator.js';
 
 import { openSharedScript } from '../state/workspace';
 import { applyConfiguratorParamsFromQuery } from '../state/configurator-url';
-import { applyLocaleFromQuery } from '../state/locale';
+import { applyLocaleFromQuery, detectPreferredLocale } from '../state/locale';
+import { setChromeLocale } from '../i18n/locale-config';
+import { allLocales } from '../i18n/locale-codes';
 import { fetchPublishedScriptVersion } from '../services/publishing.js';
 import { setServerExecutionTarget, type ServerExecutionTarget } from '../services/execution-service.js';
 
+@localized()
 @customElement('page-published-configurator')
 export class PagePublishedConfigurator extends SignalWatcher(LitElement)
 {
   @property({ attribute: false }) location?: RouterLocation;
 
   @state() private _status: 'loading' | 'ready' | 'error' = 'loading';
-  @state() private _error = '';
+  /** Why the configurator could not be shown: a known case, or the server's own words. */
+  @state() private _error: { reason: 'invalid' | 'not-found' | 'failed', detail?: string } | null = null;
 
   override connectedCallback()
   {
@@ -46,6 +51,9 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
     // ?lang=de wins over the browser's preference: a link shared in one language should
     // open in that language for whoever follows it.
     applyLocaleFromQuery(window.location.search);
+    // Until the script is here, its languages are unknown: the visitor's own language
+    // for the loading and error states. The configurator takes over once it mounts.
+    void setChromeLocale(detectPreferredLocale([...allLocales]));
     void this._load();
   }
 
@@ -68,7 +76,7 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
     if (!user || !scriptAndVersion)
     {
       this._status = 'error';
-      this._error = 'Invalid configurator URL.';
+      this._error = { reason: 'invalid' };
       return;
     }
 
@@ -78,7 +86,7 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
       if (!data)
       {
         this._status = 'error';
-        this._error = `Configurator “${user}/${scriptAndVersion}” was not found.`;
+        this._error = { reason: 'not-found', detail: `${user}/${scriptAndVersion}` };
         return;
       }
       // Load read-only as the active script; the configurator picks it up.
@@ -96,7 +104,7 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
     catch (err)
     {
       this._status = 'error';
-      this._error = (err as Error)?.message ?? 'Failed to load the configurator.';
+      this._error = { reason: 'failed', detail: (err as Error)?.message };
     }
   }
 
@@ -114,6 +122,15 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
     return { user, scriptAndVersion };
   }
 
+  /** At render time, so the message follows a chrome locale that arrives later. */
+  private _errorText(): string
+  {
+    const error = this._error;
+    if (error?.reason === 'invalid') return msg('Invalid configurator URL.');
+    if (error?.reason === 'not-found') return msg(str`Configurator “${error.detail}” was not found.`);
+    return error?.detail || msg('Failed to load the configurator.');
+  }
+
   override render()
   {
     if (this._status === 'loading')
@@ -125,7 +142,7 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
       return html`
         <div class="center error">
           <wa-icon library="lucide" name="triangle-alert"></wa-icon>
-          <p>${this._error}</p>
+          <p>${this._errorText()}</p>
         </div>`;
     }
     return html`<page-configurator></page-configurator>`;

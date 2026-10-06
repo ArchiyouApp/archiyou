@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
-  <file source-language="en" target-language="nl" datatype="plaintext" original="lit-localize-inputs">
-    <body>
+<file target-language="hi" source-language="en" original="lit-localize-inputs" datatype="plaintext">
+<body>
 <trans-unit id="sc6c573b29c660532">
   <source>Can't reach server. Please check it or your internet connection</source>
 </trans-unit>
@@ -145,375 +145,375 @@
 </trans-unit>
 <trans-unit id="s7dc47fad69f0223b">
   <source>Resize panel</source>
-  <target>Paneelgrootte aanpassen</target>
+  <target>पैनल का आकार बदलें</target>
 </trans-unit>
 <trans-unit id="s88c48021207597df">
   <source>Realistic</source>
-  <target>Realistisch</target>
+  <target>यथार्थवादी</target>
 </trans-unit>
 <trans-unit id="sb132f083572a6cd2">
   <source>X-Ray</source>
-  <target>Röntgen</target>
+  <target>एक्स-रे</target>
 </trans-unit>
 <trans-unit id="s96f013195da95865">
   <source>Wireframe</source>
-  <target>Draadmodel</target>
+  <target>वायरफ़्रेम</target>
 </trans-unit>
 <trans-unit id="sfae395b94a5a0040">
   <source>Blueprint</source>
-  <target>Blauwdruk</target>
+  <target>ब्लूप्रिंट</target>
 </trans-unit>
 <trans-unit id="sfb91434099da7351">
   <source>Tech Draw</source>
-  <target>Technische tekening</target>
+  <target>तकनीकी ड्रॉइंग</target>
 </trans-unit>
 <trans-unit id="s32308e70fc51fdb8">
   <source>Exit AR</source>
-  <target>AR verlaten</target>
+  <target>AR से बाहर निकलें</target>
 </trans-unit>
 <trans-unit id="s8b27f085888680b0">
   <source>Enter AR</source>
-  <target>Bekijken in AR</target>
+  <target>AR में देखें</target>
 </trans-unit>
 <trans-unit id="sd2e6eb5df41a5f34">
   <source>AR not supported on this device</source>
-  <target>AR wordt niet ondersteund op dit apparaat</target>
+  <target>इस डिवाइस पर AR समर्थित नहीं है</target>
 </trans-unit>
 <trans-unit id="s236ae937cbcd6a39">
   <source>Zoom in</source>
-  <target>Inzoomen</target>
+  <target>ज़ूम इन</target>
 </trans-unit>
 <trans-unit id="sc65ea2cf2f21a13a">
   <source>Zoom out</source>
-  <target>Uitzoomen</target>
+  <target>ज़ूम आउट</target>
 </trans-unit>
 <trans-unit id="s3c604c5ce842d6f2">
   <source>Fit to view</source>
-  <target>Passend maken</target>
+  <target>व्यू में फ़िट करें</target>
 </trans-unit>
 <trans-unit id="sb92cde96aa6a7ffd">
   <source>View style</source>
-  <target>Weergavestijl</target>
+  <target>व्यू शैली</target>
 </trans-unit>
 <trans-unit id="s4481f5525a7a394a">
   <source>Animations</source>
-  <target>Animaties</target>
+  <target>एनिमेशन</target>
 </trans-unit>
 <trans-unit id="s8818af2947b74b9b">
   <source>Hide grid</source>
-  <target>Raster verbergen</target>
+  <target>ग्रिड छिपाएँ</target>
 </trans-unit>
 <trans-unit id="sf6f1d2fce4cc2014">
   <source>Show grid</source>
-  <target>Raster tonen</target>
+  <target>ग्रिड दिखाएँ</target>
 </trans-unit>
 <trans-unit id="sefcf950b3cc4fc3b">
   <source>Language</source>
-  <target>Taal</target>
+  <target>भाषा</target>
 </trans-unit>
 <trans-unit id="s97ad0ba6f0b62fa5">
   <source><x id="0" equiv-text="${localeLabel(locale)}"/> (original)</source>
-  <target><x id="0" equiv-text="${localeLabel(locale)}"/> (origineel)</target>
+  <target><x id="0" equiv-text="${localeLabel(locale)}"/> (मूल)</target>
 </trans-unit>
 <trans-unit id="s927497135cdabe78">
   <source>Untitled</source>
-  <target>Naamloos</target>
+  <target>शीर्षकहीन</target>
 </trans-unit>
 <trans-unit id="h731296fe3615fd0b">
   <source>by <x id="0" equiv-text="&lt;span class=&quot;author-name&quot;&gt;${author}&lt;/span&gt;"/></source>
-  <target>door <x id="0" equiv-text="&lt;span class=&quot;author-name&quot;&gt;${author}&lt;/span&gt;"/></target>
+  <target><x id="0" equiv-text="&lt;span class=&quot;author-name&quot;&gt;${author}&lt;/span&gt;"/> द्वारा</target>
 </trans-unit>
 <trans-unit id="sa50a6326530d8a0d">
   <source>Show less</source>
-  <target>Minder tonen</target>
+  <target>कम दिखाएँ</target>
 </trans-unit>
 <trans-unit id="sb2c57b2d347203dd">
   <source>Show more</source>
-  <target>Meer tonen</target>
+  <target>और दिखाएँ</target>
 </trans-unit>
 <trans-unit id="se7ce04baa8200e17">
   <source>Presets</source>
-  <target>Voorinstellingen</target>
+  <target>प्रीसेट</target>
 </trans-unit>
 <trans-unit id="s070a892695a86cbc">
   <source>Apply preset "<x id="0" equiv-text="${label}"/>"</source>
-  <target>Voorinstelling “<x id="0" equiv-text="${label}"/>” toepassen</target>
+  <target>प्रीसेट “<x id="0" equiv-text="${label}"/>” लागू करें</target>
 </trans-unit>
 <trans-unit id="s63d894b1ddb06289">
   <source>Description</source>
-  <target>Beschrijving</target>
+  <target>विवरण</target>
 </trans-unit>
 <trans-unit id="s2734d36361f4b432">
   <source>Decrement</source>
-  <target>Verlagen</target>
+  <target>घटाएँ</target>
 </trans-unit>
 <trans-unit id="s82c4cff90db2e31e">
   <source>Increment</source>
-  <target>Verhogen</target>
+  <target>बढ़ाएँ</target>
 </trans-unit>
 <trans-unit id="se1b88c4a229e3526">
   <source>Fractional inches</source>
-  <target>Inches als breuk</target>
+  <target>भिन्नात्मक इंच</target>
 </trans-unit>
 <trans-unit id="s2d5ed76c30d38322">
   <source>Enter text…</source>
-  <target>Tekst invoeren…</target>
+  <target>टेक्स्ट दर्ज करें…</target>
 </trans-unit>
 <trans-unit id="s6cb569ebe837a748">
   <source>Min <x id="0" equiv-text="${minLen}"/> chars</source>
-  <target>Minimaal <x id="0" equiv-text="${minLen}"/> tekens</target>
+  <target>कम से कम <x id="0" equiv-text="${minLen}"/> अक्षर</target>
 </trans-unit>
 <trans-unit id="se85503fb4a31deb2">
   <source>Max <x id="0" equiv-text="${maxLen}"/> chars</source>
-  <target>Maximaal <x id="0" equiv-text="${maxLen}"/> tekens</target>
+  <target>अधिकतम <x id="0" equiv-text="${maxLen}"/> अक्षर</target>
 </trans-unit>
 <trans-unit id="s47294fd8f8bd7b6d">
   <source>No options defined</source>
-  <target>Geen opties gedefinieerd</target>
+  <target>कोई विकल्प परिभाषित नहीं</target>
 </trans-unit>
 <trans-unit id="sea4f08110bb8f15d">
   <source>Remove</source>
-  <target>Verwijderen</target>
+  <target>हटाएँ</target>
 </trans-unit>
 <trans-unit id="se8e6a39f5369c253">
   <source>Add item</source>
-  <target>Item toevoegen</target>
+  <target>आइटम जोड़ें</target>
 </trans-unit>
 <trans-unit id="s563bd69c9fb416b1">
   <source>Add number…</source>
-  <target>Getal toevoegen…</target>
+  <target>संख्या जोड़ें…</target>
 </trans-unit>
 <trans-unit id="sa176f119f892652a">
   <source>Add boolean…</source>
-  <target>Waarde toevoegen…</target>
+  <target>मान जोड़ें…</target>
 </trans-unit>
 <trans-unit id="s31aef1ac7c205e01">
   <source>Add string…</source>
-  <target>Tekst toevoegen…</target>
+  <target>टेक्स्ट जोड़ें…</target>
 </trans-unit>
 <trans-unit id="sb74b4fba5c062156">
   <source>No properties defined</source>
-  <target>Geen eigenschappen gedefinieerd</target>
+  <target>कोई गुण परिभाषित नहीं</target>
 </trans-unit>
 <trans-unit id="se577ce6e203dec0d">
   <source>Nested lists and objects are not editable here yet</source>
-  <target>Geneste lijsten en objecten zijn hier nog niet te bewerken</target>
+  <target>नेस्टेड सूचियाँ और ऑब्जेक्ट अभी यहाँ संपादित नहीं किए जा सकते</target>
 </trans-unit>
 <trans-unit id="se7a2360e38fc5886">
   <source>Add <x id="0" equiv-text="${typeName}"/></source>
-  <target><x id="0" equiv-text="${typeName}"/> toevoegen</target>
+  <target><x id="0" equiv-text="${typeName}"/> जोड़ें</target>
 </trans-unit>
 <trans-unit id="s6cee92a3b310e650">
   <source>Add entry</source>
-  <target>Item toevoegen</target>
+  <target>प्रविष्टि जोड़ें</target>
 </trans-unit>
 <trans-unit id="sf6a254c76164a617">
   <source>No <x id="0" equiv-text="${typeName}"/>s yet</source>
-  <target>Nog geen items (<x id="0" equiv-text="${typeName}"/>)</target>
+  <target>अभी कोई <x id="0" equiv-text="${typeName}"/> नहीं</target>
 </trans-unit>
 <trans-unit id="s244c9895865dcde0">
   <source>No entries yet</source>
-  <target>Nog geen items</target>
+  <target>अभी कोई प्रविष्टि नहीं</target>
 </trans-unit>
 <trans-unit id="s44a9f39dd756f7ef">
   <source>Delete?</source>
-  <target>Verwijderen?</target>
+  <target>हटाएँ?</target>
 </trans-unit>
 <trans-unit id="sb78c736a0c349d12">
   <source>Confirm delete</source>
-  <target>Verwijderen bevestigen</target>
+  <target>हटाने की पुष्टि करें</target>
 </trans-unit>
 <trans-unit id="s2ceb11be2290bb1b">
   <source>Cancel</source>
-  <target>Annuleren</target>
+  <target>रद्द करें</target>
 </trans-unit>
 <trans-unit id="sfac15b89e0668996">
   <source>Duplicate</source>
-  <target>Dupliceren</target>
+  <target>डुप्लिकेट करें</target>
 </trans-unit>
 <trans-unit id="s642c606896e8a631">
   <source>No properties defined — declare them in the script</source>
-  <target>Geen eigenschappen gedefinieerd — declareer ze in het script</target>
+  <target>कोई गुण परिभाषित नहीं — उन्हें स्क्रिप्ट में घोषित करें</target>
 </trans-unit>
 <trans-unit id="s1c0f7e3a9a6bce79">
   <source>Parameters</source>
-  <target>Parameters</target>
+  <target>पैरामीटर</target>
 </trans-unit>
 <trans-unit id="s15165fb86082f593">
   <source>No parameters defined</source>
-  <target>Geen parameters gedefinieerd</target>
+  <target>कोई पैरामीटर परिभाषित नहीं है</target>
 </trans-unit>
 <trans-unit id="s49e763aed00877a8">
   <source>Main</source>
-  <target>Algemeen</target>
+  <target>मुख्य</target>
 </trans-unit>
 <trans-unit id="s417711f56b5a5681">
   <source>Metric</source>
-  <target>Metrisch</target>
+  <target>मीट्रिक</target>
 </trans-unit>
 <trans-unit id="s7e3a237721b38a5c">
   <source>Imperial</source>
-  <target>Imperiaal</target>
+  <target>इंपीरियल</target>
 </trans-unit>
 <trans-unit id="se792fc67e668729d">
   <source>About units</source>
-  <target>Over eenheden</target>
+  <target>इकाइयों के बारे में</target>
 </trans-unit>
 <trans-unit id="s8f5563395121fa02">
   <source>Choose how measurements are shown for you. Metric uses millimetres (mm); Imperial uses inches (in). This is your local preference and does not change the script.</source>
-  <target>Kies hoe maten voor jou worden weergegeven. Metrisch gebruikt millimeters (mm); imperiaal gebruikt inches (in). Dit is je eigen voorkeur en verandert het script niet.</target>
+  <target>चुनें कि माप आपको कैसे दिखाए जाएँ। मीट्रिक मिलीमीटर (mm) का उपयोग करता है; इंपीरियल इंच (in) का। यह आपकी स्थानीय पसंद है और इससे स्क्रिप्ट नहीं बदलती।</target>
 </trans-unit>
 <trans-unit id="s055a7c2d7334ea66">
   <source>This download has no output formats set up.</source>
-  <target>Voor deze download zijn geen uitvoerformaten ingesteld.</target>
+  <target>इस डाउनलोड के लिए कोई आउटपुट फ़ॉर्मेट सेट नहीं है।</target>
 </trans-unit>
 <trans-unit id="sfb3a19c983f738e9">
   <source>The model could not be generated: <x id="0" equiv-text="${detail}"/></source>
-  <target>Het model kon niet worden gegenereerd: <x id="0" equiv-text="${detail}"/></target>
+  <target>मॉडल नहीं बनाया जा सका: <x id="0" equiv-text="${detail}"/></target>
 </trans-unit>
 <trans-unit id="s1aec527c5740b363">
   <source>The model could not be generated.</source>
-  <target>Het model kon niet worden gegenereerd.</target>
+  <target>मॉडल नहीं बनाया जा सका।</target>
 </trans-unit>
 <trans-unit id="s3e3f352f4fc10cc2">
   <source>This configuration produced no files for this download.</source>
-  <target>Deze configuratie leverde geen bestanden op voor deze download.</target>
+  <target>इस कॉन्फ़िगरेशन से इस डाउनलोड के लिए कोई फ़ाइल नहीं बनी।</target>
 </trans-unit>
 <trans-unit id="s77034a5f6017c1c9">
   <source>The PDF for “<x id="0" equiv-text="${docName}"/>” could not be created.</source>
-  <target>De pdf voor “<x id="0" equiv-text="${docName}"/>” kon niet worden gemaakt.</target>
+  <target>“<x id="0" equiv-text="${docName}"/>” के लिए PDF नहीं बनाई जा सकी।</target>
 </trans-unit>
 <trans-unit id="s27f98dea19749a5f">
   <source>Download options</source>
-  <target>Downloadopties</target>
+  <target>डाउनलोड विकल्प</target>
 </trans-unit>
 <trans-unit id="s965997460b662b34">
   <source>No downloads yet — add fulfillments when you publish this configurator.</source>
-  <target>Nog geen downloads — voeg leveringen toe wanneer je deze configurator publiceert.</target>
+  <target>अभी कोई डाउनलोड नहीं — इस कॉन्फ़िगरेटर को प्रकाशित करते समय डिलीवरी विकल्प जोड़ें।</target>
 </trans-unit>
 <trans-unit id="se7c6525cf0a0fb31">
   <source>This configurator offers no downloads.</source>
-  <target>Deze configurator biedt geen downloads.</target>
+  <target>यह कॉन्फ़िगरेटर कोई डाउनलोड प्रदान नहीं करता।</target>
 </trans-unit>
 <trans-unit id="s9e2dddc1b10e447a">
   <source>Default exports — publish this script to choose what visitors can download.</source>
-  <target>Standaardexports — publiceer dit script om te kiezen wat bezoekers kunnen downloaden.</target>
+  <target>डिफ़ॉल्ट एक्सपोर्ट — विज़िटर क्या डाउनलोड कर सकते हैं, यह चुनने के लिए इस स्क्रिप्ट को प्रकाशित करें।</target>
 </trans-unit>
 <trans-unit id="sd3386a2ef42e80b9">
   <source>Download</source>
-  <target>Downloaden</target>
+  <target>डाउनलोड</target>
 </trans-unit>
 <trans-unit id="s901a390f6bb93943">
   <source>Not available yet</source>
-  <target>Nog niet beschikbaar</target>
+  <target>अभी उपलब्ध नहीं</target>
 </trans-unit>
 <trans-unit id="s618f96a9d0d1f4e5">
   <source>The download failed.</source>
-  <target>Het downloaden is mislukt.</target>
+  <target>डाउनलोड विफल रहा।</target>
 </trans-unit>
 <trans-unit id="s480d27b7a8b69ce5">
   <source>Scroll left</source>
-  <target>Naar links scrollen</target>
+  <target>बाएँ स्क्रॉल करें</target>
 </trans-unit>
 <trans-unit id="s5febcd9b311c16fe">
   <source>Scroll right</source>
-  <target>Naar rechts scrollen</target>
+  <target>दाएँ स्क्रॉल करें</target>
 </trans-unit>
 <trans-unit id="s94a27f61d01810e2">
   <source>Made with Archiyou</source>
-  <target>Gemaakt met Archiyou</target>
+  <target>Archiyou से बनाया गया</target>
 </trans-unit>
 <trans-unit id="s435965374707319b">
   <source>Give feedback</source>
-  <target>Feedback geven</target>
+  <target>प्रतिक्रिया दें</target>
 </trans-unit>
 <trans-unit id="sd0f262dce4dc51e6">
   <source>Thanks for the feedback!</source>
-  <target>Bedankt voor je feedback!</target>
+  <target>प्रतिक्रिया के लिए धन्यवाद!</target>
 </trans-unit>
 <trans-unit id="sbb588bb505779122">
   <source>Feedback</source>
-  <target>Feedback</target>
+  <target>प्रतिक्रिया</target>
 </trans-unit>
 <trans-unit id="s5e8250fb85d64c23">
   <source>Close</source>
-  <target>Sluiten</target>
+  <target>बंद करें</target>
 </trans-unit>
 <trans-unit id="s943843f58a43a1bc">
   <source>What could be better here?</source>
-  <target>Wat kan hier beter?</target>
+  <target>यहाँ क्या बेहतर हो सकता है?</target>
 </trans-unit>
 <trans-unit id="s6ead281adf0d371d">
   <source>Sending…</source>
-  <target>Verzenden…</target>
+  <target>भेजा जा रहा है…</target>
 </trans-unit>
 <trans-unit id="s57adf424d57c8a0f">
   <source>Send</source>
-  <target>Versturen</target>
+  <target>भेजें</target>
 </trans-unit>
 <trans-unit id="s6b5248c0195b67b1">
   <source>Too much feedback at once. Please try again in a few minutes.</source>
-  <target>Te veel feedback tegelijk. Probeer het over een paar minuten opnieuw.</target>
+  <target>एक साथ बहुत अधिक प्रतिक्रियाएँ। कृपया कुछ मिनट बाद फिर से प्रयास करें।</target>
 </trans-unit>
 <trans-unit id="s76723a678d342c36">
   <source>Could not send your feedback. Please try again.</source>
-  <target>Je feedback kon niet worden verstuurd. Probeer het opnieuw.</target>
+  <target>आपकी प्रतिक्रिया भेजी नहीं जा सकी। कृपया फिर से प्रयास करें।</target>
 </trans-unit>
 <trans-unit id="s77ad963a5df00f27">
   <source>Publish this script as a configurator</source>
-  <target>Dit script als configurator publiceren</target>
+  <target>इस स्क्रिप्ट को कॉन्फ़िगरेटर के रूप में प्रकाशित करें</target>
 </trans-unit>
 <trans-unit id="s27a7043d417ea6c1">
   <source>Publish as configurator</source>
-  <target>Publiceren als configurator</target>
+  <target>कॉन्फ़िगरेटर के रूप में प्रकाशित करें</target>
 </trans-unit>
 <trans-unit id="s8ed78246f3e49c90">
   <source>Open this script's source in the editor</source>
-  <target>De broncode van dit script openen in de editor</target>
+  <target>इस स्क्रिप्ट का सोर्स एडिटर में खोलें</target>
 </trans-unit>
 <trans-unit id="s3082d635c024691d">
   <source>View source</source>
-  <target>Broncode bekijken</target>
+  <target>सोर्स देखें</target>
 </trans-unit>
 <trans-unit id="saded4620ff0874ba">
   <source>Embed this configurator on your site</source>
-  <target>Deze configurator op je eigen site insluiten</target>
+  <target>इस कॉन्फ़िगरेटर को अपनी साइट पर एम्बेड करें</target>
 </trans-unit>
 <trans-unit id="scace301a88231cce">
   <source>Embed</source>
-  <target>Insluiten</target>
+  <target>एम्बेड</target>
 </trans-unit>
 <trans-unit id="sfe0c6995bffbd197">
   <source>Embed this configurator</source>
-  <target>Deze configurator insluiten</target>
+  <target>यह कॉन्फ़िगरेटर एम्बेड करें</target>
 </trans-unit>
 <trans-unit id="hf4b6cadf590ffe18">
   <source>Paste this HTML into your page — it works like a YouTube or Vimeo embed. The frame fills the width it is given; adjust <x id="0" equiv-text="&lt;code&gt;"/>height<x id="1" equiv-text="&lt;/code&gt;"/> to taste.</source>
-  <target>Plak deze HTML in je pagina — het werkt net als een YouTube- of Vimeo-embed. Het frame vult de beschikbare breedte; pas <x id="0" equiv-text="&lt;code&gt;"/>height<x id="1" equiv-text="&lt;/code&gt;"/> naar wens aan.</target>
+  <target>इस HTML को अपने पेज में पेस्ट करें — यह YouTube या Vimeo एम्बेड की तरह काम करता है। फ़्रेम उसे दी गई पूरी चौड़ाई भर देता है; <x id="0" equiv-text="&lt;code&gt;"/>height<x id="1" equiv-text="&lt;/code&gt;"/> को अपनी ज़रूरत के अनुसार बदलें।</target>
 </trans-unit>
 <trans-unit id="sc89f5b608aeb9931">
   <source>Open directly</source>
-  <target>Direct openen</target>
+  <target>सीधे खोलें</target>
 </trans-unit>
 <trans-unit id="sf4de3bfbfaca12e5">
   <source>Copied</source>
-  <target>Gekopieerd</target>
+  <target>कॉपी हो गया</target>
 </trans-unit>
 <trans-unit id="s3687049d1af562c4">
   <source>Copy</source>
-  <target>Kopiëren</target>
+  <target>कॉपी करें</target>
 </trans-unit>
 <trans-unit id="s5c91d0b01d1e9856">
   <source>Invalid configurator URL.</source>
-  <target>Ongeldige configurator-URL.</target>
+  <target>कॉन्फ़िगरेटर URL अमान्य है।</target>
 </trans-unit>
 <trans-unit id="sc6db4046f6c64db5">
   <source>Configurator “<x id="0" equiv-text="${error.detail}"/>” was not found.</source>
-  <target>Configurator “<x id="0" equiv-text="${error.detail}"/>” is niet gevonden.</target>
+  <target>कॉन्फ़िगरेटर “<x id="0" equiv-text="${error.detail}"/>” नहीं मिला।</target>
 </trans-unit>
 <trans-unit id="s607a3222373a39b1">
   <source>Failed to load the configurator.</source>
-  <target>De configurator kon niet worden geladen.</target>
+  <target>कॉन्फ़िगरेटर लोड नहीं हो सका।</target>
 </trans-unit>
 <trans-unit id="s846b3790b6e25c1c">
   <source>Account</source>
@@ -1072,14 +1072,14 @@
 </trans-unit>
 <trans-unit id="s123467b419acbc07">
   <source>email</source>
-  <target>e-mail</target>
+  <target>ईमेल</target>
   <note from="lit-localize">Tag on a download that is delivered by email</note>
 </trans-unit>
 <trans-unit id="s11326fd2590f4e5e">
   <source>Default</source>
-  <target>Standaard</target>
+  <target>डिफ़ॉल्ट</target>
   <note from="lit-localize">The model without an animation playing</note>
 </trans-unit>
-    </body>
-  </file>
+</body>
+</file>
 </xliff>

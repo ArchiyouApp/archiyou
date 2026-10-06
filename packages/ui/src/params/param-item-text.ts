@@ -1,11 +1,13 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { localized, msg, str } from '@lit/localize';
 import { ifDefined } from 'lit/directives/if-defined.js';
 
 import type { ParamUIMode } from './param-item.js';
 import type { ScriptParam } from '@archiyou/editor/src/state/workspace';
 import { paramValue, paramMinLength, paramMaxLength } from '@archiyou/editor/src/state/workspace';
 
+@localized()
 @customElement('param-item-text')
 export class ParamItemText extends LitElement
 {
@@ -20,7 +22,7 @@ export class ParamItemText extends LitElement
                     class="input ${this._error ? 'invalid' : ''}"
                     .value=${this._value}
                     maxlength=${ifDefined(paramMaxLength(this.param))}
-                    placeholder="Enter text…"
+                    placeholder=${msg('Enter text…')}
                     @input=${this._onInput}
                     @blur=${this._onBlur}
                 />
@@ -72,13 +74,13 @@ export class ParamItemText extends LitElement
 
         if (val.length < minLen)
         {
-            this._error = `Min ${minLen} chars`;
+            this._error = msg(str`Min ${minLen} chars`);
             return;
         }
 
         if (maxLen !== undefined && val.length > maxLen)
         {
-            this._error = `Max ${maxLen} chars`;
+            this._error = msg(str`Max ${maxLen} chars`);
             return;
         }
 

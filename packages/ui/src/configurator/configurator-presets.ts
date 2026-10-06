@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
+import { localized, msg, str } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
@@ -13,6 +14,7 @@ import {
 import { translate } from '@archiyou/editor/src/state/locale';
 import { presetKey } from '@archiyou/core/src/i18n/keys';
 
+@localized()
 @customElement('configurator-presets')
 export class ConfiguratorPresets extends SignalWatcher(LitElement)
 {
@@ -30,7 +32,7 @@ export class ConfiguratorPresets extends SignalWatcher(LitElement)
     return html`
       <div class="header" @click=${this._toggleCollapse}>
         <wa-icon library="lucide" name="bookmark"></wa-icon>
-        <span class="title">Presets</span>
+        <span class="title">${msg('Presets')}</span>
         <span class="spacer"></span>
         <wa-icon library="lucide" name=${collapsed ? 'chevron-down' : 'chevron-up'}></wa-icon>
       </div>
@@ -42,7 +44,7 @@ export class ConfiguratorPresets extends SignalWatcher(LitElement)
             // shown on the button is translated.
             const label = translate.get()(presetKey(p.name), p.name);
             return html`
-            <button class="preset-btn" title=${`Apply preset "${label}"`}
+            <button class="preset-btn" title=${msg(str`Apply preset "${label}"`)}
               @click=${() => this._apply(p.name)}
             >${label}</button>
           `;})}

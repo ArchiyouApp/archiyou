@@ -23,6 +23,7 @@
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
+import { localized, msg } from '@lit/localize';
 
 export type SheetDetent = 'peek' | 'half' | 'full';
 
@@ -33,6 +34,7 @@ const FLICK_SPEED = 0.4;
 /** Slotted controls in the header keep their own taps. */
 const INTERACTIVE = new Set(['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA', 'LABEL']);
 
+@localized()
 @customElement('bottom-sheet')
 export class BottomSheet extends LitElement
 {
@@ -46,7 +48,7 @@ export class BottomSheet extends LitElement
           @pointerup=${this._onPointerUp}
           @pointercancel=${this._onPointerUp}>
         <button class="handle"
-            aria-label="Resize panel"
+            aria-label=${msg('Resize panel')}
             aria-expanded=${this.detent !== this._detents()[0]}
             @click=${this._onHandleClick}></button>
         <slot name="header"></slot>

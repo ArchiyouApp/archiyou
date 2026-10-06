@@ -1,9 +1,11 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { VIEW_STYLES } from './view-styles.js';
+import { localized, msg } from '@lit/localize';
+import { VIEW_STYLES, type ViewStyle } from './view-styles.js';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
+@localized()
 @customElement('viewer-menu')
 export class ViewerMenu extends LitElement
 {
@@ -87,6 +89,19 @@ export class ViewerMenu extends LitElement
     this.dispatchEvent(new CustomEvent(type, { bubbles: true, composed: true }));
   };
 
+  /** VIEW_STYLES keeps the English names; what the menu shows is translated. */
+  private _styleLabel(style: ViewStyle): string
+  {
+    const labels: Record<string, string> = {
+      realistic: msg('Realistic'),
+      xray:      msg('X-Ray'),
+      wireframe: msg('Wireframe'),
+      blueprint: msg('Blueprint'),
+      techdraw:  msg('Tech Draw'),
+    };
+    return labels[style.id] ?? style.label;
+  }
+
   override disconnectedCallback()
   {
     super.disconnectedCallback();
@@ -97,23 +112,24 @@ export class ViewerMenu extends LitElement
 
   override render()
   {
+    // The editor-only buttons further down stay English: the editor is not translated.
     const arTitle = this.arActive
-      ? 'Exit AR'
+      ? msg('Exit AR')
       : this.arSupported
-        ? 'Enter AR'
-        : 'AR not supported on this device';
+        ? msg('Enter AR')
+        : msg('AR not supported on this device');
 
     return html`
       <aside>
         <!-- nav group -->
         <div class="group">
-          <button class="icon-btn" title="Zoom in" @click=${() => this._emit('viewer-zoom-in')}>
+          <button class="icon-btn" title=${msg('Zoom in')} @click=${() => this._emit('viewer-zoom-in')}>
             <wa-icon library="lucide" name="zoom-in"></wa-icon>
           </button>
-          <button class="icon-btn" title="Zoom out" @click=${() => this._emit('viewer-zoom-out')}>
+          <button class="icon-btn" title=${msg('Zoom out')} @click=${() => this._emit('viewer-zoom-out')}>
             <wa-icon library="lucide" name="zoom-out"></wa-icon>
           </button>
-          <button class="icon-btn" title="Fit to view" @click=${() => this._emit('viewer-center')}>
+          <button class="icon-btn" title=${msg('Fit to view')} @click=${() => this._emit('viewer-center')}>
             <wa-icon library="lucide" name="maximize"></wa-icon>
           </button>
         </div>
@@ -126,7 +142,7 @@ export class ViewerMenu extends LitElement
           <div class="style-anchor">
             <button
               class="icon-btn ${this._stylesOpen ? 'active' : ''}"
-              title="View style"
+              title=${msg('View style')}
               @click=${this._toggleStyles}
             >
               <wa-icon library="lucide" name="palette"></wa-icon>
@@ -140,7 +156,7 @@ export class ViewerMenu extends LitElement
                     @click=${() => this._selectStyle(s.id)}
                   >
                     <wa-icon library="lucide" name=${s.icon}></wa-icon>
-                    <span>${s.label}</span>
+                    <span>${this._styleLabel(s)}</span>
                   </button>
                 `)}
               </div>
@@ -152,7 +168,7 @@ export class ViewerMenu extends LitElement
             <div class="style-anchor">
               <button
                 class="icon-btn ${this._animOpen ? 'active' : ''}"
-                title="Animations"
+                title=${msg('Animations')}
                 @click=${this._toggleAnim}
               >
                 <wa-icon library="lucide" name="film"></wa-icon>
@@ -165,7 +181,7 @@ export class ViewerMenu extends LitElement
                     @click=${() => this._selectAnimation(null)}
                   >
                     <wa-icon library="lucide" name="square"></wa-icon>
-                    <span>Default</span>
+                    <span>${msg('Default', { desc: 'The model without an animation playing' })}</span>
                   </button>
                   ${this.animations.map(name => html`
                     <button
@@ -193,7 +209,7 @@ export class ViewerMenu extends LitElement
           <!-- grid toggle -->
           <button
             class="icon-btn ${this.gridVisible ? 'active' : ''}"
-            title=${this.gridVisible ? 'Hide grid' : 'Show grid'}
+            title=${this.gridVisible ? msg('Hide grid') : msg('Show grid')}
             @click=${() => this._emit('viewer-toggle-grid')}
           >
             <wa-icon library="lucide" name="grid-3x3"></wa-icon>

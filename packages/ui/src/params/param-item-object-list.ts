@@ -1,5 +1,6 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { localized, msg, str } from '@lit/localize';
 import { repeat } from 'lit/directives/repeat.js';
 import { SignalWatcher } from '@lit-labs/signals';
 
@@ -27,6 +28,7 @@ import type { TranslatorFn } from '@archiyou/core/src/i18n/resolve';
  *  In the editor (compact) the Add button sits on the param row's name line, rendered by
  *  param-menu and calling add(); only the configurator (presentation) shows it under the list.
  */
+@localized()
 @customElement('param-item-object-list')
 export class ParamItemObjectList extends SignalWatcher(LitElement)
 {
@@ -36,7 +38,9 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
     {
         const entries    = this._entries();
         const itemSchema = this.param ? paramItemSchema(this.param) : {};
-        const typeName   = itemSchema?.title ?? 'entry';
+        // The entry type is the script's own name for it ("Opening"), not translated.
+        const typeName   = (itemSchema?.title as string | undefined)?.toLowerCase();
+        const addLabel   = typeName ? msg(str`Add ${typeName}`) : msg('Add entry');
 
         return html`
             <div class="wrap"
@@ -44,16 +48,16 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
                 @dragstart=${(e: DragEvent) => e.stopPropagation()}
             >
                 ${entries.length === 0
-                    ? html`<div class="empty">No ${typeName.toLowerCase()}s yet</div>`
+                    ? html`<div class="empty">${typeName ? msg(str`No ${typeName}s yet`) : msg('No entries yet')}</div>`
                     : html`<div class="entries">
                         ${repeat(entries, (_e, i) => i, (entry, i) => this._renderEntry(entry, i, itemSchema))}
                     </div>`
                 }
 
                 ${this.mode === 'presentation'
-                    ? html`<button class="add-btn" title=${`Add ${typeName}`} @click=${this.add}>
+                    ? html`<button class="add-btn" title=${addLabel} @click=${this.add}>
                             <wa-icon library="lucide" name="plus"></wa-icon>
-                            <span>Add ${typeName.toLowerCase()}</span>
+                            <span>${addLabel}</span>
                         </button>`
                     : nothing
                 }
@@ -75,21 +79,21 @@ export class ParamItemObjectList extends SignalWatcher(LitElement)
                     <span class="entry-spacer"></span>
                     ${isConfirming
                         ? html`
-                            <span class="confirm-label">Delete?</span>
-                            <button class="entry-btn confirm danger" title="Confirm delete"
+                            <span class="confirm-label">${msg('Delete?')}</span>
+                            <button class="entry-btn confirm danger" title=${msg('Confirm delete')}
                                 @click=${(e: Event) => { e.stopPropagation(); this._removeAt(index); }}>
                                 <wa-icon library="lucide" name="check"></wa-icon>
                             </button>
-                            <button class="entry-btn confirm" title="Cancel"
+                            <button class="entry-btn confirm" title=${msg('Cancel')}
                                 @click=${(e: Event) => { e.stopPropagation(); this._confirmingDelete = null; }}>
                                 <wa-icon library="lucide" name="x"></wa-icon>
                             </button>`
                         : html`
-                            <button class="entry-btn" title="Duplicate"
+                            <button class="entry-btn" title=${msg('Duplicate')}
                                 @click=${(e: Event) => { e.stopPropagation(); this._duplicate(index); }}>
                                 <wa-icon library="lucide" name="copy"></wa-icon>
                             </button>
-                            <button class="entry-btn danger" title="Remove"
+                            <button class="entry-btn danger" title=${msg('Remove')}
                                 @click=${(e: Event) => { e.stopPropagation(); this._confirmingDelete = index; }}>
                                 <wa-icon library="lucide" name="trash-2"></wa-icon>
                             </button>`

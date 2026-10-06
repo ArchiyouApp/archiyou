@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { localized, msg } from '@lit/localize';
 
 import type { ParamUIMode } from './param-item.js';
 import type { ScriptParam } from '@archiyou/editor/src/state/workspace';
@@ -7,6 +8,7 @@ import { paramValue, paramOptions } from '@archiyou/editor/src/state/workspace';
 import { paramOptionKey } from '@archiyou/core/src/i18n/keys';
 import type { TranslatorFn } from '@archiyou/core/src/i18n/resolve';
 
+@localized()
 @customElement('param-item-options')
 export class ParamItemOptions extends LitElement
 {
@@ -25,7 +27,7 @@ export class ParamItemOptions extends LitElement
                 @dragstart=${(e: DragEvent) => e.stopPropagation()}
             >
                 ${options.length === 0
-                    ? html`<option value="" disabled>No options defined</option>`
+                    ? html`<option value="" disabled>${msg('No options defined')}</option>`
                     : options.map(o => html`
                         <!-- The VALUE stays raw: it is what the script compares against
                              (if ($STYLE === 'modern')). Only the visible text is

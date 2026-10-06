@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { localized, msg } from '@lit/localize';
 import { live } from 'lit/directives/live.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { SignalWatcher } from '@lit-labs/signals';
@@ -24,6 +25,7 @@ import {
 /** Sentinel stored in param.units to mark a param as explicitly unitless. */
 const NONE_UNIT = 'none';
 
+@localized()
 @customElement('param-item-number')
 export class ParamItemNumber extends SignalWatcher(LitElement)
 {
@@ -83,15 +85,15 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
         `;
 
         const dec = html`
-            <button class="step-btn" title="Decrement" @click=${this._decrement}>
+            <button class="step-btn" title=${msg('Decrement')} @click=${this._decrement}>
                 <wa-icon library="lucide" name="chevron-left"></wa-icon>
             </button>`;
         const inc = html`
-            <button class="step-btn" title="Increment" @click=${this._increment}>
+            <button class="step-btn" title=${msg('Increment')} @click=${this._increment}>
                 <wa-icon library="lucide" name="chevron-right"></wa-icon>
             </button>`;
         const frac = fracHint
-            ? html`<span class="frac-hint" title="Fractional inches">${fracHint}</span>`
+            ? html`<span class="frac-hint" title=${msg('Fractional inches')}>${fracHint}</span>`
             : '';
 
         // Presentation: label + value box share the top line, the slider gets the

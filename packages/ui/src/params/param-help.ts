@@ -9,10 +9,12 @@
 
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
+import { localized, msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 
+@localized()
 @customElement('param-help')
 export class ParamHelp extends LitElement
 {
@@ -25,7 +27,7 @@ export class ParamHelp extends LitElement
     if (!text) return nothing;
 
     return html`
-      <span id="anchor" class="anchor" tabindex="0" aria-label="Description">
+      <span id="anchor" class="anchor" tabindex="0" aria-label=${msg('Description')}>
         <wa-icon library="lucide" name="circle-help"></wa-icon>
       </span>
       <wa-tooltip for="anchor" placement=${this.placement}>${text}</wa-tooltip>

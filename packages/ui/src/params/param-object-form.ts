@@ -1,5 +1,6 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
+import { localized, msg } from '@lit/localize';
 
 import './param-item-number.js';
 import './param-item-boolean.js';
@@ -55,6 +56,7 @@ const PARAM_TYPE_FOR: Record<Exclude<PropControl, null>, ScriptParamType> = {
  *  is a property of a param, not a param, and conflating the two is what makes
  *  nested editing leak into the real param store (see the event note below).
  */
+@localized()
 @customElement('param-object-form')
 export class ParamObjectForm extends LitElement
 {
@@ -67,7 +69,7 @@ export class ParamObjectForm extends LitElement
 
         if (entries.length === 0)
         {
-            return html`<div class="empty">No properties defined</div>`;
+            return html`<div class="empty">${msg('No properties defined')}</div>`;
         }
 
         // The leaf controls all dispatch `param-value-change` with bubbles+composed.
@@ -104,7 +106,7 @@ export class ParamObjectForm extends LitElement
         if (control === null)
         {
             return html`<span class="unsupported"
-                title="Nested lists and objects are not editable here yet">${JSON.stringify(value)}</span>`;
+                title=${msg('Nested lists and objects are not editable here yet')}>${JSON.stringify(value)}</span>`;
         }
 
         const param  = this._paramFor(key, propSchema, index, control);

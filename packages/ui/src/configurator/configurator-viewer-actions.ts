@@ -13,6 +13,7 @@
 import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
+import { localized, msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
@@ -24,6 +25,7 @@ import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
  *  the snippet drops into any column without the user picking numbers. */
 const EMBED_HEIGHT = 600;
 
+@localized()
 @customElement('configurator-viewer-actions')
 export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
 {
@@ -39,10 +41,10 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
 
     return html`
       <div class="actions">
-        <button class="action-btn primary" title="Publish this script as a configurator"
+        <button class="action-btn primary" title=${msg('Publish this script as a configurator')}
             @click=${this._publish}>
           <wa-icon library="lucide" name="rocket"></wa-icon>
-          <span>Publish as configurator</span>
+          <span>${msg('Publish as configurator')}</span>
         </button>
       </div>
     `;
@@ -61,17 +63,17 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
       <div class="actions">
         ${sourceUrl ? html`
           <a class="action-btn" href=${sourceUrl} target="_blank" rel="noopener"
-              title="Open this script's source in the editor" aria-label="View source">
+              title=${msg("Open this script's source in the editor")} aria-label=${msg('View source')}>
             <wa-icon library="lucide" name="code"></wa-icon>
-            <span>View source</span>
+            <span>${msg('View source')}</span>
           </a>` : nothing}
 
         ${embedUrl ? html`
           <button class="action-btn ${this._embedOpen ? 'active' : ''}"
-              title="Embed this configurator on your site" aria-label="Embed"
+              title=${msg('Embed this configurator on your site')} aria-label=${msg('Embed')}
               @click=${() => { this._embedOpen = !this._embedOpen; }}>
             <wa-icon library="lucide" name="code-xml"></wa-icon>
-            <span>Embed</span>
+            <span>${msg('Embed')}</span>
           </button>` : nothing}
       </div>
 
@@ -86,16 +88,15 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
     return html`
       <div class="panel">
         <div class="panel-header">
-          <span>Embed this configurator</span>
-          <button class="close-btn" aria-label="Close"
+          <span>${msg('Embed this configurator')}</span>
+          <button class="close-btn" aria-label=${msg('Close')}
               @click=${() => { this._embedOpen = false; }}>
             <wa-icon library="lucide" name="x"></wa-icon>
           </button>
         </div>
 
         <p class="panel-hint">
-          Paste this HTML into your page — it works like a YouTube or Vimeo embed.
-          The frame fills the width it is given; adjust <code>height</code> to taste.
+          ${msg(html`Paste this HTML into your page — it works like a YouTube or Vimeo embed. The frame fills the width it is given; adjust <code>height</code> to taste.`)}
         </p>
 
         <textarea class="snippet" readonly rows="6"
@@ -103,10 +104,10 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
         >${snippet}</textarea>
 
         <div class="panel-actions">
-          <a class="open-link" href=${embedUrl} target="_blank" rel="noopener">Open directly</a>
+          <a class="open-link" href=${embedUrl} target="_blank" rel="noopener">${msg('Open directly')}</a>
           <button class="copy-btn" @click=${() => this._copy(snippet)}>
             <wa-icon library="lucide" name=${this._copied ? 'check' : 'copy'}></wa-icon>
-            ${this._copied ? 'Copied' : 'Copy'}
+            ${this._copied ? msg('Copied') : msg('Copy')}
           </button>
         </div>
       </div>

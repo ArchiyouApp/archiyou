@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
+import { localized, msg } from '@lit/localize';
 
 import './param-object-form.js';
 import type { ParamPropertyChange } from './param-object-form.js';
@@ -16,6 +17,7 @@ import type { TranslatorFn } from '@archiyou/core/src/i18n/resolve';
  *  the param's real name. Doing that inline would duplicate it across both the
  *  editor and the configurator switch.
  */
+@localized()
 @customElement('param-item-object')
 export class ParamItemObject extends LitElement
 {
@@ -29,7 +31,7 @@ export class ParamItemObject extends LitElement
         {
             // PARAM_TYPE_SCHEMAS.object has no properties; they only arrive via
             // $PARAMS.define('X','object', { of:'Type' }) or an explicit properties map.
-            return html`<div class="empty">No properties defined — declare them in the script</div>`;
+            return html`<div class="empty">${msg('No properties defined — declare them in the script')}</div>`;
         }
 
         return html`

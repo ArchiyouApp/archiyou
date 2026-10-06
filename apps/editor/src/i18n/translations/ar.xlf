@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
-  <file source-language="en" target-language="nl" datatype="plaintext" original="lit-localize-inputs">
-    <body>
+<file target-language="ar" source-language="en" original="lit-localize-inputs" datatype="plaintext">
+<body>
 <trans-unit id="sc6c573b29c660532">
   <source>Can't reach server. Please check it or your internet connection</source>
 </trans-unit>
@@ -145,375 +145,375 @@
 </trans-unit>
 <trans-unit id="s7dc47fad69f0223b">
   <source>Resize panel</source>
-  <target>Paneelgrootte aanpassen</target>
+  <target>تغيير حجم اللوحة</target>
 </trans-unit>
 <trans-unit id="s88c48021207597df">
   <source>Realistic</source>
-  <target>Realistisch</target>
+  <target>واقعي</target>
 </trans-unit>
 <trans-unit id="sb132f083572a6cd2">
   <source>X-Ray</source>
-  <target>Röntgen</target>
+  <target>أشعة سينية</target>
 </trans-unit>
 <trans-unit id="s96f013195da95865">
   <source>Wireframe</source>
-  <target>Draadmodel</target>
+  <target>إطار سلكي</target>
 </trans-unit>
 <trans-unit id="sfae395b94a5a0040">
   <source>Blueprint</source>
-  <target>Blauwdruk</target>
+  <target>مخطط أزرق</target>
 </trans-unit>
 <trans-unit id="sfb91434099da7351">
   <source>Tech Draw</source>
-  <target>Technische tekening</target>
+  <target>رسم هندسي</target>
 </trans-unit>
 <trans-unit id="s32308e70fc51fdb8">
   <source>Exit AR</source>
-  <target>AR verlaten</target>
+  <target>الخروج من الواقع المعزز</target>
 </trans-unit>
 <trans-unit id="s8b27f085888680b0">
   <source>Enter AR</source>
-  <target>Bekijken in AR</target>
+  <target>العرض بالواقع المعزز</target>
 </trans-unit>
 <trans-unit id="sd2e6eb5df41a5f34">
   <source>AR not supported on this device</source>
-  <target>AR wordt niet ondersteund op dit apparaat</target>
+  <target>الواقع المعزز غير مدعوم على هذا الجهاز</target>
 </trans-unit>
 <trans-unit id="s236ae937cbcd6a39">
   <source>Zoom in</source>
-  <target>Inzoomen</target>
+  <target>تكبير</target>
 </trans-unit>
 <trans-unit id="sc65ea2cf2f21a13a">
   <source>Zoom out</source>
-  <target>Uitzoomen</target>
+  <target>تصغير</target>
 </trans-unit>
 <trans-unit id="s3c604c5ce842d6f2">
   <source>Fit to view</source>
-  <target>Passend maken</target>
+  <target>ملاءمة العرض</target>
 </trans-unit>
 <trans-unit id="sb92cde96aa6a7ffd">
   <source>View style</source>
-  <target>Weergavestijl</target>
+  <target>نمط العرض</target>
 </trans-unit>
 <trans-unit id="s4481f5525a7a394a">
   <source>Animations</source>
-  <target>Animaties</target>
+  <target>الرسوم المتحركة</target>
 </trans-unit>
 <trans-unit id="s8818af2947b74b9b">
   <source>Hide grid</source>
-  <target>Raster verbergen</target>
+  <target>إخفاء الشبكة</target>
 </trans-unit>
 <trans-unit id="sf6f1d2fce4cc2014">
   <source>Show grid</source>
-  <target>Raster tonen</target>
+  <target>إظهار الشبكة</target>
 </trans-unit>
 <trans-unit id="sefcf950b3cc4fc3b">
   <source>Language</source>
-  <target>Taal</target>
+  <target>اللغة</target>
 </trans-unit>
 <trans-unit id="s97ad0ba6f0b62fa5">
   <source><x id="0" equiv-text="${localeLabel(locale)}"/> (original)</source>
-  <target><x id="0" equiv-text="${localeLabel(locale)}"/> (origineel)</target>
+  <target><x id="0" equiv-text="${localeLabel(locale)}"/> (الأصل)</target>
 </trans-unit>
 <trans-unit id="s927497135cdabe78">
   <source>Untitled</source>
-  <target>Naamloos</target>
+  <target>بلا عنوان</target>
 </trans-unit>
 <trans-unit id="h731296fe3615fd0b">
   <source>by <x id="0" equiv-text="&lt;span class=&quot;author-name&quot;&gt;${author}&lt;/span&gt;"/></source>
-  <target>door <x id="0" equiv-text="&lt;span class=&quot;author-name&quot;&gt;${author}&lt;/span&gt;"/></target>
+  <target>بواسطة <x id="0" equiv-text="&lt;span class=&quot;author-name&quot;&gt;${author}&lt;/span&gt;"/></target>
 </trans-unit>
 <trans-unit id="sa50a6326530d8a0d">
   <source>Show less</source>
-  <target>Minder tonen</target>
+  <target>عرض أقل</target>
 </trans-unit>
 <trans-unit id="sb2c57b2d347203dd">
   <source>Show more</source>
-  <target>Meer tonen</target>
+  <target>عرض المزيد</target>
 </trans-unit>
 <trans-unit id="se7ce04baa8200e17">
   <source>Presets</source>
-  <target>Voorinstellingen</target>
+  <target>الإعدادات المسبقة</target>
 </trans-unit>
 <trans-unit id="s070a892695a86cbc">
   <source>Apply preset "<x id="0" equiv-text="${label}"/>"</source>
-  <target>Voorinstelling “<x id="0" equiv-text="${label}"/>” toepassen</target>
+  <target>تطبيق الإعداد المسبق «<x id="0" equiv-text="${label}"/>»</target>
 </trans-unit>
 <trans-unit id="s63d894b1ddb06289">
   <source>Description</source>
-  <target>Beschrijving</target>
+  <target>الوصف</target>
 </trans-unit>
 <trans-unit id="s2734d36361f4b432">
   <source>Decrement</source>
-  <target>Verlagen</target>
+  <target>إنقاص</target>
 </trans-unit>
 <trans-unit id="s82c4cff90db2e31e">
   <source>Increment</source>
-  <target>Verhogen</target>
+  <target>زيادة</target>
 </trans-unit>
 <trans-unit id="se1b88c4a229e3526">
   <source>Fractional inches</source>
-  <target>Inches als breuk</target>
+  <target>كسور البوصة</target>
 </trans-unit>
 <trans-unit id="s2d5ed76c30d38322">
   <source>Enter text…</source>
-  <target>Tekst invoeren…</target>
+  <target>أدخل نصًا…</target>
 </trans-unit>
 <trans-unit id="s6cb569ebe837a748">
   <source>Min <x id="0" equiv-text="${minLen}"/> chars</source>
-  <target>Minimaal <x id="0" equiv-text="${minLen}"/> tekens</target>
+  <target>الحد الأدنى للأحرف: <x id="0" equiv-text="${minLen}"/></target>
 </trans-unit>
 <trans-unit id="se85503fb4a31deb2">
   <source>Max <x id="0" equiv-text="${maxLen}"/> chars</source>
-  <target>Maximaal <x id="0" equiv-text="${maxLen}"/> tekens</target>
+  <target>الحد الأقصى للأحرف: <x id="0" equiv-text="${maxLen}"/></target>
 </trans-unit>
 <trans-unit id="s47294fd8f8bd7b6d">
   <source>No options defined</source>
-  <target>Geen opties gedefinieerd</target>
+  <target>لا توجد خيارات محددة</target>
 </trans-unit>
 <trans-unit id="sea4f08110bb8f15d">
   <source>Remove</source>
-  <target>Verwijderen</target>
+  <target>إزالة</target>
 </trans-unit>
 <trans-unit id="se8e6a39f5369c253">
   <source>Add item</source>
-  <target>Item toevoegen</target>
+  <target>إضافة عنصر</target>
 </trans-unit>
 <trans-unit id="s563bd69c9fb416b1">
   <source>Add number…</source>
-  <target>Getal toevoegen…</target>
+  <target>إضافة رقم…</target>
 </trans-unit>
 <trans-unit id="sa176f119f892652a">
   <source>Add boolean…</source>
-  <target>Waarde toevoegen…</target>
+  <target>إضافة قيمة…</target>
 </trans-unit>
 <trans-unit id="s31aef1ac7c205e01">
   <source>Add string…</source>
-  <target>Tekst toevoegen…</target>
+  <target>إضافة نص…</target>
 </trans-unit>
 <trans-unit id="sb74b4fba5c062156">
   <source>No properties defined</source>
-  <target>Geen eigenschappen gedefinieerd</target>
+  <target>لا توجد خصائص محددة</target>
 </trans-unit>
 <trans-unit id="se577ce6e203dec0d">
   <source>Nested lists and objects are not editable here yet</source>
-  <target>Geneste lijsten en objecten zijn hier nog niet te bewerken</target>
+  <target>لا يمكن تعديل القوائم والكائنات المتداخلة هنا بعد</target>
 </trans-unit>
 <trans-unit id="se7a2360e38fc5886">
   <source>Add <x id="0" equiv-text="${typeName}"/></source>
-  <target><x id="0" equiv-text="${typeName}"/> toevoegen</target>
+  <target>إضافة <x id="0" equiv-text="${typeName}"/></target>
 </trans-unit>
 <trans-unit id="s6cee92a3b310e650">
   <source>Add entry</source>
-  <target>Item toevoegen</target>
+  <target>إضافة عنصر</target>
 </trans-unit>
 <trans-unit id="sf6a254c76164a617">
   <source>No <x id="0" equiv-text="${typeName}"/>s yet</source>
-  <target>Nog geen items (<x id="0" equiv-text="${typeName}"/>)</target>
+  <target>لا توجد عناصر (<x id="0" equiv-text="${typeName}"/>) بعد</target>
 </trans-unit>
 <trans-unit id="s244c9895865dcde0">
   <source>No entries yet</source>
-  <target>Nog geen items</target>
+  <target>لا توجد عناصر بعد</target>
 </trans-unit>
 <trans-unit id="s44a9f39dd756f7ef">
   <source>Delete?</source>
-  <target>Verwijderen?</target>
+  <target>حذف؟</target>
 </trans-unit>
 <trans-unit id="sb78c736a0c349d12">
   <source>Confirm delete</source>
-  <target>Verwijderen bevestigen</target>
+  <target>تأكيد الحذف</target>
 </trans-unit>
 <trans-unit id="s2ceb11be2290bb1b">
   <source>Cancel</source>
-  <target>Annuleren</target>
+  <target>إلغاء</target>
 </trans-unit>
 <trans-unit id="sfac15b89e0668996">
   <source>Duplicate</source>
-  <target>Dupliceren</target>
+  <target>تكرار</target>
 </trans-unit>
 <trans-unit id="s642c606896e8a631">
   <source>No properties defined — declare them in the script</source>
-  <target>Geen eigenschappen gedefinieerd — declareer ze in het script</target>
+  <target>لا توجد خصائص محددة — عرّفها في البرنامج النصي</target>
 </trans-unit>
 <trans-unit id="s1c0f7e3a9a6bce79">
   <source>Parameters</source>
-  <target>Parameters</target>
+  <target>المعلمات</target>
 </trans-unit>
 <trans-unit id="s15165fb86082f593">
   <source>No parameters defined</source>
-  <target>Geen parameters gedefinieerd</target>
+  <target>لا توجد معلمات محددة</target>
 </trans-unit>
 <trans-unit id="s49e763aed00877a8">
   <source>Main</source>
-  <target>Algemeen</target>
+  <target>رئيسي</target>
 </trans-unit>
 <trans-unit id="s417711f56b5a5681">
   <source>Metric</source>
-  <target>Metrisch</target>
+  <target>متري</target>
 </trans-unit>
 <trans-unit id="s7e3a237721b38a5c">
   <source>Imperial</source>
-  <target>Imperiaal</target>
+  <target>إمبراطوري</target>
 </trans-unit>
 <trans-unit id="se792fc67e668729d">
   <source>About units</source>
-  <target>Over eenheden</target>
+  <target>حول الوحدات</target>
 </trans-unit>
 <trans-unit id="s8f5563395121fa02">
   <source>Choose how measurements are shown for you. Metric uses millimetres (mm); Imperial uses inches (in). This is your local preference and does not change the script.</source>
-  <target>Kies hoe maten voor jou worden weergegeven. Metrisch gebruikt millimeters (mm); imperiaal gebruikt inches (in). Dit is je eigen voorkeur en verandert het script niet.</target>
+  <target>اختر طريقة عرض القياسات لك. يستخدم النظام المتري المليمترات (mm)، ويستخدم النظام الإمبراطوري البوصات (in). هذا تفضيلك المحلي ولا يغيّر البرنامج النصي.</target>
 </trans-unit>
 <trans-unit id="s055a7c2d7334ea66">
   <source>This download has no output formats set up.</source>
-  <target>Voor deze download zijn geen uitvoerformaten ingesteld.</target>
+  <target>لم يتم إعداد أي تنسيقات إخراج لهذا التنزيل.</target>
 </trans-unit>
 <trans-unit id="sfb3a19c983f738e9">
   <source>The model could not be generated: <x id="0" equiv-text="${detail}"/></source>
-  <target>Het model kon niet worden gegenereerd: <x id="0" equiv-text="${detail}"/></target>
+  <target>تعذّر إنشاء النموذج: <x id="0" equiv-text="${detail}"/></target>
 </trans-unit>
 <trans-unit id="s1aec527c5740b363">
   <source>The model could not be generated.</source>
-  <target>Het model kon niet worden gegenereerd.</target>
+  <target>تعذّر إنشاء النموذج.</target>
 </trans-unit>
 <trans-unit id="s3e3f352f4fc10cc2">
   <source>This configuration produced no files for this download.</source>
-  <target>Deze configuratie leverde geen bestanden op voor deze download.</target>
+  <target>لم ينتج هذا التكوين أي ملفات لهذا التنزيل.</target>
 </trans-unit>
 <trans-unit id="s77034a5f6017c1c9">
   <source>The PDF for “<x id="0" equiv-text="${docName}"/>” could not be created.</source>
-  <target>De pdf voor “<x id="0" equiv-text="${docName}"/>” kon niet worden gemaakt.</target>
+  <target>تعذّر إنشاء ملف PDF لـ «<x id="0" equiv-text="${docName}"/>».</target>
 </trans-unit>
 <trans-unit id="s27f98dea19749a5f">
   <source>Download options</source>
-  <target>Downloadopties</target>
+  <target>خيارات التنزيل</target>
 </trans-unit>
 <trans-unit id="s965997460b662b34">
   <source>No downloads yet — add fulfillments when you publish this configurator.</source>
-  <target>Nog geen downloads — voeg leveringen toe wanneer je deze configurator publiceert.</target>
+  <target>لا توجد تنزيلات بعد — أضف خيارات التسليم عند نشر أداة التهيئة هذه.</target>
 </trans-unit>
 <trans-unit id="se7c6525cf0a0fb31">
   <source>This configurator offers no downloads.</source>
-  <target>Deze configurator biedt geen downloads.</target>
+  <target>لا تقدّم أداة التهيئة هذه أي تنزيلات.</target>
 </trans-unit>
 <trans-unit id="s9e2dddc1b10e447a">
   <source>Default exports — publish this script to choose what visitors can download.</source>
-  <target>Standaardexports — publiceer dit script om te kiezen wat bezoekers kunnen downloaden.</target>
+  <target>عمليات التصدير الافتراضية — انشر هذا البرنامج النصي لتختار ما يمكن للزوار تنزيله.</target>
 </trans-unit>
 <trans-unit id="sd3386a2ef42e80b9">
   <source>Download</source>
-  <target>Downloaden</target>
+  <target>تنزيل</target>
 </trans-unit>
 <trans-unit id="s901a390f6bb93943">
   <source>Not available yet</source>
-  <target>Nog niet beschikbaar</target>
+  <target>غير متاح بعد</target>
 </trans-unit>
 <trans-unit id="s618f96a9d0d1f4e5">
   <source>The download failed.</source>
-  <target>Het downloaden is mislukt.</target>
+  <target>فشل التنزيل.</target>
 </trans-unit>
 <trans-unit id="s480d27b7a8b69ce5">
   <source>Scroll left</source>
-  <target>Naar links scrollen</target>
+  <target>التمرير لليسار</target>
 </trans-unit>
 <trans-unit id="s5febcd9b311c16fe">
   <source>Scroll right</source>
-  <target>Naar rechts scrollen</target>
+  <target>التمرير لليمين</target>
 </trans-unit>
 <trans-unit id="s94a27f61d01810e2">
   <source>Made with Archiyou</source>
-  <target>Gemaakt met Archiyou</target>
+  <target>صُنع باستخدام Archiyou</target>
 </trans-unit>
 <trans-unit id="s435965374707319b">
   <source>Give feedback</source>
-  <target>Feedback geven</target>
+  <target>إرسال ملاحظات</target>
 </trans-unit>
 <trans-unit id="sd0f262dce4dc51e6">
   <source>Thanks for the feedback!</source>
-  <target>Bedankt voor je feedback!</target>
+  <target>شكرًا على ملاحظاتك!</target>
 </trans-unit>
 <trans-unit id="sbb588bb505779122">
   <source>Feedback</source>
-  <target>Feedback</target>
+  <target>ملاحظات</target>
 </trans-unit>
 <trans-unit id="s5e8250fb85d64c23">
   <source>Close</source>
-  <target>Sluiten</target>
+  <target>إغلاق</target>
 </trans-unit>
 <trans-unit id="s943843f58a43a1bc">
   <source>What could be better here?</source>
-  <target>Wat kan hier beter?</target>
+  <target>ما الذي يمكن تحسينه هنا؟</target>
 </trans-unit>
 <trans-unit id="s6ead281adf0d371d">
   <source>Sending…</source>
-  <target>Verzenden…</target>
+  <target>جارٍ الإرسال…</target>
 </trans-unit>
 <trans-unit id="s57adf424d57c8a0f">
   <source>Send</source>
-  <target>Versturen</target>
+  <target>إرسال</target>
 </trans-unit>
 <trans-unit id="s6b5248c0195b67b1">
   <source>Too much feedback at once. Please try again in a few minutes.</source>
-  <target>Te veel feedback tegelijk. Probeer het over een paar minuten opnieuw.</target>
+  <target>ملاحظات كثيرة جدًا في وقت واحد. يُرجى المحاولة مرة أخرى بعد بضع دقائق.</target>
 </trans-unit>
 <trans-unit id="s76723a678d342c36">
   <source>Could not send your feedback. Please try again.</source>
-  <target>Je feedback kon niet worden verstuurd. Probeer het opnieuw.</target>
+  <target>تعذّر إرسال ملاحظاتك. يُرجى المحاولة مرة أخرى.</target>
 </trans-unit>
 <trans-unit id="s77ad963a5df00f27">
   <source>Publish this script as a configurator</source>
-  <target>Dit script als configurator publiceren</target>
+  <target>نشر هذا البرنامج النصي كأداة تهيئة</target>
 </trans-unit>
 <trans-unit id="s27a7043d417ea6c1">
   <source>Publish as configurator</source>
-  <target>Publiceren als configurator</target>
+  <target>النشر كأداة تهيئة</target>
 </trans-unit>
 <trans-unit id="s8ed78246f3e49c90">
   <source>Open this script's source in the editor</source>
-  <target>De broncode van dit script openen in de editor</target>
+  <target>فتح مصدر هذا البرنامج النصي في المحرر</target>
 </trans-unit>
 <trans-unit id="s3082d635c024691d">
   <source>View source</source>
-  <target>Broncode bekijken</target>
+  <target>عرض المصدر</target>
 </trans-unit>
 <trans-unit id="saded4620ff0874ba">
   <source>Embed this configurator on your site</source>
-  <target>Deze configurator op je eigen site insluiten</target>
+  <target>تضمين أداة التهيئة هذه في موقعك</target>
 </trans-unit>
 <trans-unit id="scace301a88231cce">
   <source>Embed</source>
-  <target>Insluiten</target>
+  <target>تضمين</target>
 </trans-unit>
 <trans-unit id="sfe0c6995bffbd197">
   <source>Embed this configurator</source>
-  <target>Deze configurator insluiten</target>
+  <target>تضمين أداة التهيئة هذه</target>
 </trans-unit>
 <trans-unit id="hf4b6cadf590ffe18">
   <source>Paste this HTML into your page — it works like a YouTube or Vimeo embed. The frame fills the width it is given; adjust <x id="0" equiv-text="&lt;code&gt;"/>height<x id="1" equiv-text="&lt;/code&gt;"/> to taste.</source>
-  <target>Plak deze HTML in je pagina — het werkt net als een YouTube- of Vimeo-embed. Het frame vult de beschikbare breedte; pas <x id="0" equiv-text="&lt;code&gt;"/>height<x id="1" equiv-text="&lt;/code&gt;"/> naar wens aan.</target>
+  <target>الصق شيفرة HTML هذه في صفحتك — فهي تعمل مثل تضمين فيديو من YouTube أو Vimeo. يملأ الإطار العرض المتاح له؛ عدّل <x id="0" equiv-text="&lt;code&gt;"/>height<x id="1" equiv-text="&lt;/code&gt;"/> حسب رغبتك.</target>
 </trans-unit>
 <trans-unit id="sc89f5b608aeb9931">
   <source>Open directly</source>
-  <target>Direct openen</target>
+  <target>فتح مباشرة</target>
 </trans-unit>
 <trans-unit id="sf4de3bfbfaca12e5">
   <source>Copied</source>
-  <target>Gekopieerd</target>
+  <target>تم النسخ</target>
 </trans-unit>
 <trans-unit id="s3687049d1af562c4">
   <source>Copy</source>
-  <target>Kopiëren</target>
+  <target>نسخ</target>
 </trans-unit>
 <trans-unit id="s5c91d0b01d1e9856">
   <source>Invalid configurator URL.</source>
-  <target>Ongeldige configurator-URL.</target>
+  <target>رابط أداة التهيئة غير صالح.</target>
 </trans-unit>
 <trans-unit id="sc6db4046f6c64db5">
   <source>Configurator “<x id="0" equiv-text="${error.detail}"/>” was not found.</source>
-  <target>Configurator “<x id="0" equiv-text="${error.detail}"/>” is niet gevonden.</target>
+  <target>لم يتم العثور على أداة التهيئة «<x id="0" equiv-text="${error.detail}"/>».</target>
 </trans-unit>
 <trans-unit id="s607a3222373a39b1">
   <source>Failed to load the configurator.</source>
-  <target>De configurator kon niet worden geladen.</target>
+  <target>تعذّر تحميل أداة التهيئة.</target>
 </trans-unit>
 <trans-unit id="s846b3790b6e25c1c">
   <source>Account</source>
@@ -1072,14 +1072,14 @@
 </trans-unit>
 <trans-unit id="s123467b419acbc07">
   <source>email</source>
-  <target>e-mail</target>
+  <target>بريد إلكتروني</target>
   <note from="lit-localize">Tag on a download that is delivered by email</note>
 </trans-unit>
 <trans-unit id="s11326fd2590f4e5e">
   <source>Default</source>
-  <target>Standaard</target>
+  <target>افتراضي</target>
   <note from="lit-localize">The model without an animation playing</note>
 </trans-unit>
-    </body>
-  </file>
+</body>
+</file>
 </xliff>

@@ -9,6 +9,7 @@
 
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import { localized, msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
@@ -18,6 +19,7 @@ import { sendConfiguratorFeedback } from '@archiyou/editor/src/services/feedback
 /** Where the Archiyou logo links to. */
 const ARCHIYOU_URL = 'https://archiyou.com';
 
+@localized()
 @customElement('configurator-attribution')
 export class ConfiguratorAttribution extends LitElement
 {
@@ -29,18 +31,18 @@ export class ConfiguratorAttribution extends LitElement
 
       <div class="bar">
         <a class="brand" href=${ARCHIYOU_URL} target="_blank" rel="noopener"
-            title="Made with Archiyou">
+            title=${msg('Made with Archiyou')}>
           <img src="/img/archiyou_logo_header.png" alt="Archiyou">
         </a>
         <button id="feedback-btn" class="icon-btn ${this._open ? 'active' : ''}"
-            aria-label="Give feedback"
+            aria-label=${msg('Give feedback')}
             @click=${this._toggle}>
           <wa-icon library="lucide" name="message-square"></wa-icon>
         </button>
         <!-- Suppressed while the form is up: it would sit on top of it. -->
         ${this._open
           ? nothing
-          : html`<wa-tooltip for="feedback-btn" placement="top">Give feedback</wa-tooltip>`}
+          : html`<wa-tooltip for="feedback-btn" placement="top">${msg('Give feedback')}</wa-tooltip>`}
       </div>
     `;
   }
@@ -52,7 +54,7 @@ export class ConfiguratorAttribution extends LitElement
       return html`
         <div class="panel sent">
           <wa-icon library="lucide" name="circle-check"></wa-icon>
-          <span>Thanks for the feedback!</span>
+          <span>${msg('Thanks for the feedback!')}</span>
         </div>
       `;
     }
@@ -60,15 +62,15 @@ export class ConfiguratorAttribution extends LitElement
     return html`
       <div class="panel">
         <div class="panel-header">
-          <span>Feedback</span>
-          <button class="icon-btn small" aria-label="Close" @click=${this._close}>
+          <span>${msg('Feedback')}</span>
+          <button class="icon-btn small" aria-label=${msg('Close')} @click=${this._close}>
             <wa-icon library="lucide" name="x"></wa-icon>
           </button>
         </div>
         <textarea
           class="message"
           rows="3"
-          placeholder="What could be better here?"
+          placeholder=${msg('What could be better here?')}
           .value=${this._message}
           @input=${(e: InputEvent) => (this._message = (e.target as HTMLTextAreaElement).value)}
           @keydown=${this._onKeydown}
@@ -76,7 +78,7 @@ export class ConfiguratorAttribution extends LitElement
         ${this._error ? html`<div class="error" role="alert">${this._error}</div>` : nothing}
         <div class="panel-actions">
           <button class="btn-send" ?disabled=${!this._message.trim() || this._sending} @click=${this._send}>
-            ${this._sending ? 'Sending…' : 'Send'}
+            ${this._sending ? msg('Sending…') : msg('Send')}
           </button>
         </div>
       </div>
@@ -139,8 +141,8 @@ export class ConfiguratorAttribution extends LitElement
     {
       const status = (err as { status?: number })?.status;
       this._error = status === 429
-        ? 'Too much feedback at once. Please try again in a few minutes.'
-        : 'Could not send your feedback. Please try again.';
+        ? msg('Too much feedback at once. Please try again in a few minutes.')
+        : msg('Could not send your feedback. Please try again.');
       return;
     }
     finally

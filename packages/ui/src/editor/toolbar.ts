@@ -1,6 +1,5 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
-import { msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -46,7 +45,7 @@ export class EditorToolbar extends LitElement
       >
         <wa-icon library="lucide" name=${tool.icon} label=${tool.name}></wa-icon>
       </wa-button>
-      <wa-tooltip for="tool-btn-${tool.id}" placement=${this.horizontal ? 'top' : 'left'}>${msg(tool.name)}</wa-tooltip>
+      <wa-tooltip for="tool-btn-${tool.id}" placement=${this.horizontal ? 'top' : 'left'}>${tool.name}</wa-tooltip>
     `;
   }
 

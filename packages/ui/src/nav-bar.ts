@@ -118,9 +118,9 @@ export class NavBar extends SignalWatcher(LitElement)
             <button
               class=${`theme-seg-btn${preference === choice.value ? ' active' : ''}`}
               aria-pressed=${preference === choice.value ? 'true' : 'false'}
-              title=${msg(choice.label)}
+              title=${choice.label}
               @click=${() => this._setTheme(choice.value)}
-            ><wa-icon library="lucide" name=${choice.icon} label=${msg(choice.label)}></wa-icon></button>
+            ><wa-icon library="lucide" name=${choice.icon} label=${choice.label}></wa-icon></button>
           `)}
         </div>
 
@@ -155,7 +155,7 @@ export class NavBar extends SignalWatcher(LitElement)
           <wa-icon library="lucide" name="triangle-alert"></wa-icon>
         </span>
       </wa-button>
-      <wa-tooltip for="nav-not-signed-in" placement="bottom">${msg(NOT_SIGNED_IN_MESSAGE)}</wa-tooltip>
+      <wa-tooltip for="nav-not-signed-in" placement="bottom">${NOT_SIGNED_IN_MESSAGE}</wa-tooltip>
 
       <wa-button appearance="plain" class="theme-toggle" @click=${this._toggleTheme}>
         <wa-icon

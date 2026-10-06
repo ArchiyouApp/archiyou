@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
+import { localized, msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
@@ -15,6 +16,7 @@ import { translate } from '@archiyou/editor/src/state/locale';
 import type { Metric } from '@archiyou/core/src/calc/types';
 import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
+@localized()
 @customElement('configurator-metric-bar')
 export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
 {
@@ -27,7 +29,7 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
     return html`
       <div class="bar">
         ${this._hasOverflow ? html`
-          <button class="nav-btn prev" title="Scroll left" @click=${this._scrollPrev}>
+          <button class="nav-btn prev" title=${msg('Scroll left')} @click=${this._scrollPrev}>
             <wa-icon library="lucide" name="chevron-left"></wa-icon>
           </button>
         ` : ''}
@@ -44,16 +46,16 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
         </div>
 
         ${this._hasOverflow ? html`
-          <button class="nav-btn next" title="Scroll right" @click=${this._scrollNext}>
+          <button class="nav-btn next" title=${msg('Scroll right')} @click=${this._scrollNext}>
             <wa-icon library="lucide" name="chevron-right"></wa-icon>
           </button>
         ` : ''}
 
         ${this._hasDownloads() ? html`
           <div class="download-wrap">
-            <button id="download-btn" class="download-btn" title="Download">
+            <button id="download-btn" class="download-btn" title=${msg('Download')}>
               <wa-icon library="lucide" name="download"></wa-icon>
-              <span>Download</span>
+              <span>${msg('Download')}</span>
               <wa-icon class="download-caret" library="lucide" name="chevron-down"></wa-icon>
             </button>
           </div>

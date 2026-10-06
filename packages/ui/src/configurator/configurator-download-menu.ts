@@ -17,6 +17,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
+import { localized, msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
@@ -56,6 +57,7 @@ const CATEGORY_TINTS: Record<string, string> = {
   metrics: 'metrics',
 };
 
+@localized()
 @customElement('configurator-download-menu')
 export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
 {
@@ -65,13 +67,13 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
     const { list, defaults } = this.fulfillments();
 
     return html`
-      <div class="header">Download options</div>
+      <div class="header">${msg('Download options')}</div>
 
       ${list.length === 0
         ? html`<p class="empty">
             ${this.preview
-              ? 'No downloads yet — add fulfillments when you publish this configurator.'
-              : 'This configurator offers no downloads.'}
+              ? msg('No downloads yet — add fulfillments when you publish this configurator.')
+              : msg('This configurator offers no downloads.')}
           </p>`
         : html`<div class="list">
             ${list.map((f, i) => this._renderRow(f, i))}
@@ -79,7 +81,7 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
 
       ${defaults
         ? html`<p class="note">
-            Default exports — publish this script to choose what visitors can download.
+            ${msg('Default exports — publish this script to choose what visitors can download.')}
           </p>`
         : nothing}
 
@@ -92,7 +94,7 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
   private _renderRow(fulfillment: ScriptPublishedFulfillmentData, index: number)
   {
     const t        = translate.get();
-    const name     = t(fulfillmentNameKey(index), fulfillment.name || 'Download');
+    const name     = t(fulfillmentNameKey(index), fulfillment.name || msg('Download'));
     const about    = t(fulfillmentDescriptionKey(index), fulfillment.description ?? '');
     const formats    = fulfillmentFormats(fulfillment);
     const categories = fulfillmentCategories(fulfillment);
@@ -125,7 +127,7 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
             : nothing}
           <!-- On the row, not only in its tooltip: touch screens have no hover. -->
           ${about || blocked
-            ? html`<span class="row-about">${[about, blocked ? 'Not available yet' : ''].filter(Boolean).join(' · ')}</span>`
+            ? html`<span class="row-about">${[about, blocked ? msg('Not available yet') : ''].filter(Boolean).join(' · ')}</span>`
             : nothing}
         </span>
 
@@ -144,7 +146,7 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
   {
     const price = fulfillment.price ?? 0;
     if (price > 0) return html`<span class="row-tag">${this._formatPrice(price)}</span>`;
-    if (fulfillment.delivery === 'email') return html`<span class="row-tag">email</span>`;
+    if (fulfillment.delivery === 'email') return html`<span class="row-tag">${msg('email', { desc: 'Tag on a download that is delivered by email' })}</span>`;
     return nothing;
   }
 
@@ -211,7 +213,7 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
     catch (err)
     {
       console.error('Configurator: download failed:', err);
-      this._error = (err as Error)?.message ?? 'The download failed.';
+      this._error = (err as Error)?.message || msg('The download failed.');
     }
     finally
     {
@@ -233,7 +235,7 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
     return [
       about,
       formats.length ? formats.map(f => `.${f}`).join(', ') : '',
-      blocked ? 'Not available yet' : '',
+      blocked ? msg('Not available yet') : '',
     ].filter(Boolean).join('\n');
   }
 

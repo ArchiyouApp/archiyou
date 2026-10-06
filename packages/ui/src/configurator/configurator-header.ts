@@ -1,6 +1,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
+import { localized, msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
@@ -14,6 +15,7 @@ import {
 
 import './configurator-locale-select.js';
 
+@localized()
 @customElement('configurator-header')
 export class ConfiguratorHeader extends SignalWatcher(LitElement)
 {
@@ -24,7 +26,7 @@ export class ConfiguratorHeader extends SignalWatcher(LitElement)
     const t       = translate.get();
     // Source strings stay the fallback for every key, so a missing translation degrades
     // to the author's own words rather than to a blank.
-    const name    = t(TITLE_KEY, script?.published?.title ?? script?.name ?? 'Untitled');
+    const name    = t(TITLE_KEY, script?.published?.title ?? script?.name ?? msg('Untitled'));
     const author  = script?.author ?? null;
     const version = script?.version ?? null;
 
@@ -40,7 +42,7 @@ export class ConfiguratorHeader extends SignalWatcher(LitElement)
         <div class="titles">
           <span class="name" title=${name}>${name}</span>
           ${author
-            ? html`<span class="author">by <span class="author-name">${author}</span></span>`
+            ? html`<span class="author">${msg(html`by <span class="author-name">${author}</span>`)}</span>`
             : nothing}
         </div>
 
@@ -73,7 +75,7 @@ export class ConfiguratorHeader extends SignalWatcher(LitElement)
         ${details ? html`
           <button class="more-btn" @click=${() => { this._expanded = !this._expanded; }}>
             <wa-icon library="lucide" name=${this._expanded ? 'chevron-up' : 'chevron-down'}></wa-icon>
-            ${this._expanded ? 'Show less' : 'Show more'}
+            ${this._expanded ? msg('Show less') : msg('Show more')}
           </button>` : nothing}
       </div>
     `;

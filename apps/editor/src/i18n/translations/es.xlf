@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
-  <file source-language="en" target-language="nl" datatype="plaintext" original="lit-localize-inputs">
-    <body>
+<file target-language="es" source-language="en" original="lit-localize-inputs" datatype="plaintext">
+<body>
 <trans-unit id="sc6c573b29c660532">
   <source>Can't reach server. Please check it or your internet connection</source>
 </trans-unit>
@@ -145,375 +145,375 @@
 </trans-unit>
 <trans-unit id="s7dc47fad69f0223b">
   <source>Resize panel</source>
-  <target>Paneelgrootte aanpassen</target>
+  <target>Cambiar el tamaño del panel</target>
 </trans-unit>
 <trans-unit id="s88c48021207597df">
   <source>Realistic</source>
-  <target>Realistisch</target>
+  <target>Realista</target>
 </trans-unit>
 <trans-unit id="sb132f083572a6cd2">
   <source>X-Ray</source>
-  <target>Röntgen</target>
+  <target>Rayos X</target>
 </trans-unit>
 <trans-unit id="s96f013195da95865">
   <source>Wireframe</source>
-  <target>Draadmodel</target>
+  <target>Alámbrico</target>
 </trans-unit>
 <trans-unit id="sfae395b94a5a0040">
   <source>Blueprint</source>
-  <target>Blauwdruk</target>
+  <target>Plano</target>
 </trans-unit>
 <trans-unit id="sfb91434099da7351">
   <source>Tech Draw</source>
-  <target>Technische tekening</target>
+  <target>Dibujo técnico</target>
 </trans-unit>
 <trans-unit id="s32308e70fc51fdb8">
   <source>Exit AR</source>
-  <target>AR verlaten</target>
+  <target>Salir de RA</target>
 </trans-unit>
 <trans-unit id="s8b27f085888680b0">
   <source>Enter AR</source>
-  <target>Bekijken in AR</target>
+  <target>Ver en RA</target>
 </trans-unit>
 <trans-unit id="sd2e6eb5df41a5f34">
   <source>AR not supported on this device</source>
-  <target>AR wordt niet ondersteund op dit apparaat</target>
+  <target>La RA no es compatible con este dispositivo</target>
 </trans-unit>
 <trans-unit id="s236ae937cbcd6a39">
   <source>Zoom in</source>
-  <target>Inzoomen</target>
+  <target>Acercar</target>
 </trans-unit>
 <trans-unit id="sc65ea2cf2f21a13a">
   <source>Zoom out</source>
-  <target>Uitzoomen</target>
+  <target>Alejar</target>
 </trans-unit>
 <trans-unit id="s3c604c5ce842d6f2">
   <source>Fit to view</source>
-  <target>Passend maken</target>
+  <target>Ajustar a la vista</target>
 </trans-unit>
 <trans-unit id="sb92cde96aa6a7ffd">
   <source>View style</source>
-  <target>Weergavestijl</target>
+  <target>Estilo de vista</target>
 </trans-unit>
 <trans-unit id="s4481f5525a7a394a">
   <source>Animations</source>
-  <target>Animaties</target>
+  <target>Animaciones</target>
 </trans-unit>
 <trans-unit id="s8818af2947b74b9b">
   <source>Hide grid</source>
-  <target>Raster verbergen</target>
+  <target>Ocultar cuadrícula</target>
 </trans-unit>
 <trans-unit id="sf6f1d2fce4cc2014">
   <source>Show grid</source>
-  <target>Raster tonen</target>
+  <target>Mostrar cuadrícula</target>
 </trans-unit>
 <trans-unit id="sefcf950b3cc4fc3b">
   <source>Language</source>
-  <target>Taal</target>
+  <target>Idioma</target>
 </trans-unit>
 <trans-unit id="s97ad0ba6f0b62fa5">
   <source><x id="0" equiv-text="${localeLabel(locale)}"/> (original)</source>
-  <target><x id="0" equiv-text="${localeLabel(locale)}"/> (origineel)</target>
+  <target><x id="0" equiv-text="${localeLabel(locale)}"/> (original)</target>
 </trans-unit>
 <trans-unit id="s927497135cdabe78">
   <source>Untitled</source>
-  <target>Naamloos</target>
+  <target>Sin título</target>
 </trans-unit>
 <trans-unit id="h731296fe3615fd0b">
   <source>by <x id="0" equiv-text="&lt;span class=&quot;author-name&quot;&gt;${author}&lt;/span&gt;"/></source>
-  <target>door <x id="0" equiv-text="&lt;span class=&quot;author-name&quot;&gt;${author}&lt;/span&gt;"/></target>
+  <target>por <x id="0" equiv-text="&lt;span class=&quot;author-name&quot;&gt;${author}&lt;/span&gt;"/></target>
 </trans-unit>
 <trans-unit id="sa50a6326530d8a0d">
   <source>Show less</source>
-  <target>Minder tonen</target>
+  <target>Mostrar menos</target>
 </trans-unit>
 <trans-unit id="sb2c57b2d347203dd">
   <source>Show more</source>
-  <target>Meer tonen</target>
+  <target>Mostrar más</target>
 </trans-unit>
 <trans-unit id="se7ce04baa8200e17">
   <source>Presets</source>
-  <target>Voorinstellingen</target>
+  <target>Ajustes predefinidos</target>
 </trans-unit>
 <trans-unit id="s070a892695a86cbc">
   <source>Apply preset "<x id="0" equiv-text="${label}"/>"</source>
-  <target>Voorinstelling “<x id="0" equiv-text="${label}"/>” toepassen</target>
+  <target>Aplicar el ajuste predefinido «<x id="0" equiv-text="${label}"/>»</target>
 </trans-unit>
 <trans-unit id="s63d894b1ddb06289">
   <source>Description</source>
-  <target>Beschrijving</target>
+  <target>Descripción</target>
 </trans-unit>
 <trans-unit id="s2734d36361f4b432">
   <source>Decrement</source>
-  <target>Verlagen</target>
+  <target>Disminuir</target>
 </trans-unit>
 <trans-unit id="s82c4cff90db2e31e">
   <source>Increment</source>
-  <target>Verhogen</target>
+  <target>Aumentar</target>
 </trans-unit>
 <trans-unit id="se1b88c4a229e3526">
   <source>Fractional inches</source>
-  <target>Inches als breuk</target>
+  <target>Pulgadas fraccionarias</target>
 </trans-unit>
 <trans-unit id="s2d5ed76c30d38322">
   <source>Enter text…</source>
-  <target>Tekst invoeren…</target>
+  <target>Escribe un texto…</target>
 </trans-unit>
 <trans-unit id="s6cb569ebe837a748">
   <source>Min <x id="0" equiv-text="${minLen}"/> chars</source>
-  <target>Minimaal <x id="0" equiv-text="${minLen}"/> tekens</target>
+  <target>Mínimo <x id="0" equiv-text="${minLen}"/> caracteres</target>
 </trans-unit>
 <trans-unit id="se85503fb4a31deb2">
   <source>Max <x id="0" equiv-text="${maxLen}"/> chars</source>
-  <target>Maximaal <x id="0" equiv-text="${maxLen}"/> tekens</target>
+  <target>Máximo <x id="0" equiv-text="${maxLen}"/> caracteres</target>
 </trans-unit>
 <trans-unit id="s47294fd8f8bd7b6d">
   <source>No options defined</source>
-  <target>Geen opties gedefinieerd</target>
+  <target>No hay opciones definidas</target>
 </trans-unit>
 <trans-unit id="sea4f08110bb8f15d">
   <source>Remove</source>
-  <target>Verwijderen</target>
+  <target>Quitar</target>
 </trans-unit>
 <trans-unit id="se8e6a39f5369c253">
   <source>Add item</source>
-  <target>Item toevoegen</target>
+  <target>Añadir elemento</target>
 </trans-unit>
 <trans-unit id="s563bd69c9fb416b1">
   <source>Add number…</source>
-  <target>Getal toevoegen…</target>
+  <target>Añadir número…</target>
 </trans-unit>
 <trans-unit id="sa176f119f892652a">
   <source>Add boolean…</source>
-  <target>Waarde toevoegen…</target>
+  <target>Añadir valor…</target>
 </trans-unit>
 <trans-unit id="s31aef1ac7c205e01">
   <source>Add string…</source>
-  <target>Tekst toevoegen…</target>
+  <target>Añadir texto…</target>
 </trans-unit>
 <trans-unit id="sb74b4fba5c062156">
   <source>No properties defined</source>
-  <target>Geen eigenschappen gedefinieerd</target>
+  <target>No hay propiedades definidas</target>
 </trans-unit>
 <trans-unit id="se577ce6e203dec0d">
   <source>Nested lists and objects are not editable here yet</source>
-  <target>Geneste lijsten en objecten zijn hier nog niet te bewerken</target>
+  <target>Las listas y objetos anidados aún no se pueden editar aquí</target>
 </trans-unit>
 <trans-unit id="se7a2360e38fc5886">
   <source>Add <x id="0" equiv-text="${typeName}"/></source>
-  <target><x id="0" equiv-text="${typeName}"/> toevoegen</target>
+  <target>Añadir <x id="0" equiv-text="${typeName}"/></target>
 </trans-unit>
 <trans-unit id="s6cee92a3b310e650">
   <source>Add entry</source>
-  <target>Item toevoegen</target>
+  <target>Añadir elemento</target>
 </trans-unit>
 <trans-unit id="sf6a254c76164a617">
   <source>No <x id="0" equiv-text="${typeName}"/>s yet</source>
-  <target>Nog geen items (<x id="0" equiv-text="${typeName}"/>)</target>
+  <target>Aún no hay elementos (<x id="0" equiv-text="${typeName}"/>)</target>
 </trans-unit>
 <trans-unit id="s244c9895865dcde0">
   <source>No entries yet</source>
-  <target>Nog geen items</target>
+  <target>Aún no hay elementos</target>
 </trans-unit>
 <trans-unit id="s44a9f39dd756f7ef">
   <source>Delete?</source>
-  <target>Verwijderen?</target>
+  <target>¿Eliminar?</target>
 </trans-unit>
 <trans-unit id="sb78c736a0c349d12">
   <source>Confirm delete</source>
-  <target>Verwijderen bevestigen</target>
+  <target>Confirmar eliminación</target>
 </trans-unit>
 <trans-unit id="s2ceb11be2290bb1b">
   <source>Cancel</source>
-  <target>Annuleren</target>
+  <target>Cancelar</target>
 </trans-unit>
 <trans-unit id="sfac15b89e0668996">
   <source>Duplicate</source>
-  <target>Dupliceren</target>
+  <target>Duplicar</target>
 </trans-unit>
 <trans-unit id="s642c606896e8a631">
   <source>No properties defined — declare them in the script</source>
-  <target>Geen eigenschappen gedefinieerd — declareer ze in het script</target>
+  <target>No hay propiedades definidas: decláralas en el script</target>
 </trans-unit>
 <trans-unit id="s1c0f7e3a9a6bce79">
   <source>Parameters</source>
-  <target>Parameters</target>
+  <target>Parámetros</target>
 </trans-unit>
 <trans-unit id="s15165fb86082f593">
   <source>No parameters defined</source>
-  <target>Geen parameters gedefinieerd</target>
+  <target>No hay parámetros definidos</target>
 </trans-unit>
 <trans-unit id="s49e763aed00877a8">
   <source>Main</source>
-  <target>Algemeen</target>
+  <target>Principal</target>
 </trans-unit>
 <trans-unit id="s417711f56b5a5681">
   <source>Metric</source>
-  <target>Metrisch</target>
+  <target>Métrico</target>
 </trans-unit>
 <trans-unit id="s7e3a237721b38a5c">
   <source>Imperial</source>
-  <target>Imperiaal</target>
+  <target>Imperial</target>
 </trans-unit>
 <trans-unit id="se792fc67e668729d">
   <source>About units</source>
-  <target>Over eenheden</target>
+  <target>Acerca de las unidades</target>
 </trans-unit>
 <trans-unit id="s8f5563395121fa02">
   <source>Choose how measurements are shown for you. Metric uses millimetres (mm); Imperial uses inches (in). This is your local preference and does not change the script.</source>
-  <target>Kies hoe maten voor jou worden weergegeven. Metrisch gebruikt millimeters (mm); imperiaal gebruikt inches (in). Dit is je eigen voorkeur en verandert het script niet.</target>
+  <target>Elige cómo se muestran las medidas. El sistema métrico usa milímetros (mm); el imperial usa pulgadas (in). Es tu preferencia local y no cambia el script.</target>
 </trans-unit>
 <trans-unit id="s055a7c2d7334ea66">
   <source>This download has no output formats set up.</source>
-  <target>Voor deze download zijn geen uitvoerformaten ingesteld.</target>
+  <target>Esta descarga no tiene formatos de salida configurados.</target>
 </trans-unit>
 <trans-unit id="sfb3a19c983f738e9">
   <source>The model could not be generated: <x id="0" equiv-text="${detail}"/></source>
-  <target>Het model kon niet worden gegenereerd: <x id="0" equiv-text="${detail}"/></target>
+  <target>No se pudo generar el modelo: <x id="0" equiv-text="${detail}"/></target>
 </trans-unit>
 <trans-unit id="s1aec527c5740b363">
   <source>The model could not be generated.</source>
-  <target>Het model kon niet worden gegenereerd.</target>
+  <target>No se pudo generar el modelo.</target>
 </trans-unit>
 <trans-unit id="s3e3f352f4fc10cc2">
   <source>This configuration produced no files for this download.</source>
-  <target>Deze configuratie leverde geen bestanden op voor deze download.</target>
+  <target>Esta configuración no generó ningún archivo para esta descarga.</target>
 </trans-unit>
 <trans-unit id="s77034a5f6017c1c9">
   <source>The PDF for “<x id="0" equiv-text="${docName}"/>” could not be created.</source>
-  <target>De pdf voor “<x id="0" equiv-text="${docName}"/>” kon niet worden gemaakt.</target>
+  <target>No se pudo crear el PDF de «<x id="0" equiv-text="${docName}"/>».</target>
 </trans-unit>
 <trans-unit id="s27f98dea19749a5f">
   <source>Download options</source>
-  <target>Downloadopties</target>
+  <target>Opciones de descarga</target>
 </trans-unit>
 <trans-unit id="s965997460b662b34">
   <source>No downloads yet — add fulfillments when you publish this configurator.</source>
-  <target>Nog geen downloads — voeg leveringen toe wanneer je deze configurator publiceert.</target>
+  <target>Aún no hay descargas: añade entregables al publicar este configurador.</target>
 </trans-unit>
 <trans-unit id="se7c6525cf0a0fb31">
   <source>This configurator offers no downloads.</source>
-  <target>Deze configurator biedt geen downloads.</target>
+  <target>Este configurador no ofrece descargas.</target>
 </trans-unit>
 <trans-unit id="s9e2dddc1b10e447a">
   <source>Default exports — publish this script to choose what visitors can download.</source>
-  <target>Standaardexports — publiceer dit script om te kiezen wat bezoekers kunnen downloaden.</target>
+  <target>Exportaciones predeterminadas: publica este script para elegir qué pueden descargar los visitantes.</target>
 </trans-unit>
 <trans-unit id="sd3386a2ef42e80b9">
   <source>Download</source>
-  <target>Downloaden</target>
+  <target>Descargar</target>
 </trans-unit>
 <trans-unit id="s901a390f6bb93943">
   <source>Not available yet</source>
-  <target>Nog niet beschikbaar</target>
+  <target>Aún no disponible</target>
 </trans-unit>
 <trans-unit id="s618f96a9d0d1f4e5">
   <source>The download failed.</source>
-  <target>Het downloaden is mislukt.</target>
+  <target>La descarga ha fallado.</target>
 </trans-unit>
 <trans-unit id="s480d27b7a8b69ce5">
   <source>Scroll left</source>
-  <target>Naar links scrollen</target>
+  <target>Desplazar a la izquierda</target>
 </trans-unit>
 <trans-unit id="s5febcd9b311c16fe">
   <source>Scroll right</source>
-  <target>Naar rechts scrollen</target>
+  <target>Desplazar a la derecha</target>
 </trans-unit>
 <trans-unit id="s94a27f61d01810e2">
   <source>Made with Archiyou</source>
-  <target>Gemaakt met Archiyou</target>
+  <target>Hecho con Archiyou</target>
 </trans-unit>
 <trans-unit id="s435965374707319b">
   <source>Give feedback</source>
-  <target>Feedback geven</target>
+  <target>Enviar comentarios</target>
 </trans-unit>
 <trans-unit id="sd0f262dce4dc51e6">
   <source>Thanks for the feedback!</source>
-  <target>Bedankt voor je feedback!</target>
+  <target>¡Gracias por tus comentarios!</target>
 </trans-unit>
 <trans-unit id="sbb588bb505779122">
   <source>Feedback</source>
-  <target>Feedback</target>
+  <target>Comentarios</target>
 </trans-unit>
 <trans-unit id="s5e8250fb85d64c23">
   <source>Close</source>
-  <target>Sluiten</target>
+  <target>Cerrar</target>
 </trans-unit>
 <trans-unit id="s943843f58a43a1bc">
   <source>What could be better here?</source>
-  <target>Wat kan hier beter?</target>
+  <target>¿Qué se podría mejorar aquí?</target>
 </trans-unit>
 <trans-unit id="s6ead281adf0d371d">
   <source>Sending…</source>
-  <target>Verzenden…</target>
+  <target>Enviando…</target>
 </trans-unit>
 <trans-unit id="s57adf424d57c8a0f">
   <source>Send</source>
-  <target>Versturen</target>
+  <target>Enviar</target>
 </trans-unit>
 <trans-unit id="s6b5248c0195b67b1">
   <source>Too much feedback at once. Please try again in a few minutes.</source>
-  <target>Te veel feedback tegelijk. Probeer het over een paar minuten opnieuw.</target>
+  <target>Demasiados comentarios a la vez. Vuelve a intentarlo dentro de unos minutos.</target>
 </trans-unit>
 <trans-unit id="s76723a678d342c36">
   <source>Could not send your feedback. Please try again.</source>
-  <target>Je feedback kon niet worden verstuurd. Probeer het opnieuw.</target>
+  <target>No se pudieron enviar tus comentarios. Inténtalo de nuevo.</target>
 </trans-unit>
 <trans-unit id="s77ad963a5df00f27">
   <source>Publish this script as a configurator</source>
-  <target>Dit script als configurator publiceren</target>
+  <target>Publicar este script como configurador</target>
 </trans-unit>
 <trans-unit id="s27a7043d417ea6c1">
   <source>Publish as configurator</source>
-  <target>Publiceren als configurator</target>
+  <target>Publicar como configurador</target>
 </trans-unit>
 <trans-unit id="s8ed78246f3e49c90">
   <source>Open this script's source in the editor</source>
-  <target>De broncode van dit script openen in de editor</target>
+  <target>Abrir el código fuente de este script en el editor</target>
 </trans-unit>
 <trans-unit id="s3082d635c024691d">
   <source>View source</source>
-  <target>Broncode bekijken</target>
+  <target>Ver código fuente</target>
 </trans-unit>
 <trans-unit id="saded4620ff0874ba">
   <source>Embed this configurator on your site</source>
-  <target>Deze configurator op je eigen site insluiten</target>
+  <target>Insertar este configurador en tu sitio web</target>
 </trans-unit>
 <trans-unit id="scace301a88231cce">
   <source>Embed</source>
-  <target>Insluiten</target>
+  <target>Insertar</target>
 </trans-unit>
 <trans-unit id="sfe0c6995bffbd197">
   <source>Embed this configurator</source>
-  <target>Deze configurator insluiten</target>
+  <target>Insertar este configurador</target>
 </trans-unit>
 <trans-unit id="hf4b6cadf590ffe18">
   <source>Paste this HTML into your page — it works like a YouTube or Vimeo embed. The frame fills the width it is given; adjust <x id="0" equiv-text="&lt;code&gt;"/>height<x id="1" equiv-text="&lt;/code&gt;"/> to taste.</source>
-  <target>Plak deze HTML in je pagina — het werkt net als een YouTube- of Vimeo-embed. Het frame vult de beschikbare breedte; pas <x id="0" equiv-text="&lt;code&gt;"/>height<x id="1" equiv-text="&lt;/code&gt;"/> naar wens aan.</target>
+  <target>Pega este HTML en tu página: funciona como un vídeo insertado de YouTube o Vimeo. El marco ocupa todo el ancho disponible; ajusta <x id="0" equiv-text="&lt;code&gt;"/>height<x id="1" equiv-text="&lt;/code&gt;"/> a tu gusto.</target>
 </trans-unit>
 <trans-unit id="sc89f5b608aeb9931">
   <source>Open directly</source>
-  <target>Direct openen</target>
+  <target>Abrir directamente</target>
 </trans-unit>
 <trans-unit id="sf4de3bfbfaca12e5">
   <source>Copied</source>
-  <target>Gekopieerd</target>
+  <target>Copiado</target>
 </trans-unit>
 <trans-unit id="s3687049d1af562c4">
   <source>Copy</source>
-  <target>Kopiëren</target>
+  <target>Copiar</target>
 </trans-unit>
 <trans-unit id="s5c91d0b01d1e9856">
   <source>Invalid configurator URL.</source>
-  <target>Ongeldige configurator-URL.</target>
+  <target>La URL del configurador no es válida.</target>
 </trans-unit>
 <trans-unit id="sc6db4046f6c64db5">
   <source>Configurator “<x id="0" equiv-text="${error.detail}"/>” was not found.</source>
-  <target>Configurator “<x id="0" equiv-text="${error.detail}"/>” is niet gevonden.</target>
+  <target>No se encontró el configurador «<x id="0" equiv-text="${error.detail}"/>».</target>
 </trans-unit>
 <trans-unit id="s607a3222373a39b1">
   <source>Failed to load the configurator.</source>
-  <target>De configurator kon niet worden geladen.</target>
+  <target>No se pudo cargar el configurador.</target>
 </trans-unit>
 <trans-unit id="s846b3790b6e25c1c">
   <source>Account</source>
@@ -1072,14 +1072,14 @@
 </trans-unit>
 <trans-unit id="s123467b419acbc07">
   <source>email</source>
-  <target>e-mail</target>
+  <target>correo</target>
   <note from="lit-localize">Tag on a download that is delivered by email</note>
 </trans-unit>
 <trans-unit id="s11326fd2590f4e5e">
   <source>Default</source>
-  <target>Standaard</target>
+  <target>Predeterminado</target>
   <note from="lit-localize">The model without an animation playing</note>
 </trans-unit>
-    </body>
-  </file>
+</body>
+</file>
 </xliff>

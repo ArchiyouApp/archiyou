@@ -26,6 +26,7 @@
  */
 
 import { zipSync, type Zippable } from 'fflate';
+import { msg, str } from '@lit/localize';
 
 import {
   SCRIPT_OUTPUT_MODEL_FORMATS,
@@ -236,7 +237,7 @@ export async function downloadFulfillment(
   const exports = fulfillmentExports(fulfillment);
   if (exports.length === 0)
   {
-    throw new Error('This download has no output formats set up.');
+    throw new Error(msg('This download has no output formats set up.'));
   }
 
   // One path per request even when two deliveries share it (pdf + per-page svg).
@@ -246,7 +247,7 @@ export async function downloadFulfillment(
   if (!result || result.status === 'error')
   {
     const detail = result?.errors?.[0]?.message ?? result?.messages?.[0]?.message;
-    throw new Error(detail ? `The model could not be generated: ${detail}` : 'The model could not be generated.');
+    throw new Error(detail ? msg(str`The model could not be generated: ${detail}`) : msg('The model could not be generated.'));
   }
 
   const base  = downloadBaseName();
@@ -254,7 +255,7 @@ export async function downloadFulfillment(
 
   if (files.length === 0)
   {
-    throw new Error('This configuration produced no files for this download.');
+    throw new Error(msg('This configuration produced no files for this download.'));
   }
 
   if (files.length === 1)
@@ -383,7 +384,7 @@ async function renderPdf(docName: string, output: unknown): Promise<Uint8Array |
   catch (err)
   {
     console.error(`fulfillment: rendering the PDF for "${docName}" failed:`, err);
-    throw new Error(`The PDF for “${docName}” could not be created.`);
+    throw new Error(msg(str`The PDF for “${docName}” could not be created.`));
   }
 }
 

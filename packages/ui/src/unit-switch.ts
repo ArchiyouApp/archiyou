@@ -9,9 +9,11 @@
 
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
+import { localized, msg } from '@lit/localize';
 
 import type { UnitSystem } from '@archiyou/core/src/units/UnitConverter';
 
+@localized()
 @customElement('unit-switch')
 export class UnitSwitch extends LitElement
 {
@@ -23,11 +25,11 @@ export class UnitSwitch extends LitElement
         <button
           class=${`seg-btn ${this.value === 'metric' ? 'active' : ''}`}
           @click=${() => this._select('metric')}
-        >Metric</button>
+        >${msg('Metric')}</button>
         <button
           class=${`seg-btn ${this.value === 'imperial' ? 'active' : ''}`}
           @click=${() => this._select('imperial')}
-        >Imperial</button>
+        >${msg('Imperial')}</button>
       </div>
     `;
   }

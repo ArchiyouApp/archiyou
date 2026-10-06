@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { localized, msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
@@ -7,6 +8,7 @@ import type { ParamUIMode } from './param-item.js';
 import type { ScriptParam } from '@archiyou/editor/src/state/workspace';
 import { paramValue, paramListItemType } from '@archiyou/editor/src/state/workspace';
 
+@localized()
 @customElement('param-item-list')
 export class ParamItemList extends LitElement
 {
@@ -27,7 +29,7 @@ export class ParamItemList extends LitElement
                                 <span class="chip-label">${String(item)}</span>
                                 <button
                                     class="chip-remove"
-                                    title="Remove"
+                                    title=${msg('Remove')}
                                     @click=${() => this._removeAt(i)}
                                 >
                                     <wa-icon library="lucide" name="x"></wa-icon>
@@ -40,12 +42,12 @@ export class ParamItemList extends LitElement
                     <input
                         class="add-input"
                         .value=${this._draft}
-                        placeholder=${`Add ${itemType}…`}
+                        placeholder=${this._placeholder(itemType)}
                         @input=${(e: InputEvent) =>
                             (this._draft = (e.target as HTMLInputElement).value)}
                         @keydown=${this._onKeydown}
                     />
-                    <button class="add-btn" title="Add item" @click=${this._add}>
+                    <button class="add-btn" title=${msg('Add item')} @click=${this._add}>
                         <wa-icon library="lucide" name="plus"></wa-icon>
                     </button>
                 </div>
@@ -72,6 +74,14 @@ export class ParamItemList extends LitElement
     {
         const v = this.value !== undefined ? this.value : (this.param ? paramValue(this.param) : undefined);
         return Array.isArray(v) ? v : [];
+    }
+
+    /** One whole message per item type, so a translation can word each its own way. */
+    private _placeholder(itemType: string): string
+    {
+        if (itemType === 'number') return msg('Add number…');
+        if (itemType === 'boolean') return msg('Add boolean…');
+        return msg('Add string…');
     }
 
     private _removeAt(index: number)

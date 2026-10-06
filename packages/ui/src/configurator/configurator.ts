@@ -8,7 +8,9 @@ import { configuratorUnitSystemPick } from '@archiyou/editor/src/state/workspace
 import { buildConfiguratorRequest, configuratorValueFor, setConfiguratorValue } from '@archiyou/editor/src/state/configurator';
 import { registerViewerParamStore } from '@archiyou/editor/src/state/viewer';
 import { syncConfiguratorParamsToUrl } from '@archiyou/editor/src/state/configurator-url';
-import { refreshPreviewTranslations, clearPreviewTranslations } from '@archiyou/editor/src/state/locale';
+import { refreshPreviewTranslations, clearPreviewTranslations, configuratorLocale } from '@archiyou/editor/src/state/locale';
+import { setChromeLocale } from '@archiyou/editor/src/i18n/locale-config';
+import { sourceLocale } from '@archiyou/editor/src/i18n/locale-codes';
 import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
 import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
@@ -31,6 +33,8 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     // execution time). The pick, not the display system: that also moves when a run
     // reports the model's units().
     this._pendingUnitSystem = configuratorUnitSystemPick.get() ?? '';
+    // The buttons and labels follow the language picker, like the content does.
+    this._pendingLocale = configuratorLocale.get();
     return html`
       <!-- One DOM for both layouts, so the viewer is never re-created: on wide
            screens the sheet is docked as the sidebar, on compact ones it slides
@@ -73,6 +77,8 @@ export class PageConfigurator extends SignalWatcher(LitElement)
   private _paramExecTimeout: number | null = null;
   private _pendingUnitSystem: string | null = null;
   private _lastUnitSystem: string | null = null;
+  private _pendingLocale: string | null = null;
+  private _lastLocale: string | null = null;
   private _unregisterParamStore: (() => void) | null = null;
 
   // ── 3. Lifecycle ──
@@ -115,6 +121,12 @@ export class PageConfigurator extends SignalWatcher(LitElement)
 
   override updated()
   {
+    if (this._pendingLocale !== this._lastLocale)
+    {
+      this._lastLocale = this._pendingLocale;
+      if (this._pendingLocale) void setChromeLocale(this._pendingLocale);
+    }
+
     // Local unit-system flip → re-run so dimension/doc text reformats.
     if (this._lastUnitSystem !== null && this._pendingUnitSystem !== this._lastUnitSystem)
     {
@@ -135,6 +147,9 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     this._unregisterParamStore = null;
     if (this._paramExecTimeout !== null) clearTimeout(this._paramExecTimeout);
     if (this.preview) clearPreviewTranslations();
+    // The editor around the preview, and any page after this one, is not translated.
+    this._lastLocale = null;
+    void setChromeLocale(sourceLocale);
   }
 
   // ── 4. Behaviour & Methods ──

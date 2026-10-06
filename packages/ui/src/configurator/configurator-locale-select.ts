@@ -14,6 +14,7 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
+import { localized, msg, str } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
@@ -22,6 +23,7 @@ import {
   setConfiguratorLocale, localeLabel,
 } from '@archiyou/editor/src/state/locale';
 
+@localized()
 @customElement('configurator-locale-select')
 export class ConfiguratorLocaleSelect extends SignalWatcher(LitElement)
 {
@@ -34,16 +36,16 @@ export class ConfiguratorLocaleSelect extends SignalWatcher(LitElement)
     const source = scriptLocale.get();
 
     return html`
-      <label class="wrap" title="Language">
+      <label class="wrap" title=${msg('Language')}>
         <wa-icon library="lucide" name="languages"></wa-icon>
         <select
           class="select"
-          aria-label="Language"
+          aria-label=${msg('Language')}
           @change=${(e: Event) => setConfiguratorLocale((e.target as HTMLSelectElement).value)}
         >
           ${locales.map(locale => html`
             <option value=${locale} ?selected=${locale === active}
-              title=${`${localeLabel(locale)}${locale === source ? ' (original)' : ''}`}>
+              title=${locale === source ? msg(str`${localeLabel(locale)} (original)`) : localeLabel(locale)}>
               ${locale.toUpperCase()}
             </option>`)}
         </select>
