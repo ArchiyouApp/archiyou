@@ -45,10 +45,25 @@ async function migrationState(): Promise<{ journal: number; applied: number }> {
     const res = await db.execute(sql`select count(*)::int as n from drizzle."__drizzle_migrations"`) as
       { rows: Array<{ n: number }> };
     return { journal, applied: Number(res.rows[0]?.n ?? 0) };
-  } catch {
-    // No drizzle schema yet ⇒ nothing has ever been applied here.
-    return { journal, applied: 0 };
+  } catch (err) {
+    // No drizzle schema or table yet ⇒ nothing has ever been applied here. Anything
+    // else (wrong database name, password, unreachable host) is the real problem and
+    // must not be reported as "BEHIND, run pnpm db:migrate".
+    if (NOTHING_APPLIED_CODES.has(pgErrorCode(err) ?? '')) return { journal, applied: 0 };
+    const reason = (err as { cause?: Error }).cause?.message ?? (err as Error).message;
+    throw new Error(`Cannot read the migration state of ${describeDatabase()}: ${reason}`, { cause: err });
   }
+}
+
+/** undefined_table, invalid_schema_name: the migrations table simply is not there. */
+const NOTHING_APPLIED_CODES = new Set(['42P01', '3F000']);
+
+/** The SQLSTATE of a driver error. Drizzle wraps it in a DrizzleQueryError, so the
+ *  code may sit on the error or on its cause. */
+function pgErrorCode(err: unknown): string | undefined {
+  const codeOf = (e: unknown) => (e as { code?: unknown } | undefined)?.code;
+  const code = codeOf(err) ?? codeOf((err as { cause?: unknown } | undefined)?.cause);
+  return typeof code === 'string' ? code : undefined;
 }
 
 /**

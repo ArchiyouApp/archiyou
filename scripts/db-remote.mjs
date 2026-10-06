@@ -61,6 +61,10 @@ const flag = (name) => {
   return i === -1 ? undefined : argv[i + 1];
 };
 
+/** Set once openMaster() has a shared ssh connection; declared up here because
+ *  fail() closes it and can run before anything below has. */
+let master = false;
+
 function fail(code, message) {
   closeMaster();
   console.error(`\n❌ ${message}`);
@@ -178,7 +182,6 @@ const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').sl
 const CONTROL = join(tmpdir(), `dbrem-${process.pid}.sock`);
 const portOpts = SSH_PORT ? ['-p', SSH_PORT] : [];
 const baseOpts = ['-o', 'ConnectTimeout=20'];
-let master = false;
 const muxOpts = () => (master ? ['-o', `ControlPath=${CONTROL}`, '-o', 'ControlMaster=no'] : []);
 
 /** One authenticated connection, shared by every command below, so the password is
@@ -226,18 +229,21 @@ const formatBytes = (n) => {
 
 if (COMMAND === 'tunnel') {
   console.log(`\n🔌 forwarding ${TARGET}:5432 → localhost:${LOCAL_PORT}`);
-  console.log('   Leave this running. In another shell:\n');
-  console.log(`     SERVER_DATABASE_URL=postgres://${DB_USER}:<password>@localhost:${LOCAL_PORT}/${DB_NAME} pnpm dev:server`);
+  console.log('   Leave this running. Put this line in the root .env:\n');
+  console.log(`     SERVER_DATABASE_URL=postgres://${DB_USER}:<password>@localhost:${LOCAL_PORT}/${DB_NAME}\n`);
+  console.log('   and in another shell run `pnpm dev`, or connect directly:\n');
   console.log(`     psql postgres://${DB_USER}@localhost:${LOCAL_PORT}/${DB_NAME}\n`);
   console.log('   ⚠️  That is the CENTRAL database. A dev server will refuse to migrate it and');
   console.log('      will not seed the test user; everything else you do to it is real.\n');
   console.log('   Ctrl+C to close.\n');
 
   // -N: no remote command, just the forward. Foreground on purpose, so the process
-  // is the tunnel and closing it closes the forward.
+  // is the tunnel and closing it closes the forward. ExitOnForwardFailure: without it
+  // a busy local port (the dev Postgres container) is only a warning and ssh stays up,
+  // so the dev server would quietly talk to the LOCAL database instead.
   const child = spawn(
     'ssh',
-    [...portOpts, ...baseOpts, '-N', '-L', `127.0.0.1:${LOCAL_PORT}:127.0.0.1:5432`, TARGET],
+    [...portOpts, ...baseOpts, '-o', 'ExitOnForwardFailure=yes', '-N', '-L', `127.0.0.1:${LOCAL_PORT}:127.0.0.1:5432`, TARGET],
     { stdio: 'inherit' },
   );
   child.on('exit', (code) => process.exit(code === null ? 0 : code));
