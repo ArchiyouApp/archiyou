@@ -18,6 +18,8 @@ interface Message {
   to: string;
   subject: string;
   html: string;
+  /** Who a reply goes to; Archiyou's own address when unset. */
+  replyTo?: string;
   /** Extra context logged in the dev (no-key) fallback, e.g. the reset link. */
   devNote?: string;
 }
@@ -53,9 +55,42 @@ export class EmailService {
     });
   }
 
+  /** A visitor ordered a product from one of the author's configurators: it is a request
+   *  in their Projects now. Replies go to the visitor. */
+  async sendOrderReceived(to: string, order: {
+    product: string;
+    configurator: string;
+    clientName: string | null;
+    clientEmail: string;
+    clientPhone: string | null;
+    message: string | null;
+    link: string;
+  }): Promise<void> {
+    const who = order.clientName || order.clientEmail;
+    await this.send({
+      to,
+      replyTo: order.clientEmail,
+      subject: `New order: ${order.product} from ${who}`,
+      html: renderEmail({
+        subject: `New order from ${who}`,
+        text: `${who} ordered "${order.product}" from your configurator ${order.configurator}. `
+          + 'The configuration and their details are in your projects as a request. Reply to this email to answer them.',
+        details: [
+          ['Name', order.clientName],
+          ['Email', order.clientEmail],
+          ['Phone', order.clientPhone],
+        ],
+        quote: order.message,
+        buttonText: 'Open the request',
+        buttonLink: order.link,
+      }),
+      devNote: `request: ${order.link}`,
+    });
+  }
+
   /** Low-level send. Never throws to callers — a failed/absent send must not leak
    *  whether an account exists (forgot-password always answers 200). */
-  private async send({ to, subject, html, devNote }: Message): Promise<void> {
+  private async send({ to, subject, html, replyTo, devNote }: Message): Promise<void> {
     if (!config.mailgun.key) {
       console.log(
         `📧 [EmailService] MAILGUN_KEY not set — not sending. ` +
@@ -70,7 +105,7 @@ export class EmailService {
       form.set('to', to);
       form.set('subject', subject);
       form.set('html', html);
-      form.set('h:Reply-To', REPLY_TO);
+      form.set('h:Reply-To', replyTo ?? REPLY_TO);
 
       const auth = 'Basic ' + Buffer.from(`api:${config.mailgun.key}`).toString('base64');
       const url = `${config.mailgun.apiBase}/v3/${config.mailgun.domain}/messages`;
@@ -95,12 +130,30 @@ interface EmailContent {
   text: string;
   buttonText: string;
   buttonLink: string;
+  /** Someone's own words (an order message, a professional's note): shown quoted, as
+   *  plain text — escaped, line breaks kept, links not made clickable. */
+  quote?: string | null;
+  /** Labelled facts under the text; rows without a value are left out. */
+  details?: Array<[string, string | null | undefined]>;
+  /** A last line in the grey footer, before the privacy note. */
+  footerNote?: string;
+  /** The closing lines; the Archiyou team's by default. */
+  signature?: string[];
 }
 
 /** Minimal HTML email (inline styles for mail-client compatibility), ported from
  *  aypy/templates/mailer/archiyou.html: dark header + logo, white rounded card,
  *  CTA button, grey footer. */
-function renderEmail({ subject, text, buttonText, buttonLink }: EmailContent): string {
+function renderEmail({ subject, text, buttonText, buttonLink, quote, details, footerNote, signature }: EmailContent): string {
+  const rows = (details ?? []).filter(([, value]) => !!value);
+  const detailsHtml = rows.length
+    ? `<table style="color:#444;margin:1em 0;border-collapse:collapse">${rows.map(([label, value]) =>
+      `<tr><td style="color:#999;padding:0.2em 1em 0.2em 0">${escapeHtml(label)}</td><td>${escapeHtml(value as string)}</td></tr>`).join('')}</table>`
+    : '';
+  const quoteHtml = quote
+    ? `<blockquote style="margin:1em 0;padding:0.5em 1em;border-left:3px solid #ccc;color:#444">${escapeHtml(quote).replace(/\n/g, '<br>')}</blockquote>`
+    : '';
+  const closing = (signature ?? ['All the best,', '- The Archiyou team']).map((line) => `<p>${escapeHtml(line)}</p>`).join('');
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><title>Archiyou: ${escapeHtml(subject)}</title></head>
@@ -114,6 +167,8 @@ function renderEmail({ subject, text, buttonText, buttonLink }: EmailContent): s
       <div style="display:block;padding:2em;background:white;border-radius:1em;margin:1em">
         <h1 style="text-align:center;font-weight:normal;">${escapeHtml(subject)}</h1>
         <p style="color:#666">${escapeHtml(text)}</p>
+        ${detailsHtml}
+        ${quoteHtml}
         <a href="${escapeAttr(buttonLink)}" style="text-decoration:none;">
           <div style="margin:1.5em auto;text-align:center;font-size:1.2em;background:#f10827;width:220px;color:white;padding:1em;border-radius:0.5em;">
             ${escapeHtml(buttonText)}
@@ -123,12 +178,12 @@ function renderEmail({ subject, text, buttonText, buttonLink }: EmailContent): s
           <a href="${escapeAttr(buttonLink)}" style="color:#103eaa;word-break:break-all;">${escapeHtml(buttonLink)}</a>
         </p>
         <div style="color:#999;">
-          <p>All the best,</p>
-          <p>- The Archiyou team</p>
+          ${closing}
         </div>
       </div>
     </div>
     <div style="background:rgb(189,189,189);font-size:0.8em;padding:1em 4em 1em 2em;color:white;margin-top:3em;font-family:Verdana,Geneva,Tahoma,sans-serif;">
+      ${footerNote ? `<p>${escapeHtml(footerNote)}</p>` : ''}
       <p>This email was sent automatically — you can reach us by replying to it. We value your privacy and won’t share your data. See our
         <a href="https://archiyou.com/privacy" style="color:white;font-weight:bold;text-decoration:none;">Privacy Statement</a>.</p>
     </div>

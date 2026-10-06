@@ -9,7 +9,7 @@
  * can be deleted.
  */
 
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 
 import { Script } from '@archiyou/core/src/Script';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
@@ -61,6 +61,23 @@ export interface NewConfiguration
   sourceDeliveryId?: string | null;
   message?: string | null;
 }
+
+/** A visitor's order of a product fulfillment (POST /orders). */
+export interface NewOrder
+{
+  /** The published version ordered from; its author is the professional. */
+  script: ScriptData;
+  fulfillment: string;
+  values?: Record<string, unknown> | null;
+  unitSystem?: 'metric' | 'imperial' | null;
+  lang?: string | null;
+  contact: ClientInput & { email: string };
+  message?: string | null;
+}
+
+/** The same visitor sending the same configuration again within this window gets the
+ *  same request back (a double click, a reload), not a second one. */
+const ORDER_DEDUPE_MS = 10 * 60 * 1000;
 
 export interface NewEvent
 {
@@ -561,6 +578,7 @@ export class ProjectStore
     projectId: string,
     input: NewConfiguration,
     origin: ConfigurationOrigin = 'added',
+    opts: { event?: boolean } = {},
   ): Promise<ConfigurationData>
   {
     await this.projectRow(professional, projectId);
@@ -602,6 +620,7 @@ export class ProjectStore
     }
 
     await db.update(projects).set({ updated: new Date() }).where(eq(projects.id, projectId));
+    if (opts.event === false) return rowToConfiguration(row);
     await this.addEvent(professional, projectId, {
       type: 'configuration.added',
       actor: origin === 'added' ? 'professional' : 'client',
@@ -640,6 +659,79 @@ export class ProjectStore
     const [row] = await db.update(configurations).set({ thumbnail: url })
       .where(eq(configurations.id, id)).returning();
     return rowToConfiguration(row);
+  }
+
+  //// ORDERS ////
+
+  /**
+   * A product order from a configurator: the visitor becomes (or is found as) a client of
+   * the configurator's author, and the order a project in status `request` with the
+   * configuration as v1. The same order again within ORDER_DEDUPE_MS returns the first one.
+   *
+   * Over `perDay` orders of this configurator in the last 24 hours is a 'limit' error:
+   * the form is public, so one configurator must not be able to flood an inbox.
+   */
+  async receiveOrder(order: NewOrder, perDay: number):
+    Promise<{ project: ProjectSummary; configuration: ConfigurationData; duplicate: boolean }>
+  {
+    const professional = (order.script.author ?? '').toLowerCase();
+    const versionId = order.script.id as string;
+    if (!professional || !versionId) throw new ProjectStoreError('not_found', 'This configurator does not take orders');
+    const email = normalEmail(order.contact.email);
+    if (!email) throw new ProjectStoreError('invalid', 'An email address is needed to order');
+
+    const recent = (since: number) => and(
+      eq(configurations.professional, professional),
+      eq(configurations.origin, 'order'),
+      eq(configurations.sourceVersionId, versionId),
+      gt(configurations.created, new Date(Date.now() - since)),
+    );
+
+    const [{ n: today }] = await db.select({ n: sql<number>`count(*)`.mapWith(Number) })
+      .from(configurations).where(recent(24 * 60 * 60 * 1000));
+    if (today >= perDay) throw new ProjectStoreError('limit', 'This configurator has had too many orders today. Please try again tomorrow.');
+
+    // Validate before anything is written
+    const { values } = snapshotOf(order.script, order.values);
+
+    const same = JSON.stringify(values);
+    const [duplicate] = (await db.select({ configuration: configurations, project: projects })
+      .from(configurations)
+      .innerJoin(projects, eq(projects.id, configurations.projectId))
+      .innerJoin(clients, eq(clients.id, projects.clientId))
+      .where(and(recent(ORDER_DEDUPE_MS), eq(clients.email, email))))
+      .filter((r) => JSON.stringify(r.configuration.values) === same);
+    if (duplicate)
+    {
+      return {
+        project: rowToSummary(duplicate.project, null, duplicate.configuration.thumbnail),
+        configuration: rowToConfiguration(duplicate.configuration),
+        duplicate: true,
+      };
+    }
+
+    const client = await this.upsertClientByEmail(professional, { ...order.contact, email });
+    const project = await this.createProject(professional, {
+      title: `${order.fulfillment} – ${client.name ?? client.email}`,
+      clientId: client.id,
+      status: 'request',
+    });
+    const configuration = await this.addConfiguration(professional, project.id, {
+      script: order.script,
+      values,
+      unitSystem: order.unitSystem,
+      lang: order.lang,
+      fulfillment: order.fulfillment,
+      sourceVersionId: versionId,
+      message: order.message,
+    }, 'order', { event: false });
+    await this.addEvent(professional, project.id, {
+      type: 'order.received',
+      actor: 'client',
+      configurationId: configuration.id,
+      meta: { fulfillment: order.fulfillment, rev: configuration.rev },
+    });
+    return { project, configuration, duplicate: false };
   }
 
   //// EVENTS ////

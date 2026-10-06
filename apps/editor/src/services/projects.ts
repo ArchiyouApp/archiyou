@@ -192,6 +192,41 @@ export function openSnapshotCopy(snapshot: ConfigurationData): string | null
   return copy ? editorPathFor(copy) : null;
 }
 
+//// ORDERS ////
+
+/** A visitor's order of a configurator's product (POST /orders, public). */
+export interface OrderInput
+{
+  versionId: string;
+  fulfillment: string;
+  values: Record<string, unknown>;
+  unitSystem?: 'metric' | 'imperial' | null;
+  lang?: string | null;
+  contact: { email: string; name?: string | null; phone?: string | null };
+  message?: string | null;
+  /** Honeypot: people never see it, so it stays empty. */
+  website?: string;
+  /** Changes to a delivered design ("Adjust this design"): they go to that delivery's project. */
+  deliveryToken?: string;
+}
+
+/** Send an order, with a picture of the configured model when there is one. */
+export async function sendOrder(input: OrderInput): Promise<void>
+{
+  const result = executionResult.get();
+  const png = await renderThumbnailPng(glbOf(result), scenegraphOf(result)).catch(() => null);
+  await api.post('/orders', { ...input, thumbnail: png ? toBase64(png) : null });
+}
+
+function toBase64(buffer: ArrayBuffer): string
+{
+  const bytes = new Uint8Array(buffer);
+  const CHUNK = 0x8000;
+  const parts = Array.from({ length: Math.ceil(bytes.length / CHUNK) },
+    (_, i) => String.fromCharCode(...bytes.subarray(i * CHUNK, (i + 1) * CHUNK)));
+  return btoa(parts.join(''));
+}
+
 //// CLIENTS ////
 
 export async function listClients(q?: string): Promise<ClientData[]>

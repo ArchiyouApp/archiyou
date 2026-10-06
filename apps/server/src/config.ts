@@ -254,6 +254,16 @@ export const config = {
     timeWindow: process.env.SERVER_FEEDBACK_RATE_WINDOW ?? '10 minutes',
   },
 
+  /** Per-IP rate limit on POST /orders: product orders from a configurator, which
+   *  anonymous visitors send (plans/PROJECTS.md). */
+  orderRateLimit: {
+    max: Number(process.env.SERVER_ORDER_RATE_LIMIT ?? 10),
+    timeWindow: process.env.SERVER_ORDER_RATE_WINDOW ?? '10 minutes',
+  },
+  /** Orders one configurator takes in 24 hours; beyond it the form says to try tomorrow.
+   *  The form is public, so this caps what can land in one author's inbox. */
+  ordersPerConfiguratorPerDay: Number(process.env.SERVER_ORDERS_PER_CONFIGURATOR_PER_DAY ?? 200),
+
   /** Project activity (plans/PROJECTS.md): opens, downloads and responses of clients and
    *  the professional's own actions. Kept this long, then purged (ProjectStore.purgeEvents). */
   events: {

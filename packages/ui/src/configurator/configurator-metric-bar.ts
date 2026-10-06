@@ -9,11 +9,13 @@ import '@awesome.me/webawesome/dist/components/popover/popover.js';
 
 import './configurator-metric-card.js';
 import './configurator-download-menu.js';
+import './configurator-order-form.js';
 import '../projects/add-to-project-menu.js';
 
 import { editorScript, executing as scriptExecuting, executionResult, userState, buildConfiguratorRequest } from '@archiyou/editor/src/state/workspace';
 import { configuratorLocale } from '@archiyou/editor/src/state/locale';
 import type { ConfigurationInput } from '@archiyou/editor/src/services/projects';
+import { isDownload, isProduct } from '@archiyou/editor/src/services/fulfillment';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 import type { Metric } from '@archiyou/core/src/calc/types';
 import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
@@ -62,6 +64,15 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
           </div>
         ` : nothing}
 
+        ${this._products().length ? html`
+          <div class="download-wrap">
+            <button id="order-btn" class="download-btn" title="Order this design">
+              <wa-icon library="lucide" name="shopping-cart"></wa-icon>
+              <span>${this._orderLabel()}</span>
+            </button>
+          </div>
+        ` : nothing}
+
         ${this._hasDownloads() ? html`
           <div class="download-wrap">
             <button id="download-btn" class="download-btn" title="Download">
@@ -87,6 +98,19 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
           @wa-after-hide=${this._resetDownloadMenu}
         >
           <configurator-download-menu ?preview=${this.preview}></configurator-download-menu>
+        </wa-popover>
+      ` : nothing}
+
+      ${this._products().length ? html`
+        <wa-popover
+          class="download-popover"
+          for="order-btn"
+          placement="top-end"
+          distance="10"
+          without-arrow
+          @wa-after-hide=${this._resetOrderForm}
+        >
+          <configurator-order-form ?preview=${this.preview}></configurator-order-form>
         </wa-popover>
       ` : nothing}
 
@@ -218,10 +242,30 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
   /** Is there anything to download? A published configurator that offers no
    *  fulfillments gets no Download button at all rather than one that opens an empty
    *  list; in the preview the button always stands, since that is where an author
-   *  goes to see what they are about to offer. */
+   *  goes to see what they are about to offer. Products have their own button. */
   private _hasDownloads(): boolean
   {
-    return this.preview || (editorScript.get()?.published?.fulfillments?.length ?? 0) > 0;
+    return this.preview || (editorScript.get()?.published?.fulfillments ?? []).some(isDownload);
+  }
+
+  /** The products this configurator can be ordered as ("Order product"). */
+  private _products()
+  {
+    return (editorScript.get()?.published?.fulfillments ?? []).filter(isProduct);
+  }
+
+  /** One product: its own name ("Order this table"); several: the choice is in the form. */
+  private _orderLabel(): string
+  {
+    const products = this._products();
+    return products.length === 1 ? products[0].name : 'Order product';
+  }
+
+  /** A sent order leaves a fresh form behind once the popover closes. */
+  private _resetOrderForm(e: Event)
+  {
+    if (e.target !== e.currentTarget) return;
+    this.renderRoot.querySelector('configurator-order-form')?.reset();
   }
 
   // ── 5. Styles ──

@@ -79,15 +79,26 @@ export const FulfillmentDeliverySchema = Type.Union(
     FULFILLMENT_DELIVERIES.map((d) => Type.Literal(d)) as LiteralTuple<typeof FULFILLMENT_DELIVERIES>,
 )
 
+/** What a fulfillment is. A `download`: files from the configurator's Download menu. A
+ *  `product`: an "Order product" button that sends the configuration to the author, as a
+ *  request in their Projects (plans/PROJECTS.md). */
+export const FULFILLMENT_CATEGORIES = ['download', 'product'] as const
+export type FulfillmentCategory = typeof FULFILLMENT_CATEGORIES[number]
+
 /** A fulfillment: a named bundle of outputs (a model, data tables, documents…) the
  *  configurator makes available to end-users, with a delivery method + optional price.
  *  `exports` are output-path strings (see ScriptOutputPath), for example
- *  "default/model/(all)", "default/tables/(name)/xlsx" or "default/docs/(name)/pdf". */
+ *  "default/model/(all)", "default/tables/(name)/xlsx" or "default/docs/(name)/pdf".
+ *
+ *  `category` absent means 'download', so configurators published before products keep
+ *  working. A product's `exports` are what the author makes for an order (preselected in
+ *  a delivery), its `price` an indicative one, and it has no `delivery`. */
 export const ScriptPublishedFulfillmentSchema = Type.Object({
     name:        Type.String(),
     description: Type.Optional(Type.String()),
+    category:    Type.Optional(Type.Union(FULFILLMENT_CATEGORIES.map((c) => Type.Literal(c)) as LiteralTuple<typeof FULFILLMENT_CATEGORIES>)),
     exports:     Type.Array(Type.String()),   // resolved output-path strings
-    delivery:    FulfillmentDeliverySchema,
+    delivery:    Type.Optional(FulfillmentDeliverySchema), // downloads only; absent ⇒ 'anonymous download'
     price:       Type.Optional(Type.Number()), // defaults to 0 (applied in UI/normalize)
 })
 

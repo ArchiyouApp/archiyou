@@ -8,6 +8,7 @@
  *   - /scripts/{published,shared}/*    public libraries (routes/library.ts)
  *   - /scripts/published/execute/*     server-side execution (routes/execute.ts)
  *   - /projects/*, /clients/*          a professional's projects (routes/projects.ts)
+ *   - /orders, /d/*                    what their clients reach without an account (routes/client.ts)
  *
  * One JWT/CORS, one namespace — no `/api` split and no duplicate library auth.
  * Execution init connects to Redis; it is best-effort with a timeout so the
@@ -31,6 +32,7 @@ import { registerModuleRoutes } from './routes/modules';
 import { registerAdminRoutes } from './routes/admin';
 import { registerFeedbackRoutes } from './routes/feedback';
 import { registerProjectRoutes } from './routes/projects';
+import { registerClientRoutes } from './routes/client';
 import { moduleHost } from './modules/ModuleHost';
 import { ValidationError } from './validate';
 import { UserError, userService } from './services/UserService';
@@ -208,6 +210,7 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   await fastify.register(registerModuleRoutes);   // /modules/* (gated script modules; inert when none is installed)
   await fastify.register(registerFeedbackRoutes); // POST /feedback (public, rate limited)
   await fastify.register(registerProjectRoutes);  // /projects/*, /clients/* (verified)
+  await fastify.register(registerClientRoutes);   // POST /orders (public, rate limited)
   await fastify.register(registerAdminRoutes);    // /admin/* (operator only — users.is_admin)
 }
 

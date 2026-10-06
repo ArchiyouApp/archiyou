@@ -24,7 +24,7 @@ import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import { editorScript } from '@archiyou/editor/src/state/workspace';
 import { translate } from '@archiyou/editor/src/state/locale';
 import {
-  downloadFulfillment, fulfillmentCategories, fulfillmentFormats, isFreeDownload,
+  downloadFulfillment, fulfillmentCategories, fulfillmentFormats, isFreeDownload, isDownload,
 } from '@archiyou/editor/src/services/fulfillment';
 
 import { fulfillmentNameKey, fulfillmentDescriptionKey } from '@archiyou/core/src/i18n/keys';
@@ -67,14 +67,14 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
     return html`
       <div class="header">Download options</div>
 
-      ${list.length === 0
+      ${!list.some(isDownload)
         ? html`<p class="empty">
             ${this.preview
               ? 'No downloads yet — add fulfillments when you publish this configurator.'
               : 'This configurator offers no downloads.'}
           </p>`
         : html`<div class="list">
-            ${list.map((f, i) => this._renderRow(f, i))}
+            ${list.map((f, i) => (isDownload(f) ? this._renderRow(f, i) : nothing))}
           </div>`}
 
       ${defaults
@@ -181,14 +181,16 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
     this._done = null;
   }
 
-  /** What this configurator offers, and whether those are the author's own choices.
+  /** What this configurator offers, and whether those are the author's own choices. The
+   *  whole list, products included, so a row's index is its translation key's; the
+   *  render skips products (they have their own "Order product" button).
    *  A published script always answers for itself; in the preview a never-published
    *  script falls back to the same defaults the publish menu prefills, so the preview
    *  shows what publishing would give. */
   fulfillments(): { list: ScriptPublishedFulfillmentData[], defaults: boolean }
   {
     const published = editorScript.get()?.published?.fulfillments;
-    if (published?.length) return { list: published, defaults: false };
+    if (published?.some(isDownload)) return { list: published, defaults: false };
     if (!this.preview) return { list: [], defaults: false };
     return { list: DEFAULT_FULFILLMENTS, defaults: true };
   }

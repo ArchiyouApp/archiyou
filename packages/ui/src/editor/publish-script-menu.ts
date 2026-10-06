@@ -149,6 +149,8 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
   @state() private _editIndex: number | null = null; // index being edited, null = new
   @state() private _fName        = '';
   @state() private _fDescription = '';
+  /** A download (files from the Download menu) or a product (an "Order product" button). */
+  @state() private _fCategory: 'download' | 'product' = 'download';
   @state() private _fDelivery: FulfillmentDelivery = 'anonymous download';
   @state() private _fPrice       = 0;
   @state() private _fRows: OutputRow[] = [];
@@ -335,12 +337,14 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
   private _renderFulfillmentRow(f: ScriptPublishedFulfillmentData, i: number)
   {
     const nExports = f.exports?.length ?? 0;
-    const priceLabel = f.delivery === 'pay' ? ` ${f.price ?? 0}` : '';
+    const product = f.category === 'product';
+    const priceLabel = (f.delivery === 'pay' || product) && f.price ? ` ${f.price}` : '';
     const formats = this._fulfillmentFormats(f);
+    const how = product ? 'product order' : (f.delivery ?? 'anonymous download');
     return html`
       <div class="fulfillment-item">
         <div class="fulfillment-line">
-          <span class="fulfillment-name">${f.name || '(unnamed)'}</span><span class="fulfillment-meta"> · ${nExports} export${nExports === 1 ? '' : 's'} · ${formats} · ${f.delivery}${priceLabel}</span>
+          <span class="fulfillment-name">${f.name || '(unnamed)'}</span><span class="fulfillment-meta"> · ${nExports} export${nExports === 1 ? '' : 's'} · ${formats} · ${how}${priceLabel}</span>
         </div>
         <div class="fulfillment-actions">
           <button class="icon-btn" title="Edit" @click=${() => this._startEditFulfillment(i)}>
@@ -381,13 +385,28 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
   private _renderFulfillmentEditor()
   {
     const pipelines = this._pipelines();
+    const product = this._fCategory === 'product';
     return html`
+      <div class="field">
+        <label class="field-label">Type</label>
+        <select
+          class="mini-select"
+          @change=${(e: Event) => { this._fCategory = (e.target as HTMLSelectElement).value as 'download' | 'product'; }}
+        >
+          <option value="download" ?selected=${!product}>Download: visitors get the files</option>
+          <option value="product" ?selected=${product}>Product order: visitors send you an order request</option>
+        </select>
+        ${product
+          ? html`<span class="hint">Shows an "Order product" button. An order lands as a request in your Projects, with the configuration and the visitor's contact details.</span>`
+          : nothing}
+      </div>
+
       <div class="field">
         <label class="field-label">Name</label>
         <input
           class="text-input"
           type="text"
-          placeholder="e.g. Model, Data, Documents"
+          placeholder=${product ? 'e.g. Order this table' : 'e.g. Model, Data, Documents'}
           .value=${this._fName}
           @input=${(e: InputEvent) => { this._fName = (e.target as HTMLInputElement).value; this._fError = ''; }}
         />
@@ -404,36 +423,56 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
         ></textarea>
       </div>
 
-      <div class="field two-col">
-        <div class="col">
-          <label class="field-label">Delivery</label>
-          <select
-            class="mini-select"
-            .value=${this._fDelivery}
-            @change=${(e: Event) => (this._fDelivery = (e.target as HTMLSelectElement).value as FulfillmentDelivery)}
-          >
-            ${FULFILLMENT_DELIVERIES.map(d => html`<option value=${d} ?selected=${d === this._fDelivery}>${d}</option>`)}
-          </select>
-        </div>
-        ${this._fDelivery === 'pay'
-          ? html`
-            <div class="col">
-              <label class="field-label">Price</label>
-              <input
-                class="text-input price-input"
-                type="number"
-                min="0"
-                step="0.01"
-                .value=${String(this._fPrice)}
-                @input=${(e: InputEvent) => (this._fPrice = Number((e.target as HTMLInputElement).value) || 0)}
-              />
-            </div>`
-          : nothing}
-      </div>
+      ${product
+        ? html`
+          <div class="field">
+            <label class="field-label">Indicative price (optional)</label>
+            <input
+              class="text-input price-input"
+              type="number"
+              min="0"
+              step="0.01"
+              .value=${this._fPrice ? String(this._fPrice) : ''}
+              @input=${(e: InputEvent) => (this._fPrice = Number((e.target as HTMLInputElement).value) || 0)}
+            />
+          </div>`
+        : nothing}
+
+      ${product
+        ? nothing
+        : html`
+        <div class="field two-col">
+          <div class="col">
+            <label class="field-label">Delivery</label>
+            <select
+              class="mini-select"
+              .value=${this._fDelivery}
+              @change=${(e: Event) => (this._fDelivery = (e.target as HTMLSelectElement).value as FulfillmentDelivery)}
+            >
+              ${FULFILLMENT_DELIVERIES.map(d => html`<option value=${d} ?selected=${d === this._fDelivery}>${d}</option>`)}
+            </select>
+          </div>
+          ${this._fDelivery === 'pay'
+            ? html`
+              <div class="col">
+                <label class="field-label">Price</label>
+                <input
+                  class="text-input price-input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  .value=${String(this._fPrice)}
+                  @input=${(e: InputEvent) => (this._fPrice = Number((e.target as HTMLInputElement).value) || 0)}
+                />
+              </div>`
+            : nothing}
+        </div>`}
 
       <div class="field">
         <label class="field-label">Outputs</label>
-        <span class="hint">Each output line resolves to downloadable files. Toggle the formats to include.</span>
+        <span class="hint">${product
+          ? 'What you make for an order: preselected when you send the client a delivery. Optional.'
+          : 'Each output line resolves to downloadable files. Toggle the formats to include.'}</span>
         <div class="rows">
           ${this._fRows.map((row, i) => this._renderOutputRow(row, i, pipelines))}
         </div>
@@ -722,6 +761,7 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
   private _startAddFulfillment()
   {
     this._editIndex = null;
+    this._fCategory = 'download';
     this._fName = '';
     this._fDescription = '';
     this._fDelivery = 'anonymous download';
@@ -736,6 +776,7 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
     const f = this._fulfillments[i];
     if (!f) return;
     this._editIndex = i;
+    this._fCategory = f.category === 'product' ? 'product' : 'download';
     this._fName = f.name ?? '';
     this._fDescription = f.description ?? '';
     this._fDelivery = f.delivery ?? 'anonymous download';
@@ -765,16 +806,20 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
     const name = this._fName.trim();
     if (!name) { this._fError = 'Please enter a name for this fulfillment.'; return; }
 
+    const product = this._fCategory === 'product';
     const exports = rowsToExports(this._fRows);
-    if (exports.length === 0) { this._fError = 'Add at least one output.'; return; }
+    if (exports.length === 0 && !product) { this._fError = 'Add at least one output.'; return; }
 
-    const fulfillment: ScriptPublishedFulfillmentData = {
-      name,
-      description: this._fDescription.trim() || undefined,
-      exports,
-      delivery: this._fDelivery,
-      price: this._fDelivery === 'pay' ? this._fPrice : 0,
-    };
+    // A download keeps the old shape (no category); a product has no delivery method
+    const fulfillment: ScriptPublishedFulfillmentData = product
+      ? { name, description: this._fDescription.trim() || undefined, category: 'product', exports, price: this._fPrice || 0 }
+      : {
+        name,
+        description: this._fDescription.trim() || undefined,
+        exports,
+        delivery: this._fDelivery,
+        price: this._fDelivery === 'pay' ? this._fPrice : 0,
+      };
 
     if (this._editIndex === null)
     {
