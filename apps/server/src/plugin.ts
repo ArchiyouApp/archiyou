@@ -7,6 +7,7 @@
  *   - /scripts/{user}/*                the user's own scripts, authed (routes/scripts.ts)
  *   - /scripts/{published,shared}/*    public libraries (routes/library.ts)
  *   - /scripts/published/execute/*     server-side execution (routes/execute.ts)
+ *   - /projects/*, /clients/*          a professional's projects (routes/projects.ts)
  *
  * One JWT/CORS, one namespace — no `/api` split and no duplicate library auth.
  * Execution init connects to Redis; it is best-effort with a timeout so the
@@ -29,11 +30,13 @@ import { registerProxyRoutes } from './routes/proxy';
 import { registerModuleRoutes } from './routes/modules';
 import { registerAdminRoutes } from './routes/admin';
 import { registerFeedbackRoutes } from './routes/feedback';
+import { registerProjectRoutes } from './routes/projects';
 import { moduleHost } from './modules/ModuleHost';
 import { ValidationError } from './validate';
 import { UserError, userService } from './services/UserService';
 import { ScriptStoreError } from './services/ScriptStore';
 import { FeedbackStoreError } from './services/FeedbackStore';
+import { ProjectStoreError } from './services/ProjectStore';
 import { translationQueue } from './translation/TranslationQueue';
 
 const EXECUTION_INIT_TIMEOUT_MS = 5000;
@@ -131,6 +134,8 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
     }
   });
 
+  fastify.decorate('requireVerified', requireVerified);
+
   // preHandler for routes/admin.ts. Two distinct answers on purpose: 401 means "log
   // in", 403 means "logged in, still not allowed" — collapsing them would send the
   // editor to the login screen for an account that is already signed in.
@@ -202,7 +207,28 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   await fastify.register(registerProxyRoutes);    // /proxy?url= (asset proxy for $import)
   await fastify.register(registerModuleRoutes);   // /modules/* (gated script modules; inert when none is installed)
   await fastify.register(registerFeedbackRoutes); // POST /feedback (public, rate limited)
+  await fastify.register(registerProjectRoutes);  // /projects/*, /clients/* (verified)
   await fastify.register(registerAdminRoutes);    // /admin/* (operator only — users.is_admin)
+}
+
+/**
+ * preHandler (as `fastify.requireVerified`, after `authenticate`): the caller's email
+ * address has been confirmed. Exported so route tests decorate their app with the real one.
+ *
+ * The bar for anything other people get to see: publishing, sharing, and projects (which
+ * email clients). Saving and loading your own scripts stays open, so a new account is
+ * usable the moment it is created; verification is what makes registration spam worth the
+ * effort. Accounts that predate verification were grandfathered.
+ */
+export async function requireVerified(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const user = await userService.findByUsername(request.user.sub);
+  if (!user || user.emailVerifiedAt === null) {
+    reply.code(403).send({
+      success: false,
+      error: 'Please confirm your email address first.',
+      code: 'email_not_verified',
+    });
+  }
 }
 
 /** Exported so route tests can build an app that maps errors the way production
@@ -222,6 +248,14 @@ export function setupErrorHandling(fastify: FastifyInstance): void {
     }
     if (error instanceof FeedbackStoreError) {
       return reply.code(404).send({ success: false, error: error.message });
+    }
+    if (error instanceof ProjectStoreError) {
+      const code =
+        error.code === 'not_found' ? 404 :
+        error.code === 'conflict' ? 409 :
+        error.code === 'limit' ? 429 :
+        422;
+      return reply.code(code).send({ success: false, error: error.message, code: error.code });
     }
     if (error instanceof ScriptStoreError) {
       const code = error.code === 'not_found' ? 404 : error.code === 'conflict' ? 409 : 422;
@@ -247,6 +281,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     requireAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    requireVerified: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     executionManager?: ExecutionManager;
   }
 }

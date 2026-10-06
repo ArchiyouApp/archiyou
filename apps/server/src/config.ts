@@ -254,6 +254,12 @@ export const config = {
     timeWindow: process.env.SERVER_FEEDBACK_RATE_WINDOW ?? '10 minutes',
   },
 
+  /** Project activity (plans/PROJECTS.md): opens, downloads and responses of clients and
+   *  the professional's own actions. Kept this long, then purged (ProjectStore.purgeEvents). */
+  events: {
+    retentionDays: Number(process.env.SERVER_EVENTS_RETENTION_DAYS ?? 365),
+  },
+
   /**
    * Maximum request body size. Fastify's default is 1 MiB, which script bodies were
    * already approaching (code + params + presets) — a 413 on publish is not a failure

@@ -3,7 +3,7 @@
  *
  * Title on the left; a (small) search field and a Create menu on the right.
  * Emits `search` (detail = query string) and `create` (detail = what to create:
- * 'script'; projects are listed but not available yet).
+ * 'script' or 'project').
  */
 
 import { LitElement, html, css, unsafeCSS } from 'lit';
@@ -18,7 +18,7 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 
-export type BrowserCreateKind = 'script';
+export type BrowserCreateKind = 'script' | 'project';
 
 @customElement('browser-header')
 export class BrowserHeader extends LitElement
@@ -50,9 +50,9 @@ export class BrowserHeader extends LitElement
             <wa-icon slot="icon" library="lucide" name="file-code"></wa-icon>
             ${msg('Script')}
           </wa-dropdown-item>
-          <wa-dropdown-item value="project" disabled>
+          <wa-dropdown-item value="project">
             <wa-icon slot="icon" library="lucide" name="folder"></wa-icon>
-            ${msg('Project (coming soon)')}
+            ${msg('Project')}
           </wa-dropdown-item>
         </wa-dropdown>
       </div>
@@ -76,7 +76,7 @@ export class BrowserHeader extends LitElement
   private _onCreate(e: CustomEvent<{ item: { value: string } }>)
   {
     const kind = e.detail.item.value;
-    if (kind !== 'script') return;
+    if (kind !== 'script' && kind !== 'project') return;
     this.dispatchEvent(new CustomEvent<BrowserCreateKind>('create', {
       detail: kind,
       bubbles: true,

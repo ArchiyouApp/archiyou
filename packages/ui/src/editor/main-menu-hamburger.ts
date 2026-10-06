@@ -120,6 +120,10 @@ export class MainMenuHamburger extends SignalWatcher(LitElement)
           <wa-icon slot="icon" library="lucide" name="layout-grid"></wa-icon>
           ${msg('Manage configurators')}
         </wa-dropdown-item>
+        <wa-dropdown-item value="add-to-project">
+          <wa-icon slot="icon" library="lucide" name="folder-plus"></wa-icon>
+          ${msg('Add to project…')}
+        </wa-dropdown-item>
 
         <wa-divider></wa-divider>
 

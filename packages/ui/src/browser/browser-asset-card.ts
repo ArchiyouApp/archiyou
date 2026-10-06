@@ -11,6 +11,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import '../version-pill.js';
 
 import type { BrowserAsset, BrowserAssetKind } from './browser-asset-grid.js';
@@ -19,6 +20,7 @@ const KIND_ICONS: Record<BrowserAssetKind, string> = {
   script: 'file-code',
   shared: 'users',
   configurator: 'tv-minimal-play', // as the configurator preview button in the editor
+  project: 'folder',
 };
 
 /** Numeric date in the browser's locale, e.g. "02-10-2020" (nl) or "10/02/2020" (en-US). */
@@ -48,11 +50,16 @@ export class BrowserAssetCard extends LitElement
           : html`<wa-icon library="lucide" name=${KIND_ICONS[a.kind]}></wa-icon>`}
       </div>
       <div class="body">
-        <span class="type">${this._kindLabel(a.kind)}</span>
+        <span class="type">
+          ${this._kindLabel(a.kind)}${a.label ? html` · <span class="label">${a.label}</span>` : nothing}
+          ${a.badge ? html`<wa-badge variant=${a.badge.variant} appearance="filled-outlined">${a.badge.text}</wa-badge>` : nothing}
+        </span>
         <div class="title">
+          ${a.unread ? html`<span class="unread" title=${msg('New activity')}></span>` : nothing}
           <span class="name" title=${a.name}>${a.name}</span>
           ${a.version ? html`<version-pill version=${a.version}></version-pill>` : nothing}
         </div>
+        ${a.subtitle ? html`<span class="meta">${a.subtitle}</span>` : nothing}
         ${a.author ? html`<span class="meta">${a.author}</span>` : nothing}
         ${created || updated
           ? html`
@@ -91,7 +98,7 @@ export class BrowserAssetCard extends LitElement
   // ── 4. Behaviour & Methods ──
   private _kindLabel(kind: BrowserAssetKind): string
   {
-    return { script: msg('Script'), shared: msg('Shared script'), configurator: msg('Configurator') }[kind];
+    return { script: msg('Script'), shared: msg('Shared script'), configurator: msg('Configurator'), project: msg('Project') }[kind];
   }
 
   private _onKeydown = (e: KeyboardEvent) =>
@@ -161,10 +168,32 @@ export class BrowserAssetCard extends LitElement
     }
 
     .type {
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
       font-size: var(--text-xs);
       text-transform: uppercase;
       letter-spacing: 0.04em;
       color: var(--color-text-muted);
+    }
+
+    .type .label {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .type wa-badge {
+      margin-left: auto;
+      font-size: var(--text-x-xs);
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
+    .unread {
+      flex-shrink: 0;
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: var(--radius-full);
+      background: var(--color-primary);
     }
 
     .title {

@@ -81,6 +81,13 @@ export const routes: Route[] = [
         action: async () => { await import('../../pages/editor.js'); },
       },
       {
+        // A professional's project (pages/project.ts). Inside the layout: making the files
+        // of a delivery runs the script, so the page needs the CAD worker.
+        path: 'projects/:id',
+        component: 'page-project',
+        action: async () => { await import('../../pages/project.js'); },
+      },
+      {
         // /admin/{section}; /admin shows the first section (pages/admin.ts)
         path: 'admin/:section?',
         component: 'page-admin',

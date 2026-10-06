@@ -9,8 +9,12 @@ import '@awesome.me/webawesome/dist/components/popover/popover.js';
 
 import './configurator-metric-card.js';
 import './configurator-download-menu.js';
+import '../projects/add-to-project-menu.js';
 
-import { editorScript, executing as scriptExecuting, executionResult } from '@archiyou/editor/src/state/workspace';
+import { editorScript, executing as scriptExecuting, executionResult, userState, buildConfiguratorRequest } from '@archiyou/editor/src/state/workspace';
+import { configuratorLocale } from '@archiyou/editor/src/state/locale';
+import type { ConfigurationInput } from '@archiyou/editor/src/services/projects';
+import type { ScriptData } from '@archiyou/core/src/execution/types';
 import type { Metric } from '@archiyou/core/src/calc/types';
 import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
@@ -48,6 +52,16 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
           </button>
         ` : ''}
 
+        ${this._canAddToProject() ? html`
+          <div class="download-wrap">
+            <button class="project-btn" title="Add this design to one of your projects"
+              @click=${() => { this._showAddToProject = true; }}>
+              <wa-icon library="lucide" name="folder-plus"></wa-icon>
+              <span>Add to project</span>
+            </button>
+          </div>
+        ` : nothing}
+
         ${this._hasDownloads() ? html`
           <div class="download-wrap">
             <button id="download-btn" class="download-btn" title="Download">
@@ -75,6 +89,15 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
           <configurator-download-menu ?preview=${this.preview}></configurator-download-menu>
         </wa-popover>
       ` : nothing}
+
+      ${this._canAddToProject() ? html`
+        <add-to-project-menu
+          ?open=${this._showAddToProject}
+          .build=${this._buildConfiguration}
+          suggestedTitle=${editorScript.get()?.published?.title ?? editorScript.get()?.name ?? ''}
+          @add-to-project-close=${() => { this._showAddToProject = false; }}
+        ></add-to-project-menu>
+      ` : nothing}
     `;
   }
 
@@ -85,6 +108,7 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
   @property({ type: Boolean, reflect: true }) preview = false;
 
   @state() private _hasOverflow = false;
+  @state() private _showAddToProject = false;
   private _resizeObserver: ResizeObserver | null = null;
 
   // ── 3. Lifecycle ──
@@ -167,6 +191,29 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
     if (e.target !== e.currentTarget) return;
     this.renderRoot.querySelector('configurator-download-menu')?.reset();
   }
+
+  /** A signed-in visitor can keep this design in a project of theirs — the author's own
+   *  configurator or anyone else's. Not in the editor's preview: the editor menu has it. */
+  private _canAddToProject(): boolean
+  {
+    return !this.preview && !userState.get().anonymous;
+  }
+
+  /** The design on screen: the configurator's script with the values set in it now. */
+  private _buildConfiguration = (): ConfigurationInput | null =>
+  {
+    const request = buildConfiguratorRequest([]);
+    // buildConfiguratorRequest puts the script's toData() here
+    const script = request.script as ScriptData | undefined;
+    if (!script) return null;
+    return {
+      script,
+      values: request.params ?? {},
+      unitSystem: request.unitSystem ?? null,
+      lang: configuratorLocale.get(),
+      sourceVersionId: script.id ?? null,
+    };
+  };
 
   /** Is there anything to download? A published configurator that offers no
    *  fulfillments gets no Download button at all rather than one that opens an empty
@@ -278,6 +325,28 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
       white-space: nowrap;
     }
 
+    .project-btn
+    {
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+      padding: var(--space-sm) var(--space-md);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md, 8px);
+      background: var(--color-bg);
+      color: var(--color-text);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      font-size: var(--text-sm);
+      white-space: nowrap;
+    }
+
+    .project-btn:hover
+    {
+      border-color: var(--color-primary);
+      color: var(--color-primary);
+    }
+
     .download-btn:hover
     {
       background: color-mix(in srgb, var(--color-black, #000) 12%, var(--color-primary));
@@ -328,6 +397,11 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
       .download-wrap { padding: 0 var(--space-sm); }
 
       .download-btn { min-height: var(--hit-min); }
+
+      .project-btn { min-height: var(--hit-min); }
+
+      /* Room for the metrics: the icon says it */
+      .project-btn span { display: none; }
     }
   `;
 }
