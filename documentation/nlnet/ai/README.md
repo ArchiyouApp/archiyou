@@ -118,3 +118,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-09-21 | [SQLite → PostgreSQL for apps/server](./records/2026-09-23-sqlite-to-postgres.md) | Claude Fable 5.1 (plan), Claude Opus 5 (implementation) | pg (merged into develop) | 6 |
 | 2026-09-23 | [Kernel performance: brep naming and meshing, per-run overhead, editor double run](./records/2026-09-23-brep-performance.md) | Claude Opus 5.5 | pg (merged into develop) | 3 |
 | 2026-10-06 | [Configurator and editor tweaks: published params open on defaults, header thumbnail contrast, file browser button](./records/2026-10-06-configurator-editor-tweaks.md) | Claude Opus 5.5 | develop | 1 |
+| 2026-10-06 | [Social cards for published configurators](./records/2026-10-06-social-cards.md) | Claude Opus 5.5 | develop | 1 |

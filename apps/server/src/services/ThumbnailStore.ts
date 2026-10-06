@@ -43,7 +43,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdir, rename, unlink, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rename, unlink, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { config } from '../config';
@@ -220,6 +220,25 @@ export class ThumbnailStore {
         reason: (error as Error)?.message ?? String(error),
         detail: { root: this.root },
       });
+      return null;
+    }
+  }
+
+  /** The picture behind a thumbnail URL as stamped on a Script, or null when the URL is not
+   *  one of ours or the file is gone. The social card draws it (services/SocialCard.ts). */
+  async read(url: string | null | undefined): Promise<{ bytes: Buffer; type: string } | null>
+  {
+    if (!url || !url.startsWith(`${this.urlPrefix}/`)) return null;
+    // {author}/{fileId}/{file}, the layout store() writes — never anything else
+    const segments = safeSegments(...url.slice(this.urlPrefix.length + 1).split('/'));
+    if (!segments || segments.length !== 3 || !/\.(png|svg)$/.test(segments[2])) return null;
+    try
+    {
+      const bytes = await readFile(join(this.root, ...segments));
+      return { bytes, type: url.endsWith('.svg') ? 'image/svg+xml' : 'image/png' };
+    }
+    catch
+    {
       return null;
     }
   }

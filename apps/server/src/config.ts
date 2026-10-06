@@ -292,6 +292,25 @@ export const config = {
   },
 
   /**
+   * Social cards: what a link crawler (Slack, LinkedIn, WhatsApp, X) sees for a published
+   * configurator — Open Graph tags in the page and a 1200×630 preview image
+   * (services/SocialCard.ts). Crawlers run no JavaScript, so the SPA shell served for
+   * /configurators/* comes from here, with the tags written in, instead of from Caddy.
+   */
+  social: {
+    /** The built SPA shell. Relative to apps/server, the api container's working dir. */
+    spaIndexPath: process.env.SERVER_SPA_INDEX ?? '../editor/dist/index.html',
+    /** This API as the browser reaches it — the editor build's SERVER_API_BASE_URL —
+     *  resolved against frontendUrl for the absolute og:image URL. */
+    apiBaseUrl: process.env.SERVER_API_BASE_URL || '/api',
+    /** Per-IP limit on rendering cards. A cached card costs nothing; a new one a few ms. */
+    rateLimit: {
+      max: Number(process.env.SERVER_SOCIAL_RATE_LIMIT ?? 60),
+      timeWindow: process.env.SERVER_SOCIAL_RATE_WINDOW ?? '1 minute',
+    },
+  },
+
+  /**
    * Google Gemini, used to translate a published configurator's end-user-facing copy
    * into the locales in @archiyou/core's TRANSLATION_LOCALES.
    *

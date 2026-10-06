@@ -11,6 +11,11 @@
  *   GET /scripts/{kind}/{user}/{scriptAndVersion}  → one (":version" optional → latest)
  *
  * where {kind} ∈ { published, shared }. Execution lives in routes/execute.ts.
+ *
+ * And what a link crawler sees of a published configurator (services/SocialCard.ts):
+ *
+ *   GET /configurators/*                           → the SPA shell with social tags
+ *   GET /cards/{user}/{scriptAndVersion}.png       → its 1200×630 preview image
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -18,7 +23,9 @@ import semver from 'semver';
 
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 
+import { config } from '../config';
 import { scriptStore } from '../services/ScriptStore';
+import { cardContent, configuratorPage, readShell, renderCard, socialUrls } from '../services/SocialCard';
 import { parseScriptAndVersion } from './scriptUrl';
 
 interface GetResponse {
@@ -153,7 +160,76 @@ function registerKind(fastify: FastifyInstance, kind: LibraryKind): void {
   );
 }
 
+/** A published version by its URL segment, `{name}:{version}` (no version: the latest),
+ *  resolved the way GET /scripts/published/{user}/{scriptAndVersion} does. */
+async function findPublished(user: string, scriptAndVersion: string): Promise<ScriptData | null>
+{
+  const { scriptName, version } = parseScriptAndVersion(scriptAndVersion);
+  const resolved = version ? semver.valid(semver.coerce(version)) ?? undefined : undefined;
+  return scriptStore.getPublished(user, scriptName, resolved);
+}
+
+function registerSocialCards(fastify: FastifyInstance): void
+{
+  // The configurator page itself: Caddy sends /configurators/* here instead of serving the
+  // static shell, because crawlers run no JavaScript and must find the tags in the HTML.
+  // This must never break the page: anything that is not a published configurator gets
+  // the shell unchanged, as Caddy would have served it. helmet is off so the response
+  // carries the static file's headers (Caddy adds the site's own).
+  fastify.get('/configurators/*', { helmet: false }, async (request, reply) =>
+  {
+    const shell = await readShell();
+    if (shell === null)
+    {
+      // No built editor: 503 makes Caddy fall back to its static copy (see Caddyfile).
+      return reply.code(503).type('text/plain; charset=utf-8').send('The editor is not built yet.');
+    }
+    reply.type('text/html; charset=utf-8').header('Cache-Control', 'no-cache');
+
+    try
+    {
+      const path = request.url.split('?')[0];
+      const segments = path.split('/').filter(Boolean).map(decodeURIComponent);
+      if (segments.length !== 3) return shell;
+      const [, user, scriptAndVersion] = segments;
+
+      const data = await findPublished(user, scriptAndVersion);
+      if (!data) return shell;
+
+      const search = request.url.includes('?') ? request.url.slice(request.url.indexOf('?') + 1) : '';
+      return configuratorPage(shell, cardContent(data, search), socialUrls(request.url, user, scriptAndVersion));
+    }
+    catch (error)
+    {
+      request.log.warn({ err: error }, 'social card: serving the plain shell');
+      return shell;
+    }
+  });
+
+  fastify.get<{ Params: { user: string; file: string } }>(
+    '/cards/:user/:file',
+    { config: { rateLimit: config.social.rateLimit } },
+    async (request, reply) =>
+    {
+      const { user, file } = request.params;
+      const data = await findPublished(user, file.replace(/\.png$/i, ''));
+      if (!data) return fail(reply, 404, `Configurator "${user}/${file}" not found`);
+
+      const search = request.url.includes('?') ? request.url.slice(request.url.indexOf('?') + 1) : '';
+      const png = await renderCard(data, cardContent(data, search));
+      return reply
+        .type('image/png')
+        // Not immutable: the same link can get a new picture when the thumbnail is redrawn.
+        .header('Cache-Control', 'public, max-age=86400')
+        // Previews are embedded by whoever shows the link — see the thumbnail mount in plugin.ts.
+        .header('Cross-Origin-Resource-Policy', 'cross-origin')
+        .send(png);
+    },
+  );
+}
+
 export async function registerLibraryRoutes(fastify: FastifyInstance): Promise<void> {
   registerKind(fastify, 'published');
   registerKind(fastify, 'shared');
+  registerSocialCards(fastify);
 }

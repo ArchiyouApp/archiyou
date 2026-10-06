@@ -30,11 +30,36 @@ next.archiyou.com {
 		reverse_proxy api:4100
 	}
 
+	# --- Configurator pages: the SPA shell with social-card tags ---
+	# Link crawlers (Slack, LinkedIn, WhatsApp, X) run no JavaScript, so a configurator's
+	# title, description and preview image must be in the HTML itself. The API serves the
+	# same shell with those tags written in (apps/server/src/services/SocialCard.ts).
+	handle /configurators/* {
+		reverse_proxy api:4100
+	}
+
 	# --- Editor SPA ---
 	handle {
 		root * /srv/app
 		try_files {path} /index.html
 		file_server
+	}
+
+	# The API is down, or still building the editor on boot: configurator pages fall
+	# back to the plain shell, exactly as they were served before the route above.
+	handle_errors {
+		@configurator {
+			path /configurators/*
+			expression {err.status_code} >= 502
+		}
+		handle @configurator {
+			root * /srv/app
+			rewrite * /index.html
+			# A page, not an error: without this the shell would go out as a 502.
+			file_server {
+				status 200
+			}
+		}
 	}
 
 	header {

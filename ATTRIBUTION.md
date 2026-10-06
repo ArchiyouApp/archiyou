@@ -118,6 +118,12 @@ The webfonts used by the editor UI (Plus Jakarta Sans, Outfit, JetBrains Mono)
 are loaded from Google Fonts at runtime and are **not** redistributed here; all
 three are SIL Open Font License 1.1.
 
+The exception is `apps/server/assets/fonts/`: Outfit SemiBold and Plus Jakarta Sans
+Regular and SemiBold as static TTFs (the Google Fonts builds), which the server needs
+on disk to draw text on a configurator's social card. They are SIL Open Font License
+1.1, and the licence texts with their copyright lines sit beside them
+(`OFL-Outfit.txt`, `OFL-PlusJakartaSans.txt`).
+
 ## Runtime CDN dependencies
 
 The editor fetches these at runtime rather than bundling them. They are not

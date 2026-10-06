@@ -23,89 +23,13 @@
  * editor's Configurator Preview the address bar belongs to the editor.
  */
 
-import type { ScriptParam } from '@archiyou/core/src/execution/ScriptParam';
+import { decodeParamValues, encodeParamValues } from '@archiyou/core/src/execution/ScriptParam';
 
 import { configuratorParams, configuratorValues, configuratorValueFor } from './configurator';
 
-/** Query keys the configurator itself owns; never treated as a param. Params are
- *  matched by name anyway, but a script is free to call a param LANG. */
-const RESERVED_KEYS = ['lang'];
-
-//// CODEC (pure — see tests/configurator-url.test.ts) ////
-
-/**
- * Param values from a query string, coerced by each param's declared type and checked
- * against its schema. Keys that name no param, and values the param rejects, are left
- * out. Param names are matched case-insensitively: people retype these by hand.
- */
-export function decodeParamValues(search: string, params: ScriptParam[]): Record<string, any>
-{
-  const byName = new Map(params.map(p => [p.name.toUpperCase(), p]));
-  const values: Record<string, any> = {};
-
-  new URLSearchParams(search).forEach((raw, key) =>
-  {
-    if (RESERVED_KEYS.includes(key.toLowerCase())) return;
-
-    const param = byName.get(key.toUpperCase());
-    if (!param) return;
-
-    const value = coerce(raw, param);
-    if (value === undefined)
-    {
-      console.warn(`configurator-url: ignoring "${key}=${raw}" — not a valid ${param.type} value.`);
-      return;
-    }
-    if (!param.validateValue(value))
-    {
-      console.warn(`configurator-url: ignoring "${key}=${raw}" — outside what "${param.name}" allows.`);
-      return;
-    }
-
-    values[param.name] = value;
-  });
-
-  return values;
-}
-
-/**
- * The query string for a set of values: every key that was already in `search` and is
- * not a param is kept as it stands (?lang=, campaign tags, whatever the link carried),
- * every param that differs from its default is added, every param at its default is
- * dropped.
- */
-export function encodeParamValues(
-  search: string,
-  params: ScriptParam[],
-  values: Record<string, any>,
-): string
-{
-  const isParam = new Set(params.map(p => p.name.toUpperCase()));
-  const next = new URLSearchParams();
-
-  new URLSearchParams(search).forEach((raw, key) =>
-  {
-    const reserved = RESERVED_KEYS.includes(key.toLowerCase());
-    if (reserved || !isParam.has(key.toUpperCase())) next.append(key, raw);
-  });
-
-  params.forEach((param) =>
-  {
-    const value = values[param.name];
-    if (value === undefined || sameValue(value, openingValue(param))) return;
-    next.set(param.name, serialize(value, param));
-  });
-
-  return next.toString();
-}
-
-/** What the configurator opens with for this param when the URL says nothing — the
- *  same rule configuratorValueFor() applies. A published script can carry a saved
- *  `_value`, and writing that into the link would pin a value nobody chose. */
-function openingValue(param: ScriptParam): any
-{
-  return param._value ?? param.default;
-}
+// The codec itself lives in core, next to ScriptParam: the server reads the same links
+// for a configurator's social card, and must read them exactly as this page does.
+export { decodeParamValues, encodeParamValues };
 
 //// SIGNALS + ADDRESS BAR ////
 
@@ -140,66 +64,4 @@ export function syncConfiguratorParamsToUrl(): void
   // Nothing about the model depends on this, so a refusal is not worth an error.
   try { window.history.replaceState(window.history.state, '', url); }
   catch (err) { console.warn('configurator-url: could not update the address bar:', err); }
-}
-
-//// VALUES ⇄ STRINGS ////
-
-/** One raw query value → a typed param value, or undefined when it cannot be read as
- *  one. Kept deliberately literal: `?WIDTH=1200`, not `?WIDTH=%221200%22`. */
-function coerce(raw: string, param: ScriptParam): any
-{
-  switch (param.type)
-  {
-    case 'number':
-    {
-      const n = Number(raw);
-      return (raw.trim() !== '' && Number.isFinite(n)) ? n : undefined;
-    }
-    case 'boolean':
-    {
-      const v = raw.trim().toLowerCase();
-      if (['true', '1', 'yes', 'on'].includes(v)) return true;
-      if (['false', '0', 'no', 'off'].includes(v)) return false;
-      return undefined;
-    }
-    case 'number-ranges':
-    {
-      // ?BAYS=25,50,25 — plain numbers; the param's validation decides whether they fit
-      const numbers = raw.split(',').map(part => (part.trim() === '') ? NaN : Number(part));
-      return numbers.every(Number.isFinite) ? numbers : undefined;
-    }
-    case 'list':
-    case 'object':
-    {
-      // The only types a URL cannot express plainly; JSON keeps them exact.
-      try { return JSON.parse(raw); }
-      catch { return undefined; }
-    }
-    default:
-      // text / options — the string IS the value
-      return raw;
-  }
-}
-
-function serialize(value: any, param: ScriptParam): string
-{
-  switch (param.type)
-  {
-    case 'number-ranges':
-      return Array.isArray(value) ? value.join(',') : String(value);
-    case 'list':
-    case 'object':
-      return JSON.stringify(value);
-    default:
-      return String(value);
-  }
-}
-
-/** Structural equality, so a list/object at its default is recognised as untouched. */
-function sameValue(a: any, b: any): boolean
-{
-  if (a === b) return true;
-  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
-  try { return JSON.stringify(a) === JSON.stringify(b); }
-  catch { return false; }
 }

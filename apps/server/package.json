@@ -35,6 +35,7 @@
     "@fastify/rate-limit": "^9.1.0",
     "@fastify/static": "^7.0.4",
     "@google/genai": "^1.44.0",
+    "@resvg/resvg-js": "^2.6.2",
     "archiver": "^7.0.1",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.11.1",
