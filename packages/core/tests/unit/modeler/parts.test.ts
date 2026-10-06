@@ -119,6 +119,12 @@ describe('Make.partList (pinned before the parts.ts extraction)', () =>
         modeler.make.partList(modeler.all())
         expect(calc.tables()).toContain('parts')
     })
+
+    it('lists everything in the scene when given no shapes', () =>
+    {
+        const all = rowsOf(modeler.make.partList(modeler.all(), 'all') as any)
+        expect(rowsOf(modeler.make.partList() as any)).toEqual(all)
+    })
 })
 
 describe('measurePart', () =>

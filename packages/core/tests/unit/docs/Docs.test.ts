@@ -522,6 +522,26 @@ describe('Doc', () =>
 		]))
 	})
 
+	it('positions by alignment words, as pivot() reads them', () =>
+	{
+		const { doc } = createDoc()
+		const d = doc.create('aligned').page('sheet').text('A')
+		const container = () => doc.getDoc('aligned')!._activeContainer as any
+
+		d.position('topright').pivot('topright')
+		expect(container()._position).toEqual([1, 1])
+		expect(container()._pivot).toEqual([1, 1])
+
+		// what is not said is centered, in any order and case
+		d.position('bottom').pivot('centerLeft')
+		expect(container()._position).toEqual([0.5, 0])
+		expect(container()._pivot).toEqual([0, 0.5])
+
+		// the two-argument form is unchanged
+		d.position('right', 'top')
+		expect(container()._position).toEqual([1, 1])
+	})
+
 	describe('image sizing', () =>
 	{
 		const realFetch = globalThis.fetch

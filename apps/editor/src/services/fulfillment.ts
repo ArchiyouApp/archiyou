@@ -428,7 +428,7 @@ function base64ToBytes(base64: string): Uint8Array
   return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
 }
 
-function zipFiles(files: FulfillmentFile[]): Uint8Array
+export function zipFiles(files: FulfillmentFile[]): Uint8Array
 {
   const encoder = new TextEncoder();
   const zippable: Zippable = Object.fromEntries(files.map(file =>

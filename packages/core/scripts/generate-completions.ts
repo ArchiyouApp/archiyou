@@ -33,13 +33,14 @@
  *   src/interaction/Handle.ts         → Handle members (what $handle() returns)
  *   src/docs/Docs.ts                  → Docs members (the `doc` global)
  *   src/docs/Document.ts              → Document members (what doc.create() and the chain return)
+ *   src/modeler/Make.ts               → Make members (the `make` global)
  *
  * The brep classes (Solid/Edge/Wire/Face) are deliberately NOT emitted: brep mode is not
  * wired after the SmartShape removal — Modeler._brepNotWired() throws for every brep-only
  * factory — so offering completions for them would advertise an API that cannot run.
  */
 
-import { Project, SyntaxKind, Scope, type ClassDeclaration, type MethodDeclaration, type MethodSignature, type GetAccessorDeclaration } from 'ts-morph'
+import { Project, SyntaxKind, Scope, Node, type ClassDeclaration, type MethodDeclaration, type MethodSignature, type GetAccessorDeclaration, type JSDocTag } from 'ts-morph'
 import { writeFileSync, mkdirSync } from 'fs'
 import { join, dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
@@ -57,6 +58,12 @@ interface MethodInfo
     label: string
     detail: string
     info?: string
+    /** Documented parameters (@param), in order */
+    params?: Array<{ name: string, info: string }>
+    /** @returns */
+    returns?: string
+    /** The first @example */
+    example?: string
     type: 'function' | 'property'
 }
 
@@ -128,19 +135,63 @@ function formatMethodSignature(method: MethodDeclaration | MethodSignature): str
     return `(${params}): ${returnText}`
 }
 
-function getJsDoc(method: MethodDeclaration | MethodSignature): string | undefined
+/** Join the lines a doc comment was wrapped at, so the info box wraps the text to its own
+ *  width. Paragraphs (blank lines), list items ('- ', '* ', '1. ') and indented code keep
+ *  their line breaks; a line indented further than a list item continues the item, one
+ *  that is not ends the list. Tag text (@param) comes without its indentation: there a
+ *  line after an item continues it. */
+function unwrap(text: string): string
 {
-    const own = method.getJsDocs()[0]?.getDescription()?.trim()
-    if (own) return own
+    const lines = text.split('\n')
+    const indent = (line: string) => line.length - line.trimStart().length
+    const rest = lines.slice(1).filter(line => line.trim())
+    const base = rest.length ? Math.min(...rest.map(indent)) : 0
 
-    // an overloaded method carries its doc on the first overload, not on the implementation
+    return lines
+        .reduce<{ out: string[], item: number | null }>(({ out, item }, line, i) =>
+        {
+            const trimmed = line.trim()
+            const last = out[out.length - 1]
+            if (!trimmed) return { out: [...out, ''], item: null }
+            if (/^([-*•]|\d+\.)\s/.test(trimmed)) return { out: [...out, trimmed], item: indent(line) }
+            if (item !== null && (indent(line) > item || indent(line) === item && item === 0)) return { out: [...out.slice(0, -1), `${last} ${trimmed}`], item }
+            if (item !== null) return { out: [...out, trimmed], item: null }
+            if (i > 0 && indent(line) >= base + 3) return { out: [...out, line.slice(base)], item: null }
+            if (last) return { out: [...out.slice(0, -1), `${last} ${trimmed}`], item: null }
+            return { out: [...out, trimmed], item: null }
+        }, { out: [], item: null })
+        .out
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+}
+
+/** What a completion shows of a method's doc comment: the description, the documented
+ *  parameters, what it returns and its first example. An overloaded method carries its doc
+ *  on the first overload, not on the implementation. */
+function docOf(method: MethodDeclaration | MethodSignature): Pick<MethodInfo, 'info' | 'params' | 'returns' | 'example'>
+{
     const overloads = (method as MethodDeclaration).getOverloads?.() ?? []
-    for (const overload of overloads)
-    {
-        const doc = overload.getJsDocs()[0]?.getDescription()?.trim()
-        if (doc) return doc
+    const doc = [method, ...overloads]
+        .map(m => m.getJsDocs()[0])
+        .find(d => d?.getDescription()?.trim())
+    if (!doc) return {}
+
+    const tags = doc.getTags()
+    const text = (tag: JSDocTag | undefined) => tag?.getCommentText()?.replace(/^\s*-\s*/, '').trim() || undefined
+    const prose = (tag: JSDocTag | undefined) => { const t = text(tag); return t && unwrap(t) }
+    const params = tags
+        .filter(Node.isJSDocParameterTag)
+        .map(tag => ({ name: tag.getName(), info: prose(tag) ?? '' }))
+        .filter(p => p.info)
+    const returns = prose(tags.find(t => t.getTagName() === 'returns'))
+    const example = text(tags.find(t => t.getTagName() === 'example'))
+
+    return {
+        info: unwrap(doc.getDescription().trim()),
+        ...(params.length ? { params } : {}),
+        ...(returns ? { returns } : {}),
+        ...(example ? { example } : {}),
     }
-    return undefined
 }
 
 /** Extract all public instance methods from a class, excluding Object prototype methods. */
@@ -160,7 +211,7 @@ function extractPublicMethods(cls: ClassDeclaration, excludeNames?: Set<string>)
         results.push({
             label: name,
             detail: formatMethodSignature(method),
-            info: getJsDoc(method),
+            ...docOf(method),
             type: 'function',
         })
     }
@@ -225,7 +276,7 @@ for (const method of modelerClass.getInstanceMethods())
     modelerFunctions.push({
         label: name,
         detail: formatMethodSignature(method),
-        info: getJsDoc(method),
+        ...docOf(method),
         type: 'function',
     })
 }
@@ -273,7 +324,7 @@ function extractAnnotationMethods(interfaceName: string): MethodInfo[]
                 results.push({
                     label: name,
                     detail: formatMethodSignature(method),
-                    info: getJsDoc(method),
+                    ...docOf(method),
                     type: 'function',
                 })
             }
@@ -333,7 +384,7 @@ function extractStatics(relPath: string, cls: string, includeNames: string[]): M
         .map(m => ({
             label: m.getName(),
             detail: formatMethodSignature(m),
-            info: getJsDoc(m),
+            ...docOf(m),
             type: 'function' as const,
         }))
 }
@@ -350,18 +401,27 @@ const obboxStatics  = extractStatics('../meshup/src/OBbox.ts',  'OBbox',  ['from
 const documentMethods = extractPublicMethods(
     getClass('src/docs/Document.ts', 'Document'),
     new Set(['createPage', 'pageExists', 'addPipeline', 'toData', 'toSVG', 'toSVGPages',
-             'resolveScopeReferences', 'parseInputNumberUnitsConvertTo']),
+             'resolveScopeReferences', 'parseInputNumberUnitsConvertTo', 'resolveUnitSystem']),
 )
 
 // Most Docs methods are one-line shims forwarding to the active Document: they have no
 // JSDoc of their own, so they borrow the Document's
-const documentInfo = new Map(documentMethods.map(m => [m.label, m.info]))
+const documentByLabel = new Map(documentMethods.map(m => [m.label, m]))
 const docsMethods = extractPublicMethods(
     getClass('src/docs/Docs.ts', 'Docs'),
     new Set(['getAssetProxyUrl', 'getAppBaseUrl', 'hasDocs', 'setArchiyou', 'reset', 'executePipelines',
              'checkAndMakeDefaultDoc', 'toInternalData', 'getDocs', 'instructs', 'getInstruct',
              'toData', 'toPDF', 'toSVG', 'toSVGPages']),
-).map(m => ({ ...m, info: m.info ?? documentInfo.get(m.label) }))
+).map(m => (m.info ? m : { ...documentByLabel.get(m.label), ...m })) // without a description it has no doc fields
+
+/* ------------------------------------------------------------------ */
+/*  Extract: make (the `make` global: frames, walls, part lists)        */
+/* ------------------------------------------------------------------ */
+
+const makeMethods = extractPublicMethods(
+    getClass('src/modeler/Make.ts', 'Make'),
+    new Set(['setArchiyou', 'packReady']),
+)
 
 /* ------------------------------------------------------------------ */
 /*  Assemble: shapeClasses                                              */
@@ -446,6 +506,11 @@ const shapeClasses: ShapeClassInfo[] = [
         detail: 'a document with pages and containers (view, text, image, …)',
         members: documentMethods,
     },
+    {
+        label: 'Make',
+        detail: 'the make global: frames, walls, boarding, packing and part lists',
+        members: makeMethods,
+    },
 ]
 
 /* ------------------------------------------------------------------ */
@@ -454,9 +519,10 @@ const shapeClasses: ShapeClassInfo[] = [
 
 function renderMethodInfo(m: MethodInfo, indent: string): string
 {
-    const info = m.info ? `\n${indent}  info: ${JSON.stringify(m.info)},` : ''
+    const field = (key: keyof MethodInfo) => m[key] ? `\n${indent}  ${key}: ${JSON.stringify(m[key])},` : ''
     return (
-        `${indent}{ label: ${JSON.stringify(m.label)}, detail: ${JSON.stringify(m.detail)},${info}\n` +
+        `${indent}{ label: ${JSON.stringify(m.label)}, detail: ${JSON.stringify(m.detail)},` +
+        `${field('info')}${field('params')}${field('returns')}${field('example')}\n` +
         `${indent}  type: '${m.type}' },`
     )
 }
@@ -507,7 +573,9 @@ const header = `\
 const output =
     header +
     `export interface MethodInfo {\n` +
-    `  label: string;\n  detail: string;\n  info?: string;\n  type: 'function' | 'property';\n}\n\n` +
+    `  label: string;\n  detail: string;\n  info?: string;\n` +
+    `  params?: Array<{ name: string; info: string }>;\n  returns?: string;\n  example?: string;\n` +
+    `  type: 'function' | 'property';\n}\n\n` +
     `export interface ShapeClassInfo {\n` +
     `  label: string;\n  detail: string;\n  statics?: MethodInfo[];\n  members: MethodInfo[];\n}\n\n` +
     `export const modelerFunctions: MethodInfo[] = [\n` +

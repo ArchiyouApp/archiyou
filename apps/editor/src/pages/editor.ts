@@ -131,7 +131,7 @@ export class PageEditor extends SignalWatcher(LitElement)
         </div>
         <wa-split-panel
           slot=${compact ? 'start' : 'end'}
-          class="viewer-tools-split"
+          class="viewer-tools-split ${tools.length > 0 && !compact ? 'has-tools' : ''}"
           position=${compact ? 100 : this._wideHelp ? 50 : tools.length > 0 ? 100 - tools.reduce((max, t) => Math.max(max, t.width), 0) : 100}
         >
           ${tools.length > 0 && !compact ? html`<wa-icon slot="divider" class="split-grip" library="lucide" name="grip-vertical"></wa-icon>` : ''}
@@ -220,9 +220,6 @@ export class PageEditor extends SignalWatcher(LitElement)
 
   @state() private _activeSection: 'info' | 'code' | 'history' | 'files' | 'templates' | 'help' | 'settings' | null = 'code';
   @state() private _activeTools: ToolDef[] = [];
-  /** Opened from a tutorial link: code, viewer and help panel share the width in thirds
-   *  (while help is open), so the tutorial has room next to a still usable viewer. */
-  @state() private _tutorialLayout = false;
   private _linkedTutorial: string | null = null;
   @state() private _showScriptManager = false;
   @state() private _showScriptImporter = false;
@@ -437,7 +434,6 @@ export class PageEditor extends SignalWatcher(LitElement)
       this._linkedTutorial = name;
 
       this._openTool('help');
-      this._tutorialLayout = true;
       void openHelpDoc(`tutorials/${name}`).then(found =>
       {
         if (!found) this._showNotice(`There is no tutorial called “${name}”.`);
@@ -1017,9 +1013,12 @@ export class PageEditor extends SignalWatcher(LitElement)
   }
 
 
+  /** While help is open, code, viewer and help share the width in thirds: help opens at a
+   *  third of the screen, wide enough for a tutorial or the reference, next to a still
+   *  usable viewer. As a tool's own width it got a third of the viewer's half only. */
   private get _wideHelp(): boolean
   {
-    return this._tutorialLayout && this._activeTools.some(t => t.id === 'help');
+    return this._activeTools.some(t => t.id === 'help');
   }
 
   private _handleToolToggle(e: CustomEvent<string>)
@@ -1065,8 +1064,6 @@ export class PageEditor extends SignalWatcher(LitElement)
   private _closeTool(id: string)
   {
     this._activeTools = this._activeTools.filter(t => t.id !== id);
-    // The tutorial link's wide help panel ends with the panel
-    if (id === 'help') this._tutorialLayout = false;
   }
 
   private async _handleExecute()
@@ -1221,6 +1218,12 @@ export class PageEditor extends SignalWatcher(LitElement)
       width: 100%;
       height: 100%;
       --divider-width: var(--size-divider);
+    }
+
+    /* An open tool keeps at least a quarter of the screen, when opened at its own width
+       and when dragged: --max caps the viewer (the start panel), divider included */
+    .viewer-tools-split.has-tools {
+      --max: calc(100% - 25vw - var(--divider-width));
     }
 
     editor-tool-panels {

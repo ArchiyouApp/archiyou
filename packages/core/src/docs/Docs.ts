@@ -263,7 +263,20 @@ export class Docs
 
     //// DOCS API ////
 
-    /** Make a new Document with optionally a name and return it to build on */
+    /** Make a new document and build on it: pages, views, text, tables. It starts in mm on
+     *  A4 landscape (inch on Letter for a model in inches or feet); see units(), pageSize()
+     *  and pageOrientation(). Each document becomes a PDF in the Doc tool and the outputs.
+     *  @param name  Its name (default 'doc1', 'doc2', …).
+     *  @returns The new document.
+     *
+     *  @example
+     *  box(1000, 500, 700)
+     *  iso = all().iso().tmp()
+     *  docs.create('plan')
+     *      .page('overview')
+     *      .text('My design')
+     *      .view('iso', iso).width(0.5).position('right').pivot('right')
+     */
     create(name?:string):Document
     {
         const docName = `${this.DOC_DEFAULT_NAME}${this._docs.length+1}` // start a unnamed doc
@@ -362,7 +375,7 @@ export class Docs
     lastBlock():ContainerBlock { return this.checkAndMakeDefaultDoc().lastBlock(); }
     width(n:WidthHeightInput):Document { return this.checkAndMakeDefaultDoc().width(n); }
     height(n:WidthHeightInput):Document { return this.checkAndMakeDefaultDoc().height(n); }
-    position(x:number|ContainerPositionLike, y?:number|string):Document { return this.checkAndMakeDefaultDoc().position(x, y); }
+    position(x:number|string|ContainerPositionLike, y?:number|string):Document { return this.checkAndMakeDefaultDoc().position(x, y); }
     pivot(x:number|ContainerPositionLike|string|Array<number|number>, y?:number):Document { return this.checkAndMakeDefaultDoc().pivot(x, y); }
     border(style?:DocPathStyle):Document { return this.checkAndMakeDefaultDoc().border(style); }
     contentAlign(align:ContainerHAlignment|ContainerVAlignment|ContainerAlignment):Document { return this.checkAndMakeDefaultDoc().contentAlign(align); }
@@ -375,12 +388,18 @@ export class Docs
 
     //// OUTPUT ////
 
-    /** Return names of docs present */
+    /** The names of the documents made so far.
+     *  @returns Like ['plan', 'parts'].
+     */
     docs():Array<string>
     {
         return this._docs.map(doc => doc._name);
     }
 
+    /** A document by its name, to add to it later in the script.
+     *  @param name  The document's name.
+     *  @returns The document, or null when there is none by that name.
+     */
     getDoc(name:string):Document|null
     {
         const doc = this._docs.find(d => d._name === name);

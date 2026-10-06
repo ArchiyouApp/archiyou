@@ -58,3 +58,22 @@ describe('table column units', () =>
         expect(undeclared).toContain('3000') // nothing converts without a declaration
     })
 })
+
+describe('table font size', () =>
+{
+    /** The font sizes of the cells, in mm */
+    async function fontSizes(options?:any):Promise<Array<number>>
+    {
+        const doc = makeDocs().create('d')
+        doc.page('p').table(CUT_LIST, options)
+        const svg = (await doc.toSVGPages())[0].svg
+        return [...new Set([...svg.matchAll(/<text[^>]*font-size="([\d.]+)"[^>]*dominant-baseline="middle"/g)].map(m => Number(m[1])))]
+    }
+
+    it('is 6 points by default, and what the options say otherwise', async () =>
+    {
+        const mm = (pt:number) => pt * 25.4 / 72
+        expect((await fontSizes()).map(s => +s.toFixed(3))).toEqual([+mm(6).toFixed(3)])
+        expect((await fontSizes({ fontsize: 9 })).map(s => +s.toFixed(3))).toEqual([+mm(9).toFixed(3)])
+    })
+})

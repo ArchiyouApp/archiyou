@@ -251,9 +251,21 @@ export class Make
 
     //// MAIN METHODS ////
 
-    /** Make simple rectangular frame of width, height, depth and thickness at origin position
-     *  prio sets what members have priority (default: horizontal)
-     *  Frame is parallel to the front side. Works on both kernels (mesh and brep).
+    /** A rectangular frame of four members (bottom, top, left and right), standing on the
+     *  origin, parallel to the front: it runs along x and up z, its depth along y.
+     *  Works on both kernels (mesh and brep).
+     *
+     *  @param width      Outer width, along x.
+     *  @param height     Outer height, along z.
+     *  @param depth      Depth of the members, along y.
+     *  @param thickness  Thickness of the members.
+     *  @param prio       Which members run through at the corners: 'horizontal' (default) gives
+     *                    the top and bottom the full width, 'vertical' the sides the full height.
+     *  @returns A group 'Frame' with frameBottom, frameTop, frameLeft and frameRight.
+     *
+     *  @example
+     *  // A window frame of 1000 x 1200, 90 deep, from 44 thick members
+     *  frame = make.frame(1000, 1200, 90, 44)
      */
     public frame(width: number, height: number, depth: number, thickness: number, prio: 'horizontal' | 'vertical' = 'horizontal'): ShapeCollection
     {
@@ -298,12 +310,33 @@ export class Make
         return modeler.group(bottomMem, topMem, leftMem, rightMem).name('Frame');
     }
 
-    /** Make an advanced wood frame for a wall
-     *  starting from origin with centerline along x-axis
-     *  returns ShapeCollection and puts messages inside console
+    /** A timber stud wall: plates, studs on a grid, framed openings for windows and doors,
+     *  insulation between the studs and, optionally, a sloped top. It starts at the origin
+     *  with its centerline along x and stands up z. Notes on the build go to the console.
      *
-     *  NOTE: Added sloped roof with optional ridge height and centerline [0-1]:
-     *    this will add a triangular top to the wall
+     *  Each kind of part is a group of the wall, to reach or style on its own (`wall.studs`):
+     *  studs, plates, cripplesTop, cripplesBottom, openingFramesHorizontals,
+     *  openingFramesVerticals, openingKingStuds, openingJackStuds, insulation, gridlines,
+     *  and the hidden diagram and openingDiagrams.
+     *
+     *  @param width          Length of the wall, along x.
+     *  @param height         Height of the wall, plates included, along z.
+     *  @param depth          Thickness of the wall: the depth of the studs, like 140. Needed.
+     *  @param studThickness  Thickness of the studs and plates (default 38).
+     *  @param grid           Distance between the studs, center to center (default 610).
+     *  @param openings       Windows and doors: [{ left, sill, width, height }], with `left`
+     *                        from the start of the wall and `sill` from its bottom. Openings
+     *                        less than two studs apart are merged into one.
+     *  @param ridge          A sloped top: { height, center }, `height` above the wall at the
+     *                        ridge and `center` [0-1] where along the wall the ridge is.
+     *  @returns The wall: a group with a group per kind of part.
+     *
+     *  @example
+     *  // A wall of 3 x 2.4 m, 140 thick, with one window
+     *  wall = make.wall(3000, 2400, 140, 38, 610, [
+     *      { left: 800, sill: 900, width: 1200, height: 1000 },
+     *  ])
+     *  wall.insulation.hide()
      */
     public wall(width: number, height: number, depth?: number, studThickness?: number, grid?: number, openings: Array<WallOpening> = [], ridge?: { height: number; center: number }): ShapeCollection
     {
@@ -1141,7 +1174,8 @@ export class Make
 
     //// 2D LAYOUTS ////
 
-    /** Reset (and return) the stats of the last stats-gathering operation */
+    /** Clear `make.stats`, the statistics of the last boarding(), and return them empty.
+     *  boarding() starts with this itself. */
     resetStats(): MakeStats
     {
         this.stats = {
@@ -1385,6 +1419,22 @@ export class Make
      * behind it). With `leftover: true` the off-cut of a row starts the next one.
      *
      * Statistics on cuts, stock count and waste land on `make.stats` afterwards.
+     *
+     * @param options  The area and the stock:
+     *   - width, height: the area to cover, from the origin (needed)
+     *   - stockWidth, stockHeight: one board or sheet (default 100 x 100)
+     *   - direction: 'horizontal' (default) lays the boards along x, 'vertical' along y
+     *   - start: corner to start from, 'bottomleft' (default), 'bottomright', 'topleft' or 'topright'
+     *   - grid, gridOffset: snap the board ends to a grid, like the studs behind (default none)
+     *   - leftover: start the next row with the off-cut of the last board (default false)
+     *   - cutMargin: room between parts nested onto stock (default 5)
+     *   - stats: gather `make.stats` (default true)
+     * @returns A group 'boards' of flat rectangles on the XY plane; extrude them for thickness.
+     *
+     * @example
+     * // Sheets of 1220 x 2440 over a 3 x 2.4 m wall, their joints on the studs every 610
+     * sheets = make.boarding({ width: 3000, height: 2400, stockWidth: 1220, stockHeight: 2440, grid: 610, leftover: true })
+     * print(make.stats.numStock, 'sheets needed')
      */
     boarding(options?: Layout2DOptions): ShapeCollection
     {
@@ -1403,6 +1453,11 @@ export class Make
      * @param width      Width of the strut.
      * @param space      [width, height] of the space it has to fit into.
      * @param withSpace  Also return the space itself as a blue outline (for debugging a fit).
+     * @returns The strut as a flat Polygon, or with withSpace a group of the strut and the space.
+     *
+     * @example
+     * // A 90 wide brace that fits diagonally into a 1000 x 600 space, made 44 thick
+     * brace = make.fitRectStrut(90, [1000, 600]).extrude(44)
      */
     fitRectStrut(width: number, space: Array<number>, withSpace: boolean = false): Polygon | ShapeCollection
     {
@@ -1443,8 +1498,19 @@ export class Make
      * and returned as a new collection.
      *
      * @param shapes  Shapes to pack — typically Meshes, Polygons or Curves.
-     * @param options Sheet dimensions, kerf and solver budget.
-     * @returns A collection of the placed copies, one per successfully packed shape.
+     * @param options The sheets and the solver:
+     *   - width, height: one sheet (default 2440 x 1220)
+     *   - kerf: gap between the parts, like the saw blade (default 0)
+     *   - rotation: allow turning parts 90° (default true)
+     *   - maxIterations: cap on the solver's rounds (default 200)
+     *   - maxTime: time budget of the solver in seconds (default none)
+     * @returns A group 'packed' of the placed copies with the sheet outlines, side by side
+     *   along x. The solver's statistics are at `modeler.stats`.
+     *
+     * @example
+     * // Nest the panels of a cabinet onto sheets, with a 4 mm saw kerf
+     * panels = collection(box(800, 400, 18), box(800, 400, 18), box(600, 400, 18), box(564, 600, 18))
+     * sheets = make.pack(panels, { width: 2440, height: 1220, kerf: 4 })
      */
     public pack(shapes: ShapeCollection, options: PackOptions): ShapeCollection
     {
@@ -1658,7 +1724,7 @@ export class Make
      *
      *  @param edge  An edge of the end cut: the one it shares with the face on the table.
      *  @param beam  The beam the edge belongs to (optional, see above).
-     *  @returns { miter, bevel } in degrees.
+     *  @returns The miter and bevel in degrees, as `{ miter, bevel }`.
      *
      *  @example
      *  beam = box(600, 90, 40)
@@ -1785,7 +1851,8 @@ export class Make
     //// DATA GATHERING /////
 
     /** Generate a part list Calc table from a ShapeCollection of cuboid parts
-     *  (beam-like and plate-like solids).
+     *  (beam-like and plate-like solids). Without shapes it lists everything in the
+     *  scene: `make.partList()` is `make.partList(all())`.
      *
      *  Each shape is classified and measured inline from its oriented bounding box (OBB).
      *  With dims sorted ascending → [thickness, width, length]:
@@ -1796,9 +1863,25 @@ export class Make
      *  For optimal information gathering:
      *   - organize shapes into groups (group name → part name)
      *   - name individual shapes (shape name → subpart name)
+     *
+     *  @param shapes   The parts (default: everything in the scene).
+     *  @param name     Name of the table (default: the name of the collection, else 'parts').
+     *  @param options  - labels: add a label column (A, B, C …) as the first column (default false)
+     *  @returns A Calc table with the columns part, subpart, type, section, length and quantity:
+     *    one row per distinct part, and the total length per section in its footer.
+     *
+     *  @example
+     *  // Four legs and a top: the legs merge into one row, quantity 4
+     *  leg = box(44, 44, 720).name('leg')
+     *  leg.copy().moveX(1000)
+     *  leg.copy().moveY(600)
+     *  leg.copy().move(1000, 600)
+     *  box(1200, 800, 18).move(500, 300, 369).name('top')
+     *  parts = make.partList()
      */
-    partList(shapes: ShapeCollection, name?: string, options?: PartListOptions): Table
+    partList(shapes?: ShapeCollection, name?: string, options?: PartListOptions): Table
     {
+        shapes = shapes ?? this.modeler.all();
         const withLabels = options?.labels === true;
 
         /*  `label` is opt-in and goes FIRST when it is on. Off by default because scripts read

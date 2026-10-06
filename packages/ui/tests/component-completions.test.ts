@@ -3,6 +3,7 @@ import { EditorState } from '@codemirror/state';
 import { CompletionContext } from '@codemirror/autocomplete';
 
 import { archiyouCompletions, registerComponentNames } from '../src/editor/completions';
+import { shapeClasses } from '../src/editor/completions-data.generated';
 
 /** Completions at the end of `doc`. */
 function complete(doc: string)
@@ -103,9 +104,26 @@ describe('doc completions', () =>
 {
   const labels = (doc: string) => complete(doc)?.options.map(o => o.label) ?? [];
 
-  it('offers the doc global at the top level', () =>
+  it('offers the docs global at the top level', () =>
   {
-    expect(labels(`do`)).toContain('doc');
+    expect(labels(`do`)).toContain('docs');
+  });
+
+  it('offers the same after docs., the name scripts use, as after its older name doc.', () =>
+  {
+    expect(labels(`docs.`)).toEqual(labels(`doc.`));
+    expect(labels(`docs.`)).not.toContain('extrude');
+    expect(labels(`docs.create('a').page('p').`)).toContain('view');
+    expect(labels(`d = docs.create('a')\nd.`)).toContain('titleblock');
+    expect(labels(`d = docs\nd.`)).toContain('create');
+  });
+
+  it('documents the options of a view and gives an example', () =>
+  {
+    const view = shapeClasses.find(c => c.label === 'Document')!.members.find(m => m.label === 'view')!;
+    expect(view.params?.find(p => p.name === 'options')?.info).toContain('scale');
+    expect(view.example).toContain(".view('front'");
+    expect(typeof complete(`docs.create('a').`)!.options.find(o => o.label === 'view')!.info).toBe('function');
   });
 
   it('offers the Docs methods after doc.', () =>
@@ -141,5 +159,40 @@ describe('doc completions', () =>
   it('stops at methods that do not return the Document', () =>
   {
     expect(labels(`doc.lastBlock().`)).not.toContain('pivot');
+  });
+});
+
+describe('make completions', () =>
+{
+  const labels = (doc: string) => complete(doc)?.options.map(o => o.label) ?? [];
+
+  it('offers the methods of the make global after make.', () =>
+  {
+    expect(labels(`make.`)).toEqual(expect.arrayContaining(['partList', 'wall', 'frame', 'boarding', 'pack', 'cutAngles']));
+    expect(labels(`t = make.part`)).toContain('partList');
+    expect(labels(`make.`)).not.toContain('setArchiyou');
+    expect(labels(`make.`)).not.toContain('move'); // not a shape
+  });
+
+  it('offers make itself at the top level', () =>
+  {
+    expect(labels(`ma`)).toContain('make');
+  });
+
+  it('leaves what make returns to the shape lookup', () =>
+  {
+    expect(labels(`make.wall(1000, 2400).`)).toContain('move');
+    expect(labels(`remake.`)).not.toContain('partList');
+  });
+
+  it('documents the options and gives an example, in an info box of its own', () =>
+  {
+    const partList = shapeClasses.find(c => c.label === 'Make')!.members.find(m => m.label === 'partList')!;
+    expect(partList.params?.map(p => p.name)).toEqual(['shapes', 'name', 'options']);
+    expect(partList.example).toContain('make.partList()');
+
+    // documented: the info is built on demand (a DOM node), not a plain string
+    const option = complete(`make.`)!.options.find(o => o.label === 'partList')!;
+    expect(typeof option.info).toBe('function');
   });
 });

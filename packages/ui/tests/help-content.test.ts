@@ -173,6 +173,33 @@ describe('codeAt', () =>
   {
     expect(codeAt(parseHelpDoc('## Only prose\nHello'), 0)).toBeNull();
   });
+
+  describe('prepend', () =>
+  {
+    const fence = (action: string, code: string) => `\`\`\`js ${action}\n${code}\n\`\`\`\n`;
+    const steps = (...blocks: string[]) => parseHelpDoc(blocks.map((b, i) => `## Step ${i}\n${b}`).join(''));
+
+    it('puts its code before the block of the last append', () =>
+    {
+      const doc = steps(fence('run', 'a'), fence('append', 'b'), fence('prepend', 'p'));
+      expect(doc.steps[2].blocks[0]).toMatchObject({ kind: 'code', action: 'prepend' });
+      expect(codeAt(doc, 2)).toBe('a\np\nb');
+    });
+
+    it('goes first after a run, and keeps a run of prepends in reading order', () =>
+    {
+      expect(codeAt(steps(fence('run', 'a'), fence('prepend', 'p')), 1)).toBe('p\na');
+      expect(codeAt(steps(fence('run', 'a'), fence('append', 'b'), fence('prepend', 'p'), fence('prepend', 'q')), 3))
+        .toBe('a\np\nq\nb');
+    });
+
+    it('stays where it went when more is appended, and is the code when there is none yet', () =>
+    {
+      expect(codeAt(steps(fence('run', 'a'), fence('append', 'b'), fence('prepend', 'p'), fence('append', 'c')), 3))
+        .toBe('a\np\nb\nc');
+      expect(codeAt(steps(fence('prepend', 'p')), 0)).toBe('p');
+    });
+  });
 });
 
 describe('tags and paths', () =>

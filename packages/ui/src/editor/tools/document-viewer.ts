@@ -10,6 +10,8 @@ import '@awesome.me/webawesome/dist/components/select/select.js';
 import '@awesome.me/webawesome/dist/components/option/option.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
+import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '../../unit-switch.js';
 
 import { executionResult, docUnitSystem, setDocUnitSystem } from '@archiyou/editor/src/state/workspace';
@@ -22,6 +24,8 @@ import type { DocSVGPage } from '@archiyou/core/src/docs/types';
 
 type SvgMap = Record<string, string>;
 type SvgPagesMap = Record<string, Array<DocSVGPage>>;
+/** What Save offers: a PDF, one SVG with a page per Inkscape page, or a standalone SVG per page */
+type SaveFormat = 'pdf' | 'svg-pages' | 'svg';
 
 /**
  * Sanitize script-produced SVG before it is injected with unsafeHTML().
@@ -103,17 +107,28 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
           .value=${docUnitSystem.get()}
           @unit-system-change=${(e: CustomEvent<UnitSystem>) => setDocUnitSystem(e.detail)}
         ></unit-switch>
-        <wa-button
-          class="pdf-btn"
-          size="small"
-          appearance="plain"
-          ?loading=${this._exportingPdf}
-          ?disabled=${this._exportingPdf}
-          @click=${() => this._handleSavePDF(selected)}
-          title="Save as PDF"
+        <wa-dropdown
+          class="save-dropdown"
+          placement="bottom-end"
+          hoist
+          @wa-select=${(e: CustomEvent) => this._handleSave(selected, (e.detail.item as { value: string }).value as SaveFormat)}
         >
-          <wa-icon library="lucide" name="file-down" label="Save as PDF"></wa-icon>
-        </wa-button>
+          <wa-button
+            slot="trigger"
+            class="save-btn"
+            size="small"
+            appearance="plain"
+            with-caret
+            ?loading=${this._exporting}
+            ?disabled=${this._exporting}
+            title="Save the document"
+          >
+            <wa-icon library="lucide" name="file-down" label="Save the document"></wa-icon>
+          </wa-button>
+          <wa-dropdown-item value="pdf">PDF</wa-dropdown-item>
+          <wa-dropdown-item value="svg-pages">SVG pages (Inkscape)</wa-dropdown-item>
+          <wa-dropdown-item value="svg">SVG</wa-dropdown-item>
+        </wa-dropdown>
         <wa-button class="reset-btn" size="small" appearance="plain" @click=${this._resetView} title="Reset view">
           <wa-icon library="lucide" name="crosshair" label="Reset view"></wa-icon>
         </wa-button>
@@ -130,7 +145,7 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
   // active Metric/Imperial preference in _formatDocSize().
   @state() private _docW: number | null = null;
   @state() private _docH: number | null = null;
-  @state() private _exportingPdf = false;
+  @state() private _exporting = false;
   @query('.svg-wrapper') private _svgWrapper!: HTMLElement;
   @query('.doc-select') private _select!: HTMLElement & { value: string };
 
@@ -226,12 +241,33 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
       }, {});
   }
 
-  /** Render the selected document's pages to a PDF and download it. PDF rendering
-   *  (svg2pdf) needs a DOM, so it runs here on the main thread — never in the worker. */
-  private async _handleSavePDF(docName: string)
+  /** Save the selected document as a PDF, as one SVG with its pages as Inkscape pages (the
+   *  document as shown), or as standalone SVGs: one per page, zipped when there are more. */
+  private async _handleSave(docName: string, format: SaveFormat)
   {
-    if (this._exportingPdf) return;
+    if (this._exporting) return;
 
+    this._exporting = true;
+    try
+    {
+      if (format === 'pdf') await this._savePDF(docName);
+      else if (format === 'svg-pages') this._saveFile(this._buildSvgMap()[docName], 'image/svg+xml', `${docName}.svg`);
+      else await this._saveSVGs(docName);
+    }
+    catch (err)
+    {
+      console.error(`document-viewer: Saving "${docName}" as ${format} failed`, err);
+    }
+    finally
+    {
+      this._exporting = false;
+    }
+  }
+
+  /** Render the document's pages to a PDF. PDF rendering (svg2pdf) needs a DOM, so it
+   *  runs here on the main thread — never in the worker. */
+  private async _savePDF(docName: string)
+  {
     const pages = this._buildSvgPagesMap()[docName];
     if (!pages || pages.length === 0)
     {
@@ -239,33 +275,46 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
       return;
     }
 
-    this._exportingPdf = true;
-    try
+    const buffer = (await new PDFExporter().export({ [docName]: pages }))?.[docName];
+    if (!buffer)
     {
-      const buffers = await new PDFExporter().export({ [docName]: pages });
-      const buffer = buffers?.[docName];
-      if (!buffer)
-      {
-        console.error(`document-viewer: PDF export produced no buffer for "${docName}".`);
-        return;
-      }
+      console.error(`document-viewer: PDF export produced no buffer for "${docName}".`);
+      return;
+    }
+    this._saveFile(buffer, 'application/pdf', `${docName}.pdf`);
+  }
 
-      const blob = new Blob([buffer], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `${docName}.pdf`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-    }
-    catch (err)
+  /** A standalone SVG per page: one file, or a zip with a page suffix on each, as a
+   *  configurator's SVG download does. fflate comes with the editor's download code. */
+  private async _saveSVGs(docName: string)
+  {
+    const pages = this._buildSvgPagesMap()[docName] ?? [];
+    if (pages.length === 0)
     {
-      console.error('document-viewer: PDF export failed', err);
+      console.warn(`document-viewer: No per-page SVGs available for "${docName}"; cannot export SVG.`);
+      return;
     }
-    finally
+    if (pages.length === 1)
     {
-      this._exportingPdf = false;
+      this._saveFile(pages[0].svg, 'image/svg+xml', `${docName}.svg`);
+      return;
     }
+
+    const { zipFiles } = await import('@archiyou/editor/src/services/fulfillment');
+    const zip = zipFiles(pages.map((page, i) => ({ name: `${docName}_p${i + 1}.svg`, data: page.svg, mime: 'image/svg+xml' })));
+    this._saveFile(zip as BlobPart, 'application/zip', `${docName}.zip`);
+  }
+
+  /** Hand data to the browser as a download */
+  private _saveFile(data: BlobPart | undefined, type: string, filename: string)
+  {
+    if (!data) return;
+    const url = URL.createObjectURL(new Blob([data], { type }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   /** Read the document size (mm) from the SVG viewBox or width/height attributes
@@ -451,7 +500,16 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
     .spacer { flex: 1; }
     .unit-switch { flex-shrink: 0; }
     .reset-btn { flex-shrink: 0; }
-    .pdf-btn { flex-shrink: 0; }
+    .save-dropdown { flex-shrink: 0; }
+
+    /* The save menu: small text on a white panel, like the rest of the toolbar */
+    .save-dropdown::part(menu) {
+      background-color: var(--color-bg-elevated);
+    }
+
+    .save-dropdown wa-dropdown-item {
+      font-size: var(--text-xs);
+    }
 
     /* ─── SVG stage (gray viewport) ─── */
     .svg-stage

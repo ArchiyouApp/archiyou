@@ -11,7 +11,7 @@ import { DOC_UNIT_SYSTEM_DEFAULT } from '../constants'
 
 export class Table extends Container
 {
-    DEFAULT_FONT_SIZE = 10; // in points
+    DEFAULT_FONT_SIZE = 6; // in points
     DEFAULT_FONT_COLOR = 'black'; // converted to hex
 
     DEFAULT_TABLE_PIVOT_POSITION = [0,1]; // top left is most widely used as default
@@ -73,7 +73,7 @@ export class Table extends Container
 
         const fmt = (n: number) => +n.toFixed(4);
 
-        const fontSizePt = convertSizeUnitsToFontPoints(this._options.fontsize ?? 8);
+        const fontSizePt = convertSizeUnitsToFontPoints(this._options.fontsize ?? this.DEFAULT_FONT_SIZE);
         const fontSizeMm = pointsToMm(fontSizePt);
         const fill       = this._options.fontcolor ?? 'black';
         const rowHMm     = fontSizeMm * 1.6 + 2 * TABLE_CELL_PAD_MM;

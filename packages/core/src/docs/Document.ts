@@ -135,14 +135,20 @@ export class Document
 
     //// DOCUMENT SETTINGS API ////
 
-    /** Set name of this document */
+    /** Rename this document: the name it is listed and saved under (plan.pdf).
+     *  @param name  The new name.
+     */
     name(name:string):this
     {
         this._name = name;
         return this;
     }
 
-    /** Set Unit for this Document: 'mm','cm' or 'inch' */
+    /** The unit of the document's own sizes given as bare numbers: padding, widths,
+     *  positions, text sizes. Default 'mm', or 'inch' for a model in inches or feet.
+     *  Values with a unit ('10mm', '0.5"') are read as they are.
+     *  @param units  'mm', 'cm' or 'inch'
+     */
     units(units:DocUnits):this
     {
         if(!isDocUnits(units)){ throw new Error(`Document::units: Invalid units. Use 'mm', 'cm' or 'inch'`);}
@@ -165,8 +171,19 @@ export class Document
         return systemOfUnit(this._docs?._archiyou?.modeler?.units?.() ?? 'mm');
     }
 
-    /** Set general page size for this doc: ISO (A0-A7), US (Letter, Legal, Tabloid),
-     *  ANSI (ANSI_A-ANSI_E) or architectural (ARCH_A-ARCH_E1) */
+    /** The size of the pages made after it: ISO (A0-A7), US (Letter, Legal, Tabloid),
+     *  ANSI (ANSI_A-ANSI_E) or architectural (ARCH_A-ARCH_E1). Default A4, or Letter for a
+     *  model in inches or feet. size() changes a page already made.
+     *  @param size  Like 'A3' or 'Letter'.
+     *
+     *  @example
+     *  box(100)
+     *  docs.create('drawings')
+     *      .pageSize('A3')
+     *      .pageOrientation('portrait')
+     *      .page('front')
+     *      .text('Front view')
+     */
     pageSize(size:PageSize):this
     {
         if(!isPageSize(size)){ throw new Error(`Document::pageSize: Invalid page size "${size}". Use: ${PAGE_SIZES_TEXT}`);}
@@ -174,7 +191,9 @@ export class Document
         return this;
     }
 
-    /** Set general page orientation for this doc */
+    /** The orientation of the pages made after it. Default 'landscape'.
+     *  @param o  'landscape' or 'portrait'
+     */
     pageOrientation(o:PageOrientation):this
     {
         if(!isPageOrientation(o)){ throw new Error(`Document::pageOrientation: Invalid page orientation. Use 'landscape' or 'portrait'`);}
@@ -195,7 +214,17 @@ export class Document
         return this._activePage;
     }
 
-    /** Add a new page to the doc with given name */
+    /** Start a new page: what follows goes on it. It gets the document's pageSize() and
+     *  pageOrientation(). Text, tables and images start a page 'default' when there is
+     *  none yet; views and title blocks need one.
+     *  @param name  A name for the page, unique in this document.
+     *
+     *  @example
+     *  box(100)
+     *  docs.create('plan')
+     *      .page('cover').text('My design')
+     *      .page('parts').text('Parts')
+     */
     page(name:string):this
     {
         if(!name){ throw new Error(`Document::page: Please supply a name to a page!`)}
@@ -205,7 +234,11 @@ export class Document
         return this;
     }
 
-    /** Define script that is executed before this Document is generated */
+    /** A function to run before this document is generated, to make what it shows (shapes
+     *  for a view, given by name). Use a regular function and `return { name, … }` to hand
+     *  its results to the document.
+     *  @param fn  The function to run.
+     */
     pipeline(fn: () => any):this
     {
         if(typeof fn !== 'function')
@@ -225,7 +258,9 @@ export class Document
 
     //// PAGE API ////
 
-    /** Set size of active Page */
+    /** The size of the active page only. See pageSize() for the pages to come.
+     *  @param size  Like 'A3' or 'Letter'.
+     */
     size(size:PageSize):this
     {
         this._checkPageIsActive();
@@ -234,8 +269,10 @@ export class Document
         return this;
     }
 
-    /** Set padding of active Page (width (left and right) and height (top and bottom))
-     *  Use relative width/height ([0-1]), number with percentage (5%) or number with real units ('1cm','0.5"')
+    /** The margin of the active page: what containers' positions and sizes are measured in.
+     *  @param w  Left and right: a fraction of the page [0-1], a percentage '5%', or a size
+     *            with units like '1cm' or '0.5"'.
+     *  @param h  Top and bottom, the same way (default: as w).
     */
     padding(w:WidthHeightInput, h?:WidthHeightInput):this // in doc units
     {
@@ -246,7 +283,9 @@ export class Document
         return this;
     }
 
-    /** Set orientation ('landscape' or 'portrait') of active page */
+    /** The orientation of the active page only. See pageOrientation() for the pages to come.
+     *  @param o  'landscape' or 'portrait'
+     */
     orientation(o:PageOrientation):this
     {
         if(!isPageOrientation(o)){ throw new Error(`Document::orientation: Invalid page orientation. Use 'landscape' or 'portrait'`);}
@@ -258,13 +297,31 @@ export class Document
 
     //// BASIC CONTAINERS ////
 
-    /** Add View Container to active Page
+    /** Add a view to the active page: a box that draws shapes, usually a projection like an
+     *  iso() or elevation(). It fills the page until width(), height() and position() say
+     *  otherwise. Needs a page: start one with page().
      *
      *  `view('elevation', { scale: 1/100, caption: true, bar: true })` — options may take the
-     *  place of the shapes, or follow them. The two are told apart structurally (a Shape and
-     *  a ShapeCollection both answer isShapeClass()/isShapeCollection()), so an options object
-     *  can never be mistaken for geometry. Passing options where shapes were expected used to
-     *  drop them silently.
+     *  place of the shapes, or follow them.
+     *
+     *  @param name             A name for the view; a caption can show it.
+     *  @param shapesOrOptions  The shapes to draw (or set them with shapes()), or the options.
+     *  @param options  How to draw:
+     *   - scale: 'fit' (default), 'auto' (largest standard scale that fits), 1/100, '1:100',
+     *     or a list to choose from
+     *   - zoom: on top of the scale (2 is twice as big)
+     *   - caption: true for the view's name and scale, or a text
+     *   - bar: a graduated scale bar
+     *   - lineWeight: line width on the page, in mm (default 0.25)
+     *   - overflow: 'clip' (default) or 'fit', when a scale does not fit the view
+     *
+     *  @example
+     *  box(1000, 500, 700)
+     *  front = all().elevation('front').tmp()
+     *  docs.create('plan')
+     *      .page('front')
+     *      .view('front', front, { scale: 1/20, caption: true, bar: true })
+     *      .width(0.5)
      */
     view(name?:string, shapesOrOptions?:ShapeCollection|string|ViewOptions, options?:ViewOptions):this
     {
@@ -274,6 +331,9 @@ export class Document
         const newViewContainer = new View().on(this._getOrMakeActivePage()).setName(name);
         this._activeContainer = newViewContainer;
 
+        // Shapes and options are told apart structurally (a Shape and a ShapeCollection both
+        // answer isShapeClass()/isShapeCollection()), so an options object can never be mistaken
+        // for geometry. Passing options where shapes were expected used to drop them silently.
         const givenShapes = (isKernelShapeOrCollection(shapesOrOptions) || typeof shapesOrOptions === 'string')
                                 ? shapesOrOptions
                                 : null;
@@ -288,7 +348,14 @@ export class Document
         return this;
     }
 
-    /** Add Image Container to active Page */
+    /** Add an image to the active page: an http(s) url, a data: uri, or a path like
+     *  '/img/logo.png'. It fills the page until width(), height() and position() say otherwise.
+     *  @param url      Where the image is.
+     *  @param options  How to show it:
+     *   - fit: 'contain' (default, all of it), 'cover' (fill the box, cropped) or 'fill' (stretched)
+     *   - align: where it sits in its box, like ['left', 'top'] (default)
+     *   - opacity, brightness, contrast, grayscale: [0-100]
+     */
     image(url:string, options?:ImageOptions):this
     {
         if(typeof url !== 'string' || url.trim() === ''){ throw new Error(`Document::image: Please supply a string with the image url`);}
@@ -307,7 +374,22 @@ export class Document
         return this;
     }
 
-    /** Add Text line to active Page */
+    /** Add a line of text to the active page, at its top left until position() says
+     *  otherwise. See textarea() for text that wraps.
+     *  @param text     The text, or a number.
+     *  @param options  How it looks:
+     *   - size: in points, or with units like '5mm' (default '7mm')
+     *   - color: like 'red' or '#336699' (default black)
+     *   - bold: true for bold
+     *   - angle: rotation in degrees
+     *
+     *  @example
+     *  box(100)
+     *  docs.create('plan')
+     *      .page('cover')
+     *      .text('Workbench', { size: '12mm', bold: true })
+     *      .position('center').pivot('center')
+     */
     text(text:string|number, options?:TextOptions):this
     {
         if( (typeof text !== 'string') && (typeof text !== 'number') ){ throw new Error('Document::text(): Please supply a string or number for a Text Container!') }
@@ -318,7 +400,11 @@ export class Document
         return this;
     }
 
-    /** Add multiline text area */
+    /** Add text that wraps within its box: 100mm wide and 60% of the page high, until
+     *  width() and height() say otherwise.
+     *  @param text     The text, or a number.
+     *  @param options  As text(): size (default '7mm'), color, bold.
+     */
     textarea(text:string|number, options?:TextOptions):this
     {
         if( (typeof text !== 'string') && (typeof text !== 'number') ){ throw new Error('Document::textarea(): Please supply a string or number for a Text Container!') }
@@ -329,8 +415,19 @@ export class Document
         return this;
     }
 
-    /** Add table to active Page
-     *  @param nameOrData name of Calc table or raw data rows
+    /** Add a table to the active page: a Calc table by name (like the 'parts' table of
+     *  make.partList()), or rows of your own.
+     *  @param nameOrData  The name of a Calc table, or rows like [{ part: 'leg', qty: 4 }].
+     *  @param options  How it looks:
+     *   - fontsize: in points, or with units like '3mm' (default 6)
+     *   - fontcolor: (default black)
+     *   - units: the unit of columns with lengths, like { length: 'mm' }, so they follow the
+     *     document's metric or imperial system
+     *
+     *  @example
+     *  box(44, 44, 700).name('leg')
+     *  make.partList()
+     *  docs.create('parts').page('list').table('parts')
     */
     table(nameOrData:ContainerTableInput, options?:TableOptions):this
     {
@@ -362,8 +459,17 @@ export class Document
 
     //// GRAPHICAL ELEMENTS ////
 
-    /** Draw rect graphic on current page
-     *  @param input { size (when width=height), width, height, round }
+    /** Draw a rectangle on the active page, centered on its position.
+     *  @param input  A size for a square (a number in document units, or like '20mm'), or
+     *                { width, height, round }.
+     *  @param style  { lineWidth (default 3, in points), strokeColor (default black), fillColor }
+     *
+     *  @example
+     *  box(100)
+     *  docs.create('plan')
+     *      .page('marks')
+     *      .rect({ width: 40, height: 20 }, { strokeColor: 'blue', lineWidth: 1 })
+     *      .position('center')
      */
     rect(input?:number|string|DocGraphicInputRect, style?:DocPathStyle):this
     {
@@ -402,8 +508,9 @@ export class Document
         return this;
     }
 
-    /** Draw circle graphic on current page
-     *  @param input { size (=radius), radius }
+    /** Draw a circle on the active page, centered on its position.
+     *  @param input  A radius (a number in document units, or like '10mm'), or { radius }.
+     *  @param style  { lineWidth (default 3, in points), strokeColor (default black), fillColor }
      */
     circle(input?:number|string|DocGraphicInputCircle, style?:DocPathStyle):this
     {
@@ -506,11 +613,29 @@ export class Document
         return this;
     }
 
+    /** Draw a horizontal line on the active page, from its position to the right.
+     *  @param input      Its length: a number in document units, a size like '50mm', or
+     *                    { length, thickness, color }.
+     *  @param thickness  Line width, in points or with units (default 3 points).
+     *  @param color      (default black)
+     *
+     *  @example
+     *  box(100)
+     *  docs.create('plan')
+     *      .page('sheet')
+     *      .hline('100mm', 1).position(0, 0.5)
+     */
     hline(input?:string|number|DocGraphicInputOrthoLine, thickness?:number|string, color?:string):this
     {
         return this._oline('h', input, thickness, color);
     }
 
+    /** Draw a vertical line on the active page, from its position down. See hline().
+     *  @param input      Its length: a number in document units, a size like '50mm', or
+     *                    { length, thickness, color }.
+     *  @param thickness  Line width, in points or with units (default 3 points).
+     *  @param color      (default black)
+     */
     vline(input?:string|number|DocGraphicInputOrthoLine, thickness?:number|string, color?:string):this
     {
         return this._oline('v', input, thickness, color);
@@ -518,7 +643,17 @@ export class Document
 
     //// VARIABLES ////
 
-    /** Set content of active container as variable with given name */
+    /** Name the active container, to set its content later with set(name, value): text
+     *  that is only known later in the script, or that a component's user fills in.
+     *  @param name  The variable name.
+     *
+     *  @example
+     *  box(100)
+     *  docs.create('plan')
+     *      .page('cover')
+     *      .text('Untitled').var('title')
+     *      .set('title', 'Workbench')
+     */
     var(name:string):this
     {
         if(typeof name !== 'string' || name.length === 0){ throw new Error(`Document::var(name): Please supply a variable name as string!`); }
@@ -542,14 +677,20 @@ export class Document
         return this;
     }
 
-    /** Alias of var(): name the active container to set its content later with set(name, value) */
+    /** Alias of var(): name the active container to set its content later with set(name, value).
+     *  @param name  The variable name.
+     */
     tag(name:string):this
     {
         console.user(`Document::tag(name): tag() is an alias of var(). Please use var("${name}") instead.`);
         return this.var(name);
     }
 
-    /** Set variable that sets content of a container */
+    /** Set the content of the container(s) named with var(), like a title block's
+     *  'titleblock:title'.
+     *  @param name   The variable name.
+     *  @param value  The new content.
+     */
     set(name:string, value:string):this
     {
         if(typeof name !== 'string' || name.length === 0){ throw new Error(`Document::set(name, value): Please supply a variable name as string!`); }
@@ -566,8 +707,10 @@ export class Document
 
     //// BLOCKS OF CONTAINERS ////
 
-    /** Place default title block
-     *  @param data:TitleBlockInput
+    /** Place a title block in the bottom right of the active page: the title, designer,
+     *  licenses, logo, version, units, metrics and the parameters of the run.
+     *  @param data  { title, designer, logoUrl, designLicense, manualLicense }. Defaults:
+     *               'Untitled', 'Unknown', the Archiyou logo, 'CC BY-NC' and 'CC BY-NC'.
      *
      *  Its texts are variables, to set later with set(): 'titleblock:title', 'titleblock:designer',
      *  'titleblock:designLicense', 'titleblock:manualLicense', 'titleblock:logoUrl',
@@ -576,6 +719,12 @@ export class Document
      *
      *  'titleblock:units' says what the drawing's bare numbers are in ('All dimensions in mm').
      *  It is empty when the document is imperial: imperial values carry their own marks.
+     *
+     *  @example
+     *  box(100)
+     *  docs.create('plan')
+     *      .page('front')
+     *      .titleblock({ title: 'Workbench', designer: 'Me' })
      */
     titleblock(data?:TitleBlockInput):this
     {
@@ -838,9 +987,13 @@ export class Document
         }
     }
 
-    /** Create a block with one or more label and one or more texts
-     *  The first label/text pair fills half of the container
-     *  Used mostly for titleblock
+    /** A block of labelled texts, like the fields of a title block: each label small above
+     *  its text. The first label/text pair fills half of the block.
+     *  @param labels   One label, or one per text.
+     *  @param texts    One text, or several.
+     *  @param options  x, y and width of the block (a fraction [0-1], '5%' or '40mm'),
+     *                  textSize, labelSize, numTextLines, margin, line (a rule under the
+     *                  label) and vars: names to set() the texts later.
      */
     labelblock(labels:string|Array<string>, texts:string|Array<string>, options:LabelBlockOptions = {}):this
     {
@@ -947,6 +1100,15 @@ export class Document
      *  TextArea wraps on an estimated character width and a long note is clipped by the
      *  cell's own clip path rather than pushing the drawing off the page. Give the step
      *  shorter prose, or more `noteLines`.
+     *
+     *  @param name     The instructable to lay out (default 'instructable'), made with docs.instruct().
+     *  @param options  The grid and the look:
+     *   - columns, rows: step cells per page (default 2 x 2)
+     *   - gutter: gap between cells, a fraction of the page (default 0.03)
+     *   - numbering, numberSize, titleSize, noteSize, noteLines: the texts of a step
+     *   - border: a border around each cell (default false)
+     *   - contextColor, subjectColor: the parts a step is not, and is, about
+     *   - pageName: base name of the pages it makes (default the instructable's name)
      */
     instructable(name?:string, options?:InstructableOptions):this
     {
@@ -1110,7 +1272,9 @@ export class Document
         }
     }
 
-    /** Get last created ContainerBlock */
+    /** Where the last block made by titleblock() or labelblock() is, and how big.
+     *  @returns { x, y, width, height, pivot }, relative to the page, to place things next to it.
+     */
     lastBlock():ContainerBlock
     {
         return this._lastBlock
@@ -1118,7 +1282,18 @@ export class Document
 
     //// DEFINE ACTIVE CONTAINER ////
 
-    /** Set Page width or Container width based if View is active */
+    /** The width of the active container (a view, image, text, table), or of the page when
+     *  there is none yet.
+     *  @param n  A fraction of the page's content area [0-1], a percentage '50%', a size with
+     *            units like '120mm', or 'auto'.
+     *
+     *  @example
+     *  box(1000, 500, 700)
+     *  iso = all().iso().tmp()
+     *  docs.create('plan')
+     *      .page('iso')
+     *      .view('iso', iso).width(0.5).height('60%')
+     */
     width(n:WidthHeightInput):this
     {
         if(this._activeContainer)
@@ -1133,7 +1308,10 @@ export class Document
         return this;
     }
 
-    /** Set Page width or View width based if View is active */
+    /** The height of the active container, or of the page when there is none yet.
+     *  @param n  A fraction of the page's content area [0-1], a percentage '50%', a size with
+     *            units like '80mm', or 'auto'.
+     */
     height(n:WidthHeightInput):this
     {
         if(this._activeContainer)
@@ -1151,12 +1329,18 @@ export class Document
      *   @param x
      *     - if 0 <= x <= 1 relative to page content area 0.5 center)
      *     - if > 1 in default Document units (mostly mm)
-     *     - Alignment: topleft, bottom(center)
+     *     - Alignment, as in pivot(): 'topright', 'bottom' (centered), or ('right', 'top')
      *     - absolute with units ('10mm')
      *     - or array [x,y]
      *   @param y see x, but without array
+     *
+     *  @example
+     *  box(100)
+     *  docs.create('plan')
+     *      .page('cover')
+     *      .text('Top right').position('topright').pivot('topright')
      */
-    position(x:number|ContainerPositionLike, y?:number|string):this
+    position(x:number|string|ContainerPositionLike, y?:number|string):this
     {
         if(!this._activeContainer)
         {
@@ -1167,8 +1351,13 @@ export class Document
             throw new Error(`Document::position(): Can not set position of active container. No active page. Create at least one page!`);
         }
 
+        // position('topright'): alignment words, read as pivot() reads them
+        if(typeof x === 'string' && y === undefined && !isContainerPositionCoordAbs(x))
+        {
+            this._activeContainer.position(this._alignmentWords(x));
+        }
         // two parameters, combine into ContainerPositionRel array
-        if(typeof y === 'number' || typeof y === 'string')
+        else if(typeof y === 'number' || typeof y === 'string')
         {
             this._activeContainer.position([x,y] as ContainerPositionLike);
         }
@@ -1202,8 +1391,7 @@ export class Document
         // if something like pivot('topleft') - backward compatable
         if (typeof x === 'string')
         {
-            args[0] = x.match(/left|right|center/gi)?.at(0) || 'center';
-            args[1] = x.match(/top|center|bottom/gi)?.at(0) || 'center';
+            [args[0], args[1]] = this._alignmentWords(x);
         }
         // pivot([1,0]) - backward compatable
         else if(Array.isArray(x))
@@ -1231,7 +1419,20 @@ export class Document
         return this;
     }
 
-    /** Turn on border on active container with optional styling */
+    /** Alignment words as [horizontal, vertical], for position() and pivot(): 'topright' is
+     *  ['right', 'top'], 'top' is ['center', 'top']. What is not said is centered. */
+    _alignmentWords(words:string):ContainerAlignment
+    {
+        const w = words.toLowerCase();
+        return [
+            (w.match(/left|right/)?.[0] ?? 'center') as ContainerHAlignment,
+            (w.match(/top|bottom/)?.[0] ?? 'center') as ContainerVAlignment,
+        ];
+    }
+
+    /** Draw a border around the active container.
+     *  @param style  { lineWidth, strokeColor, dash } (default a thin grey line).
+     */
     border(style?:DocPathStyle):this
     {
         if(!this._activeContainer){ throw new Error(`Document::border(): Cannot set border on active container! Make a container first!`)};
@@ -1241,7 +1442,10 @@ export class Document
     }
 
     /** Align the content (text, image, drawing) within the active container: 'center',
-     *  'right', 'bottom', or both like ['center','center']. Default is ['left','top'] */
+     *  'right', 'bottom', or both like ['center','center']. Default is ['left','top'].
+     *  To place the container itself on the page, use position() and pivot().
+     *  @param align  'left', 'center' or 'right'; 'top', 'center' or 'bottom'; or both as a pair.
+     */
     contentAlign(align:ContainerHAlignment|ContainerVAlignment|ContainerAlignment):this
     {
         if(!this._activeContainer){ throw new Error(`Document::contentAlign(): Cannot set contentAlign. No active container. Please make one first!`)};
@@ -1264,9 +1468,11 @@ export class Document
         return this;
     }
 
-    /** Set caption on active container */
     /** Caption the active container. On a view, no argument means "say what you are": its
-     *  name, and the scale it is drawn at. See View.caption(). */
+     *  name, and the scale it is drawn at, inside the view's frame. Other containers need a
+     *  text, which goes under their frame. false removes it.
+     *  @param s  A text; on a view also true, or { text, scale, format, align }.
+     */
     caption(s?:string|boolean|Record<string,any>):this
     {
         if(!this._activeContainer){ throw new Error(`Document::caption(): Cannot set caption. No active container. Please make one first!`)};
@@ -1275,6 +1481,9 @@ export class Document
         return this;
     }
 
+    /** A title above the active container, like 'Front elevation'.
+     *  @param s  The title.
+     */
     title(s?:string):this
     {
         if(!this._activeContainer){ throw new Error(`Document::title(): Cannot set title. No active container. Please make one first!`)};
@@ -1285,7 +1494,11 @@ export class Document
 
     //// FORWARD TO SPECIFIC CONTAINER TYPES ////
 
-    /** Bind ShapeCollection to View: either a real reference or the name of a ShapeCollection after running the doc pipeline */
+    /** The shapes the active view draws: a shape or collection, usually a projection like
+     *  all().iso(), or the name of one that a pipeline() makes.
+     *  @param shapes  What to draw, or its name.
+     *  @param all     Also draw hidden shapes (brep only).
+     */
     shapes(shapes:ShapeCollection|string, all:boolean=false):this
     {
         if(!this._activeContainer){ throw new Error(`Document::shapes(): Cannot add Shapes because no View Container is active! Make a View first with view("myView")!`)};
@@ -1295,6 +1508,9 @@ export class Document
         return this;
     }
 
+    /** Zoom the active view on top of its scale: 2 shows the drawing twice as big, 1/2 half.
+     *  @param level  The zoom factor.
+     */
     zoom(level:number):this
     {
         if(!this._activeContainer){ throw new Error(`Document::zoom(): Cannot add Shapes because no View Container is active! Make a View first with view("myView")!`)};
@@ -1304,6 +1520,18 @@ export class Document
         return this;
     }
 
+    /** The drawing scale of the active view.
+     *  @param factor  'fit' to fill the view (the view's default); 'auto' (without a factor too)
+     *                 for the largest standard scale that fits; a ratio like 1/100 or 2;
+     *                 a list to choose from, like [1/50, 1/100]; or written like '1:100'.
+     *
+     *  @example
+     *  box(2000, 600, 900)
+     *  front = all().elevation('front').tmp()
+     *  docs.create('plan')
+     *      .page('front')
+     *      .view('front', front).scale(1/20).caption()
+     */
     scale(factor?:ScaleInput):this
     {
         if(!factor) factor = 'auto' as ScaleInput;
@@ -1317,8 +1545,9 @@ export class Document
 
     //// DOCUMENT AGGREGATION OPERATIONS ////
 
-    /** Merge incoming Document instances with this document
-     *  @param d single or collection of Document instance
+    /** Add the pages of other documents to this one, like the documents of a component.
+     *  @param d           A document, or a list or record of them.
+     *  @param namePrefix  Put in front of the names of the pages taken over (default none).
     */
     merge(d:Document|Array<Document>|Record<string, Document>, namePrefix:string=''):this
     {

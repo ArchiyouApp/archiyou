@@ -59,6 +59,40 @@ const sketchForwardedFunctions: MethodInfo[] = [
 /** All top-level global functions: auto-generated from Modeler.ts + sketch forwarding supplement. */
 const modelerFunctions: MethodInfo[] = [...autoModelerFunctions, ...sketchForwardedFunctions];
 
+/** A generated method as a completion. One with documented parameters, a return value or an
+ *  example shows them in its info box, the example as code. */
+function toCompletion(m: MethodInfo, type: string = (m.type === 'property' ? 'property' : 'method')): Completion
+{
+  const documented = m.params || m.returns || m.example;
+  return { label: m.label, type, detail: m.detail, info: documented ? () => completionInfo(m) : m.info };
+}
+
+/** The info box of a documented method: what it does, its parameters, what it returns and an
+ *  example. Built from text nodes only: the docs are not HTML. */
+export function completionInfo(m: MethodInfo): HTMLElement
+{
+  const box = document.createElement('div');
+  box.className = 'ay-completion-info';
+  const add = (tag: string, className: string, text: string) =>
+  {
+    const el = box.appendChild(document.createElement(tag));
+    el.className = className;
+    el.textContent = text;
+    return el;
+  };
+
+  if (m.info) add('div', 'ay-completion-doc', m.info);
+  m.params?.forEach(p =>
+  {
+    const row = add('div', 'ay-completion-param', '');
+    row.appendChild(document.createElement('code')).textContent = p.name;
+    row.append(` ${p.info}`);
+  });
+  if (m.returns) add('div', 'ay-completion-returns', `Returns ${m.returns}`);
+  if (m.example) add('pre', 'ay-completion-example', m.example);
+  return box;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Factory → shape class mapping (mesh mode default)                  */
 /* ------------------------------------------------------------------ */
@@ -138,12 +172,7 @@ export function resolveType(root: string, scopeMap: Map<string, string>): string
 /* ------------------------------------------------------------------ */
 
 /** Top-level completions: Modeler global functions + keywords */
-const topLevelCompletions: Completion[] = modelerFunctions.map(f => ({
-  label: f.label,
-  type: 'function',
-  detail: f.detail,
-  info: f.info,
-}));
+const topLevelCompletions: Completion[] = modelerFunctions.map(f => toCompletion(f, 'function'));
 
 topLevelCompletions.push(
   { label: 'new',     type: 'keyword' },
@@ -151,7 +180,8 @@ topLevelCompletions.push(
   { label: 'let',     type: 'keyword' },
   { label: 'await',   type: 'keyword' },
   { label: 'console', type: 'variable', detail: 'Console API' },
-  { label: 'doc',     type: 'variable', detail: 'Documents: pages with views, text and images' },
+  { label: 'docs',    type: 'variable', detail: 'Documents: pages with views, text and images' },
+  { label: 'make',    type: 'variable', detail: 'Make: frames, walls, boarding, packing and part lists' },
   { label: '$handle', type: 'function', detail: '(): Handle',
     info: 'Make a handle: a point in the viewer that users drag to change a parameter' },
 );
@@ -324,33 +354,17 @@ const staticMap = new Map<string, Completion[]>();
 const memberMap = new Map<string, Completion[]>();
 
 /** Classes that are not shapes: their members only show where the type is known (a Handle
- *  after `$handle()`), and they are not made with `new` */
-const NON_SHAPE_CLASSES = new Set(['Handle', 'Docs', 'Document']);
+ *  after `$handle()`, Make after `make.`), and they are not made with `new` */
+const NON_SHAPE_CLASSES = new Set(['Handle', 'Docs', 'Document', 'Make']);
 
 for (const cls of shapeClasses)
 {
   if (cls.statics && cls.statics.length > 0)
   {
-    staticMap.set(
-      cls.label,
-      cls.statics.map(m => ({
-        label: m.label,
-        type: m.type === 'property' ? 'property' : 'method',
-        detail: m.detail,
-        info: m.info,
-      })),
-    );
+    staticMap.set(cls.label, cls.statics.map(m => toCompletion(m)));
   }
 
-  memberMap.set(
-    cls.label,
-    cls.members.map(m => ({
-      label: m.label,
-      type: m.type === 'property' ? 'property' : 'method',
-      detail: m.detail,
-      info: m.info,
-    })),
-  );
+  memberMap.set(cls.label, cls.members.map(m => toCompletion(m)));
 }
 
 /** All instance members merged (used when variable type cannot be determined) */
@@ -364,12 +378,7 @@ const allMembers: Completion[] = [];
       if (!seen.has(m.label))
       {
         seen.add(m.label);
-        allMembers.push({
-          label: m.label,
-          type: m.type === 'property' ? 'property' : 'method',
-          detail: m.detail,
-          info: m.info,
-        });
+        allMembers.push(toCompletion(m));
       }
     }
   }
@@ -431,25 +440,28 @@ export function chainBackwards(textBefore: string): { root: string; calls: strin
   }
 }
 
-/** Variables holding the doc global or a Document: `d = doc` → Docs, `d = doc.create('x')` → Document */
+/** The docs global, and `doc`, its older name that scripts still use */
+const DOCS_GLOBALS = new Set(['docs', 'doc']);
+
+/** Variables holding the docs global or a Document: `d = docs` → Docs, `d = docs.create('x')` → Document */
 function buildDocsScopeMap(docText: string): Map<string, 'Docs' | 'Document'>
 {
   const map = new Map<string, 'Docs' | 'Document'>();
-  const re = /\b([A-Za-z_$][\w$]*)\s*=\s*doc\b(\s*\.)?/g;
+  const re = /\b([A-Za-z_$][\w$]*)\s*=\s*docs?\b(\s*\.)?/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(docText)) !== null) map.set(m[1], m[2] ? 'Document' : 'Docs');
   return map;
 }
 
-/** Which docs class the chain before a `.` holds — 'Docs' for `doc.`, 'Document' anywhere
- *  down a chain on it — or null when it is not a docs chain */
+/** Which docs class the chain before a `.` holds — 'Docs' for `docs.` (or `doc.`), 'Document'
+ *  anywhere down a chain on it — or null when it is not a docs chain */
 export function resolveDocsType(textBefore: string, docText: string): 'Docs' | 'Document' | null
 {
   const chain = chainBackwards(textBefore);
   if (!chain) return null;
   if (chain.calls.some(c => DOCS_CHAIN_ENDS.has(c))) return null;
 
-  const rootType = (chain.root === 'doc') ? 'Docs' : buildDocsScopeMap(docText).get(chain.root);
+  const rootType = DOCS_GLOBALS.has(chain.root) ? 'Docs' : buildDocsScopeMap(docText).get(chain.root);
   if (!rootType) return null;
 
   return (rootType === 'Docs' && chain.calls.length === 0) ? 'Docs' : 'Document';
@@ -512,7 +524,19 @@ export function archiyouCompletions(
       };
     }
 
-    // `doc.` and every link of a chain on it (also across lines) → Docs / Document methods
+    // `make.` → the methods of the make global. What they return are shapes, a Table or
+    // angles, so further down a chain the general lookup below takes over.
+    const chain = chainBackwards(textBefore);
+    if (chain?.root === 'make' && chain.calls.length === 0)
+    {
+      return {
+        from: memberMatch.from + 1,
+        options: memberMap.get('Make') ?? [],
+        validFor: /^\w*$/,
+      };
+    }
+
+    // `docs.` and every link of a chain on it (also across lines) → Docs / Document methods
     const docsType = resolveDocsType(textBefore, docText);
     if (docsType)
     {

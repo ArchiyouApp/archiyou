@@ -1100,6 +1100,41 @@ export class CodeBox extends SignalWatcher(LitElement)
       font-weight: 500;
     }
 
+    /* Completion info box of a documented method: description, parameters (option lists
+       keep their lines), return value and an example as code */
+    .ay-completion-info {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+      white-space: normal;
+    }
+
+    .ay-completion-doc,
+    .ay-completion-param {
+      white-space: pre-line;
+    }
+
+    .ay-completion-param,
+    .ay-completion-returns {
+      color: var(--color-text-muted);
+    }
+
+    .ay-completion-param code {
+      font-family: var(--font-mono, monospace);
+      color: var(--color-text);
+    }
+
+    .ay-completion-example {
+      margin: 0;
+      padding: var(--space-xs);
+      overflow-x: auto;
+      white-space: pre;
+      font-family: var(--font-mono, monospace);
+      font-size: var(--text-xs);
+      background: var(--color-bg-code);
+      border-radius: var(--radius-sm);
+    }
+
   `;
 }
 

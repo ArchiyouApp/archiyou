@@ -10,9 +10,11 @@
  *      Images in the text (`![alt](tour.gif)`) are also relative to the file.
  *   2. Every `## ` heading starts a step. Text before the first one is the intro.
  *   3. A word after a code fence's language says what the editor does with it:
- *        ```js run     replace the tutorial's code with this block, then execute
- *        ```js append  add this block to the tutorial's code so far, then execute
- *        ```js         display only
+ *        ```js run      replace the tutorial's code with this block, then execute
+ *        ```js append   add this block to the tutorial's code so far, then execute
+ *        ```js prepend  put this block before the code of the last run or append block
+ *                       (after the prepends already made to it), then execute
+ *        ```js          display only
  *      and an HTML comment `<!-- highlight: viewer -->` spotlights a UI element
  *      (ids in HELP_TARGETS) while the step is shown.
  *   4. Lines between `<!-- docs-only -->` and `<!-- /docs-only -->` (each on its own line)
@@ -25,7 +27,7 @@
  */
 
 /** What an editor does with a code block. */
-export type HelpFenceAction = 'run' | 'append';
+export type HelpFenceAction = 'run' | 'append' | 'prepend';
 
 export interface HelpMarkdownBlock
 {
@@ -207,7 +209,7 @@ export function parseHelpDoc(source: string): HelpDoc
     {
       flushProse();
       const words = open[4].split(/\s+/);
-      const action = (['run', 'append'] as const).find(a => words.includes(a)) ?? null;
+      const action = (['run', 'append', 'prepend'] as const).find(a => words.includes(a)) ?? null;
       fence = { marker: open[2], lang: open[3], action, lines: [] };
       return;
     }
@@ -263,22 +265,32 @@ function followAside(aside: AsideState, line: string): AsideState | null
   return aside;
 }
 
-/** The tutorial's code after applying every run/append block up to and including
+/** The tutorial's code after applying every run/append/prepend block up to and including
  *  `stepIndex` (and within that step up to `blockIndex`, when given).
- *  null when nothing up to there touches the code. */
+ *  null when nothing up to there touches the code.
+ *
+ *  The code is kept as the blocks that built it, with `anchor` at the block of the last run
+ *  or append: a prepend goes in before that block, after the prepends already made to it,
+ *  so a run of prepends keeps the order they are read in. */
 export function codeAt(doc: HelpDoc, stepIndex: number, blockIndex?: number): string | null
 {
-  return doc.steps
+  const { parts } = doc.steps
     .slice(0, stepIndex + 1)
     .flatMap((step, i) => i === stepIndex && blockIndex !== undefined
       ? step.blocks.slice(0, blockIndex + 1)
       : step.blocks)
-    .reduce<string | null>((code, block) =>
+    .reduce<{ parts: string[], anchor: number }>((built, block) =>
     {
-      if (block.kind !== 'code' || !block.action) return code;
-      if (block.action === 'run' || code === null) return block.code;
-      return code.replace(/\n*$/, '\n') + block.code;
-    }, null);
+      if (block.kind !== 'code' || !block.action) return built;
+      if (block.action === 'run') return { parts: [block.code], anchor: 0 };
+      if (block.action === 'append') return { parts: [...built.parts, block.code], anchor: built.parts.length };
+      return {
+        parts: [...built.parts.slice(0, built.anchor), block.code, ...built.parts.slice(built.anchor)],
+        anchor: built.anchor + 1,
+      };
+    }, { parts: [], anchor: 0 });
+
+  return parts.length ? parts.reduce((code, part) => code.replace(/\n*$/, '\n') + part) : null;
 }
 
 /** True when the document changes the script, i.e. is a tutorial rather than a tour. */
