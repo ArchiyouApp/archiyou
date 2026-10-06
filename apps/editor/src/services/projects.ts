@@ -8,14 +8,18 @@
  */
 
 import type {
-  ClientData, ClientInput, ConfigurationData, ProjectData, ProjectList, ProjectStatus,
+  ClientData, ClientInput, ConfigurationData, DeliveryData, DeliveryOffer, DeliveryResponse, DeliveryView,
+  ProjectData, ProjectList, ProjectStatus,
 } from '@archiyou/types';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
+import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
 import { Script } from '@archiyou/core/src/Script';
 
 import { configuratorUrl } from '@archiyou/ui/editor/publish-constants.js';
 
-import { api } from './api.js';
+import { api, assetUrl } from './api.js';
+import { runScript } from './execution-service.js';
+import { fulfillmentExports, outputsToFiles, type FulfillmentFile } from './fulfillment.js';
 import { editorPathFor } from './script-links.js';
 import { renderThumbnailPng, glbOf, scenegraphOf } from './thumbnails.js';
 import {
@@ -190,6 +194,133 @@ export function openSnapshotCopy(snapshot: ConfigurationData): string | null
     .map(([name, p]) => [name, { ...(p as object), _value: snapshot.values[name] }]));
   const copy = importScriptFromData({ ...data, params, published: null, shared: null, version: null });
   return copy ? editorPathFor(copy) : null;
+}
+
+//// DELIVERIES ////
+
+export interface DeliveryInput
+{
+  configurationId: string;
+  title: string;
+  message?: string | null;
+  offer?: DeliveryOffer | null;
+  recipientEmail?: string | null;
+  recipientName?: string | null;
+  allowAdjust?: boolean;
+}
+
+/** What goes into a delivery besides the 3D model, which always does. */
+export interface DeliveryOutputs
+{
+  documents: boolean;
+  sheets: boolean;
+}
+
+const projectPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}`;
+const deliveryPath = (projectId: string, id: string) => `${projectPath(projectId)}/deliveries/${encodeURIComponent(id)}`;
+
+export async function createDelivery(projectId: string, input: DeliveryInput): Promise<DeliveryData>
+{
+  return (await api.post<Envelope<DeliveryData>>(`${projectPath(projectId)}/deliveries`, input)).data;
+}
+
+export async function uploadDeliveryFile(projectId: string, id: string, file: FulfillmentFile): Promise<DeliveryData>
+{
+  const body = typeof file.data === 'string' ? new TextEncoder().encode(file.data) : file.data;
+  return (await api.putBinary<Envelope<DeliveryData>>(
+    `${deliveryPath(projectId, id)}/files/${encodeURIComponent(file.name)}`, body, 'application/octet-stream',
+  )).data;
+}
+
+/** Send a draft: the server freezes it, gives it its link and emails the client. */
+export async function sendDelivery(projectId: string, id: string): Promise<DeliveryData>
+{
+  return (await api.post<Envelope<DeliveryData>>(`${deliveryPath(projectId, id)}/send`, {})).data;
+}
+
+export async function revokeDelivery(projectId: string, id: string): Promise<DeliveryData>
+{
+  return (await api.post<Envelope<DeliveryData>>(`${deliveryPath(projectId, id)}/revoke`, {})).data;
+}
+
+export async function deleteDelivery(projectId: string, id: string): Promise<void>
+{
+  await api.delete(deliveryPath(projectId, id));
+}
+
+/** A file name the server takes: plain letters, digits, `.`, `_` and `-`. */
+function safeFileName(name: string): string
+{
+  const dot = name.lastIndexOf('.');
+  const stem = (dot > 0 ? name.slice(0, dot) : name).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '-').replace(/^[^A-Za-z0-9]+/, '');
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+  return `${(stem || 'file').slice(0, 70)}${ext ? `.${ext}` : ''}`;
+}
+
+/**
+ * Make a delivery's files from a configuration: run its script snapshot at its values
+ * (here, in the professional's browser — the server runs no scripts) and turn the outputs
+ * into files, as a configurator's download does. The 3D model always, documents as PDF
+ * and tables and metrics as spreadsheets when asked, and a picture of the model.
+ */
+export async function generateDeliveryFiles(
+  projectId: string,
+  configuration: ConfigurationData,
+  outputs: DeliveryOutputs,
+): Promise<FulfillmentFile[]>
+{
+  const snapshot = await fetchConfiguration(projectId, configuration.id);
+  const script = snapshot.script as unknown as ScriptData;
+  const exports = fulfillmentExports({
+    name: 'delivery',
+    exports: [
+      'default/model/glb',
+      ...(outputs.documents ? ['default/docs/*/pdf'] : []),
+      ...(outputs.sheets ? ['default/tables/*/xlsx', 'default/metrics/*/xlsx'] : []),
+    ],
+    delivery: 'anonymous download',
+  });
+  const paths = exports.map(e => e.path).filter((p, i, all) => all.indexOf(p) === i);
+  const unitSystem = snapshot.unitSystem ?? script.units ?? undefined;
+  const result = await runScript({
+    outputs: paths,
+    messages: ['error'],
+    script,
+    params: snapshot.values,
+    unitSystem,
+    docUnitSystem: unitSystem,
+  } as RunnerScriptExecutionRequest);
+  if (!result || result.status === 'error')
+  {
+    const detail = result?.errors?.[0]?.message;
+    throw new Error(detail ? `The model could not be made: ${detail}` : 'The model could not be made.');
+  }
+
+  const base = script.name || 'design';
+  const files = (await outputsToFiles(result.outputs ?? [], base, exports))
+    .map(f => ({ ...f, name: safeFileName(f.name) }));
+  const png = await renderThumbnailPng(glbOf(result), scenegraphOf(result));
+  return png ? [...files, { name: 'preview.png', data: new Uint8Array(png), mime: 'image/png' }] : files;
+}
+
+//// THE CLIENT'S PAGE ////
+
+/** A delivery as its client sees it, by its link. A revoked one throws (410) with the
+ *  sender's name in the error body. */
+export async function fetchDeliveryView(token: string): Promise<DeliveryView>
+{
+  return (await api.get<Envelope<DeliveryView>>(`/d/${encodeURIComponent(token)}`)).data;
+}
+
+/** A delivery file's address; `download` makes it a saved file (and counts it). */
+export function deliveryFileUrl(token: string, name: string, download = false): string
+{
+  return assetUrl(`/d/${encodeURIComponent(token)}/files/${encodeURIComponent(name)}${download ? '?download=1' : ''}`) ?? '';
+}
+
+export async function respondToDelivery(token: string, response: DeliveryResponse, note: string | null): Promise<void>
+{
+  await api.post(`/d/${encodeURIComponent(token)}/respond`, { response, note });
 }
 
 //// ORDERS ////

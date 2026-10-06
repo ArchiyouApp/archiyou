@@ -130,6 +130,27 @@ export interface DeliveryData
   updated: string;
 }
 
+/** What the client's page (/d/:token) gets: no ids, no email addresses. */
+export interface DeliveryView
+{
+  status: 'sent' | 'revoked';
+  /** Who sent it (their display name). */
+  professional: string;
+  title: string;
+  message: string | null;
+  offer: DeliveryOffer | null;
+  files: DeliveryFile[];
+  /** The client's first name, for "Prepared for …". */
+  recipient: string | null;
+  sentAt: string | null;
+  response: DeliveryResponse | null;
+  responseNote: string | null;
+  responseAt: string | null;
+  /** The configurator at the delivered values, when the professional allows adjusting
+   *  and the design came from a published configurator. A path on the editor's origin. */
+  adjustPath: string | null;
+}
+
 export interface ProjectEvent
 {
   id: string;

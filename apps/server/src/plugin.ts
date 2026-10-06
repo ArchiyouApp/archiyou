@@ -90,6 +90,10 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   // oversized picture is refused by the check (and logged) rather than by a bare 413.
   fastify.addContentTypeParser('image/png', { parseAs: 'buffer', bodyLimit: config.thumbnails.maxBytes + 1024 },
     (_request, body, done) => done(null, body));
+  // …and the files of a delivery (routes/projects.ts), made in the professional's browser:
+  // a model, a PDF or a spreadsheet, each up to the delivery file cap.
+  fastify.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: config.deliveries.maxFileBytes },
+    (_request, body, done) => done(null, body));
 
   // Script thumbnails as static files (services/ThumbnailStore.ts writes them). Filenames
   // are content-addressed, which is what makes `immutable` safe: a regenerated thumbnail
@@ -210,7 +214,7 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   await fastify.register(registerModuleRoutes);   // /modules/* (gated script modules; inert when none is installed)
   await fastify.register(registerFeedbackRoutes); // POST /feedback (public, rate limited)
   await fastify.register(registerProjectRoutes);  // /projects/*, /clients/* (verified)
-  await fastify.register(registerClientRoutes);   // POST /orders (public, rate limited)
+  await fastify.register(registerClientRoutes);   // POST /orders, /d/:token (public, rate limited)
   await fastify.register(registerAdminRoutes);    // /admin/* (operator only — users.is_admin)
 }
 

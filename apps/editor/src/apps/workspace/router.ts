@@ -49,6 +49,14 @@ export const routes: Route[] = [
     action: async () => { await import('../../pages/published-configurator.js'); },
   },
 
+  // --- A delivery, as the professional's client opens it from the email (standalone, no
+  //     account and no CAD kernel: the files are frozen) ---
+  {
+    path: '/d/:token',
+    component: 'page-delivery',
+    action: async () => { await import('../../pages/delivery.js'); },
+  },
+
   // --- App (with nav-bar layout) ---
   {
     path: '/',

@@ -9,7 +9,9 @@
  * can be deleted.
  */
 
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { createHash, randomBytes } from 'node:crypto';
+
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
 
 import { Script } from '@archiyou/core/src/Script';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
@@ -17,7 +19,7 @@ import { uuid4 } from '@archiyou/core/src/utils';
 import {
   PROJECT_STATUSES,
   type ClientData, type ClientInput, type ConfigurationData, type ConfigurationOrigin,
-  type DeliveryData, type ProjectCounts, type ProjectData, type ProjectEvent, type ProjectEventActor,
+  type DeliveryData, type DeliveryFile, type DeliveryFileKind, type DeliveryOffer, type DeliveryResponse, type ProjectCounts, type ProjectData, type ProjectEvent, type ProjectEventActor,
   type ProjectStatus, type ProjectSummary,
 } from '@archiyou/types';
 
@@ -27,6 +29,7 @@ import {
   clients, configurations, deliveries, events, projects,
   type ClientRow, type ConfigurationRow, type DeliveryRow, type EventRow, type ProjectRow,
 } from '../db/schema';
+import { deliveryFileType } from './DeliveryFileStore';
 import { uniqueViolation } from './ScriptStore';
 
 export class ProjectStoreError extends Error
@@ -60,6 +63,53 @@ export interface NewConfiguration
   fulfillment?: string | null;
   sourceDeliveryId?: string | null;
   message?: string | null;
+}
+
+/** A delivery as the professional starts it; files are added before it is sent. */
+export interface NewDelivery
+{
+  configurationId: string;
+  title: string;
+  message?: string | null;
+  offer?: DeliveryOffer | null;
+  /** Defaults to the project's client. */
+  recipientEmail?: string | null;
+  recipientName?: string | null;
+  allowAdjust?: boolean;
+}
+
+/** Per-sender caps on deliveries (config.deliveries). */
+export interface DeliveryLimits
+{
+  maxDeliveryBytes: number;
+  quotaBytes: number;
+  sendPerHour: number;
+  sendPerDay: number;
+  newAccountSendPerDay: number;
+}
+
+/** Output categories (default/{category}/…) and the kind of file they become. */
+const KIND_OF_CATEGORY: Record<string, DeliveryFileKind> = { model: 'model', docs: 'document', tables: 'sheet', metrics: 'sheet' };
+
+/**
+ * The kinds of file a delivery of this configuration may carry. Of the professional's own
+ * script: anything. Of another author's configurator: the 3D model (what its page shows
+ * anyway) and what its Download fulfillments give every visitor — nothing more.
+ */
+export function allowedKinds(professional: string, script: ScriptData): Set<DeliveryFileKind>
+{
+  if (!script.author || script.author === professional) return new Set(['model', 'document', 'sheet', 'preview']);
+  const downloads = (script.published?.fulfillments ?? []).filter((f) => f.category !== 'product');
+  const kinds = downloads.flatMap((f) => f.exports.map((path) => KIND_OF_CATEGORY[path.split('/')[1]]).filter(Boolean));
+  return new Set<DeliveryFileKind>(['model', 'preview', ...kinds]);
+}
+
+/** A visitor of a delivery, for counting unique opens: a hash of who and which day,
+ *  salted with the server secret, so it cannot be turned back into an address and does
+ *  not follow anyone from one day to the next. */
+export function visitorOf(ip: string, userAgent: string, day = new Date().toISOString().slice(0, 10)): string
+{
+  return createHash('sha256').update(`${config.jwtSecret}|${day}|${ip}|${userAgent}`).digest('hex').slice(0, 32);
 }
 
 /** A visitor's order of a product fulfillment (POST /orders). */
@@ -659,6 +709,223 @@ export class ProjectStore
     const [row] = await db.update(configurations).set({ thumbnail: url })
       .where(eq(configurations.id, id)).returning();
     return rowToConfiguration(row);
+  }
+
+  //// DELIVERIES ////
+
+  async deliveryRow(professional: string, projectId: string, id: string): Promise<DeliveryRow>
+  {
+    const [row] = await db.select().from(deliveries)
+      .where(and(eq(deliveries.professional, professional), eq(deliveries.projectId, projectId), eq(deliveries.id, id)))
+      .limit(1);
+    if (!row) throw new ProjectStoreError('not_found', `Delivery ${id} not found`);
+    return row;
+  }
+
+  /** A draft delivery of one configuration (the next number in the project). */
+  async createDelivery(professional: string, projectId: string, input: NewDelivery): Promise<DeliveryData>
+  {
+    const project = await this.projectRow(professional, projectId);
+    await this.configurationRow(professional, projectId, input.configurationId);
+    const client = project.clientId ? await this.clientRow(professional, project.clientId).catch(() => null) : null;
+    const title = trimmed(input.title, TITLE_MAX);
+    if (!title) throw new ProjectStoreError('invalid', 'A delivery needs a title');
+    const offer = input.offer
+      ? {
+        total: Number(input.offer.total) || 0,
+        currency: trimmed(input.offer.currency, 3)?.toUpperCase() ?? 'EUR',
+        validUntil: trimmed(input.offer.validUntil, 10),
+        note: trimmed(input.offer.note),
+      }
+      : null;
+
+    const insert = async () =>
+    {
+      const [{ next }] = await db.select({ next: sql<number>`coalesce(max(${deliveries.number}), 0) + 1`.mapWith(Number) })
+        .from(deliveries).where(eq(deliveries.projectId, projectId));
+      const now = new Date();
+      const [row] = await db.insert(deliveries).values({
+        id: uuid4(),
+        professional,
+        projectId,
+        configurationId: input.configurationId,
+        number: next,
+        title,
+        message: trimmed(input.message),
+        offer,
+        recipientEmail: normalEmail(input.recipientEmail) ?? client?.email ?? null,
+        recipientName: trimmed(input.recipientName, 200) ?? client?.name ?? null,
+        status: 'draft',
+        allowAdjust: !!input.allowAdjust,
+        created: now,
+        updated: now,
+      }).returning();
+      return row;
+    };
+    try
+    {
+      return rowToDelivery(await insert());
+    }
+    catch (e)
+    {
+      if (uniqueViolation(e) === null) throw e;
+      return rowToDelivery(await insert());
+    }
+  }
+
+  /**
+   * Add (or replace) one file of a draft delivery. Checks everything before `write` puts
+   * the bytes on disk: the name, that this configuration may carry this kind of file, the
+   * delivery's size and the professional's quota. Only then is the file listed.
+   */
+  async addDeliveryFile(
+    professional: string,
+    projectId: string,
+    id: string,
+    name: string,
+    bytes: number,
+    limits: Pick<DeliveryLimits, 'maxDeliveryBytes' | 'quotaBytes'>,
+    write: () => Promise<void>,
+  ): Promise<DeliveryData>
+  {
+    const row = await this.deliveryRow(professional, projectId, id);
+    if (row.status !== 'draft') throw new ProjectStoreError('conflict', 'A sent delivery cannot change');
+    const type = deliveryFileType(name);
+    if (!type) throw new ProjectStoreError('invalid', `A delivery cannot hold "${name}": .glb, .pdf, .xlsx and .png only`);
+
+    const configuration = await this.configurationRow(professional, projectId, row.configurationId);
+    if (!allowedKinds(professional, configuration.script).has(type.kind))
+    {
+      throw new ProjectStoreError('invalid', 'From another author\'s configurator you can only deliver the 3D model and what it offers for download');
+    }
+
+    const files: DeliveryFile[] = [...row.files.filter((f) => f.name !== name), { name, kind: type.kind, bytes, mime: type.mime }];
+    const total = files.reduce((sum, f) => sum + f.bytes, 0);
+    if (total > limits.maxDeliveryBytes) throw new ProjectStoreError('limit', 'This delivery is too large');
+    const [{ used }] = await db.select({ used: sql<number>`coalesce(sum(${deliveries.bytes}), 0)`.mapWith(Number) })
+      .from(deliveries).where(and(eq(deliveries.professional, professional), ne(deliveries.id, id)));
+    if (used + total > limits.quotaBytes) throw new ProjectStoreError('limit', 'Your deliveries take up all the space you have. Delete old projects to make room.');
+
+    await write();
+    const [updated] = await db.update(deliveries).set({ files, bytes: total, updated: new Date() })
+      .where(eq(deliveries.id, id)).returning();
+    return rowToDelivery(updated);
+  }
+
+  /**
+   * Send a draft: give it its link and freeze it. The caller emails the link. Capped per
+   * professional — everyone with a verified address can email strangers through this.
+   */
+  async sendDelivery(professional: string, projectId: string, id: string, accountCreated: Date, limits: DeliveryLimits): Promise<DeliveryData>
+  {
+    const row = await this.deliveryRow(professional, projectId, id);
+    if (row.status !== 'draft') throw new ProjectStoreError('conflict', 'This delivery was sent already');
+    if (!row.recipientEmail) throw new ProjectStoreError('invalid', 'Who should get it? Add the client\'s email address.');
+    if (row.files.length === 0) throw new ProjectStoreError('invalid', 'A delivery needs its files');
+
+    const sentSince = async (ms: number) =>
+    {
+      const [{ n }] = await db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(deliveries)
+        .where(and(eq(deliveries.professional, professional), gt(deliveries.sentAt, new Date(Date.now() - ms))));
+      return n;
+    };
+    const DAY = 24 * 60 * 60 * 1000;
+    const newAccount = Date.now() - accountCreated.getTime() < DAY;
+    if (await sentSince(60 * 60 * 1000) >= limits.sendPerHour
+      || await sentSince(DAY) >= (newAccount ? limits.newAccountSendPerDay : limits.sendPerDay))
+    {
+      throw new ProjectStoreError('limit', 'You have sent a lot of deliveries just now. Please wait a while before sending more.');
+    }
+
+    const now = new Date();
+    const [sent] = await db.update(deliveries)
+      .set({ status: 'sent', token: randomBytes(32).toString('base64url'), sentAt: now, updated: now })
+      .where(eq(deliveries.id, id)).returning();
+    await db.update(projects).set({ updated: now }).where(eq(projects.id, projectId));
+    await this.addEvent(professional, projectId, {
+      type: 'delivery.sent', actor: 'professional', deliveryId: id, meta: { number: sent.number, to: sent.recipientEmail },
+    });
+    return rowToDelivery(sent);
+  }
+
+  /** Take a sent delivery offline: its link and its files stop working. */
+  async revokeDelivery(professional: string, projectId: string, id: string): Promise<DeliveryData>
+  {
+    const row = await this.deliveryRow(professional, projectId, id);
+    if (row.status !== 'sent') throw new ProjectStoreError('conflict', 'Only a sent delivery can be revoked');
+    const [revoked] = await db.update(deliveries).set({ status: 'revoked', updated: new Date() })
+      .where(eq(deliveries.id, id)).returning();
+    await this.addEvent(professional, projectId, { type: 'delivery.revoked', actor: 'professional', deliveryId: id, meta: { number: row.number } });
+    return rowToDelivery(revoked);
+  }
+
+  /** A draft that will not be sent. Its files are the caller's to remove. */
+  async deleteDraft(professional: string, projectId: string, id: string): Promise<void>
+  {
+    const row = await this.deliveryRow(professional, projectId, id);
+    if (row.status !== 'draft') throw new ProjectStoreError('conflict', 'A sent delivery stays in the project; revoke it instead');
+    await db.delete(deliveries).where(eq(deliveries.id, id));
+  }
+
+  //// THE CLIENT'S SIDE OF A DELIVERY ////
+
+  /** A sent (or revoked) delivery by its link; drafts have no link. */
+  async deliveryByToken(token: string): Promise<DeliveryRow | null>
+  {
+    if (!/^[A-Za-z0-9_-]{20,100}$/.test(token)) return null;
+    const [row] = await db.select().from(deliveries).where(eq(deliveries.token, token)).limit(1);
+    return row && row.status !== 'draft' ? row : null;
+  }
+
+  /** Has this visitor done this today already? Reloading the page is not a second open. */
+  private async seenToday(row: DeliveryRow, type: string, visitor: string, file?: string): Promise<boolean>
+  {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const found = await db.select({ meta: events.meta }).from(events)
+      .where(and(eq(events.deliveryId, row.id), eq(events.type, type), eq(events.visitor, visitor), gt(events.created, today)));
+    return found.some((e) => file === undefined || (e.meta as { file?: string } | null)?.file === file);
+  }
+
+  /** The client opened the page: counted once per visitor per day. */
+  async recordOpen(row: DeliveryRow, visitor: string): Promise<void>
+  {
+    if (await this.seenToday(row, 'delivery.opened', visitor)) return;
+    const now = new Date();
+    await db.update(deliveries).set({
+      openCount: sql`${deliveries.openCount} + 1`,
+      firstOpenedAt: row.firstOpenedAt ?? now,
+    }).where(eq(deliveries.id, row.id));
+    await this.addEvent(row.professional, row.projectId, {
+      type: 'delivery.opened', actor: 'client', deliveryId: row.id, visitor, meta: { number: row.number },
+    });
+  }
+
+  /** The client downloaded a file: counted once per visitor, file and day. */
+  async recordDownload(row: DeliveryRow, file: string, visitor: string): Promise<void>
+  {
+    if (await this.seenToday(row, 'file.downloaded', visitor, file)) return;
+    await db.update(deliveries).set({ downloadCount: sql`${deliveries.downloadCount} + 1` }).where(eq(deliveries.id, row.id));
+    await this.addEvent(row.professional, row.projectId, {
+      type: 'file.downloaded', actor: 'client', deliveryId: row.id, visitor, meta: { number: row.number, file },
+    });
+  }
+
+  /** The client's answer to an offer: once, and only while the link works. */
+  async respond(row: DeliveryRow, response: DeliveryResponse, note: string | null): Promise<DeliveryRow>
+  {
+    if (row.status !== 'sent') throw new ProjectStoreError('not_found', 'This link is no longer available');
+    if (row.response) throw new ProjectStoreError('conflict', 'This offer has been answered already');
+    const [answered] = await db.update(deliveries)
+      .set({ response, responseNote: trimmed(note), responseAt: new Date() })
+      .where(and(eq(deliveries.id, row.id), isNull(deliveries.response)))
+      .returning();
+    if (!answered) throw new ProjectStoreError('conflict', 'This offer has been answered already');
+    const type = response === 'changes' ? 'delivery.changes_requested' : `delivery.${response}`;
+    await this.addEvent(row.professional, row.projectId, {
+      type, actor: 'client', deliveryId: row.id, meta: { number: row.number, note: answered.responseNote },
+    });
+    return answered;
   }
 
   //// ORDERS ////

@@ -88,6 +88,65 @@ export class EmailService {
     });
   }
 
+  /** A professional's delivery to their client: the link to its page. From Archiyou, but
+   *  replies go to the professional, and the footer says who sent it and where to report
+   *  mail nobody asked for — every verified user can send these. */
+  async sendDelivery(to: string, delivery: {
+    professionalName: string;
+    professionalEmail: string;
+    recipientName: string | null;
+    title: string;
+    message: string | null;
+    offer: { total: number; currency: string; validUntil?: string | null } | null;
+    link: string;
+  }): Promise<void> {
+    const { professionalName: from, offer } = delivery;
+    const what = offer ? 'an offer' : 'a design';
+    const total = offer ? formatMoney(offer.total, offer.currency) : null;
+    await this.send({
+      to,
+      replyTo: delivery.professionalEmail,
+      subject: `${from} sent you ${what}: ${delivery.title}`,
+      html: renderEmail({
+        subject: delivery.title,
+        text: `${delivery.recipientName ? `Hello ${delivery.recipientName}, ` : ''}${from} sent you ${what}. `
+          + 'Open it to look at the design in 3D and at the documents that come with it.',
+        quote: delivery.message,
+        details: offer ? [['Total', total], ['Valid until', offer.validUntil ?? null]] : [],
+        buttonText: offer ? 'View the offer' : 'View the design',
+        buttonLink: delivery.link,
+        footerNote: `Sent by ${from} (${delivery.professionalEmail}) with Archiyou. Reply to this email to reach them. `
+          + 'Not expecting this? Let us know at info@archiyou.com.',
+        signature: ['Kind regards,', from],
+      }),
+      devNote: `delivery: ${delivery.link}`,
+    });
+  }
+
+  /** The client answered a delivery: accepted, declined, or asked for changes. */
+  async sendClientResponse(to: string, answer: {
+    clientName: string;
+    title: string;
+    response: 'accepted' | 'declined' | 'changes';
+    note: string | null;
+    link: string;
+  }): Promise<void> {
+    const said = { accepted: 'accepted', declined: 'declined', changes: 'asks for changes to' }[answer.response];
+    const subject = { accepted: 'Accepted', declined: 'Declined', changes: 'Changes requested' }[answer.response];
+    await this.send({
+      to,
+      subject: `${subject}: ${answer.title}`,
+      html: renderEmail({
+        subject: `${answer.clientName} ${said} ${answer.title}`,
+        text: `${answer.clientName} ${said} "${answer.title}".`,
+        quote: answer.note,
+        buttonText: 'Open the project',
+        buttonLink: answer.link,
+      }),
+      devNote: `project: ${answer.link}`,
+    });
+  }
+
   /** Low-level send. Never throws to callers — a failed/absent send must not leak
    *  whether an account exists (forgot-password always answers 200). */
   private async send({ to, subject, html, replyTo, devNote }: Message): Promise<void> {
@@ -190,6 +249,15 @@ function renderEmail({ subject, text, buttonText, buttonLink, quote, details, fo
   </div>
 </body>
 </html>`;
+}
+
+/** "€1,200.00": the amount in its currency. */
+function formatMoney(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat('en', { style: 'currency', currency }).format(amount);
+  } catch {
+    return `${currency} ${amount}`;
+  }
 }
 
 function escapeHtml(s: string): string {

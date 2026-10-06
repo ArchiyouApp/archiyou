@@ -2,8 +2,8 @@
  * <page-project> — one of the professional's projects, at /projects/:id (plans/PROJECTS.md).
  *
  * The header carries the number, title and status (with only the status changes that are
- * allowed from here); the main column the configurations (and, from phase 3, the
- * deliveries); the side column the client, the professional's note and the activity.
+ * allowed from here); the main column the configurations and the deliveries sent to the
+ * client; the side column the client, the professional's note and the activity.
  * Opening the page clears the project's unread dot (the server marks it seen).
  */
 
@@ -25,13 +25,17 @@ import '@awesome.me/webawesome/dist/components/select/select.js';
 import '@awesome.me/webawesome/dist/components/option/option.js';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import '@archiyou/ui/projects/project-configurations.js';
+import '@archiyou/ui/projects/project-deliveries.js';
 import '@archiyou/ui/projects/project-activity.js';
+import '@archiyou/ui/projects/delivery-menu.js';
 
-import { projectLabel, type ClientData, type ClientInput, type ConfigurationData, type ProjectData, type ProjectStatus } from '@archiyou/types';
+import {
+  projectLabel, type ClientData, type ClientInput, type ConfigurationData, type DeliveryData, type ProjectData, type ProjectStatus,
+} from '@archiyou/types';
 
 import {
   fetchProject, updateProject, deleteProject, setConfigurationLabel, listClients, createClient, updateClient,
-  configuratorPathFor, editorOpening, openSourceWithValues, openSnapshotCopy,
+  configuratorPathFor, editorOpening, openSourceWithValues, openSnapshotCopy, revokeDelivery,
 } from '../services/projects.js';
 import { ApiError } from '../services/api.js';
 import { BREAKPOINT_COMPACT } from '../styles/design-tokens.js';
@@ -87,10 +91,30 @@ export class PageProject extends SignalWatcher(LitElement)
             <project-configurations
               .configurations=${p.configurations}
               me=${userState.get().id ?? ''}
+              canDeliver
               @configuration-open-configurator=${this._openConfigurator}
               @configuration-open-editor=${this._openEditor}
               @configuration-label=${this._setLabel}
+              @configuration-deliver=${(e: CustomEvent<ConfigurationData>) => this._newDelivery(e.detail)}
             ></project-configurations>
+          </section>
+
+          <section>
+            <div class="section-head">
+              <h2>${msg('Deliveries')}</h2>
+              ${p.configurations.length
+                ? html`
+                  <wa-button size="small" variant="brand" @click=${() => this._newDelivery(null)}>
+                    <wa-icon slot="start" library="lucide" name="send"></wa-icon>${msg('New delivery')}
+                  </wa-button>`
+                : nothing}
+            </div>
+            <project-deliveries
+              .deliveries=${p.deliveries}
+              .configurations=${p.configurations}
+              @delivery-copy-link=${this._copyLink}
+              @delivery-revoke=${this._askRevoke}
+            ></project-deliveries>
           </section>
         </div>
 
@@ -114,7 +138,15 @@ export class PageProject extends SignalWatcher(LitElement)
       </div>
 
       ${this._renderChangedDialog()}
-      ${this._renderDeleteDialog(p)}
+      ${this._renderConfirmDialog()}
+      <delivery-menu
+        ?open=${this._delivering}
+        .project=${p}
+        .configuration=${this._deliverFrom}
+        me=${userState.get().id ?? ''}
+        @delivery-menu-sent=${() => void this._load()}
+        @delivery-menu-close=${() => { this._delivering = false; }}
+      ></delivery-menu>
     `;
   }
 
@@ -223,14 +255,16 @@ export class PageProject extends SignalWatcher(LitElement)
       </wa-dialog>`;
   }
 
-  private _renderDeleteDialog(p: ProjectData)
+  /** Asks before something that cannot be undone (deleting the project, revoking a link). */
+  private _renderConfirmDialog()
   {
+    const c = this._confirm;
     return html`
-      <wa-dialog label=${msg('Delete project')} ?open=${this._confirmDelete}
-        @wa-after-hide=${(e: Event) => { if (e.target === e.currentTarget) this._confirmDelete = false; }}>
-        <p>${msg(str`Delete ${projectLabel(p.number)} ${p.title} with its configurations, deliveries and activity? Links you sent stop working. This cannot be undone.`)}</p>
-        <wa-button slot="footer" appearance="outlined" @click=${() => { this._confirmDelete = false; }}>${msg('Cancel')}</wa-button>
-        <wa-button slot="footer" variant="danger" @click=${this._delete}>${msg('Delete')}</wa-button>
+      <wa-dialog label=${c?.title ?? ''} ?open=${!!c}
+        @wa-after-hide=${(e: Event) => { if (e.target === e.currentTarget) this._confirm = null; }}>
+        <p>${c?.text ?? ''}</p>
+        <wa-button slot="footer" appearance="outlined" @click=${() => { this._confirm = null; }}>${msg('Cancel')}</wa-button>
+        <wa-button slot="footer" variant="danger" @click=${this._confirmed}>${c?.button ?? ''}</wa-button>
       </wa-dialog>`;
   }
 
@@ -245,7 +279,11 @@ export class PageProject extends SignalWatcher(LitElement)
   @state() private _clientDraft: ClientInput = {};
   /** The professional's other clients, for "Existing client". */
   @state() private _clients: ClientData[] = [];
-  @state() private _confirmDelete = false;
+  /** The question the confirm dialog asks, and what happens on yes. */
+  @state() private _confirm: { title: string; text: string; button: string; action: () => Promise<void> } | null = null;
+  @state() private _delivering = false;
+  /** The configuration a new delivery starts from. */
+  @state() private _deliverFrom: ConfigurationData | null = null;
   /** A configuration whose source script changed, waiting for the professional's choice. */
   @state() private _changed: (ConfigurationData & { snapshot: ConfigurationData }) | null = null;
 
@@ -332,21 +370,63 @@ export class PageProject extends SignalWatcher(LitElement)
   {
     const value = e.detail.item.value;
     if (value === 'archive') void this._apply(() => updateProject(this._id, { archived: !this._project?.archived }));
-    if (value === 'delete') this._confirmDelete = true;
+    if (value === 'delete' && this._project)
+    {
+      const p = this._project;
+      this._confirm = {
+        title: msg('Delete project'),
+        text: msg(str`Delete ${projectLabel(p.number)} ${p.title} with its configurations, deliveries and activity? Links you sent stop working. This cannot be undone.`),
+        button: msg('Delete'),
+        action: async () =>
+        {
+          await deleteProject(this._id);
+          Router.go('/browser/projects');
+        },
+      };
+    }
   }
 
-  private async _delete()
+  private async _confirmed()
   {
-    this._confirmDelete = false;
+    const action = this._confirm?.action;
+    this._confirm = null;
+    if (!action) return;
     try
     {
-      await deleteProject(this._id);
-      Router.go('/browser/projects');
+      await action();
     }
     catch (err)
     {
-      this._error = errorText(err, msg('Could not delete the project.'));
+      this._error = errorText(err, msg('That did not work.'));
     }
+  }
+
+  //// DELIVERIES ////
+
+  private _newDelivery(configuration: ConfigurationData | null)
+  {
+    this._deliverFrom = configuration;
+    this._delivering = true;
+  }
+
+  private async _copyLink(e: CustomEvent<DeliveryData>)
+  {
+    if (e.detail.link) await navigator.clipboard?.writeText(e.detail.link).catch(() => undefined);
+  }
+
+  private _askRevoke(e: CustomEvent<DeliveryData>)
+  {
+    const delivery = e.detail;
+    this._confirm = {
+      title: msg('Revoke link'),
+      text: msg(str`Revoke the link to #${delivery.number} ${delivery.title}? The client can no longer open it or its files. This cannot be undone.`),
+      button: msg('Revoke'),
+      action: async () =>
+      {
+        await revokeDelivery(this._id, delivery.id);
+        await this._load();
+      },
+    };
   }
 
   //// CLIENT ////
@@ -571,6 +651,18 @@ export class PageProject extends SignalWatcher(LitElement)
       flex-direction: column;
       gap: var(--space-lg);
       min-width: 0;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-md);
+      margin-bottom: var(--space-sm);
+    }
+
+    .section-head h2 {
+      margin: 0;
     }
 
     h2 {

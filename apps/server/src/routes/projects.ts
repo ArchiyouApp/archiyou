@@ -1,6 +1,6 @@
 /**
- * routes/projects.ts — a professional's projects, clients and configurations
- * (plans/PROJECTS.md). Deliveries are added to the same prefix in phase 3.
+ * routes/projects.ts — a professional's projects, clients, configurations and the
+ * deliveries they send their clients (plans/PROJECTS.md).
  *
  *   GET    /projects?status&q&archived&limit&offset
  *   POST   /projects                                   { title?, clientId?, client?, configuration? }
@@ -11,6 +11,11 @@
  *   GET    /projects/:id/configurations/:cid           with the script snapshot
  *   PUT    /projects/:id/configurations/:cid           { label }
  *   PUT    /projects/:id/configurations/:cid/thumbnail image/png
+ *   POST   /projects/:id/deliveries                   { configurationId, title, message?, offer?, recipientEmail?, recipientName?, allowAdjust? }
+ *   PUT    /projects/:id/deliveries/:did/files/:name  application/octet-stream, while a draft
+ *   POST   /projects/:id/deliveries/:did/send          freezes it, gives it its link, emails the client
+ *   POST   /projects/:id/deliveries/:did/revoke
+ *   DELETE /projects/:id/deliveries/:did               a draft
  *   GET    /clients?q · GET /clients/:id · POST /clients · PUT /clients/:id · DELETE /clients/:id
  *
  * Every route needs a signed-in user with a verified email (the professional is
@@ -23,8 +28,12 @@ import { Type } from 'typebox';
 
 import { PROJECT_STATUSES, type ProjectStatus } from '@archiyou/types';
 
+import { config } from '../config';
+import { deliveryFileStore } from '../services/DeliveryFileStore';
+import { emailService } from '../services/EmailService';
 import { projectStore, snapshotOf, TEXT_MAX, TITLE_MAX } from '../services/ProjectStore';
 import { thumbnailStore } from '../services/ThumbnailStore';
+import { userService } from '../services/UserService';
 import { parse } from '../validate';
 
 const optionalText = (maxLength: number) => Type.Optional(Type.Union([Type.String({ maxLength }), Type.Null()]));
@@ -66,8 +75,27 @@ const ProjectPatchSchema = Type.Object({
 
 const LabelSchema = Type.Object({ label: optionalText(TITLE_MAX) });
 
+const DeliverySchema = Type.Object({
+  configurationId: Type.String({ minLength: 1, maxLength: 100 }),
+  title: Type.String({ minLength: 1, maxLength: TITLE_MAX }),
+  message: optionalText(TEXT_MAX),
+  offer: Type.Optional(Type.Union([
+    Type.Object({
+      total: Type.Number({ minimum: 0 }),
+      currency: Type.String({ minLength: 3, maxLength: 3 }),
+      validUntil: optionalText(10),
+      note: optionalText(TEXT_MAX),
+    }),
+    Type.Null(),
+  ])),
+  recipientEmail: optionalText(254),
+  recipientName: optionalText(200),
+  allowAdjust: Type.Optional(Type.Boolean()),
+});
+
 type IdParams = { Params: { id: string } };
 type ConfigurationParams = { Params: { id: string; cid: string } };
+type DeliveryParams = { Params: { id: string; did: string } };
 
 export async function registerProjectRoutes(fastify: FastifyInstance): Promise<void>
 {
@@ -121,7 +149,8 @@ export async function registerProjectRoutes(fastify: FastifyInstance): Promise<v
 
   fastify.delete<IdParams>('/projects/:id', verified, async (request, reply) =>
   {
-    await projectStore.deleteProject(request.user.sub, request.params.id);
+    const { deliveryIds } = await projectStore.deleteProject(request.user.sub, request.params.id);
+    await Promise.all(deliveryIds.map((did) => deliveryFileStore.remove(request.user.sub, did)));
     // Configuration thumbnails live under the project's id (see the thumbnail route)
     await thumbnailStore.remove(request.user.sub, request.params.id);
     reply.code(204);
@@ -169,6 +198,68 @@ export async function registerProjectRoutes(fastify: FastifyInstance): Promise<v
       return { success: true, thumbnail: url };
     },
   );
+
+  //// DELIVERIES ////
+
+  fastify.post<IdParams>('/projects/:id/deliveries', verified, async (request, reply) =>
+  {
+    const body = parse(DeliverySchema, request.body);
+    reply.code(201);
+    return { success: true, data: await projectStore.createDelivery(request.user.sub, request.params.id, body) };
+  });
+
+  // One file of a draft, as the raw body: made in the professional's browser (the server
+  // runs no scripts). The store decides whether it may be added before it is written.
+  fastify.put<{ Params: { id: string; did: string; name: string }; Body: Buffer }>(
+    '/projects/:id/deliveries/:did/files/:name',
+    verified,
+    async (request, reply) =>
+    {
+      const { id, did, name } = request.params;
+      const body = request.body;
+      if (!Buffer.isBuffer(body) || body.length === 0)
+      {
+        reply.code(422);
+        return { success: false, error: 'The file is empty' };
+      }
+      const delivery = await projectStore.addDeliveryFile(
+        request.user.sub, id, did, name, body.length, config.deliveries,
+        () => deliveryFileStore.write(request.user.sub, did, name, body),
+      );
+      return { success: true, data: delivery };
+    },
+  );
+
+  fastify.post<DeliveryParams>('/projects/:id/deliveries/:did/send', verified, async (request) =>
+  {
+    const { id, did } = request.params;
+    const professional = (await userService.findByUsername(request.user.sub))!;
+    const delivery = await projectStore.sendDelivery(request.user.sub, id, did, professional.createdAt, config.deliveries);
+    await emailService.sendDelivery(delivery.recipientEmail as string, {
+      professionalName: professional.name || professional.username,
+      professionalEmail: professional.email,
+      recipientName: delivery.recipientName,
+      title: delivery.title,
+      message: delivery.message,
+      offer: delivery.offer,
+      link: delivery.link as string,
+    });
+    return { success: true, data: delivery };
+  });
+
+  fastify.post<DeliveryParams>('/projects/:id/deliveries/:did/revoke', verified, async (request) =>
+  {
+    const { id, did } = request.params;
+    return { success: true, data: await projectStore.revokeDelivery(request.user.sub, id, did) };
+  });
+
+  fastify.delete<DeliveryParams>('/projects/:id/deliveries/:did', verified, async (request, reply) =>
+  {
+    const { id, did } = request.params;
+    await projectStore.deleteDraft(request.user.sub, id, did);
+    await deliveryFileStore.remove(request.user.sub, did);
+    reply.code(204);
+  });
 
   //// CLIENTS ////
 
