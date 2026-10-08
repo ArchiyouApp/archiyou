@@ -325,6 +325,39 @@ describe('mesh ↔ brep parity', () =>
         }, modelers)
     })
 
+    describe('drawings', () =>
+    {
+        /*  Both kernels draw what the viewer sees (divergence 38, retired in part): a 100 box at
+            the origin and a 20 marker at +x, +y and up, and the side of the drawing the marker
+            lands on. meshup drew every view but 'front' mirrored before. */
+        const markerIn = (modeler: Modeler, draw: (c: any) => any) =>
+        {
+            const drawing = draw((modeler as any).collection(modeler.box(100), modeler.box(20).move(100, 100, 30)))
+            const marker = drawing.toArray().filter((s: any) => Math.max(s.bbox().width(), s.bbox().depth()) <= 21)
+            const [c, mc] = [drawing.bbox().center(), (modeler as any).collection(...marker).bbox().center()]
+            return [Math.sign(Math.round(mc.x - c.x)), Math.sign(Math.round(mc.y - c.y))]
+        }
+
+        it('a floor plan (horizontal section) is seen from above: +x right, +y up', () =>
+        {
+            const plan = (c: any) => c.section([0, 0, 35])
+            expect(markerIn(mesh, plan)).toEqual([1, 1])
+            expect(markerIn(brep, plan)).toEqual([1, 1])
+        }, 60_000)
+
+        it.each([
+            ['front', [1, 1]],   // from -y: +x right, +z up
+            ['right', [1, 1]],   // from +x: +y right
+            ['back', [-1, 1]],   // from +y: +x left
+            ['left', [-1, 1]],   // from -x: +y left
+        ])('elevation %s: both kernels draw the view from that side', (view, expected) =>
+        {
+            const elevation = (c: any) => c.elevation(view)
+            expect(markerIn(mesh, elevation)).toEqual(expected)
+            expect(markerIn(brep, elevation)).toEqual(expected)
+        }, 60_000)
+    })
+
     describe('the chain runner itself', () =>
     {
         it('aborts a chain instead of reporting noise once the kernels diverge grossly', () =>

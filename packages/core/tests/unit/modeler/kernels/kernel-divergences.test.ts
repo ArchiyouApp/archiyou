@@ -67,6 +67,11 @@
  *   12  brep pointAt()/middle() — by arc length now (sampled: no GCPnts in the bindings)
  *   10  (part) Wire/Edge.area() of a closed planar outline is the enclosed area
  *   11  (part) a closed brep Wire's end() is its start(); the seam corner still differs
+ *   38  (part) meshup elevation(), isometry() of a single mesh, project() and section() drew
+ *       every view but 'front' mirrored (the view from behind the plane, a floor plan seen from
+ *       below): the flatten got the normal pointing away from the viewer, and its upside-down
+ *       twist turned around X. Now the view the viewer sees, as brep — asserted both ways in
+ *       shape-parity.test.ts ("drawings") and in meshup's projectionOrientation.test.ts
  *
  *  Still OPEN:
  *   36  fusing a RING of touching solids (four walls meeting at the corners): brep's pairwise
@@ -79,9 +84,7 @@
  *       and its axes carry an arbitrary sign, where brep's OBB is tight — so a rotation
  *       derived from obbox().axes() lands the leg 1.7 mm wider and turned 180° on mesh.
  *       A tighter OBB fitter on the mesh side (minimum-volume, not PCA) would close it
- *   38  meshup elevation() and section() draw every view but 'front' mirrored: the drawing is
- *       the view from behind its plane (a floor plan seen from below), where brep draws what
- *       the viewer sees. meshup's vertical sections also collapse the cut profile to z = 0
+ *   38  (rest) meshup's vertical sections collapse the cut profile to z = 0
  *
  *   10  area()/size()/length() answer for different shape families
  *   11  closed outlines are seamed differently, so start()/end()/middle() differ
@@ -197,34 +200,6 @@ describe('mesh ↔ brep divergences (pinned, not accepted)', () =>
         expect((brep.circle(40) as any).segments().length).toEqual(1)
         expect(r4((mesh.circle(40) as any).length())).toBeCloseTo(r4((brep.circle(40) as any).length()), 2)
     })
-
-    //// ==== 38. MIRRORED DRAWINGS ==== ////
-
-    it('38. meshup elevations and sections are mirrored, except the front view', () =>
-    {
-        /*  SHOULD BE: meshup draws what the viewer sees, as brep does. Mesh._flattenProjectionToScreen
-                       turns the plane normal pointing AWAY from the viewer onto +z, so the drawing
-                       is the view from behind; only 'front' comes out right, by its 180° twist. */
-
-        // A 100 box at the origin and a 20 marker at +x, +y and up; the sign of where it lands
-        const markerIn = (modeler: Modeler, draw: (c: any) => any) =>
-        {
-            const drawing = draw((modeler as any).collection(modeler.box(100), modeler.box(20).move(100, 100, 30)))
-            const marker = drawing.toArray().filter((s: any) => Math.max(s.bbox().width(), s.bbox().depth()) <= 21)
-            const [c, mc] = [drawing.bbox().center(), (modeler as any).collection(...marker).bbox().center()]
-            return [Math.sign(Math.round(mc.x - c.x)), Math.sign(Math.round(mc.y - c.y))]
-        }
-        const plan = (c: any) => c.section([0, 0, 35]) // seen from above: +x right, +y up
-        const right = (c: any) => c.elevation('right') // seen from +x: +y right, +z up
-
-        expect(markerIn(brep, plan)).toEqual([1, 1])
-        expect(markerIn(mesh, plan), 'meshup draws the plan as seen from below').toEqual([-1, 1])
-        expect(markerIn(brep, right)).toEqual([1, 1])
-        expect(markerIn(mesh, right), 'meshup draws it as seen from -x').toEqual([-1, 1])
-
-        const front = (c: any) => c.elevation('front')
-        expect(markerIn(mesh, front)).toEqual(markerIn(brep, front))
-    }, 60_000)
 
     //// ==== 22. MESH-ONLY MODULES ==== ////
 

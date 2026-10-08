@@ -565,10 +565,10 @@ Red-Blue chair in an empty folder set up from the packed tarballs (`npx archiyou
 | What caught what | `--clash` found the chair's one real bug (the back board 177 cm³ into the foot bar); the summary showed it too (depth 864); the overlay confirmed the side elevation; the text agent found a half-depth hole from a `print()`ed volume |
 
 Fixed after their feedback:
-- **Named views were mirrored** (see the meshup bug below): `run` now draws every named view through
-  the camera path as a `cam:` direction (`front` = `cam:0,-1,0`, `left` = `cam:-1,0,0`, ...), plus an
-  exact mirror fix for the one camera case meshup still mirrors. Checked with an asymmetric test model
-  for all six views, `iso`, and twelve camera directions.
+- **Named views were mirrored** (the meshup bug below, since fixed): `run` draws every named view as a
+  `cam:` direction (`front` = `cam:0,-1,0`, `left` = `cam:-1,0,0`, ...). Until the meshup fix it also
+  mirrored the level back view back; that workaround is gone again. Checked with an asymmetric test
+  model for all six views, `iso`, and twelve camera directions.
 - `--views around` (eight directions labelled with their `cam:`) to find a photo's camera; the skill
   explains the directions; iso and camera tiles no longer show a meaningless projected size.
 - Overlays are also written full size (`overlay-1-<photo>.png`); the skill says what an orthographic
@@ -589,13 +589,20 @@ Fixed after their feedback:
 
 #### Found outside this plan (for Mark)
 
-- **meshup: mirrored elevations.** `Mesh.isometry`, `Mesh.elevation` and `ShapeCollection._elevation`
-  pass the plane normal reversed to `_flattenProjectionToScreen`, which expects it toward the viewer
-  (`ShapeCollection._iso` already dropped the `.reverse()`, with "TODO: check why"). And when the
-  mapped up vector is exactly anti-parallel to screen-up, the twist is a 180° turn around X, which is
-  a mirror; it should turn around Z. The two cancel for `front`, so only `front` looks right: `top`,
-  `left`, `right` and `back` elevations (in documents too) come out mirrored, and `cam:0,1,0` as well.
-  Fixing it changes existing drawings, and the CLI's mirror fix for `cam:(0,+y,0)` must then go.
+- **meshup: mirrored drawings — fixed 2026-10-08 on Mark's request** (kernel divergence 38, pinned
+  since 2026-10-05 with "fixing meshup changes existing drawings, user not asked yet").
+  `Mesh.isometry`, `Mesh.elevation`, `Mesh.section`, `ShapeCollection._elevation`, `project()` and
+  `ShapeCollection.section` passed the plane normal reversed to `_flattenProjectionToScreen`, which
+  expects it toward the viewer (`ShapeCollection._iso` had already dropped the `.reverse()`, with
+  "TODO: check why"); and when the mapped up vector was exactly anti-parallel to screen-up, the twist
+  turned 180° around X, itself a mirror, instead of around Z. The two cancelled for `front`, so only
+  front views and front sections looked right; `top`, `left`, `right`, `back`, every isometry of a
+  single mesh and floor-plan sections were mirrored, in documents and thumbnails too. Fix: the flatten
+  gets the normal toward the viewer everywhere, the twist turns around Z. meshup's
+  `projectionOrientation.test.ts` checks screen right x up = toward the viewer for every path (40
+  tests, 26 failed before); core's divergence 38 is retired in part (vertical sections still collapse
+  the cut profile) and `shape-parity.test.ts` asserts mesh and brep draw the same plan and
+  elevations. Existing drawings and stored thumbnails of non-front views change orientation.
 - **core API text**: `cylinder()` says "centred on the origin" but stands on z = 0 (in both kernels,
   per the text agent); its example `cylinder(40, 900).moveZ(450) // standing on the ground` floats.
   `Mesh.rotateX`/`rotateY` give no sign convention or default pivot. `api Mesh` lists internals
@@ -637,6 +644,7 @@ Fixed after their feedback:
 - 2026-10-07: asked to implement the plan on branch `agent`.
 - 2026-10-07: chose the summary lines of the commits and approved each commit message.
 - 2026-10-08: the implementation notes in the plan record what was changed after two agent sessions tested the skill and CLI, including a mirrored-view bug in meshup and a clash-check bug of the agent's own, both found that way.
+- 2026-10-08: asked to fix the mirrored views in meshup (accepting that existing non-front drawings change orientation) and to write a to-the-point README for the CLI package.
 
 ## Commits
 | Commit | Subject | Prompt it answers |

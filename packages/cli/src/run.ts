@@ -89,9 +89,8 @@ interface RunResult
 //// SETTINGS ////
 
 const DEFAULT_VIEWS = 'iso,front,right,top';
-/** Named views as camera directions: from the model to the camera, z up. Drawn through core's
- *  camera path: its own named views come out mirrored except front (meshup flattens them with a
- *  reversed plane normal; see projection() for the one camera case it also mirrors) */
+/** Named views as camera directions: from the model to the camera, z up. One way to say a view
+ *  for the skill, the labels and core */
 const NAMED_VIEWS: Record<string, Vec3> = {
     front: [0, -1, 0], back: [0, 1, 0], left: [-1, 0, 0], right: [1, 0, 0], top: [0, 0, 1], bottom: [0, 0, -1], iso: [-1, -1, 1],
 };
@@ -490,23 +489,10 @@ function parseOverlay(spec: string): OverlaySpec
 
 function projection(modeler: any, v: ViewSpec): { svg: string; extents: [number, number, number, number] } | null
 {
-    const raw: string | null = modeler.toProjectionSVG({ cam: v.cam });
-    if (!raw) { return null; }
-    const box = (attr: string) => (raw.match(new RegExp(`${attr}="([^"]+)"`))?.[1] ?? '0 0 1 1').split(/\s+/).map(Number);
-    const extents = box(raw.includes('data-extents') ? 'data-extents' : 'viewBox') as [number, number, number, number];
-    // meshup turns a drawing whose up lands exactly upside down with a 180° turn around X, which
-    // mirrors it. That happens for a level camera from straight behind (0, +y, 0) only: it tests
-    // an unnormalised up vector, so a camera that is a little higher takes the right branch.
-    // Mirror that one back
-    if (Math.abs(v.cam[0]) > 1e-9 || Math.abs(v.cam[2]) > 1e-9 || v.cam[1] <= 0) { return { svg: raw, extents }; }
-    const vb = box('viewBox');
-    const flipX = (b: Array<number>) => `${-(b[0] + b[2])} ${b[1]} ${b[2]} ${b[3]}`;
-    const svg = raw
-        .replace(/viewBox="[^"]+"/, `viewBox="${flipX(vb)}"`)
-        .replace(/data-extents="[^"]+"/, `data-extents="${flipX(extents)}"`)
-        .replace(/(<svg[^>]*>)/, '$1<g transform="scale(-1,1)">')
-        .replace(/<\/svg>\s*$/, '</g></svg>');
-    return { svg, extents: [-(extents[0] + extents[2]), extents[1], extents[2], extents[3]] };
+    const svg: string | null = modeler.toProjectionSVG({ cam: v.cam });
+    if (!svg) { return null; }
+    const extents = (svg.match(/data-extents="([^"]+)"/)?.[1] ?? svg.match(/viewBox="([^"]+)"/)?.[1] ?? '0 0 1 1').split(/\s+/).map(Number);
+    return { svg, extents: extents as [number, number, number, number] };
 }
 
 /** Core's projection styles its lines for a browser (non-scaling stroke); resvg ignores that,
