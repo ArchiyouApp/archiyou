@@ -23,7 +23,10 @@
  */
 
 import { jsPDF } from 'jspdf'
-import 'svg2pdf.js'
+// The ES build by path: svg2pdf.js has no exports map, so plain Node ESM resolves `main`, a UMD
+// build that looks for a global `jspdf` and throws on import. Bundlers already picked this file
+// (its `module`/`browser` field), so for them nothing changes.
+import 'svg2pdf.js/dist/svg2pdf.es.min.js'
 
 import type { DocSVGPage } from './types'
 
