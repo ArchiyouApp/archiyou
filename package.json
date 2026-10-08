@@ -27,6 +27,7 @@
     "docker:dev:down": "docker compose -f docker-compose.dev.yml down",
     "build:wasm": "turbo build:wasm",
     "build:meshup": "pnpm --filter @archiyou/meshup build",
+    "archiyou": "pnpm -s --filter @archiyou/cli dev",
     "watch:meshup": "pnpm --filter @archiyou/meshup build -- --watch",
     "test:core": "pnpm --filter @archiyou/core test",
     "test:meshup": "pnpm --filter @archiyou/meshup test",

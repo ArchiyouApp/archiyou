@@ -14,7 +14,6 @@
 
 ## Plan (agent output, reviewed by the human before implementation)
 
-
 ### Context
 
 A coding agent (Claude Code and similar) can already write Archiyou scripts, but it works blind: it cannot
@@ -514,6 +513,100 @@ pnpm -s archiyou sweep rietveld.js --clash                                      
 Then open `views.png` and check line weight and labels on a 100 mm part and on a 5 m model
 (`timberwall.js`), and do step 10.
 
+### Implementation notes (2026-10-07, branch `agent`)
+
+Where the build differs from the plan above, and what it found:
+
+- **Workspace name `@archiyou/cli`**, command `archiyou`: the monorepo root package is already called
+  `archiyou`, so a workspace package with that name makes `pnpm --filter archiyou` ambiguous. `init`
+  writes the command as `npx <package name>`, so the AGENTS block stays right whichever name is
+  published. Until the CLI is published as `archiyou`, `npx archiyou` without a local install would
+  fetch the old engine 0.7.2. The name decision in §1 is still open.
+- **Four source files**: `common.ts` (output, muting core, data paths, arguments) next to
+  `archiyou.ts`, `run.ts` and `lookup.ts`, so the commands share helpers without import cycles. About
+  1,350 lines in all (`run.ts` 840), far more than the ~515 estimated: the overlay, sheet, inventory,
+  sweep and eval code is bigger than counted.
+- **§0 done**: svg2pdf's ES build by path; a second tsup config for `dist/node/` that reuses the browser
+  build's `dist/textures` and `dist/wasm` (two path rewrites with a guard) instead of a second copy of
+  32 MB; core's tarball grew 0.6 MB. The build script empties `dist/` first, because both builds write
+  into it at once. **Finding (3) was not a core problem**: the smoke script used the param name `W`,
+  which core rejects (minimum three characters); the error was reported correctly.
+- **One process, one Runner** for `sweep` and `eval`, reused like the editor does: 13 chair runs in
+  1.6 s, instead of one process per run (about 2.5 s each).
+- **The orthographic views share one scale** (front, side, top), so their sizes compare; iso and `cam:`
+  views fill their tiles.
+- **Overlay rectangles and `mark` points also take fractions** of the photo: an agent's image reader
+  may downscale a large photo, so pixel coordinates it reads off are not the file's pixels.
+- **WebP is refused** with a message: resvg does not decode it.
+- **Error hints**: for "x is not a function" the run suggests close API names with their owner
+  (`Curve.fillet`, since Mesh has no fillet).
+- **Inventory globs take `|`** between alternatives.
+- **Skill: cutting tools** stay in the model unless made `.tmp()`; found when a quick eval solution
+  left its four cylinders in (the summary showed it at once: height 50 instead of 20, four extra parts).
+- **Lockfile**: regenerated with `pnpm lockfile:public`, which also removed the private modules'
+  importers that were already in `develop`'s lockfile.
+- **Tests**: core 54 param tests + 2 Runner tests, CLI 17 subprocess tests, `pack-smoke.sh` green.
+  Pre-existing, not from this work: the three cadscripts table tests (parity, coverage, round trip)
+  fail on `develop` too; `brep/Shelling`, `annotator/annotationsDedupe` and `importer` time out only
+  in the full parallel run and pass alone.
+- **The check against the old `rietveld.js`**: an inventory of the original chair gives exactly the
+  four errors from Mark's review (6 mismatch lines), and the overlay on the Cassina side photo
+  measures the proportions 8 % narrower than the photo.
+
+#### Steps 9 and 10: two agent sessions with the skill (2026-10-07/08)
+
+Two subagents with fresh context, given only the prompts: the seven text items in the repo, and the
+Red-Blue chair in an empty folder set up from the packed tarballs (`npx archiyou init`, three photos).
+
+| | Result |
+| --- | --- |
+| Text baseline | all 7 build and sweep clean; 1–2 run rounds each; `eval`: size 7/7, volume 1/1, params 5/5, sweep 5/5 |
+| Chair from photos | brief with coverage, scale and assumed answers in `brief.md`; inventory of 17 parts and 50 rules; 6 run rounds; 660 × 830 × 880 (exact); `sweep --clash --check` clean over 17 variants; passes the hand-written reference inventory (24 rules). **Contaminated**: the skill's inventory example was this chair (same names, counts, hanging middle posts), so the structure score does not count; rerun after the example change |
+| What caught what | `--clash` found the chair's one real bug (the back board 177 cm³ into the foot bar); the summary showed it too (depth 864); the overlay confirmed the side elevation; the text agent found a half-depth hole from a `print()`ed volume |
+
+Fixed after their feedback:
+- **Named views were mirrored** (see the meshup bug below): `run` now draws every named view through
+  the camera path as a `cam:` direction (`front` = `cam:0,-1,0`, `left` = `cam:-1,0,0`, ...), plus an
+  exact mirror fix for the one camera case meshup still mirrors. Checked with an asymmetric test model
+  for all six views, `iso`, and twelve camera directions.
+- `--views around` (eight directions labelled with their `cam:`) to find a photo's camera; the skill
+  explains the directions; iso and camera tiles no longer show a meaningless projected size.
+- Overlays are also written full size (`overlay-1-<photo>.png`); the skill says what an orthographic
+  overlay can and cannot show on a close-up photo.
+- `--expect WxDxH`; `sweep --corners` (every combination of the extremes, up to 128 runs); the print
+  column is no longer cut off.
+- `touches` uses the real shapes for solids (`hits()`, `distance()`), not only the bounding boxes.
+- Piped output was cut at 64 KB by `process.exit()`: the CLI now exits once stdout is flushed.
+- Skill: `boxBetween`, the param aliases, `cylinder()` stands on z = 0, `union()` arguments need
+  `.tmp()` too, the corrected cut-through example, a bench as the inventory example (no more chair),
+  touching is not a clash, `mark --out`.
+- Eval: `volumeTolerance` per item (a half-depth hole is only 0.7 % of the plate's volume, within the
+  2 % size tolerance).
+- **A bug of my own, found by re-scoring**: to cover brep in the clash check I called `_intersection()`
+  where it exists; on a mesh that is the *mutating* variant, so the check replaced each mesh by its
+  intersection and later pairs and the `touches` check saw destroyed shapes. Fixed (non-mutating
+  `intersection()` for meshes), with a regression test that fails on the bug.
+
+#### Found outside this plan (for Mark)
+
+- **meshup: mirrored elevations.** `Mesh.isometry`, `Mesh.elevation` and `ShapeCollection._elevation`
+  pass the plane normal reversed to `_flattenProjectionToScreen`, which expects it toward the viewer
+  (`ShapeCollection._iso` already dropped the `.reverse()`, with "TODO: check why"). And when the
+  mapped up vector is exactly anti-parallel to screen-up, the twist is a 180° turn around X, which is
+  a mirror; it should turn around Z. The two cancel for `front`, so only `front` looks right: `top`,
+  `left`, `right` and `back` elevations (in documents too) come out mirrored, and `cam:0,1,0` as well.
+  Fixing it changes existing drawings, and the CLI's mirror fix for `cam:(0,+y,0)` must then go.
+- **core API text**: `cylinder()` says "centred on the origin" but stands on z = 0 (in both kernels,
+  per the text agent); its example `cylinder(40, 900).moveZ(450) // standing on the ground` floats.
+  `Mesh.rotateX`/`rotateY` give no sign convention or default pivot. `api Mesh` lists internals
+  (`fromSDF`, `BoxBetween`).
+- **`make.wall`** (via `examples timberwallopenings`): a 3000 wall comes out 3019 long (the end stud
+  overhangs), centred on y, with two unnamed `Vertex` parts, a warning
+  `_ShapeCollection.removeFromScene(): collection is not in the scene`, and 610 default stud spacing.
+- **The Red-Blue chair is under copyright** (Rietveld died 1964; the design is protected until 2035).
+  The photos in the eval set are freely licensed; a model of the chair is fine as a private eval,
+  publishing one is another matter.
+
 ### Later (not in this plan)
 
 - **B: `archiyou agent "<prompt>"`**: an agent SDK loop with the user's API key from an env var, the
@@ -542,6 +635,8 @@ Then open `views.png` and check line weight and labels on a 100 mm part and on a
 - 2026-10-07: the CLI gets its own package instead of a script in `apps/server`; asked for the developer experience of `npx archiyou-agent "…"`, agreed with tools for existing agents first and an own agent later.
 - 2026-10-07: reviewed `rietveld.js` against a side photo: 5 crossbars not 6, the back board's top bar behind the rear posts, middle posts that do not reach the floor, an invented mid rail. Proposed element counting, extending lines from the photo, and a check of design and photo coverage before modelling; these became the brief, the inventory with `--check`, `mark` and `--overlay`.
 - 2026-10-07: asked to implement the plan on branch `agent`.
+- 2026-10-07: chose the summary lines of the commits and approved each commit message.
+- 2026-10-08: the implementation notes in the plan record what was changed after two agent sessions tested the skill and CLI, including a mirrored-view bug in meshup and a clash-check bug of the agent's own, both found that way.
 
 ## Commits
 | Commit | Subject | Prompt it answers |

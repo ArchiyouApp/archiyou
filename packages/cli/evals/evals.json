@@ -1,0 +1,64 @@
+{
+  "about": "Hand-run eval set for the archiyou skill and CLI. An agent session solves each prompt into <dir>/<id>.js, then `archiyou eval <dir>` scores the builds, the size (per axis, within tolerance), the volume (volumeTolerance, else tolerance), the number of parameters, a clean sweep and the inventory check. Axes: x width, y depth (front at y = 0), z up. Used to compare a skill or docs change before and after; see plans/AI_TEXT2CAD_HARNASS.md.",
+  "items": [
+    {
+      "id": "plate-holes",
+      "prompt": "A steel plate 200 x 120 x 20 mm with a 10 mm hole through it 15 mm in from each corner.",
+      "size": [200, 120, 20],
+      "volume": 473717,
+      "volumeTolerance": 0.002,
+      "tolerance": 0.02
+    },
+    {
+      "id": "l-bracket",
+      "prompt": "An L-bracket bent from 5 mm plate, 30 mm wide (along y): a 60 mm leg lying on the floor along x and a 40 mm leg standing up at one end, each with a 6 mm hole in the middle.",
+      "size": [60, 30, 40],
+      "tolerance": 0.03
+    },
+    {
+      "id": "table",
+      "prompt": "A table 1000 x 500 mm and 720 mm high: four 60 x 60 mm legs set in 40 mm from the edges, a 30 mm thick top. Make length, width and height parameters.",
+      "size": [1000, 500, 720],
+      "minParams": 3,
+      "sweepClean": true
+    },
+    {
+      "id": "wall-shelf",
+      "prompt": "A wall shelf unit from 18 mm boards, 800 wide, 300 deep, 1200 high: two sides, a top, a bottom and evenly spaced shelves, the number of shelves a parameter (2 to 8, default 4).",
+      "size": [800, 300, 1200],
+      "minParams": 1,
+      "sweepClean": true
+    },
+    {
+      "id": "step-stool",
+      "prompt": "A two-step stool from 18 mm plywood, 400 mm wide: steps at 220 and 440 mm, the lower step 200 mm deep in front of the upper one, the upper step 250 mm deep, closed sides. Step heights as parameters.",
+      "size": [400, 450, 440],
+      "minParams": 2,
+      "sweepClean": true
+    },
+    {
+      "id": "stud-wall",
+      "prompt": "A timber stud wall 3000 long and 2600 high from 38 x 140 mm studs at 600 mm centres, with a bottom and top plate and one window opening 1200 wide and 1000 high, its sill at 900 mm, centred in the wall. Opening width, height and sill as parameters.",
+      "size": [3000, 140, 2600],
+      "minParams": 3,
+      "sweepClean": true
+    },
+    {
+      "id": "box-lid",
+      "prompt": "A storage box 300 x 200 x 150 mm from 12 mm boards with a loose lid of 12 mm on top (total height 162). Width, depth and height as parameters.",
+      "size": [300, 200, 162],
+      "minParams": 3,
+      "sweepClean": true
+    },
+    {
+      "id": "redbluechair",
+      "prompt": "Model this chair from the photos as a parametric Archiyou script. Name the parts: frontLegL/R, middlePostL/R, rearPostL/R, railL/R, armL/R, seat, back, and the crossbars crossbarSeatFront, crossbarSeatRear, crossbarFrontBottom, crossbarBackFoot, crossbarBackTop. Its published size is 66 x 83 x 88 cm.",
+      "images": ["images/redbluechair-front.jpg", "images/redbluechair-side.jpg", "images/redbluechair-three-quarter.jpg"],
+      "size": [660, 830, 880],
+      "tolerance": 0.1,
+      "minParams": 3,
+      "sweepClean": true,
+      "inventory": "redbluechair.inventory.json"
+    }
+  ]
+}

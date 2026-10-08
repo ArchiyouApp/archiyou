@@ -1,0 +1,16 @@
+{
+  // Used only to run the CLI from source (`pnpm dev`, the tests): tsx compiles core from src/
+  // with core's decorator settings and takes meshup from its built dist/. The same setup as
+  // apps/server/tsconfig.runtime.json, which explains it in full; needs `pnpm build:meshup`.
+  // The published CLI does not use this: it imports @archiyou/core's Node build.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@archiyou/core": ["../core/src/index.ts"],
+      "@archiyou/core/src/*": ["../core/src/*"],
+      "@archiyou/types": ["../types/src/index.ts"],
+      "@archiyou/meshup": ["../meshup/dist/index.js"]
+    }
+  },
+  "include": ["src", "../core/src", "../types/src"]
+}

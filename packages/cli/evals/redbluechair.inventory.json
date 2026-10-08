@@ -1,0 +1,31 @@
+{
+  "count": {
+    "crossbar*": 5,
+    "frontLeg*": 2,
+    "middlePost*": 2,
+    "rearPost*": 2,
+    "rail*": 2,
+    "arm*": 2,
+    "seat": 1,
+    "back": 1
+  },
+  "axis": {
+    "crossbar*": "x",
+    "rail*": "y",
+    "frontLeg*|middlePost*|rearPost*": "z",
+    "arm*": "y"
+  },
+  "floor": ["frontLeg*", "rearPost*"],
+  "notFloor": ["middlePost*"],
+  "relations": [
+    ["crossbarBackTop", "behind", "rearPost*"],
+    ["crossbarBackFoot", "behind", "middlePost*"],
+    ["crossbarSeatRear", "inFront", "middlePost*"],
+    ["crossbarSeatFront|crossbarFrontBottom", "behind", "frontLeg*"],
+    ["arm*", "above", "middlePost*|rearPost*"],
+    ["seat", "touches", "crossbarSeatFront"],
+    ["seat", "touches", "crossbarSeatRear"],
+    ["back", "touches", "crossbarBackFoot"],
+    ["back", "touches", "crossbarBackTop"]
+  ]
+}

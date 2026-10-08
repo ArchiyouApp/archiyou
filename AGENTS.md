@@ -150,6 +150,10 @@ declare global
 
 
 
+## Modelling with Archiyou
+
+To write or check an Archiyou CAD script, follow the `archiyou` skill (`packages/cli/skill/SKILL.md`). In this repo the CLI it uses is called as `pnpm -s archiyou <command>` (run, sweep, api, docs, ...).
+
 ## Commits with generated code
 
 Archiyou is NLnet-funded and discloses AI involvement per commit. Code an agent wrote is committed with `pnpm commit:ai` (author "with <model>", disclosure block, human-written summary, approval before commit) and belongs to a record in `documentation/nlnet/ai/records/`. The process: `documentation/nlnet/ai/README.md`; for Claude Code: `.claude/skills/ai-disclosure/SKILL.md`. No co-author trailers, no links to chat platforms.

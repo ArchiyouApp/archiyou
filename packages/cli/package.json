@@ -1,0 +1,45 @@
+{
+  "name": "@archiyou/cli",
+  "version": "0.1.0",
+  "description": "Run, check and look up Archiyou CAD scripts from the command line: the harness a coding agent needs to model with Archiyou.",
+  "license": "Apache-2.0",
+  "author": "Mark van der Net (Archiyou)",
+  "homepage": "https://archiyou.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ArchiyouApp/archiyou-web.git",
+    "directory": "packages/cli"
+  },
+  "type": "module",
+  "bin": {
+    "archiyou": "./dist/archiyou.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx --tsconfig ./tsconfig.runtime.json src/archiyou.ts",
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@archiyou/core": "workspace:*",
+    "@resvg/resvg-js": "^2.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "count": { "block*": 2, "plate": 1 },
+  "axis": { "plate": "x", "block*": "y" },
+  "floor": ["block*"],
+  "notFloor": ["plate"],
+  "relations": [["plate", "above", "block*"], ["blockL", "leftOf", "blockR"]]
+}
