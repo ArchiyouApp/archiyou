@@ -52,6 +52,8 @@ export const ModuleManifestSchema = Type.Object({
   public: Type.Optional(Type.Boolean()),
   /** A server module that also ships a client wrapper bundle. See AyModuleManifest.client. */
   client: Type.Optional(Type.Boolean()),
+  /** Keep a server module's worker thread per user between calls. See AyModuleManifest.keepAlive. */
+  keepAlive: Type.Optional(Type.Boolean()),
   /** Runs that load the module record shape recipes. See AyModuleManifest.recipes. */
   recipes: Type.Optional(Type.Boolean()),
   /** Output formats the module builds. See AyModuleManifest.outputs. */

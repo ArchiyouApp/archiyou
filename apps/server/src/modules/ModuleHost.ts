@@ -404,15 +404,19 @@ export class ModuleHost {
     return this._modules.get(id)?.docs ?? null;
   }
 
-  /** Invoke a server module's method in a worker thread. */
-  async call(id: string, method: string, args: unknown): Promise<unknown> {
+  /** Invoke a server module's method in a worker thread. `owner` (the calling
+   *  user) selects their warm thread for a `keepAlive` module. */
+  async call(id: string, method: string, args: unknown, owner?: string): Promise<unknown> {
     if (!this._loaded) this.load();
     const found = this._modules.get(id);
     if (!found) throw new ModuleCallError('failed', `unknown module '${id}'`);
     if (found.manifest.runtime !== 'server') {
       throw new ModuleCallError('failed', `module '${id}' is a client module and cannot be called`);
     }
-    return moduleWorkerPool.call(found.entry, method, args, id);
+    return moduleWorkerPool.call(found.entry, method, args, id, {
+      keepAlive: found.manifest.keepAlive === true,
+      owner,
+    });
   }
 }
 

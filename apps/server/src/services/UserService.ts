@@ -208,11 +208,35 @@ export class UserService {
   }
 
   /** Is this account entitled to one specific module? The single question every
-   *  gated route asks. */
+   *  gated route asks.
+   *
+   *  Answered from a short in-memory cache (config.modules.entitlementTtlMs):
+   *  this runs before EVERY server-module call, and a script makes several in a
+   *  row, each paying a database round trip otherwise. A grant or revoke made in
+   *  this process clears the entry at once; one made from the admin CLI (another
+   *  process) takes effect within the TTL. That bounded delay is the trade —
+   *  unlike a JWT claim, which would keep working for the token's 7 days.
+   *  getModules() stays uncached, so the admin CLI always reports the truth. */
   async hasModule(username: string | null | undefined, moduleId: string): Promise<boolean> {
     if (!username) return false;
-    const owned = await this.getModules(username);
+    const owned = await this._cachedModules(username);
     return grantsAllModules(owned) || owned.includes(moduleId);
+  }
+
+  private _entitlements = new Map<string, { modules: string[]; at: number }>();
+
+  private async _cachedModules(username: string): Promise<string[]> {
+    const ttl = config.modules.entitlementTtlMs;
+    const hit = this._entitlements.get(username);
+    if (ttl > 0 && hit && Date.now() - hit.at < ttl) return hit.modules;
+
+    const modules = await this.getModules(username);
+    if (ttl > 0) {
+      // Bounded: a flood of distinct handles must not grow this without limit.
+      if (this._entitlements.size >= 10_000) this._entitlements.clear();
+      this._entitlements.set(username, { modules, at: Date.now() });
+    }
+    return modules;
   }
 
   /** Replace the entitlement list. Deduplicated and sorted so the stored value is
@@ -228,6 +252,7 @@ export class UserService {
     const ids = normalizeModuleIds(moduleIds);
     const next = grantsAllModules(ids) ? [ALL_MODULES] : [...new Set(ids)].sort();
     await db.update(users).set({ modules: next }).where(eq(users.id, user.id));
+    this._entitlements.delete(username);
     return next;
   }
 

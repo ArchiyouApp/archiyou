@@ -20,7 +20,7 @@ import { join } from 'node:path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 import { ModuleHost } from '../../src/modules/ModuleHost';
-import { ModuleCallError } from '../../src/modules/ModuleWorkerPool';
+import { ModuleCallError, moduleWorkerPool } from '../../src/modules/ModuleWorkerPool';
 import { config } from '../../src/config';
 
 let root: string;
@@ -99,6 +99,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
+  moduleWorkerPool.retire();
   config.modules.callTimeoutMs = savedTimeout;
   rmSync(root, { recursive: true, force: true });
 });
@@ -369,4 +370,90 @@ describe('ModuleHost — calling a server module', () => {
     expect(err.kind).toBe('timeout');
     expect(elapsed).toBeLessThan(5000);
   }, 15_000);
+});
+
+describe('ModuleHost — warm workers (keepAlive)', () => {
+  let dir: string;
+  const savedIdle = config.modules.warmIdleMs;
+
+  /** A module that counts calls in module scope: the count only grows when
+   *  the same thread answers again. */
+  function installCounter(source = '') {
+    mkdirSync(join(dir, 'counter'), { recursive: true });
+    writeFileSync(join(dir, 'counter', 'manifest.json'), JSON.stringify({
+      id: 'counter', global: 'counter', name: 'Counter',
+      version: '1.0.0', engine: '^1.0.0', runtime: 'server', keepAlive: true,
+    }));
+    writeFileSync(join(dir, 'counter', 'server.js'), `
+      let n = 0;
+      export default { methods: {
+        next: async () => ++n,
+        spin: async () => { while (true) {} },
+        ${source}
+      } };
+    `);
+  }
+
+  beforeAll(() => {
+    // An earlier test leaves a 700 ms timeout behind; thread start-up under a
+    // loaded run can take longer than that.
+    config.modules.callTimeoutMs = savedTimeout;
+    dir = mkdtempSync(join(tmpdir(), 'ay-warm-'));
+    installCounter();
+  });
+
+  afterAll(() => {
+    moduleWorkerPool.retire();
+    config.modules.warmIdleMs = savedIdle;
+    config.modules.callTimeoutMs = savedTimeout;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reuses one thread per user, and never shares it between users', async () => {
+    const host = new ModuleHost().load(dir);
+    expect(await host.call('counter', 'next', null, 'ann')).toBe(1);
+    expect(await host.call('counter', 'next', null, 'ann')).toBe(2);
+    expect(await host.call('counter', 'next', null, 'bob')).toBe(1);
+    moduleWorkerPool.retire();
+  }, 20_000);
+
+  it('runs concurrent calls of one user one after another', async () => {
+    const host = new ModuleHost().load(dir);
+    const got = await Promise.all([1, 2].map(() => host.call('counter', 'next', null, 'cid')));
+    expect(got.sort()).toEqual([1, 2]);
+    moduleWorkerPool.retire();
+  }, 20_000);
+
+  it('starts fresh after the idle period', async () => {
+    const host = new ModuleHost().load(dir);
+    config.modules.warmIdleMs = 200;
+    expect(await host.call('counter', 'next', null, 'dee')).toBe(1);
+    await new Promise((r) => setTimeout(r, 500));
+    expect(moduleWorkerPool.warmCount).toBe(0);
+    expect(await host.call('counter', 'next', null, 'dee')).toBe(1);
+    config.modules.warmIdleMs = savedIdle;
+    moduleWorkerPool.retire();
+  }, 20_000);
+
+  it('kills a stuck warm thread on timeout and recovers with a fresh one', async () => {
+    const host = new ModuleHost().load(dir);
+    expect(await host.call('counter', 'next', null, 'eve')).toBe(1);
+    // Short only for the stuck call: thread start-up under a loaded test run
+    // can itself take longer than this.
+    config.modules.callTimeoutMs = 700;
+    const err = await host.call('counter', 'spin', null, 'eve').catch((e) => e);
+    config.modules.callTimeoutMs = savedTimeout;
+    expect(err.kind).toBe('timeout');
+    expect(await host.call('counter', 'next', null, 'eve')).toBe(1);
+    moduleWorkerPool.retire();
+  }, 20_000);
+
+  it('picks up a rebuilt server.js', async () => {
+    const host = new ModuleHost().load(dir);
+    expect(await host.call('counter', 'next', null, 'fay')).toBe(1);
+    await new Promise((r) => setTimeout(r, 20)); // a distinct mtime
+    installCounter("version: async () => 2,");
+    expect(await host.call('counter', 'version', null, 'fay')).toBe(2);
+    moduleWorkerPool.retire();
+  }, 20_000);
 });

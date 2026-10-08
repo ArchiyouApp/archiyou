@@ -203,6 +203,13 @@ export const config = {
     callTimeoutMs: Number(process.env.SERVER_MODULES_CALL_TIMEOUT_MS ?? 60_000),
     /** Max concurrently-running module worker threads. */
     poolSize: Number(process.env.SERVER_MODULES_POOL_SIZE ?? 2),
+    /** How long a user's module entitlements are cached in memory (UserService.hasModule).
+     *  Bounds how late a revoke from the admin CLI takes effect. 0 disables the cache. */
+    entitlementTtlMs: Number(process.env.SERVER_MODULES_ENTITLEMENT_TTL_MS ?? 30_000),
+    /** `keepAlive` modules: how long a user's warm worker thread may sit idle before it is terminated. */
+    warmIdleMs: Number(process.env.SERVER_MODULES_WARM_IDLE_MS ?? 120_000),
+    /** `keepAlive` modules: max warm worker threads alive at once (least recently used is evicted). */
+    warmMax: Number(process.env.SERVER_MODULES_WARM_MAX ?? 8),
     /** Per-user rate limit on module calls: max requests within the window. */
     rateLimit: Number(process.env.SERVER_MODULES_RATE_LIMIT ?? 60),
     /** Rate-limit window in ms. */

@@ -4,9 +4,10 @@
  * Access to a gated script module (see modules/README.md) is a per-user list of
  * module ids in `users.modules`. This is the only supported way to change it.
  *
- * Entitlements are read from the database on every request, so a change here
- * takes effect on the user's next run — there is no token to expire and no cache
- * to clear.
+ * Entitlements are read from the database, not from the login token, so a change
+ * here takes effect without the user signing in again: at once for the module
+ * catalog, and within SERVER_MODULES_ENTITLEMENT_TTL_MS (30 s) for bundles and
+ * server-module calls, which the API caches in memory (UserService.hasModule).
  *
  * Exit codes:
  *   0  the requested change was applied, or the listing printed
@@ -183,7 +184,7 @@ async function main(): Promise<void> {
   console.log(`\n${handle}`);
   console.log(`  before: ${describe(before)}`);
   console.log(`  after:  ${describe(after)}`);
-  console.log('\nTakes effect on the next run — entitlements are read per request.\n');
+  console.log(`\nTakes effect within ${Math.round(config.modules.entitlementTtlMs / 1000)} s — the API caches entitlements that long.\n`);
 }
 
 await main();

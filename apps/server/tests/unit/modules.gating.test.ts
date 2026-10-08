@@ -232,8 +232,9 @@ describe('GET /modules/:id/:version/bundle.js — client bundles', () => {
   });
 
   it('stops serving the moment access is revoked', async () => {
-    // Entitlements are read per request precisely so this is immediate; a JWT
-    // claim would have kept working until the token expired, days later.
+    // A revoke in this process clears the entitlement cache, so this is
+    // immediate; a JWT claim would have kept working until the token expired,
+    // days later.
     expect((await app.inject({ method: 'GET', url: URL_OK, headers: auth('owner') })).statusCode).toBe(200);
 
     await userService.revokeModules('owner', ['example']);
@@ -337,5 +338,46 @@ describe('POST /modules/:id/call — server modules', () => {
       payload: { method: 'echo' }, headers: auth('owner'),
     });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('entitlement cache', () => {
+  /** What the admin CLI does from its own process: write the row directly,
+   *  leaving this process's cache untouched. */
+  async function revokeBehindTheCache(username: string) {
+    const { db } = await import('../../src/db/client');
+    const { users } = await import('../../src/db/schema');
+    const { eq } = await import('drizzle-orm');
+    await db.update(users).set({ modules: [] }).where(eq(users.username, username));
+  }
+
+  it('lets a revoke from another process take effect within the TTL', async () => {
+    const { config } = await import('../../src/config');
+    const saved = config.modules.entitlementTtlMs;
+    config.modules.entitlementTtlMs = 300;
+    try {
+      expect(await userService.hasModule('owner', 'heavy')).toBe(true);
+      await revokeBehindTheCache('owner');
+      // Still cached: this is the bounded delay the cache trades for speed…
+      expect(await userService.hasModule('owner', 'heavy')).toBe(true);
+      await new Promise((r) => setTimeout(r, 400));
+      // …and no longer than the TTL.
+      expect(await userService.hasModule('owner', 'heavy')).toBe(false);
+    } finally {
+      config.modules.entitlementTtlMs = saved;
+    }
+  });
+
+  it('reads the database every time with the TTL at 0', async () => {
+    const { config } = await import('../../src/config');
+    const saved = config.modules.entitlementTtlMs;
+    config.modules.entitlementTtlMs = 0;
+    try {
+      expect(await userService.hasModule('owner', 'heavy')).toBe(true);
+      await revokeBehindTheCache('owner');
+      expect(await userService.hasModule('owner', 'heavy')).toBe(false);
+    } finally {
+      config.modules.entitlementTtlMs = saved;
+    }
   });
 });

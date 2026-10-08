@@ -132,6 +132,18 @@ export interface AyModuleManifest {
      */
     client?: boolean;
     /**
+     * Keep this server module's worker thread alive between calls, one per user.
+     *
+     * By default every call runs in a fresh thread. A module whose start-up is
+     * expensive (loading a WASM engine, parsing a workbook) can opt into reuse:
+     * module-scope state then survives from one call of a user to the next, so
+     * the module must expect that — e.g. re-check that cached data is still
+     * fresh. State is never shared between users. The thread is terminated after
+     * an idle period, on timeout or crash, and when server.js is rebuilt.
+     * Ignored for `runtime: 'client'`.
+     */
+    keepAlive?: boolean;
+    /**
      * The module reads shape recipes (how each shape was made: primitives,
      * transforms, booleans), so a run that loads it records them.
      *

@@ -182,12 +182,21 @@ export async function registerModuleRoutes(fastify: FastifyInstance): Promise<vo
       const { id } = request.params;
       const username = request.user.sub;
 
+      // Server-Timing, so a browser profiler shows where a slow call spends its
+      // time: before the handler (auth, parsing), the entitlement lookup, or the
+      // module itself. Durations only — nothing about the module or the user.
+      const timing: string[] = [`pre;dur=${reply.elapsedTime.toFixed(1)}`];
+      const lap = (name: string, start: number) => timing.push(`${name};dur=${(performance.now() - start).toFixed(1)}`);
+
       const manifest = moduleHost.get(id);
       if (!manifest) return reply.code(404).send({ success: false, error: `Unknown module '${id}'` });
 
       // A public module skips the entitlement check entirely — see AyModuleManifest.public.
       // Gating stays the default; this is the opt-out an open-source module declares.
-      if (!manifest.public && !(await userService.hasModule(username, id))) {
+      const entitleStart = performance.now();
+      const entitled = manifest.public || (await userService.hasModule(username, id));
+      lap('entitle', entitleStart);
+      if (!entitled) {
         return reply.code(403).send({
           success: false,
           error: `Module '${id}' is not available on your account`,
@@ -204,8 +213,11 @@ export async function registerModuleRoutes(fastify: FastifyInstance): Promise<vo
 
       const { method, args } = parse(ModuleCallSchema, request.body);
 
+      const callStart = performance.now();
       try {
-        const result = await moduleHost.call(id, method, args);
+        const result = await moduleHost.call(id, method, args, username);
+        lap('module', callStart);
+        reply.header('Server-Timing', timing.join(', '));
         return { success: true, result };
       } catch (err) {
         if (err instanceof ModuleCallError) {
