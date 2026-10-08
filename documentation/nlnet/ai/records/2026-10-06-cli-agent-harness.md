@@ -2,15 +2,28 @@
 
 | | |
 |---|---|
-| Dates | 2026-10-06 → (open) |
-| Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
+| Dates | 2026-10-06 → 2026-10-08 |
+| Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent — the first research and plan (2026-10-06, plan mode) were Claude Fable 5.1 (claude-fable-5-1) |
 | Tool | Claude Code as agent: plan researched and tested with a prototype in chat, reworked twice with the human, then implemented |
 | Human | Mark van der Net: asked for the image-to-model user story and its test, reviewed the chair model and found four structural errors, decided on a separate CLI package and on tools for existing agents first, approved the plan |
 | Branch | `agent` |
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+Two sessions: the research and first plan (Claude Fable 5.1, 2026-10-06 15:38), then the rework and implementation (Claude Opus 5.5). Left out: skill text Claude Code injects as a user turn (`archiyou-local-db`, `ai-disclosure`) and two images the agent opened itself.
+```
+2026-10-06 15:38 +0200  Can you research to add a CAD AI harnass to archiyou. Research best practices, but keep it simple. Probably good to go for a CLI approach. How to document? Skills? Visual feedback, testing etc. This might be a good inspiration: https://github.com/earthtojake/text-to-cad
+2026-10-06 23:43 +0200  For the plan AI_TEXT2CAD_HARNASS I want you to add and test the following userstory: "A user has one or more images of a design - for example a chair - and asks to model it in archiyou in a parametric way"
+2026-10-07 09:23 +0200  Just write the script in rietveld.js in the main dir. Ill pick it up
+2026-10-07 21:55 +0200  I want to spar a bit. Honestly to place the cli in the server feels a bit weird. It should have its own package. Maybe call it archiyou-agent. I think about Devx too, how would something very simple look like: npx archiyou-agent "In this directory I have a couple of sketches and photos, can you generate a parametric model for me?". Or do I make this too simple? Of course one would supply the agent with a AI token?
+2026-10-07 22:00 +0200  yes rework the plan first
+2026-10-07 22:16 +0200  Some feedback on the accuracy of the script you produced from the rietveld chair. I noticed some errors. First the seat and backrest each have their own support lat. See image in my homefolder "product_13996_105157_red-and-blue.jpg.webp" that shows that clearly. Also your script version has 6 lats in the section, while the original has 5. Two for backrest, two for seat, and one front bottom. The top lat supporting the backrest should also be to the back, not in front. Another thing: Also in the side view: the center "leg" does not touch the ground, only the front and back ones do. So what can we learn from these mistakes? Can we not do a simple count of elements in the images and compare with the ones from our script? Could we for example extend all orthogonal lines the photo into space as clear measurements on how parts relate to each other in space. This would fix the center "leg" problem maybe. We would probably also check if a given design is somewhat orthogonal, and the user provides ample photos from a variety of angles, before we even attempt to make script?
+2026-10-07 22:21 +0200  Write it into the plan first please
+2026-10-07 22:26 +0200  Can you start implementing the AI_TEXT2CAD_HARNASS plan. Please use the branch agent
+2026-10-08 10:20 +0200  Ok first, fix the meshup mirrored views. Then also make a to the point README.md in the cli package dir.
+2026-10-08 10:53 +0200  In the example of the rietveld chair you mentioned a lot of work figuring out the angles between the seating and backrest and proposed making this more general in a method like align. Can you research such a solution a bit, and see if you can do away with some of the complexity of the rietveld chair script?
+2026-10-08 14:51 +0200  Can you write the rietveld script as new version in the db?
+```
 
 ## Plan (agent output, reviewed by the human before implementation)
 
@@ -669,7 +682,17 @@ shape of `other`.
 - 2026-10-08: the implementation notes in the plan record what was changed after two agent sessions tested the skill and CLI, including a mirrored-view bug in meshup and a clash-check bug of the agent's own, both found that way.
 - 2026-10-08: asked to fix the mirrored views in meshup (accepting that existing non-front drawings change orientation) and to write a to-the-point README for the CLI package.
 - 2026-10-08: asked to research a general placement method (like align) that would remove the angle work from the Red-Blue chair script, and to simplify the script with it; this became moveUntil().
+- 2026-10-08: had the simplified chair script saved as a new version of `testrietveld` in the shared server database (data, not code).
+- 2026-10-08: had the record closed after the work was committed.
 
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| 3a27ca8 | A Node build of core (dist/node), so it runs in plain Node | 2026-10-07 22:26 (plan step 2) |
+| c8cbbef | CLI and skill for agents | 2026-10-07 22:26 (plan steps 3-10) |
+| ff6a6dd (meshup) | Projection:elevations/isometry/sections: No longer mirrored | 2026-10-08 10:20 |
+| 7cdf83e | Meshup: projections fixed | 2026-10-08 10:20 |
+| 270039f | README: shorter and more examples | 2026-10-08 10:20 |
+| c034a24 (meshup) | Shape.moveUntil(): move a shape until it touches | 2026-10-08 10:53 |
+| b58572f | Shape.moveUntil on both kernels | 2026-10-08 10:53 |
+| (this commit) | closes this record | — |
