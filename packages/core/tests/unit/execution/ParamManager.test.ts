@@ -84,6 +84,40 @@ describe('ParamManager.define() — preserves the current value', () =>
 
         expect(pm.getParamsMap()['WIDTH']._value).toBe(150)
     })
+
+    it('takes a request value for a param with no stored definition (code-only params)', () =>
+    {
+        // A CLI run: the script declares WIDTH only in code, the request carries a value
+        const pm = new ParamManager()
+        pm._requestValues = { width: 160 }
+        pm.define('WIDTH', 'number', { min: 0, max: 200, default: 100 })
+
+        expect(pm.getParamsMap()['WIDTH']._value).toBe(160)
+    })
+
+    it('falls back to the default when the request value does not validate', () =>
+    {
+        const pm = new ParamManager()
+        pm._requestValues = { WIDTH: 500 }
+        pm.define('WIDTH', 'number', { min: 0, max: 200, default: 100 })
+
+        const p = pm.getParamsMap()['WIDTH']
+        expect(p._value ?? p.default).toBe(100)
+    })
+
+    it('prefers the stored value over the request value', () =>
+    {
+        const incoming = {
+            name: 'WIDTH', type: 'number',
+            schema: { type: 'number', minimum: 0, maximum: 200, default: 100 },
+            _value: 150,
+        } as ScriptParamData
+        const pm = new ParamManager([incoming])
+        pm._requestValues = { WIDTH: 120 }
+        pm.define('WIDTH', 'number', { min: 0, max: 200, default: 100 })
+
+        expect(pm.getParamsMap()['WIDTH']._value).toBe(150)
+    })
 })
 
 // ── define() — order ─────────────────────────────────────────────────────────

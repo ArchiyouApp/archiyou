@@ -66,6 +66,11 @@ export class ParamManager
      *  set() or push() that ends on a different value, so the app does not re-run for nothing. */
     _startValues:Record<string, any> = {};
 
+    /** Param values of the execution request (name → value), set by the Runner. define() takes
+     *  one for a param that has no stored definition yet, so a run with values for a script that
+     *  only declares its params in code (a CLI run with -p) gets them. */
+    _requestValues:Record<string, any> = {};
+
     /** Set up ParamManager with current params */
     constructor(params?:Array<ScriptParam|ScriptParamData>)
     {
@@ -600,7 +605,9 @@ export class ParamManager
         // A ranges value is fitted to the new definition instead of dropped: its track can
         // follow another param (`maximum: $LENGTH`), and a reset on every change of that
         // param would throw away what the user set
-        const prevVal = existing?.targetParam?._value;
+        // No stored definition: a value the request carries for this name (case-insensitive)
+        const requested = Object.keys(this._requestValues).find(k => k.toUpperCase() === upper);
+        const prevVal = existing?.targetParam?._value ?? (requested !== undefined ? this._requestValues[requested] : undefined);
         const curVal = ((param.type as string) === 'number-ranges')
             ? ScriptParam.fitRanges(param.schema as Record<string, any>, prevVal) ?? prevVal
             : prevVal;

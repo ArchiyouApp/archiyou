@@ -66,6 +66,35 @@ describe('Runner — programmatic params ($PARAMS.define / $PARAMS.preset)', () 
         expect(managed.deleted.length).toBe(0)   // still defined → not dropped
     })
 
+    it('honours a request value for a param declared only in code (first run, no stored definition)', async () =>
+    {
+        // What a CLI run with -p WIDTH=60 sends: no stored definitions, just values
+        const runner = await new Runner().load()
+        const result = await runner.execute({
+            kernel:  'mesh',
+            script:  { code: SCRIPT_CODE },
+            params:  { WIDTH: 60 },
+            outputs: ['default/model/gltf'],
+        } as RunnerScriptExecutionRequest)
+
+        expect(result.status).toBe('success')
+        const width = runner.getScope('default').modeler.scene().shapes().bbox().width()
+        expect(width).toBeCloseTo(60)
+    })
+
+    it('rejects param values passed as definitions with a clear message', async () =>
+    {
+        const runner = await new Runner().load()
+        const result = await runner.execute({
+            kernel:  'mesh',
+            script:  { code: SCRIPT_CODE, params: { WIDTH: 60 } as any },
+            outputs: ['default/model/gltf'],
+        } as RunnerScriptExecutionRequest)
+
+        expect(result.status).toBe('error')
+        expect(result.errors?.[0]?.message).toContain('Param values go in request.params')
+    })
+
     /* TODO: Fix and tests
         $PARAMS.define('SHOW', 'boolean', { default: false });  ==> looks like setting default is not workign
     */

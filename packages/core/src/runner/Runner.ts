@@ -1421,6 +1421,13 @@ ${contextLines.join('\n')}
         // Setup ParamManager - it still uses Array of Param defintions with _value
         const paramDefsWithValues = [...Object.values(request.script.params || {})] as Array<ScriptParam|ScriptParamData>; // param names are uppercase
         const paramValues = request.params || {};
+        // script.params holds param DEFINITIONS; values go in request.params. A value put there
+        // by mistake otherwise fails below as "Cannot create property '_value' on number"
+        const notDefinition = paramDefsWithValues.find(pd => typeof pd !== 'object' || pd === null || typeof pd.name !== 'string');
+        if (notDefinition !== undefined)
+        {
+            throw new Error(`Runner: script.params holds param definitions ({ name, type, ... }), got ${JSON.stringify(notDefinition)}. Param values go in request.params.`);
+        }
         paramDefsWithValues.forEach(pd =>
         {
             const n = Object.keys(paramValues).find( p => p.toLowerCase() === pd.name.toLowerCase())
@@ -1431,6 +1438,8 @@ ${contextLines.join('\n')}
 
         // NOTE: ParamManager sets values in scope 
         scope._paramManager = new ParamManager(paramDefsWithValues).setParent(scope);
+        // for params the script only declares in code ($PARAMS.define) and that have no stored definition
+        scope._paramManager._requestValues = paramValues;
         scope.$PARAMS = scope._paramManager;
         
         // Reset some modules
