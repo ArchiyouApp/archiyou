@@ -122,6 +122,7 @@ export class PageEditor extends SignalWatcher(LitElement)
           <editor-code-box
               data-help="code"
               .code=${editorScript.get()?.code ?? ''}
+              .scriptId=${editorScript.get()?.fileId ?? null}
               ?readonly=${isReadOnly.get()}
             @change=${this._handleCodeChange}
             @execute=${this._handleExecute}

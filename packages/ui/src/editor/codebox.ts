@@ -264,6 +264,9 @@ export class CodeBox extends SignalWatcher(LitElement)
 
   // ── 2. Properties ──
   @property({ type: String }) code = '';
+  /** Identity of the open script (its fileId). When it changes the editor starts over
+   *  with a fresh state, so undo cannot step back into the code of the previous script. */
+  @property({ type: String }) scriptId: string | null = null;
   /** When true the document is read-only (e.g. a foreign shared script). Run
    *  stays available; only editing is blocked. */
   @property({ type: Boolean }) readonly = false;
@@ -293,108 +296,7 @@ export class CodeBox extends SignalWatcher(LitElement)
     const container = this.renderRoot.querySelector<HTMLElement>('.cm-container')!;
 
     this._view = new EditorView({
-      state: EditorState.create({
-        doc: this.code,
-        extensions: [
-          basicSetup,
-          errorLineField,
-          statementLinesField,
-          javascript({ typescript: true }),
-          autocompletion({ override: [archiyouCompletions] }),
-          keymap.of([
-            {
-              key: 'Tab',
-              run: (view) =>
-              {
-                // If the autocomplete popup is open, Tab accepts the active suggestion
-                // instead of indenting.
-                if (completionStatus(view.state) === 'active' && acceptCompletion(view)) return true;
-
-                const { state } = view;
-                // If the selection spans multiple lines, indent each line
-                const sel = state.selection.main;
-                const fromLine = state.doc.lineAt(sel.from);
-                const toLine   = state.doc.lineAt(sel.to);
-                if (fromLine.number !== toLine.number || sel.empty === false && sel.to > sel.from)
-                {
-                  // Indent every line that the selection touches
-                  const changes = state.changeByRange(range =>
-                  {
-                    const startLine = state.doc.lineAt(range.from);
-                    const endLine   = state.doc.lineAt(range.to);
-                    const inserts: { from: number; insert: string }[] = [];
-                    for (let ln = startLine.number; ln <= endLine.number; ln++)
-                    {
-                      inserts.push({ from: state.doc.line(ln).from, insert: '  ' });
-                    }
-                    const cs = state.changes(inserts);
-                    return { changes: cs, range: range.map(cs) };
-                  });
-                  view.dispatch(state.update(changes, { userEvent: 'input' }));
-                }
-                else
-                {
-                  view.dispatch(state.update(state.replaceSelection('  '), { scrollIntoView: true, userEvent: 'input' }));
-                }
-                return true;
-              },
-            },
-            {
-              key: 'Shift-Tab',
-              run: (view) =>
-              {
-                const { state } = view;
-                const changes = state.changeByRange(range =>
-                {
-                  const line = state.doc.lineAt(range.from);
-                  const text = line.text;
-                  const stripped = text.startsWith('    ') ? text.slice(4)
-                    : text.startsWith('  ') ? text.slice(2)
-                    : text.startsWith('\t') ? text.slice(1)
-                    : text;
-                  const removed = text.length - stripped.length;
-                  return removed === 0
-                    ? { range }
-                    : {
-                        changes: { from: line.from, to: line.from + removed, insert: '' },
-                        range: range.map(state.changes({ from: line.from, to: line.from + removed, insert: '' })),
-                      };
-                });
-                view.dispatch(state.update(changes, { userEvent: 'delete' }));
-                return true;
-              },
-            },
-            {
-              key: 'Ctrl-Enter',
-              mac: 'Cmd-Enter',
-              run: () => { this._fireExecute(); return true; },
-            },
-            {
-              // Help for the word at the cursor (the help panel's API reference)
-              key: 'F1',
-              run: view => { this._fireCursor('help-lookup', view); return true; },
-            },
-          ]),
-          themeCompartment.of(this._currentTheme()),
-          editableCompartment.of(this._editableExtension()),
-          EditorView.updateListener.of(update =>
-          {
-            if (update.docChanged)
-            {
-              this._skipNextUpdate = true;
-              this.dispatchEvent(new CustomEvent<string>('change', {
-                detail: update.state.doc.toString(),
-                bubbles: true,
-                composed: true,
-              }));
-            }
-            if (update.docChanged || update.selectionSet)
-            {
-              this._fireCursor('cursor-change', update.view);
-            }
-          }),
-        ],
-      }),
+      state: this._createState(this.code),
       parent: container,
     });
 
@@ -417,7 +319,11 @@ export class CodeBox extends SignalWatcher(LitElement)
       });
     }
 
-    if (changed.has('code') && this._view && !this._skipNextUpdate)
+    if (changed.has('scriptId') && changed.get('scriptId') !== undefined && this._view)
+    {
+      this._view.setState(this._createState(this.code));
+    }
+    else if (changed.has('code') && this._view && !this._skipNextUpdate)
     {
       const current = this._view.state.doc.toString();
       if (current !== this.code)
@@ -481,6 +387,114 @@ export class CodeBox extends SignalWatcher(LitElement)
   private _lastAppliedStatement: ReturnType<typeof selectedStatement.get> = null;
   private _lastSelectedPath: string | null = null;
   private _darkMQ = window.matchMedia('(prefers-color-scheme: dark)');
+
+  /** A fresh editor state for the given code: its own undo history, selection and
+   *  decorations. Used when the editor opens and whenever another script is opened. */
+  private _createState(doc: string): EditorState
+  {
+    return EditorState.create({
+      doc,
+      extensions: [
+        basicSetup,
+        errorLineField,
+        statementLinesField,
+        javascript({ typescript: true }),
+        autocompletion({ override: [archiyouCompletions] }),
+        keymap.of([
+          {
+            key: 'Tab',
+            run: (view) =>
+            {
+              // If the autocomplete popup is open, Tab accepts the active suggestion
+              // instead of indenting.
+              if (completionStatus(view.state) === 'active' && acceptCompletion(view)) return true;
+
+              const { state } = view;
+              // If the selection spans multiple lines, indent each line
+              const sel = state.selection.main;
+              const fromLine = state.doc.lineAt(sel.from);
+              const toLine   = state.doc.lineAt(sel.to);
+              if (fromLine.number !== toLine.number || sel.empty === false && sel.to > sel.from)
+              {
+                // Indent every line that the selection touches
+                const changes = state.changeByRange(range =>
+                {
+                  const startLine = state.doc.lineAt(range.from);
+                  const endLine   = state.doc.lineAt(range.to);
+                  const inserts: { from: number; insert: string }[] = [];
+                  for (let ln = startLine.number; ln <= endLine.number; ln++)
+                  {
+                    inserts.push({ from: state.doc.line(ln).from, insert: '  ' });
+                  }
+                  const cs = state.changes(inserts);
+                  return { changes: cs, range: range.map(cs) };
+                });
+                view.dispatch(state.update(changes, { userEvent: 'input' }));
+              }
+              else
+              {
+                view.dispatch(state.update(state.replaceSelection('  '), { scrollIntoView: true, userEvent: 'input' }));
+              }
+              return true;
+            },
+          },
+          {
+            key: 'Shift-Tab',
+            run: (view) =>
+            {
+              const { state } = view;
+              const changes = state.changeByRange(range =>
+              {
+                const line = state.doc.lineAt(range.from);
+                const text = line.text;
+                const stripped = text.startsWith('    ') ? text.slice(4)
+                  : text.startsWith('  ') ? text.slice(2)
+                  : text.startsWith('\t') ? text.slice(1)
+                  : text;
+                const removed = text.length - stripped.length;
+                return removed === 0
+                  ? { range }
+                  : {
+                      changes: { from: line.from, to: line.from + removed, insert: '' },
+                      range: range.map(state.changes({ from: line.from, to: line.from + removed, insert: '' })),
+                    };
+              });
+              view.dispatch(state.update(changes, { userEvent: 'delete' }));
+              return true;
+            },
+          },
+          {
+            key: 'Ctrl-Enter',
+            mac: 'Cmd-Enter',
+            run: () => { this._fireExecute(); return true; },
+          },
+          {
+            // Help for the word at the cursor (the help panel's API reference)
+            key: 'F1',
+            run: view => { this._fireCursor('help-lookup', view); return true; },
+          },
+        ]),
+        themeCompartment.of(this._currentTheme()),
+        editableCompartment.of(this._editableExtension()),
+        EditorView.updateListener.of(update =>
+        {
+          if (update.docChanged)
+          {
+            this._skipNextUpdate = true;
+            this.dispatchEvent(new CustomEvent<string>('change', {
+              detail: update.state.doc.toString(),
+              bubbles: true,
+              composed: true,
+            }));
+          }
+          if (update.docChanged || update.selectionSet)
+          {
+            this._fireCursor('cursor-change', update.view);
+          }
+        }),
+      ],
+    });
+  }
 
   /** Editability extensions derived from the `readonly` property. */
   private _editableExtension()
