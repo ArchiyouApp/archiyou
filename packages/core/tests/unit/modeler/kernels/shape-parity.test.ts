@@ -358,6 +358,36 @@ describe('mesh ↔ brep parity', () =>
         }, 60_000)
     })
 
+    describe('placing by contact: moveUntil()', () =>
+    {
+        /*  One implementation for both kernels (meshup's moveUntilTouching, driven by each kernel's
+            exact distance): a bar pushed up under a seat tilted 12°, and a bar slid forward against
+            a board leaning 26°, land in the same place on both. */
+        const seat = (m: Modeler) => (m.boxBetween([-250, 0, -15], [250, 450, 0]) as any).rotateX(-12, [0, 0, 0]).moveZ(400)
+        const back = (m: Modeler) => (m.boxBetween([-200, -12, 0], [200, 0, 800]) as any).rotateX(-26, [0, 0, 0]).move(0, 300, 100)
+
+        it('a bar pushed up under a tilted seat stops against its underside', () =>
+        {
+            const theta = 12 * Math.PI / 180
+            const expected = 400 - 15 * Math.cos(theta) - (130 + 15 * Math.sin(theta)) * Math.tan(theta)
+            const tops = [mesh, brep].map(m => (m.boxBetween([-280, 100, 0], [280, 130, 30]) as any).moveUntil(seat(m), 'up').bbox().max().z)
+            tops.forEach(top => expect(top).toBeCloseTo(expected, 3))
+        }, 60_000)
+
+        it('a bar slid forward against a leaning board, and a collection moved down', () =>
+        {
+            const fronts = [mesh, brep].map(m => (m.boxBetween([-280, 900, 500], [280, 930, 530]) as any).moveUntil(back(m), 'front').bbox().min().y)
+            expect(fronts[1]).toBeCloseTo(fronts[0], 3)
+            const lows = [mesh, brep].map(m =>
+            {
+                const floor = m.boxBetween([-500, -500, -10], [500, 500, 0])
+                const pair = (m as any).collection(m.boxBetween([0, 0, 300], [100, 100, 400]), m.boxBetween([200, 0, 250], [300, 100, 350]))
+                return pair.moveUntil(floor, 'down', 5).bbox().min().z
+            })
+            lows.forEach(low => expect(low).toBeCloseTo(5, 4))
+        }, 60_000)
+    })
+
     describe('the chain runner itself', () =>
     {
         it('aborts a chain instead of reporting noise once the kernels diverge grossly', () =>

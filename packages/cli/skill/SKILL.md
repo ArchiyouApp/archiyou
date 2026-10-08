@@ -39,6 +39,11 @@ print('seat area', seat.area());               // shows in the run summary
   function is defined (the run warns about this).
 - `.hide()` construction geometry (helper lines, guides): it stays out of the views, the size and the
   checks.
+- **Place parts against each other with `moveUntil(other, direction, gap = 0)`**: it moves a part
+  ('up', 'down', 'left', 'right', 'front', 'back' or a vector) until it touches the true shape of
+  `other`, so a bar under a tilted seat or behind a leaning board needs no angles worked out:
+  `crossbar(...).moveUntil(seat, 'up')`, `topBar.moveUntil(back, 'front')`. Prefer it over
+  computing positions with sin/cos; it throws when the part would never touch `other`.
 - Shapes you only cut or merge with stay in the model: `a.subtract(b)` and `a.union(b)` change `a` and
   leave `b`. Make `b` with `.tmp()`, as in
   `plate.subtract(cylinder(5, 40).move(15, 15, -10).tmp())` (a hole through a 20 mm plate at z 0–20).
@@ -119,7 +124,8 @@ Globs match part names (`*`, `?`, `|` between alternatives). Relations: `behind`
 - `--ref <photo>` puts a photo on the sheet as is.
 - Fix the mismatches the check lists before anything else.
 - Pick one driving part (often the largest board or the frame) and place the others against its
-  faces, not at fixed coordinates; then they stay attached when parameters change.
+  faces with `moveUntil()`, not at computed coordinates; then they stay attached when parameters
+  change.
 - Finish with `archiyou sweep <name>.js --clash --check <name>.inventory.json`.
 
 ## 4. Where to look things up

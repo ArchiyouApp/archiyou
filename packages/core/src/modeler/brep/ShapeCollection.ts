@@ -39,7 +39,7 @@ import { flattenEntitiesToArray, flattenEntities, roundToTolerance, projectionOp
 
 // special libraries
 import { Color } from '@archiyou/meshup'
-import { gridCounts } from '@archiyou/meshup'
+import { gridCounts, moveUntilTouching } from '@archiyou/meshup'
 //import { packer } from 'guillotine-packer' // see: https://github.com/tyschroed/guillotine-packer
 // import { DxfWriter, Units } from '@tarikjabiri/dxf'; // TODO: after refactor
  
@@ -581,6 +581,16 @@ import { getOc } from './index' // OC global getter
          let moveVec = (to as Vector).subtract(this.center().toVector());
          this.shapes.forEach( shape => shape.move(moveVec));
 
+         return this;
+      }
+
+      /** Move the whole Collection along `direction` until one of its Shapes touches `other`, or
+       *  stops `gap` short of it. See Shape.moveUntil() */
+      moveUntil(other:AnyShapeOrCollection, direction:string|PointLike, gap:number=0):AnyShapeCollection
+      {
+         const dir = (typeof direction === 'string') ? direction : new Point(direction).toArray() as [number, number, number];
+         moveUntilTouching(this as any, other as any, dir, gap,
+            () => Math.min(...this.shapes.map(shape => shape.distance(other))), 'ShapeCollection.moveUntil()');
          return this;
       }
 

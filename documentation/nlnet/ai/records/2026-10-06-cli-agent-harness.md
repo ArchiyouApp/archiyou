@@ -587,6 +587,29 @@ Fixed after their feedback:
   intersection and later pairs and the `touches` check saw destroyed shapes. Fixed (non-mutating
   `intersection()` for meshes), with a regression test that fails on the bug.
 
+#### Placing by contact: `moveUntil()` (2026-10-08)
+
+The chair's hard part was trigonometry: putting a crossbar exactly under a tilted seat, or a bar
+exactly behind a leaning board (`seatUnderZ`, `backY`/`frontY`, `S0`/`S1`, ...). Existing helpers
+(`align`, `alignByPoints`, `place`) work on bboxes or given points, and a tilted board's bbox is not
+the board. New: `shape.moveUntil(other, direction, gap = 0)` moves a shape (or collection) along a
+direction ('up', 'down', 'left', 'right', 'front', 'back' or a vector) until it touches the true
+shape of `other`.
+- How: conservative advancement on the exact distance (parry3d for meshes, BRepExtrema for brep):
+  move by the current distance, which can never pass through, and measure again; one or two steps
+  head-on, a few on a slant. Throws when the part would never touch (shadows across the motion do not
+  overlap, or the other is behind it), restoring its position; a part that already touches stays.
+- One implementation for both kernels: `moveUntilTouching()` in meshup's utils, used by meshup's
+  `Shape`/`ShapeCollection` and by core's brep `Shape`/`ShapeCollection`.
+- Tests: meshup `moveUntil.test.ts` (the contact height under a 12° seat to 4 decimals, a leaning
+  board, gap, words and vectors, the errors, collections); core `shape-parity.test.ts` checks mesh
+  and brep land in the same place.
+- The chair rebuilt with it (`rietveld.js`, the agent's correct structure: 5 crossbars, hanging middle
+  posts): 37 code lines instead of 76, no trigonometry instead of 19 sin/cos/tan calls, 9 derived
+  constants instead of 29. 660 x 828 x 880, no clashes, the reference inventory (24 rules) passes,
+  the side overlay within 1 %, `sweep --clash --check` clean over 17 variants (1.8 s).
+- In the skill: a convention entry and the driving-part advice now name `moveUntil()`.
+
 #### Found outside this plan (for Mark)
 
 - **meshup: mirrored drawings — fixed 2026-10-08 on Mark's request** (kernel divergence 38, pinned
@@ -632,8 +655,8 @@ Fixed after their feedback:
   proves too loose.
 - Vanishing-point analysis of the photos (line detection, grouping, calibration): an automatic
   "how right-angled is this design" score for the brief, and single-view measurements.
-- A placement helper: put a part against or on a face of another (rotated) part, the hand trigonometry
-  that dominated the image test.
+- `moveUntil()` on top of parry3d's shape casting (time of impact) in the wasm, if the distance steps
+  prove slow on large meshes; the same contract.
 - `watch` mode or warm daemon; MCP wrapper over the same functions.
 - `llms.txt` on the docs site from the same API JSON.
 
@@ -645,6 +668,7 @@ Fixed after their feedback:
 - 2026-10-07: chose the summary lines of the commits and approved each commit message.
 - 2026-10-08: the implementation notes in the plan record what was changed after two agent sessions tested the skill and CLI, including a mirrored-view bug in meshup and a clash-check bug of the agent's own, both found that way.
 - 2026-10-08: asked to fix the mirrored views in meshup (accepting that existing non-front drawings change orientation) and to write a to-the-point README for the CLI package.
+- 2026-10-08: asked to research a general placement method (like align) that would remove the angle work from the Red-Blue chair script, and to simplify the script with it; this became moveUntil().
 
 ## Commits
 | Commit | Subject | Prompt it answers |

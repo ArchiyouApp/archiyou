@@ -40,7 +40,7 @@ import { Vector, Point, Bbox, OBbox, Vertex, Edge, Wire, Face,
 // Scene + style come from the MESH kernel: both kernels share one SceneNode graph and one
 // Style model, which is what lets the scene navigator and the GLTF exporter stay kernel-agnostic.
 import { SceneNode } from '@archiyou/meshup'
-import { nodeToString, gridCounts } from '@archiyou/meshup'
+import { nodeToString, gridCounts, moveUntilTouching } from '@archiyou/meshup'
 import { Style } from '@archiyou/meshup'
 import type { StyleData } from '@archiyou/meshup'
 import { Color } from '@archiyou/meshup'
@@ -1148,6 +1148,18 @@ export class Shape
     {
         let moveVec = (to as Vector).subtracted(this.center());
         this.move(moveVec);
+        return this;
+    }
+
+    /** Move this Shape along `direction` until it touches `other`, or stops `gap` short of it: on
+     *  the true shapes, so a part meets a tilted board where the board is. The same contract as
+     *  the mesh kernel's moveUntil() (one shared implementation, in meshup): `direction` is a
+     *  vector or 'up', 'down', 'left', 'right', 'front' (-y), 'back' (+y); it throws when moving
+     *  that way never touches `other`; a shape that already touches stays where it is. */
+    moveUntil(other:AnyShapeOrCollection, direction:string|PointLike, gap:number=0):this
+    {
+        const dir = (typeof direction === 'string') ? direction : new Point(direction).toArray() as [number, number, number];
+        moveUntilTouching(this as any, other as any, dir, gap, () => this.distance(other), `${this.type}.moveUntil()`);
         return this;
     }
 
