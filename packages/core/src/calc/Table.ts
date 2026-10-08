@@ -61,7 +61,8 @@ export class Table
             this._dataRows = data;
         }
         else {
-            console.info(`Table: Can't create table. Unknown data format. Please supply [{ col1:v1, col2:v2 }, ...] or [[r1v1,r1v2],...]`);
+            // Left without rows, the table would fail later in some unrelated method
+            throw new Error(`Table: Can't create table. Unknown data format. Please supply [{ col1:v1, col2:v2 }, ...] or [[r1v1,r1v2],...] with strings, numbers or booleans as values`);
         }
     
     }

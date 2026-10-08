@@ -142,3 +142,18 @@ describe('Table — attached workbook (xlsx())', () =>
         expect(() => new Table([]).xlsx(42 as any)).toThrow(/expected an ArrayBuffer/);
     });
 });
+
+describe('calc.Table data', () =>
+{
+    it('takes booleans as cell values (a checkbox column in a spreadsheet)', () =>
+    {
+        expect(new Table([{ item: 'roof', included: true }, { item: 'walls', included: false }]).toDataRows())
+            .toEqual([{ item: 'roof', included: true }, { item: 'walls', included: false }])
+        expect(new Table([['roof', true]]).numRows()).toBe(1)
+    })
+
+    it('throws on data it cannot hold instead of becoming a table without rows', () =>
+    {
+        expect(() => new Table([{ when: new Date() }] as any)).toThrow(/Unknown data format/)
+    })
+})

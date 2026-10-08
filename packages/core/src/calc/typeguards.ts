@@ -6,12 +6,12 @@ export function isDataRowColumnValue(o:any): o is DataRowColumnValue
 {
     return typeof o === 'object'
         && Object.keys(o).every(k => typeof k === 'string')
-        && Object.values(o).every(v => !v || (typeof v === 'string') || typeof v === 'number')
+        && Object.values(o).every(v => !v || (typeof v === 'string') || typeof v === 'number' || typeof v === 'boolean')
 }
 
 export function isDataRowValues(o:any): o is DataRowValues
 {
-    return (Array.isArray(o)) && o.every(v => (typeof v === 'string') || (typeof v === 'number'))
+    return (Array.isArray(o)) && o.every(v => (typeof v === 'string') || (typeof v === 'number') || (typeof v === 'boolean'))
 }
 
 export function isDataRowsColumnValue(o:any): o is DataRowsColumnValue
