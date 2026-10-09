@@ -211,6 +211,8 @@ export async function registerExecuteRoutes(fastify: FastifyInstance): Promise<v
         componentLibraryUrl: internalApiUrl,
         moduleApiUrl: internalApiUrl,
         modules: moduleHost.catalogFor(authorModules),
+        // Client-module bundles are fetched on the author's entitlement, like the catalog above.
+        publishedScript: `${user}/${scriptAndVersion}`,
       };
 
       try {

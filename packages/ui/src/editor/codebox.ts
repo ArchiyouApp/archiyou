@@ -28,6 +28,7 @@ import { tags as t } from '@lezer/highlight';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { autocompletion, acceptCompletion, completionStatus } from '@codemirror/autocomplete';
 import { archiyouCompletions, registerModuleCompletions, registerComponentNames } from './completions.js';
+import './key-badge.js';
 import { moduleCatalog } from '@archiyou/editor/src/services/module-service';
 import { authService } from '@archiyou/editor/src/services/auth-service';
 import { fetchPublicShared, fetchSharedWithMe } from '@archiyou/editor/src/services/sharing';
@@ -204,6 +205,7 @@ export class CodeBox extends SignalWatcher(LitElement)
                         : ''
             }
           </span>
+          <editor-key-badge></editor-key-badge>
           <span class="spacer"></span>
           <button class="execute-button" data-help="run"
               @click=${this._handleRunClick} title="Run (Ctrl+Enter)">

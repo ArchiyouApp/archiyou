@@ -393,6 +393,34 @@ describe('ModuleRegistry — warm-up', () =>
     })
 })
 
+describe('ModuleRegistry — after the run', () =>
+{
+    it('collects what each module read, once', async () =>
+    {
+        const mod = { ...fakeModule(), report: () => ({ used: ['google-sheet:sheet1', 'google-sheet:sheet1'] }) } as any
+
+        const reg = new ModuleRegistry().setOptions({ loadClient: async () => mod })
+        await reg.prepare("$module('example')\nexample.double(1)", [entry()])
+
+        expect(reg.report()).toEqual({ used: ['google-sheet:sheet1'] })
+    })
+
+    it('leaves out a module whose report throws, and reads nothing through stubs', async () =>
+    {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const broken = { ...fakeModule(), report() { throw new Error('oops') } } as any
+        const reg = new ModuleRegistry().setOptions({ loadClient: async () => broken })
+        await reg.prepare("$module('example')\nexample.double(1)", [entry()])
+        expect(reg.report()).toEqual({ used: [] })
+        expect(warn.mock.calls.flat().join(' ')).toMatch(/failed to report.*oops/)
+        warn.mockRestore()
+
+        const stubbed = new ModuleRegistry()
+        await stubbed.prepare("$module('example')\nexample.run()", [entry({ entitled: false })])
+        expect(stubbed.report()).toEqual({ used: [] })
+    })
+})
+
 describe('ModuleRegistry — server runtime', () =>
 {
     it('forwards a call to the backend and returns its result', async () =>

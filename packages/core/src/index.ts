@@ -47,6 +47,9 @@ export type {
   AyModuleFactory,
   AyServerModuleMethod,
   AyServerModule,
+  AyModuleRunReport,
+  AyGoogleSheetCopy,
+  AyGoogleSheetCopyResult,
 } from './modules/sdkTypes';
 export { ARCHIYOU_CORE_VERSION } from './constants';
 

@@ -17,7 +17,7 @@ import { customElement } from 'lit/decorators.js';
 import '@archiyou/ui/nav-bar.js';
 import '../components/verify-email-banner.js';
 
-import { warmupWorker, setServerExecutionTarget } from '../services/execution-service';
+import { warmupWorker, setServerExecutionTarget, setPublishedScript } from '../services/execution-service';
 
 @customElement('layout-main')
 export class LayoutMain extends LitElement
@@ -45,6 +45,7 @@ export class LayoutMain extends LitElement
     // and would make the warmup below a silent no-op. Clearing it first makes the
     // teardown order of the previous route irrelevant.
     setServerExecutionTarget(null);
+    setPublishedScript(null);
 
     warmupWorker().catch(err =>
     {

@@ -1,4 +1,4 @@
-import type { AyModuleCatalogEntry } from "../modules/sdkTypes";
+import type { AyModuleCatalogEntry, AyContentItem, AyContentKind, AyContentNeeds } from "../modules/sdkTypes";
 
 import type { ArchiyouModules } from "../types";
 import type { Modeler } from "../modeler/Modeler";
@@ -50,6 +50,24 @@ export interface RunnerScriptExecutionResult
      *  in code with $PARAMS.define). Its scope is gone after execution, so this is the only
      *  place they survive - see RunnerComponentImporter.info() */
     params?: Array<ScriptParamData>
+
+    /** What the run needed and did not have, when it stopped on a module's
+     *  ContentNeededError. The app fetches it (see request.content) and runs again. */
+    needs?: AyContentNeeds
+
+    /** The content the run read, as the modules report it — never the bytes. How
+     *  the app got each item says whether one of the user's keys was involved. */
+    used?: Array<RunnerContentUse>
+}
+
+/** One item of content a run read: AyContentItem without its bytes. */
+export interface RunnerContentUse
+{
+    kind: AyContentKind
+    id: string
+    title?: string
+    via: 'public' | 'key'
+    keyName?: string
 }
 
 /** Basic structure and state of scope */
@@ -143,6 +161,17 @@ export interface RunnerScriptExecutionRequest
      *  all. Only ever set by the app for the user's own run — it is not read from
      *  or written to a script. */
     authToken?: string
+
+    /** The published script this run is of, as `user/scriptAndVersion` — a configurator.
+     *  Gated module bundles are then served on the script author's entitlement, since the
+     *  visitor may be signed out (see ModuleRegistryOptions.publishedScript). */
+    publishedScript?: string
+
+    /** Content the app fetched for this run, keyed by contentKey(kind, id) — what
+     *  modules read synchronously (cloudcalc's sheets). Handed to modules through
+     *  warm(), never to the script. Bytes only: how they were fetched (anonymously,
+     *  or with one of the user's keys) is a name at most, never a credential. */
+    content?: Record<string, AyContentItem>
 
     /** Base URL of the Archiyou backend used to resolve `$component('./name')`
      *  when nothing was linked in via componentScripts — the case for a published

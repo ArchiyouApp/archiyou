@@ -27,7 +27,8 @@ import { ScriptOutputData,
 import type { RunnerActiveScope,
     RunnerScriptExecutionRequest,
     RunnerScriptExecutionResult,
-    RunnerScriptScope } from './types'; // Runner types
+    RunnerScriptScope,
+    RunnerContentUse } from './types'; // Runner types
 
 
 import { RunnerComponentImporter } from './RunnerComponentImporter'; // helper for importing components in scope
@@ -63,6 +64,7 @@ import { Calc } from '../calc/Calc';
 import { Docs } from '../docs/Docs';
 import { MaterialManager } from '../materials/MaterialManager';
 import { ModuleRegistry } from '../modules/ModuleRegistry'; // optional, entitlement-gated script modules
+import { contentNeedsOf } from '../modules/sdkTypes';
 
 // Settings
 import { MODELER_METHODS_INTO_GLOBAL, SCRIPT_OUTPUT_GLTF_OPTIONS_DEFAULT, outputsNeedRecipes } from '../constants'; 
@@ -798,10 +800,20 @@ export class Runner
         // each statement is timed. Opt-in via request.perStatement (editor on, server off).
         if(request.perStatement)
         {
-            return await this.executeInScriptStatements(request);
+            return this._withoutContentBytes(await this.executeInScriptStatements(request));
         }
 
-        return await this._execute(request, true, true);
+        return this._withoutContentBytes(await this._execute(request, true, true));
+    }
+
+    /** The result echoes its request, which may carry the run's content (whole workbooks).
+     *  The caller has those bytes already, so leave them out instead of sending them back
+     *  across the worker boundary. */
+    private _withoutContentBytes(result:RunnerScriptExecutionResult):RunnerScriptExecutionResult
+    {
+        if(!result?.request?.content) return result;
+        const { content, ...request } = result.request;
+        return { ...result, request: request as RunnerScriptExecutionRequest };
     }
 
     /** Switch shape recipe recording on for runs that request a recipe format or load a script module
@@ -1127,6 +1139,8 @@ ${description === '***** CODE ****\nUnexpected end of input' ? code : ''}
             // get all messages out too, this could help debugging
             messages: scope._archiyou.console.getBufferedMessages(['user', 'exec','warn', 'error']),
             request: request, // original request in response for debugging
+            // A module stopped the run for content it lacked: say what, so the app can fetch it and run again
+            needs: contentNeedsOf(e) ?? undefined,
         } as RunnerScriptExecutionResult
     }
 
@@ -1255,6 +1269,7 @@ ${description === '***** CODE ****\nUnexpected end of input' ? code : ''}
         const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
         const statementResults:Array<ScriptStatementResult> = [];
         let failed:ScriptStatementResult | null = null;
+        let failedError:unknown = null;
 
         for(let s = 0; s < statements.length; s++)
         {
@@ -1283,6 +1298,7 @@ ${description === '***** CODE ****\nUnexpected end of input' ? code : ''}
 
                 const message = this._formatStatementError(stmt, request, e as Error);
                 failed = { ...stmt, ...this._statementSids(scope, sidBefore), status: 'error', message, duration };
+                failedError = e;
                 statementResults.push(failed);
                 // Mirror into the Archiyou console buffer so UI consoles surface it.
                 scope?._archiyou?.console?.error(message);
@@ -1315,6 +1331,7 @@ ${description === '***** CODE ****\nUnexpected end of input' ? code : ''}
         {
             result.status = 'error';
             result.errors = [failed];
+            result.needs = contentNeedsOf(failedError) ?? undefined;
         }
 
         this._finalizeExecutionDuration(result, executeStartTime);
@@ -1795,6 +1812,7 @@ ${contextLines.join('\n')}
         this._moduleRegistry.setOptions({
             moduleApiUrl: req.moduleApiUrl ?? '',
             authToken: req.authToken,
+            publishedScript: req.publishedScript,
         });
 
         await this._moduleRegistry.prepare([code, ...componentCode].join('\n'), catalog);
@@ -1804,7 +1822,9 @@ ${contextLines.join('\n')}
         // to know the run — chiefly its asset proxy, which is the only way a
         // browser worker can fetch a third-party host at all. This is the last
         // async moment before the scope is built.
-        await this._moduleRegistry.warmModules({ assetProxyUrl: req.assetProxyUrl });
+        // The content the app fetched for this run goes the same way: a module reads it
+        // synchronously during the script, so it has to be in hand before the script starts.
+        await this._moduleRegistry.warmModules({ assetProxyUrl: req.assetProxyUrl, content: req.content });
     }
 
     //// $import ASSETS ////
@@ -2522,6 +2542,10 @@ ${contextLines.join('\n')}
             throw new Error(`Runner::getScopeResults(): No outputs requested`);
         }
 
+        // What the modules read and offer. Main scope only: a pipeline's sub-scope is the
+        // same run, and its modules' reports are the run's.
+        if(scope._main) this._addModuleReportToResult(request, result);
+
         // Output console messages
         const DEFAULT_OUTPUT_MESSAGES = ['user'] as Array<ConsoleMessageType>
         const messagesToOutput = (Array.isArray(request.messages)) 
@@ -2533,6 +2557,24 @@ ${contextLines.join('\n')}
         return result;
     }
 
+
+    /** result.used from the modules' reports (AyModule.report).
+     *  `used` is described from the content the run was handed, without the bytes —
+     *  a key the run was not handed is a module's mistake, and is left out. */
+    _addModuleReportToResult(request:RunnerScriptExecutionRequest, result:RunnerScriptExecutionResult):void
+    {
+        const { used } = this._moduleRegistry.report();
+        const described = used.flatMap((key) =>
+        {
+            const item = request.content?.[key];
+            if(!item) return [];
+            const use:RunnerContentUse = { kind: item.kind, id: item.id, via: item.via };
+            if(item.title) use.title = item.title;
+            if(item.keyName) use.keyName = item.keyName;
+            return [use];
+        });
+        if(described.length) result.used = described;
+    }
 
     /** Get results from local execution scope based on 
      *  request.outputs paths

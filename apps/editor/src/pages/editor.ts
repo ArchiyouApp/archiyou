@@ -36,6 +36,7 @@ import '@archiyou/ui/editor/share-script-menu.js';
 import '@archiyou/ui/editor/publish-script-menu.js';
 import '@archiyou/ui/editor/manage-configurators-menu.js';
 import '@archiyou/ui/editor/modules-menu.js';
+import '@archiyou/ui/editor/keys-menu.js';
 import type { ToolDef } from '@archiyou/ui/editor/toolbar.js';
 
 import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystemOverride, docUnitSystemOverride, perStatement, kernel, autoRun, wasActiveScriptRestored } from '../state/workspace';
@@ -191,6 +192,10 @@ export class PageEditor extends SignalWatcher(LitElement)
         ?open=${this._showModules}
         @modules-menu-cancel=${() => { this._showModules = false; }}
       ></editor-modules-menu>
+      <editor-keys-menu
+        ?open=${this._showKeys}
+        @keys-menu-cancel=${() => { this._showKeys = false; }}
+      ></editor-keys-menu>
       <script-importer
         ?open=${this._showScriptImporter}
         @script-importer-cancel=${this._handleScriptImporterCancel}
@@ -228,6 +233,7 @@ export class PageEditor extends SignalWatcher(LitElement)
   @state() private _showPublishMenu = false;
   @state() private _showManageConfigurators = false;
   @state() private _showModules = false;
+  @state() private _showKeys = false;
   @state() private _showDeleteConfirm = false;
   // Non-null → the publish menu opens in edit mode for this published version.
   @state() private _editConfigurator: ScriptData | null = null;
@@ -242,6 +248,8 @@ export class PageEditor extends SignalWatcher(LitElement)
   override connectedCallback()
   {
     super.connectedCallback();
+    // The code editor's key badge (<editor-key-badge>) opens the Keys menu.
+    this.addEventListener('open-keys', this._openKeys);
     // Register execution callback so the viewer can trigger re-execution
     // when a handle (or other interaction) changes a param value.
     registerScheduleExecution(() => this._scheduleParamExecute());
@@ -715,6 +723,11 @@ export class PageEditor extends SignalWatcher(LitElement)
 
 
   /** Show a short informational popup at the top of the editor; it hides itself after a while. */
+  private _openKeys = () =>
+  {
+    this._showKeys = true;
+  };
+
   private _showNotice(text: string, durationMs = 6000)
   {
     this._notice = text;
@@ -785,6 +798,12 @@ export class PageEditor extends SignalWatcher(LitElement)
     if (value === 'modules')
     {
       this._showModules = true;
+      return;
+    }
+
+    if (value === 'keys')
+    {
+      this._showKeys = true;
       return;
     }
 

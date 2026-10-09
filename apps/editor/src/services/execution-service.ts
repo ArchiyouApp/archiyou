@@ -26,15 +26,28 @@
  * Both backends return the same RunnerScriptExecutionResult: the server runs the
  * same core Runner and JSON-encodes the result, base64-wrapping binary outputs.
  * The viewer and the download path already unwrap that form.
+ *
+ * CONTENT. A local run may need content the worker cannot fetch itself: a script runs
+ * synchronously, and the worker holds no keys (plans/PROTECTED_CONTENT.md). So this
+ * funnel fetches it before the run — what the script is known to need — and, when a
+ * run still stops on a module's ContentNeededError (result.needs), fetches that and
+ * runs again. Keys are only ever used for the user's own script (secret-manager.ts),
+ * and the worker is replaced when a run's ownership differs from the last one's, so
+ * nothing one script was given lingers for another.
  */
 
 import type { RunnerWorker as RunnerWorkerType } from '@archiyou/core';
 import type { RunnerScriptExecutionRequest, RunnerScriptExecutionResult } from '@archiyou/core/src/runner/types';
 import type { ConsoleMessage } from '@archiyou/core/src/console/types';
 
+import type { ScriptData } from '@archiyou/core/src/ScriptSchema';
+
 import { api, ApiError } from './api.js';
 import { authService } from './auth-service.js';
 import { ensureModuleCatalog } from './module-service.js';
+import { secretManager, type ContentProblem, type RunTrust } from './secret-manager.js';
+import { scriptDataOf, isOwnScript, knownNeeds, rememberNeeds } from './content-needs.js';
+import { knownCopies, resolveCopies } from './cloud-copies.js';
 
 // Base URL of the backend. Same value api.ts/auth-service.ts use; '' → root-relative.
 // Feeds two core lookups that have to reach the server on their own: the $import()
@@ -73,6 +86,21 @@ export function getServerExecutionTarget(): ServerExecutionTarget | null
   return serverTarget;
 }
 
+//// PUBLISHED SCRIPT ////
+
+let publishedScript: string | null = null;
+
+/**
+ * The published script this page runs, as `user/scriptAndVersion` — set by
+ * <page-published-configurator>, null everywhere else. Module bundles are then requested
+ * on the script AUTHOR's entitlement, because the visitor may be signed out
+ * (routes/modules.ts on the server). Page-level, for the same reason as the server target.
+ */
+export function setPublishedScript(ref: string | null): void
+{
+  publishedScript = ref;
+}
+
 //// LOCAL WORKER ////
 
 // Loaded on demand. The import itself is dynamic so a page that only ever executes
@@ -88,6 +116,100 @@ async function getWorker(): Promise<RunnerWorkerType>
     workerPromise = import('@archiyou/core').then(({ RunnerWorker }) => new RunnerWorker());
   }
   return workerPromise;
+}
+
+/** Tear the worker down; the next run starts a fresh one (and loads the kernel again). */
+function resetWorker(): void
+{
+  const previous = workerPromise;
+  workerPromise = null;
+  previous?.then((w) => w.terminate()).catch(() => { /* never started */ });
+}
+
+//// CONTENT ////
+
+/** Whether the last local run was of the user's own script. */
+let lastRunOwn: boolean | null = null;
+
+/**
+ * Keep foreign and own runs apart. Modules live on in the worker between runs (that is
+ * what lets them keep a loaded workbook or engine), so a foreign script run after the
+ * user's own could read what the user's run was given. A fresh worker cannot.
+ */
+function separateTrust(trust: RunTrust): void
+{
+  if (lastRunOwn !== null && lastRunOwn !== trust.own) resetWorker();
+  lastRunOwn = trust.own;
+}
+
+/** Put what could not be fetched in front of the error, so the user reads the fix. */
+function explainProblems(result: RunnerScriptExecutionResult, problems: ContentProblem[]): RunnerScriptExecutionResult
+{
+  if (!problems.length) return result;
+  const text = problems.map((p) => p.message).join('\n');
+  const [first, ...rest] = result.errors ?? [];
+  return {
+    ...result,
+    errors: [{ ...(first ?? { status: 'error' }), message: `${text}\n\n${first?.message ?? ''}`.trim() } as any, ...rest],
+    messages: [...(result.messages ?? []), createErrorConsoleMessage(text)],
+  };
+}
+
+/**
+ * Run locally with the content the script needs. Fetch what is known up front; when the
+ * run still stops for content (result.needs), fetch that and run again — three times at
+ * most: a workbook can only reveal its imports once it is loaded, and a copy
+ * (cloudcalc's cloudcopy(), see cloud-copies.ts) its inputs once it is computed.
+ */
+async function runLocalWithContent(request: RunnerScriptExecutionRequest): Promise<RunnerScriptExecutionResult>
+{
+  const d = scriptDataOf(request);
+  const trust: RunTrust = { own: isOwnScript(d) };
+  separateTrust(trust);
+
+  const started = performance.now();
+  const known = knownNeeds(d);
+  if (known.length)
+  {
+    const { content } = await secretManager.resolve(known, trust);
+    request.content = { ...(request.content ?? {}), ...content };
+  }
+  request.content = { ...(request.content ?? {}), ...knownCopies(d) };
+  const steps = [`content ${ms(started)}`];
+  const result = await runAgainForNeeds(request, d, trust, 3, steps);
+  // Only when a run stopped for content and ran again: where the time of that went.
+  if (steps.length > 2) console.info(`runScript(): ${steps.join(' → ')} = ${ms(started)}`);
+  return result;
+}
+
+async function runAgainForNeeds(request: RunnerScriptExecutionRequest, d: Partial<ScriptData>, trust: RunTrust, triesLeft: number, steps: string[]): Promise<RunnerScriptExecutionResult>
+{
+  const worker = await getWorker();
+  const ran = performance.now();
+  const result = await worker.run(request);
+  const needs = result?.needs?.content ?? [];
+  steps.push(`run ${ms(ran)}${needs.length ? ` (stopped for ${[...new Set(needs.map((n) => n.kind))].join(', ')})` : ''}`);
+  if (!needs.length) return result;
+
+  // Sheets are remembered, so the next run has them up front. A copy is not: it is asked
+  // with the inputs of one run, and handed on as an answer (knownCopies) once made.
+  const sheets = needs.filter((n) => n.kind === 'google-sheet');
+  if (sheets.length) rememberNeeds(d, sheets);
+  const missing = needs.filter((n) => !request.content?.[`${n.kind}:${n.id}`]);
+  const fetching = performance.now();
+  const [{ content, problems }, copies] = (missing.length && triesLeft > 0)
+    ? await Promise.all([secretManager.resolve(missing, trust), resolveCopies(missing, d, trust)])
+    : [{ content: {}, problems: [] as ContentProblem[] }, {}];
+  steps.push(`fetched ${ms(fetching)}`);
+  if (!Object.keys(content).length && !Object.keys(copies).length) return explainProblems(result, problems); // nothing new: stop, and say why
+
+  request.content = { ...(request.content ?? {}), ...content, ...copies };
+  return runAgainForNeeds(request, d, trust, triesLeft - 1, steps);
+}
+
+function ms(since: number): string
+{
+  return `${Math.round(performance.now() - since)} ms`;
 }
 
 function formatUnknownError(error: unknown): string
@@ -283,10 +405,10 @@ export async function runScript(request: RunnerScriptExecutionRequest, options: 
       request.modules ??= await ensureModuleCatalog();
       request.moduleApiUrl ??= API_BASE_URL;
       request.authToken ??= (await authService.getToken()) ?? undefined;
+      if (publishedScript) request.publishedScript ??= publishedScript;
 
       // The viewer needs the full result (scenegraph/annotations/handles), so use run().
-      const worker = await getWorker();
-      return await worker.run(request);
+      return await runLocalWithContent(request);
     }
     catch (error)
     {

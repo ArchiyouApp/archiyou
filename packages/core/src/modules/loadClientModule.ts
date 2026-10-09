@@ -18,6 +18,9 @@ export interface LoadClientModuleOptions
     /** Base URL of the Archiyou backend. '' means root-relative. */
     moduleApiUrl: string;
     authToken?: string;
+    /** The published script the bundle is for (`user/scriptAndVersion`): lets the backend
+     *  serve it on the script author's entitlement. See ModuleRegistryOptions. */
+    publishedScript?: string;
     /** Injectable for tests — Node has no reliable blob-URL import. */
     fetchImpl?: typeof fetch;
     /** Injectable for tests: turn bundle source into its module namespace. */
@@ -77,11 +80,16 @@ async function importFromSource(source: string, manifest: AyModuleManifest): Pro
 export function clientBundleUrl(
     manifest: AyModuleManifest & { rev?: string },
     moduleApiUrl: string,
+    publishedScript?: string,
 ): string
 {
     const base = (moduleApiUrl ?? '').replace(/\/+$/, '');
     const path = `${base}/modules/${encodeURIComponent(manifest.id)}/${encodeURIComponent(manifest.version)}/bundle.js`;
-    return manifest.rev ? `${path}?rev=${encodeURIComponent(manifest.rev)}` : path;
+    const query = [
+        ...(manifest.rev ? [`rev=${encodeURIComponent(manifest.rev)}`] : []),
+        ...(publishedScript ? [`script=${encodeURIComponent(publishedScript)}`] : []),
+    ];
+    return query.length ? `${path}?${query.join('&')}` : path;
 }
 
 export async function loadClientModule(
@@ -91,7 +99,7 @@ export async function loadClientModule(
 {
     const doFetch = opts.fetchImpl ?? globalThis.fetch;
     const doImport = opts.importImpl ?? importFromSource;
-    const url = clientBundleUrl(manifest, opts.moduleApiUrl);
+    const url = clientBundleUrl(manifest, opts.moduleApiUrl, opts.publishedScript);
 
     let res: Response;
     try

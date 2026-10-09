@@ -83,6 +83,48 @@ Note that the CSP must allow `'unsafe-eval'`, because that is how the Runner
 works. Session tokens are JWTs held in `localStorage`, so any XSS that does get
 through can read one.
 
+A published configurator's gated module bundles are served on its **author's**
+entitlement (`GET /modules/:id/:version/bundle.js?script=user/name:version`),
+because a visitor may be signed out: when that published version declares the
+module with a literal `$module('id')` and the author is entitled. Anyone who can
+open such a configurator can therefore read those bundles.
+
+### Keys in the browser
+
+The editor's *Keys* menu stores the user's own credentials — a Google service
+account, AI provider keys, API keys — in the browser
+(`apps/editor/src/services/secret-manager.ts`). What holds:
+
+- **Never in the script worker.** Keys live in `localStorage` (or
+  `sessionStorage`, "this tab only") on the main thread, which a worker cannot
+  read, and are used there. A run receives content a key fetched — a private
+  Google Sheet's bytes — never the key or a token. Nothing is persisted in
+  IndexedDB or the Cache API, which a worker can read.
+- **Own scripts only.** Keys fetch content only for the signed-in user's own
+  script (or an unsaved draft); for anyone else's — a configurator, a shared
+  script — only public content is fetched. The worker is replaced when a run's
+  ownership differs from the previous one's, so modules cannot carry what one
+  run was given into another.
+- **Pinned hosts.** Each key is only ever sent to the hosts it is for (a
+  service account: Google's token endpoint and APIs).
+- **Writes are described, and made once.** A run reads with a read-only token.
+  The one write a script can ask for — a copy of a Google Sheet with its inputs
+  written in (cloudcalc's `cloudcopy()`) — ends the run as a need carrying a
+  description, is checked in the editor, and is made with a write token, for
+  the user's own script only; the script runs again and gets the copy's url. A script copies a
+  sheet once (`apps/editor/src/services/cloud-copies.ts`): not again for the
+  same inputs, and not for other inputs unless it passes `force`. The copy goes
+  next to the sheet, values are written as values, not formulas, and it is
+  shared beyond its folder only when the script asks. Copies carry private
+  Drive app properties (hashes of the script and inputs) so earlier copies can
+  be found; only the key's own Google project can read them.
+- **Not sent to Archiyou.** Keys are not stored on the server.
+
+What does not hold: a key in `localStorage` is readable by an XSS on this origin,
+like the session token — and a service-account key lives longer than a session.
+Use a service account just for Archiyou, share only what it needs (as Viewer),
+use "this tab only" on shared machines, and replace a key you suspect.
+
 ### Sessions
 
 Tokens are stateless JWTs with a 7-day lifetime and **no revocation list**. A

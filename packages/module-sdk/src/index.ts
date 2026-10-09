@@ -11,6 +11,13 @@ export type {
     AyModuleFactory,
     AyServerModuleMethod,
     AyServerModule,
+    AyContentKind,
+    AyContentItem,
+    AyContentNeed,
+    AyContentNeeds,
+    AyModuleRunReport,
+    AyGoogleSheetCopy,
+    AyGoogleSheetCopyResult,
 } from './types';
 
-export { defineModule, defineServerModule } from './types';
+export { defineModule, defineServerModule, contentKey, ContentNeededError, contentNeedsOf } from './types';

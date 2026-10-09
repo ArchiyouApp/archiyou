@@ -531,7 +531,7 @@ export class Table
      * of a workbook generated from the rows.
      *
      * This is how a module hands the script a spreadsheet it produced (the
-     * cloudcalc module's `wb.fill(input).export(name)`, for instance) without
+     * cloudcalc module's `wb.xlsx(name)`, for instance) without
      * the output machinery having to know about it. Accepts the bytes, or a
      * base64 string as they arrive over a JSON hop.
      */

@@ -22,7 +22,17 @@ const SECRET = 'test-secret-for-module-gating';
 let app: FastifyInstance;
 let userService: typeof import('../../src/services/UserService').userService;
 let moduleHost: typeof import('../../src/modules/ModuleHost').moduleHost;
+let scriptStore: typeof import('../../src/services/ScriptStore').scriptStore;
 let modulesDir: string;
+
+/** Publish a configurator whose code is `code`; returns `author/name:version` as a bundle URL names it. */
+async function publishScript(author: string, name: string, code: string): Promise<string> {
+  const fileId = (await scriptStore.create(author, { name, code })).fileId as string;
+  await scriptStore.publish(author, fileId, {
+    name, version: '1.0.0', code, published: { public: true, fulfillments: [] },
+  } as unknown as Record<string, unknown>);
+  return `${author}/${name}:1.0.0`;
+}
 
 /** Write a module into the fixture directory the way a deployment would. */
 function installModule(
@@ -80,6 +90,7 @@ beforeAll(async () => {
 
   ({ userService } = await import('../../src/services/UserService'));
   ({ moduleHost } = await import('../../src/modules/ModuleHost'));
+  ({ scriptStore } = await import('../../src/services/ScriptStore'));
 
   modulesDir = mkdtempSync(join(tmpdir(), 'ay-modulesdir-'));
   installModule('example');
@@ -275,6 +286,42 @@ describe('GET /modules/:id/:version/bundle.js — client bundles', () => {
     // would defeat the entire point of a server-side module.
     expect(res.statusCode).toBe(404);
     expect(res.body).not.toContain('export default');
+  });
+
+  describe('for a published configurator, on its author\'s entitlement', () => {
+    let declares: string;
+    let doesNot: string;
+    let byNobody: string;
+    beforeAll(async () => {
+      declares = await publishScript('owner', 'uses-example', "cc = $module('example')\nbox(10)");
+      doesNot = await publishScript('owner', 'no-modules', 'box(10)');
+      byNobody = await publishScript('nobody', 'nobody-example', "$module('example')");
+    });
+    const bundleFor = (script: string, headers = {}) =>
+      app.inject({ method: 'GET', url: `${URL_OK}?script=${encodeURIComponent(script)}`, headers });
+
+    it('serves a signed-out visitor when the script declares the module and its author is entitled', async () => {
+      const res = await bundleFor(declares);
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('export default');
+    });
+
+    it('refuses when the script does not declare the module, or does not exist', async () => {
+      expect((await bundleFor(doesNot)).statusCode).toBe(401);
+      expect((await bundleFor('owner/nope:1.0.0')).statusCode).toBe(401);
+      expect((await bundleFor('not a script')).statusCode).toBe(401);
+    });
+
+    it('refuses when the author is not entitled — the visitor gets what the author has, no more', async () => {
+      expect((await bundleFor(byNobody)).statusCode).toBe(401);
+      await userService.revokeModules('owner', ['example']);
+      expect((await bundleFor(declares)).statusCode).toBe(401);
+    });
+
+    it('serves a signed-in visitor without the module the same way', async () => {
+      expect((await bundleFor(declares, auth('nobody'))).statusCode).toBe(200);
+      expect((await app.inject({ method: 'GET', url: URL_OK, headers: auth('nobody') })).statusCode).toBe(403);
+    });
   });
 
   it('serves the client wrapper of a hybrid module, never its server code', async () => {

@@ -35,4 +35,7 @@ export type {
     AyModuleFactoryContext,
     AyServerModuleMethod,
     AyServerModule,
+    AyModuleRunReport,
+    AyGoogleSheetCopy,
+    AyGoogleSheetCopyResult,
 } from './sdkTypes';

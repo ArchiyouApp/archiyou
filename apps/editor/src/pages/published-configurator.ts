@@ -33,7 +33,7 @@ import { applyLocaleFromQuery, detectPreferredLocale } from '../state/locale';
 import { setChromeLocale } from '../i18n/locale-config';
 import { allLocales } from '../i18n/locale-codes';
 import { fetchPublishedScriptVersion } from '../services/publishing.js';
-import { setServerExecutionTarget, type ServerExecutionTarget } from '../services/execution-service.js';
+import { setServerExecutionTarget, setPublishedScript, type ServerExecutionTarget } from '../services/execution-service.js';
 
 @localized()
 @customElement('page-published-configurator')
@@ -65,6 +65,7 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
     // running the one being edited. <layout-main> clears it too, so neither teardown
     // order can leave a stale one behind.
     setServerExecutionTarget(null);
+    setPublishedScript(null);
   }
 
   private async _load()
@@ -95,6 +96,8 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
       // is a no-op once a server target is set. Getting here late would download the
       // kernel anyway and waste the whole point.
       setServerExecutionTarget(this._serverTarget(user, scriptAndVersion, data));
+      // A visitor may be signed out: module bundles come on the author's entitlement.
+      setPublishedScript(`${user}/${scriptAndVersion}`);
       // ?WIDTH=1200&SHELVES=4 — a shared link opens on that exact model. Applied
       // after the script is loaded (its params are what type the raw strings) and
       // before <page-configurator> mounts, so the first run is already the right one.

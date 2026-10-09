@@ -97,10 +97,10 @@ export class ModuleWorkerPool {
    *
    * NOT the API's environment: that holds the JWT signing key, the mail
    * credentials and the S3 keys, and module code has no business reading them.
-   * But a module does need its own configuration — cloudcalc needs the sheets it
-   * may open, and its Google service-account key.
+   * But a module does need its own configuration — the endpoint and key of the
+   * service it calls, say.
    *
-   * So the rule is a namespace: a module with id `cloudcalc` sees `CLOUDCALC_*`,
+   * So the rule is a namespace: a module with id `pricing` sees `PRICING_*`,
    * and every module sees `MODULE_*` for anything shared. An operator can grant
    * config by naming the variable, and cannot leak a secret by accident.
    */

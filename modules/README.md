@@ -48,7 +48,7 @@ print(report.utilisation)
 make the dependency read as a binding:
 
 ```js
-fem = $module('cloudcalc')
+fem = $module('fem')
 
 // a server module — the call crosses the network, so await it
 beam   = box(200, 40, 40)
@@ -414,6 +414,47 @@ read `pv.site` with no `await` anywhere.)
 Script parameters are not on `ay`; they live on the scope. Reach them with
 `ay.runner.getActiveScope().$PARAMS` (that is how `optimize` builds its search space).
 
+### Content a module needs: `warm({ content })`
+
+Some content a module cannot fetch itself, because fetching it takes a key — a private Google
+Sheet — and keys never enter the script worker (foreign scripts run there too). The app fetches such
+content **before** the run and hands it to `warm()` as `ctx.content`: `AyContentItem`s keyed by
+`contentKey(kind, id)`, each with the bytes, a `version` that changes when the content does, and how
+it was fetched (`via`, `keyName` — a name, never a value). Public content arrives the same way.
+
+When a run asks for something it was not given, throw a `ContentNeededError` (from
+`@archiyou/module-sdk`) carrying `{ content: [{ kind, id, key?, reason }] }`. The runner returns it as
+`result.needs`; the app fetches it (with the user's keys, for the user's own script only) and runs
+the script again. Serve only what THIS run was handed — keep what you built from content across runs
+by its `version`, but do not open something from memory that the current run's `ctx.content` lacks.
+`cloudcalc` is the worked example (`src/books.ts`). Two kinds so far:
+
+- `google-sheet`: a sheet's `.xlsx` export, in the item's `bytes`.
+- `google-sheet-copy`: a copy the app makes with the user's key — a module cannot write to their
+  Drive. The need carries the copy (`copy: AyGoogleSheetCopy`: the sheet, a title, the cell writes,
+  `share`, `force`) and an id that hashes it; the next run's item carries the answer
+  (`copy: AyGoogleSheetCopyResult`: `status`, `url`, `title`, `messages`). The editor makes a copy
+  once per script and values, for other values only with `force`, and hands the answers to the
+  script's later runs (`apps/editor/src/services/cloud-copies.ts`). cloudcalc's `cloudcopy()`.
+
+### After the run: `report()`
+
+Once a run succeeded, the runner asks each client module for `report()` — `{ used? }`,
+`AyModuleRunReport` — and returns it as `result.used`: the content keys (`contentKey(kind, id)`) the
+run actually read, out of what `warm()` was handed. The editor shows which of the user's keys a run
+read with from this — what a run is handed is not that, since the app also hands it what earlier
+runs needed. Keep the state for it per run.
+
+### Autocomplete for the objects a module returns
+
+`completions` covers the members of the module's global (`cloudcalc.open`). For what those return,
+declare `types` — `{ Workbook: [...], Sheet: [...] }` — and give a member `returnsType: 'Workbook'`.
+The editor then follows assignments and chains: after `wb = cloudcalc.open(url)`, `wb.` lists the
+Workbook entries, and `wb.sheet('Calc').` the Sheet ones. An entry may carry `params` (options as
+`options.title`), `returns` and `example`; the editor shows them in the same info box as the core
+API's. `cloudcalc` generates all of this from its TSDoc (`scripts/build-completions.ts`) — a pattern
+worth copying, so the docs a script author sees are the code's own.
+
 ```js
 // in a user script — no await needed
 result = fem.analyse(myBeam, { load: 500 })
@@ -487,7 +528,7 @@ export default defineModule(({ server }) => ({
 ```
 
 ```js
-wb = cloudcalc.open('https://docs.google.com/spreadsheets/d/…')
+wb = sheets.open('https://docs.google.com/spreadsheets/d/…')
 out = wb.compute({ width: 300 })
 ```
 

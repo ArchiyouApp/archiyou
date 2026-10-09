@@ -42,6 +42,14 @@ describe('clientBundleUrl', () =>
         expect(clientBundleUrl({ ...manifest, rev: 'k3f9' }, ''))
             .toBe('/modules/example/2.3.4/bundle.js?rev=k3f9')
     })
+
+    it('names the published script, so a signed-out visitor gets it on the author\'s entitlement', () =>
+    {
+        expect(clientBundleUrl(manifest, '', 'mark/kozijn:1.2.0'))
+            .toBe('/modules/example/2.3.4/bundle.js?script=mark%2Fkozijn%3A1.2.0')
+        expect(clientBundleUrl({ ...manifest, rev: 'k3f9' }, '', 'mark/kozijn'))
+            .toBe('/modules/example/2.3.4/bundle.js?rev=k3f9&script=mark%2Fkozijn')
+    })
 })
 
 describe('loadClientModule', () =>

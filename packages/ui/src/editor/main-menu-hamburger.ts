@@ -127,6 +127,10 @@ export class MainMenuHamburger extends SignalWatcher(LitElement)
           <wa-icon slot="icon" library="lucide" name="puzzle"></wa-icon>
           ${msg('Modules')}
         </wa-dropdown-item>
+        <wa-dropdown-item value="keys">
+          <wa-icon slot="icon" library="lucide" name="key-round"></wa-icon>
+          ${msg('Keys')}
+        </wa-dropdown-item>
 
         <wa-divider></wa-divider>
 

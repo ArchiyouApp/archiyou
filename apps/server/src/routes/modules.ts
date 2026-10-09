@@ -24,8 +24,12 @@ import { config } from '../config';
 import { moduleHost } from '../modules/ModuleHost';
 import { ModuleCallError } from '../modules/ModuleWorkerPool';
 import { ModuleCallSchema } from '../modules/manifestSchema';
+import semver from 'semver';
+
 import { userService } from '../services/UserService';
+import { scriptStore } from '../services/ScriptStore';
 import { parse } from '../validate';
+import { parseScriptAndVersion } from './scriptUrl';
 
 /** Resolve the caller's handle if a valid token is present, else null.
  *  Mirrors optionalUser() in routes/library.ts. */
@@ -36,6 +40,21 @@ async function optionalUser(request: FastifyRequest): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** Whether a published script lets its visitors load module `id`: the version exists, its
+ *  code declares the module with a literal `$module('id')` (the same declaration the runner
+ *  loads modules by), and its author is entitled to it. `script` is `user/name[:version]`. */
+async function publishedScriptEntitles(script: string | undefined, id: string): Promise<boolean> {
+  if (typeof script !== 'string' || !script.includes('/') || script.length > 300) return false;
+  const slash = script.indexOf('/');
+  const user = script.slice(0, slash);
+  const { scriptName, version } = parseScriptAndVersion(script.slice(slash + 1));
+  const validVersion = version ? semver.valid(semver.coerce(version)) ?? undefined : undefined;
+  const published = await scriptStore.getPublished(user, scriptName, validVersion);
+  if (!published?.author || typeof published.code !== 'string') return false;
+  const declares = new RegExp(`\\$module\\(\\s*(['"\`])${id.replace(/[^A-Za-z0-9_-]/g, '')}\\1\\s*\\)`).test(published.code);
+  return declares && await userService.hasModule(published.author, id);
 }
 
 /** Ceiling on a served DOCS.md. Generous for documentation, small enough that an
@@ -118,28 +137,41 @@ export async function registerModuleRoutes(fastify: FastifyInstance): Promise<vo
    * This route IS the enforcement for client-runtime modules: the browser cannot
    * obtain the code any other way, so a 403 here means a user without the
    * entitlement never receives it.
+   *
+   * Whose entitlement: the caller's — or, for a published configurator, its
+   * AUTHOR's. A configurator's visitor may be signed out and has no entitlement of
+   * their own; the bundle request then names the script (`?script=user/name:version`)
+   * and is served when that published version declares the module in its code and
+   * its author is entitled. Server-side runs already take module entitlement from
+   * the author (routes/execute.ts); this is the same rule for the browser. It does
+   * mean a gated module used by any published configurator can be read by anyone
+   * who opens that configurator (plans/PROTECTED_CONTENT.md §12.1).
    */
   fastify.get(
     '/modules/:id/:version/bundle.js',
-    { preHandler: fastify.authenticate },
     async (
-      request: FastifyRequest<{ Params: { id: string; version: string } }>,
+      request: FastifyRequest<{ Params: { id: string; version: string }; Querystring: { script?: string } }>,
       reply: FastifyReply,
     ) => {
       const { id, version } = request.params;
-      const username = request.user.sub;
+      const username = await optionalUser(request);
 
       const manifest = moduleHost.get(id);
       if (!manifest) return reply.code(404).send({ success: false, error: `Unknown module '${id}'` });
 
       // A public module skips the entitlement check entirely — see AyModuleManifest.public.
       // Gating stays the default; this is the opt-out an open-source module declares.
-      if (!manifest.public && !(await userService.hasModule(username, id))) {
-        return reply.code(403).send({
-          success: false,
-          error: `Module '${id}' is not available on your account`,
-          code: 'module_not_entitled',
-        });
+      const entitled = manifest.public
+        || (username !== null && await userService.hasModule(username, id))
+        || await publishedScriptEntitles(request.query.script, id);
+      if (!entitled) {
+        return username === null
+          ? reply.code(401).send({ success: false, error: 'Unauthorized' })
+          : reply.code(403).send({
+            success: false,
+            error: `Module '${id}' is not available on your account`,
+            code: 'module_not_entitled',
+          });
       }
 
       // Path comes from ModuleHost's validated map, never from the URL — see

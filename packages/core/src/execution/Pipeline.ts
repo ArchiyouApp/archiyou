@@ -11,8 +11,8 @@
  *          // User defined pipeline function
  *          iso = mainScope.someShape.iso(); // Make some isometric view
  *          
- *          // e.g. push the model's numbers into a spreadsheet copy (cloudcalc module):
- *          //   $module('cloudcalc'); wb = cloudcalc.open(url); wb.copy({ width: mainScope.WIDTH }, { title: 'Offer' })
+ *          // e.g. push the model's numbers into a spreadsheet (cloudcalc module):
+ *          //   $module('cloudcalc'); wb = cloudcalc.open(url); wb.compute({ width: mainScope.WIDTH }); wb.xlsx('offer')
  *          // Anything asynchronous inside a pipeline still needs `await` — see NOTES below.
  * 
  *          // RETURN: after pipeline is done, results are taken from pipeline scope

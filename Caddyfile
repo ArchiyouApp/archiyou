@@ -81,8 +81,16 @@ next.archiyou.com {
 		#   fonts.googleapis/gstatic  webfonts in index.html
 		#   cdn.jsdelivr.net          lucide icon sprites (src/icons.ts)
 		#   www.gstatic.com           Draco decoder (packages/ui model-viewer.ts)
+		#   docs.google.com, *.googleusercontent.com, oauth2.googleapis.com,
+		#   www.googleapis.com        Google Sheets a script reads, fetched by the
+		#                  editor's main thread before the run — public ones from the
+		#                  export URL (which redirects to googleusercontent), private
+		#                  ones through the Drive API with the user's own service
+		#                  account (apps/editor/src/services/secret-manager.ts)
+		#   sheets.googleapis.com     writing a script's inputs into a copy of a sheet the
+		#                  user made from the editor (cloudcalc's copy(), same file)
 		# Vendoring those three CDNs would let script-src/font-src drop to 'self'.
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://www.gstatic.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' blob: data: https://cdn.jsdelivr.net https://www.gstatic.com; frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://www.gstatic.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' blob: data: https://cdn.jsdelivr.net https://www.gstatic.com https://docs.google.com https://*.googleusercontent.com https://oauth2.googleapis.com https://www.googleapis.com https://sheets.googleapis.com; frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
 	}
 }
 

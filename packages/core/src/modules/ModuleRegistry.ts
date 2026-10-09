@@ -66,6 +66,11 @@ export interface ModuleRegistryOptions
     moduleApiUrl?: string;
     /** Bearer token of the signed-in user, needed for gated bundles and calls. */
     authToken?: string;
+    /** The published script this run is of, as `user/scriptAndVersion`. A configurator's
+     *  visitor may be signed out, and has no entitlement of their own; the backend then
+     *  serves a gated bundle on the script AUTHOR's entitlement — the rule server-side
+     *  runs already follow — when the script declares the module. */
+    publishedScript?: string;
     /** Core version the `engine` range is checked against. Overridable for tests. */
     coreVersion?: string;
     fetchImpl?: typeof fetch;
@@ -329,6 +334,7 @@ export class ModuleRegistry
                     ?? ((m: AyModuleCatalogEntry) => loadClientModule(m, {
                         moduleApiUrl: this._opts.moduleApiUrl ?? '',
                         authToken: this._opts.authToken,
+                        publishedScript: this._opts.publishedScript,
                         fetchImpl: this._opts.fetchImpl,
                         factoryContext,
                     }));
@@ -499,6 +505,30 @@ export class ModuleRegistry
     needsRecipes(): boolean
     {
         return Object.values(this._loaded).some(e => e.recipes === true);
+    }
+
+    /** What the client modules of this run report after it (AyModule.report): the
+     *  content they read. A module whose report throws is logged and left out: a
+     *  report is not the run. */
+    report(): { used: Array<string> }
+    {
+        const reports = Object.values(this._loaded).flatMap((entry) =>
+        {
+            const mod = this._globals[entry.global] as AyModule;
+            if(!this._isInstance(mod) || typeof mod.report !== 'function') return [];
+            try
+            {
+                return [mod.report() ?? {}];
+            }
+            catch(e)
+            {
+                console.warn(`ModuleRegistry: module '${entry.id}' failed to report on the run: ${(e as Error)?.message}`);
+                return [];
+            }
+        });
+        return {
+            used: [...new Set(reports.flatMap((report) => (report.used ?? []).filter((k): k is string => typeof k === 'string')))],
+        };
     }
 
     /** The module loaded for this run that builds `format` (manifest `outputs`),

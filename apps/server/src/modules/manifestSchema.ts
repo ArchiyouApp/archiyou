@@ -11,6 +11,9 @@
 
 import { Type, type Static } from 'typebox';
 
+/** A name in the manifest's `types`, and what `returnsType` refers to. */
+const TypeNameSchema = Type.String({ minLength: 1, maxLength: 64, pattern: '^[A-Za-z_][A-Za-z0-9_]*$' });
+
 export const ModuleCompletionSchema = Type.Object({
   label: Type.String({ minLength: 1 }),
   detail: Type.Optional(Type.String()),
@@ -23,6 +26,10 @@ export const ModuleCompletionSchema = Type.Object({
       Type.Literal('class'),
     ]),
   ),
+  params: Type.Optional(Type.Array(Type.Object({ name: Type.String({ minLength: 1, maxLength: 200 }), info: Type.String({ maxLength: 2000 }) }), { maxItems: 30 })),
+  returns: Type.Optional(Type.String({ maxLength: 2000 })),
+  example: Type.Optional(Type.String({ maxLength: 4000 })),
+  returnsType: Type.Optional(TypeNameSchema),
 });
 
 /** A model output format a client module builds. See AyModuleOutput. */
@@ -48,6 +55,8 @@ export const ModuleManifestSchema = Type.Object({
   description: Type.Optional(Type.String({ maxLength: 2000 })),
   docsUrl: Type.Optional(Type.String({ maxLength: 500 })),
   completions: Type.Optional(Type.Array(ModuleCompletionSchema, { maxItems: 500 })),
+  /** Completions for the objects the module returns, by type name. See AyModuleManifest.types. */
+  types: Type.Optional(Type.Record(TypeNameSchema, Type.Array(ModuleCompletionSchema, { maxItems: 500 }), { maxProperties: 50, additionalProperties: false })),
   /** Available without an entitlement. See AyModuleManifest.public. */
   public: Type.Optional(Type.Boolean()),
   /** A server module that also ships a client wrapper bundle. See AyModuleManifest.client. */

@@ -201,6 +201,23 @@ topLevelCompletions.push(
  */
 const moduleGlobalCompletions: Completion[] = [];
 const moduleMemberMap = new Map<string, Completion[]>();
+/** Members of the objects modules return, by type key `<global>:<Type>` (manifest `types`). */
+const moduleTypeMembers = new Map<string, Completion[]>();
+/** What a member gives, when it is a module type: `cloudcalc.open` → `cloudcalc:Workbook`,
+ *  `cloudcalc:Workbook.sheet` → `cloudcalc:Sheet` (manifest `returnsType`). */
+const moduleReturnTypes = new Map<string, string>();
+
+/** One completion entry of a module, as the SDK's AyModuleCompletion has it. */
+interface ModuleCompletionEntry {
+  label: string;
+  detail?: string;
+  info?: string;
+  type?: string;
+  params?: Array<{ name: string; info: string }>;
+  returns?: string;
+  example?: string;
+  returnsType?: string;
+}
 
 /** Minimal shape of a catalog entry — declared structurally so this package does
  *  not need to depend on the module SDK just for autocomplete. */
@@ -209,7 +226,18 @@ interface ModuleCompletionSource {
   name?: string;
   description?: string;
   entitled?: boolean;
-  completions?: Array<{ label: string; detail?: string; info?: string; type?: string }>;
+  completions?: Array<ModuleCompletionEntry>;
+  types?: Record<string, Array<ModuleCompletionEntry>>;
+}
+
+/** A module's entry as a completion, with the same info box as the core API's. */
+function moduleCompletion(c: ModuleCompletionEntry): Completion
+{
+  const property = c.type === 'property';
+  return toCompletion(
+    { label: c.label, detail: c.detail ?? '', info: c.info, params: c.params, returns: c.returns, example: c.example, type: property ? 'property' : 'function' },
+    property ? 'property' : 'method',
+  );
 }
 
 /** Replace the registered module completions. Called by the editor whenever the
@@ -218,6 +246,8 @@ export function registerModuleCompletions(modules: ReadonlyArray<ModuleCompletio
 {
   moduleGlobalCompletions.length = 0;
   moduleMemberMap.clear();
+  moduleTypeMembers.clear();
+  moduleReturnTypes.clear();
 
   for (const mod of modules)
   {
@@ -230,19 +260,58 @@ export function registerModuleCompletions(modules: ReadonlyArray<ModuleCompletio
       info: mod.description,
     });
 
+    const typeKey = (name: string) => `${mod.global}:${name}`;
+    const noteReturns = (owner: string, entries: ModuleCompletionEntry[]) => entries
+      .filter(c => c.returnsType)
+      .forEach(c => moduleReturnTypes.set(`${owner}.${c.label}`, typeKey(c.returnsType!)));
+
     if (mod.completions?.length)
     {
-      moduleMemberMap.set(
-        mod.global,
-        mod.completions.map(c => ({
-          label: c.label,
-          type: (c.type === 'property' ? 'property' : 'method') as Completion['type'],
-          detail: c.detail,
-          info: c.info,
-        })),
-      );
+      moduleMemberMap.set(mod.global, mod.completions.map(moduleCompletion));
+      noteReturns(mod.global, mod.completions);
     }
+    Object.entries(mod.types ?? {}).forEach(([name, members]) =>
+    {
+      moduleTypeMembers.set(typeKey(name), (members ?? []).map(moduleCompletion));
+      noteReturns(typeKey(name), members ?? []);
+    });
   }
+}
+
+/** Follow `calls` from a module global or a module type to the type they end on. */
+function walkModuleType(start: string, calls: string[]): string | null
+{
+  const end = calls.reduce<string | null>((type, call) => (type ? moduleReturnTypes.get(`${type}.${call}`) ?? null : null), start);
+  return end && moduleTypeMembers.has(end) ? end : null;
+}
+
+/** Variables holding a module object, in document order: `wb = cloudcalc.open(url)` →
+ *  `cloudcalc:Workbook`, then `tab = wb.sheet('Calc')` → `cloudcalc:Sheet`. */
+function buildModuleScopeMap(docText: string): Map<string, string>
+{
+  const map = new Map<string, string>();
+  const re = /(?:^|[;{}\n])\s*(?:(?:let|const|var)\s+)?([A-Za-z_$][\w$]*)\s*=(?![=>])\s*([^;\n]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(docText)) !== null)
+  {
+    // A trailing comment after the call, not the `//` of a URL inside it
+    const chain = chainBackwards(m[2].replace(/\)\s*\/\/.*$/, ')').trim());
+    const start = chain && (moduleMemberMap.has(chain.root) ? chain.root : map.get(chain.root));
+    const type = chain && start ? walkModuleType(start, chain.calls) : null;
+    if (type) map.set(m[1], type);
+    else map.delete(m[1]);
+  }
+  return map;
+}
+
+/** The module type the expression before a `.` holds — `cloudcalc.open(url)`, a variable
+ *  assigned one, `wb.sheet('Calc')` — or null. */
+export function resolveModuleType(textBefore: string, docText: string): string | null
+{
+  const chain = chainBackwards(textBefore);
+  if (!chain) return null;
+  const start = moduleMemberMap.has(chain.root) ? chain.root : buildModuleScopeMap(docText).get(chain.root);
+  return start ? walkModuleType(start, chain.calls) : null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -520,6 +589,18 @@ export function archiyouCompletions(
       return {
         from: memberMatch.from + 1,
         options: moduleMembers,
+        validFor: /^\w*$/,
+      };
+    }
+
+    // `wb.` where `wb = cloudcalc.open(url)`, `cloudcalc.open(url).`, `wb.sheet('x').` →
+    // the members of the module type it holds (manifest `types`).
+    const moduleType = resolveModuleType(textBefore, docText);
+    if (moduleType)
+    {
+      return {
+        from: memberMatch.from + 1,
+        options: moduleTypeMembers.get(moduleType) ?? [],
         validFor: /^\w*$/,
       };
     }

@@ -51,6 +51,17 @@ export interface AyModuleCompletion {
     /** Longer description shown in the completion's info panel. */
     info?: string;
     type?: 'method' | 'property' | 'function' | 'class';
+    /** Documented parameters, shown one per line in the info panel. Options of an
+     *  object parameter are named with a dot: `options.title`. */
+    params?: Array<{ name: string; info: string }>;
+    /** What it returns, in words — shown as "Returns …". */
+    returns?: string;
+    /** Example code, shown as code. */
+    example?: string;
+    /** The name of the type in AyModuleManifest.types that it returns, so the
+     *  editor completes what follows: `wb = mod.open(url)` → `wb.` lists the
+     *  members of that type. */
+    returnsType?: string;
 }
 
 /** An output format a client module builds, requested like a built-in one:
@@ -99,6 +110,9 @@ export interface AyModuleManifest {
     docsUrl?: string;
     /** Optional autocomplete entries, merged into the editor for entitled users. */
     completions?: Array<AyModuleCompletion>;
+    /** Autocomplete for the objects the module's methods return, by type name —
+     *  `{ Workbook: [...] }`. A completion's `returnsType` names one of these. */
+    types?: Record<string, Array<AyModuleCompletion>>;
     /**
      * Available to everyone, with no entitlement.
      *
@@ -239,6 +253,145 @@ export interface AyModuleWarmContext {
      *  Undefined when the run has none, in which case a module that needs the
      *  network should skip its warm-up rather than attempt a direct fetch. */
     assetProxyUrl?: string;
+    /** The content the app fetched for this run, keyed by contentKey(kind, id).
+     *  Absent when there is none. See AyContentItem. */
+    content?: Record<string, AyContentItem>;
+}
+
+//// CONTENT ////
+
+/** A kind of content a module can ask the app for. 'google-sheet' is a Google
+ *  Sheet as an .xlsx export. 'google-sheet-copy' is a copy of one in Google Drive
+ *  that the app makes with the user's key (see AyGoogleSheetCopy): the run asks for
+ *  it, the app makes it, and the next run gets its address. */
+export type AyContentKind = 'google-sheet' | 'google-sheet-copy';
+
+/** Content the app fetched BEFORE the run and hands to modules through warm().
+ *
+ *  A script runs synchronously, and the script worker never holds a key — so it
+ *  cannot fetch protected content itself, and it cannot wait for the app to do it
+ *  mid-run. The app fetches what a run needs up front: anonymously when the
+ *  content is public, with one of the user's own keys when it is the user's own
+ *  script. A module reads the bytes; it never sees how they were obtained. */
+export interface AyContentItem {
+    kind: AyContentKind;
+    /** Id within the kind — for 'google-sheet', the spreadsheet id; for
+     *  'google-sheet-copy', the id of the need it answers. */
+    id: string;
+    /** The content. Empty for a 'google-sheet-copy': its answer is `copy`. */
+    bytes: ArrayBuffer;
+    /** Changes whenever the content does (a hash or a modification time), so a
+     *  module may keep what it built from the bytes until it changes. */
+    version: string;
+    /** The document's title, when the source reports one. */
+    title?: string;
+    /** How the app got it: anonymously, or with one of the user's keys. */
+    via: 'public' | 'key';
+    /** Which key, by name — never a value. Set when `via` is 'key'. */
+    keyName?: string;
+    /** For a 'google-sheet-copy': what came of it. */
+    copy?: AyGoogleSheetCopyResult;
+}
+
+/** Content a run needed and did not have. A module throws a ContentNeededError
+ *  carrying these; the runner returns them as `result.needs`, the app fetches
+ *  them, and runs the script again. */
+export interface AyContentNeed {
+    kind: AyContentKind;
+    id: string;
+    /** The key the script named for it (`{ key: 'urbuild' }`), if any. A name. */
+    key?: string;
+    /** 'open': the script asked for it. 'import': content it opened refers to it. */
+    reason?: 'open' | 'import';
+    /** For a 'google-sheet-copy': the copy to make. */
+    copy?: AyGoogleSheetCopy;
+}
+
+export interface AyContentNeeds {
+    content?: AyContentNeed[];
+}
+
+/** The key of an item in AyModuleWarmContext.content. */
+export function contentKey(kind: AyContentKind, id: string): string {
+    return `${kind}:${id}`;
+}
+
+/** Thrown by a module when the run lacks content it needs. The runner recognises
+ *  it by its `needs` (not by class, so a module's own copy of this class works). */
+export class ContentNeededError extends Error {
+    readonly needs: AyContentNeeds;
+
+    constructor(message: string, needs: AyContentNeeds) {
+        super(message);
+        this.name = 'ContentNeededError';
+        this.needs = needs;
+    }
+}
+
+/** The needs an error carries, or null. Duck-typed: a module bundles its own copy
+ *  of ContentNeededError, so `instanceof` would not match across bundles. */
+export function contentNeedsOf(e: unknown): AyContentNeeds | null {
+    const content = (e as any)?.needs?.content;
+    return Array.isArray(content) && content.length ? { content } : null;
+}
+
+//// AFTER A RUN ////
+
+/** What a module tells the app about a run, once the script ran.
+ *
+ *  The app uses `used` to show which of the user's keys a run read with — the
+ *  content it was HANDED is not that: the app hands a run what earlier runs of the
+ *  script needed. */
+export interface AyModuleRunReport {
+    /** Keys of the content (contentKey(kind, id)) this run read, out of what
+     *  warm() was handed. */
+    used?: string[];
+}
+
+//// COPIES ////
+
+/** Copy a Google Sheet in Google Drive, next to it, and write values into the copy.
+ *
+ *  A script runs synchronously and its worker holds no keys, so a module cannot
+ *  write to the user's Drive itself: it asks for the copy as content it needs
+ *  (kind 'google-sheet-copy'), the app makes it with the user's key, and runs the
+ *  script again with the answer. The app copies a sheet once per script: not again
+ *  for the same values, and not for other values either unless `force` is set. */
+export interface AyGoogleSheetCopy {
+    kind: 'google-sheet-copy';
+    /** The spreadsheet to copy. */
+    id: string;
+    /** The key the script named for it (`{ key: 'urbuild' }`), if any. A name. */
+    key?: string;
+    /** Title of the copy. Without one, the app names it `<sourceTitle>_COPY_<date and time>`. */
+    title?: string;
+    /** Title of the sheet copied, for that default name. */
+    sourceTitle?: string;
+    /** Where the copy goes: a folder's URL or id, or a path relative to the sheet's folder
+     *  (`'Offers'`, `'Offers/2026'`; made when missing). Default: next to the sheet. */
+    folder?: string;
+    /** What to write into the copy: A1 ranges with their sheet (`'Inputs'!B2:B4`)
+     *  and their values, row by row. Written as values, never as formulas. */
+    writes: Array<{ range: string; values: unknown[][] }>;
+    /** Give anyone with the link this access to the copy. Off unless the script asks. */
+    share?: 'reader' | 'writer';
+    /** Copy even when this script copied the sheet before with other values. */
+    force?: boolean;
+}
+
+/** What came of a copy a run asked for.
+ *  - 'copied': made now;
+ *  - 'existing': this script copied the sheet with the same values before — that copy;
+ *  - 'blocked': it copied the sheet with other values before, and `force` was not set —
+ *    no copy, `url` is the earlier one;
+ *  - 'failed': no copy; `messages` say why and what to do. */
+export interface AyGoogleSheetCopyResult {
+    status: 'copied' | 'existing' | 'blocked' | 'failed';
+    /** Address of the copy, or of the earlier one when blocked. Null when failed. */
+    url: string | null;
+    title: string;
+    /** For the user, in the order they happened. Empty when there is nothing to say. */
+    messages: string[];
 }
 
 /** A live client module instance.
@@ -287,6 +440,9 @@ export interface AyModule {
      *  script ran. Returns the file (text or bytes), or null when the model has
      *  nothing to write in this format. */
     output?(format: string, ctx: AyModuleOutputContext): string | Uint8Array | null | Promise<string | Uint8Array | null>;
+    /** What this run read and offers, asked once the script ran successfully.
+     *  See AyModuleRunReport. Keep per-run state for it, and drop it in reset(). */
+    report?(): AyModuleRunReport;
     /** The script-facing API. Anything else on the object is callable from a
      *  user script as `<global>.<name>(...)`. */
     [key: string]: any;
