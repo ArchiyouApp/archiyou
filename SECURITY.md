@@ -116,8 +116,16 @@ account, AI provider keys, API keys — in the browser
   same inputs, and not for other inputs unless it passes `force`. The copy goes
   next to the sheet, values are written as values, not formulas, and it is
   shared beyond its folder only when the script asks. Copies carry private
-  Drive app properties (hashes of the script and inputs) so earlier copies can
-  be found; only the key's own Google project can read them.
+  Drive app properties (hashes of the script and inputs, and the copy's
+  Archiyou link) so earlier copies can be found; only the key's own Google
+  project can read them.
+- **Links are not open redirects.** A copy is handed to the script as an
+  Archiyou link (`/go/<key>`, `apps/server/src/routes/links.ts`) reserved
+  before Drive has made it. Keys are 10 random base58 characters (about 58
+  bits), so links cannot be guessed or listed; only the user who reserved a
+  link can set it, and only to `https://docs.google.com/` or
+  `https://drive.google.com/` (`config.links.targets`). The link stores the
+  sheet's address and title, never a key.
 - **Not sent to Archiyou.** Keys are not stored on the server.
 
 What does not hold: a key in `localStorage` is readable by an XSS on this origin,

@@ -148,3 +148,28 @@ export const feedback = pgTable('feedback', {
 
 export type FeedbackRow = typeof feedback.$inferSelect;
 export type NewFeedbackRow = typeof feedback.$inferInsert;
+
+/**
+ * Links: `/go/<key>` on the app's own domain, reserved before the thing it points at exists
+ * (routes/links.ts). The editor reserves one for a Google Sheet copy, hands it to the script at
+ * once, and sets the target when Drive has made the copy; until then the link shows a waiting
+ * page. `owner` is the handle of the user who reserved it.
+ */
+export const links = pgTable('links', {
+  key: text('key').primaryKey(),                // 10 characters of base58
+  owner: text('owner').notNull(),
+  kind: text('kind').notNull(),                 // 'google-sheet-copy'
+  /** For the waiting page. */
+  title: text('title'),
+  /** Where the link goes once ready. */
+  target: text('target'),
+  status: text('status').notNull(),             // 'pending' | 'ready' | 'failed'
+  /** Why it failed, as the editor said it. */
+  message: text('message'),
+  created: timestamp('created', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updated: timestamp('updated', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+}, (t) => [
+  index('links_by_owner').on(t.owner),
+]);
+
+export type LinkRow = typeof links.$inferSelect;

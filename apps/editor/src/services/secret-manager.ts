@@ -144,6 +144,9 @@ export interface CopyTag
 {
   script: string;
   inputs: string;
+  /** The Archiyou link (`…/go/<key>`) the script was given for this copy before it existed;
+   *  earlier copies answer with it, so a script keeps handing out the same url. */
+  link?: string;
 }
 
 /** A copy found in Drive, made earlier from the same script and sheet. */
@@ -156,6 +159,9 @@ export interface EarlierCopy
   /** CopyTag.inputs it was made with. */
   inputs: string;
 }
+
+/** An Archiyou link as a copy's tag may carry it. Drive allows 124 bytes per app property. */
+const LINK = /^https?:\/\/[^\s/]{1,60}\/go\/[1-9A-HJ-NP-Za-km-z]{10}$/;
 
 interface CachedContent
 {
@@ -433,7 +439,8 @@ class ClientSecretManager
     const body = await res.json() as { files?: Array<{ id: string; name?: string; webViewLink?: string; createdTime?: string; appProperties?: Record<string, string> }> };
     return (body.files ?? []).map((f) => ({
       id: f.id,
-      url: f.webViewLink ?? `https://docs.google.com/spreadsheets/d/${f.id}/edit`,
+      url: (LINK.test(f.appProperties?.archiyouLink ?? '') ? f.appProperties!.archiyouLink! : null)
+        ?? f.webViewLink ?? `https://docs.google.com/spreadsheets/d/${f.id}/edit`,
       title: f.name ?? '',
       createdTime: f.createdTime ?? '',
       inputs: f.appProperties?.archiyouInputs ?? '',
@@ -462,7 +469,7 @@ class ClientSecretManager
       json: {
         name: title,
         ...(folder ? { parents: [folder] } : {}),
-        appProperties: { archiyouTemplate: copy.id, archiyouScript: tag.script, archiyouInputs: tag.inputs },
+        appProperties: { archiyouTemplate: copy.id, archiyouScript: tag.script, archiyouInputs: tag.inputs, ...(tag.link ? { archiyouLink: tag.link } : {}) },
       },
     });
     if (!copied.ok) throw await explainCopyFailure(copied, key, copy);
@@ -540,6 +547,13 @@ class ClientSecretManager
       if (!made.ok) throw new KeyError(`Could not make the folder '${name}' in Google Drive: ${await googleMessage(made)}`);
       return ((await made.json()) as { id: string }).id;
     })), parentOf);
+  }
+
+  /** Throws the KeyError copySheet() would throw before it asks Drive anything: not the
+   *  user's script, or no key to copy with. */
+  checkCopy(copy: AyGoogleSheetCopy, trust: RunTrust) : void
+  {
+    this._copyKey(copy, trust);
   }
 
   /** The name of the key a copy is made with — a name, never a value — or null when there is none. */
@@ -703,6 +717,7 @@ function checkCopyAction(a: AyGoogleSheetCopy) : void
 function checkTag(tag: CopyTag) : void
 {
   if (!/^[0-9a-f]{64}$/.test(tag.script) || !/^[0-9a-f]{64}$/.test(tag.inputs)) throw new KeyError('A copy tag is a pair of SHA-256 hashes.');
+  if (tag.link !== undefined && !LINK.test(tag.link)) throw new KeyError(`Not an Archiyou link: ${tag.link}`);
 }
 
 /** Google's own words for a failed request. */

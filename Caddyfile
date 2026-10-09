@@ -38,6 +38,11 @@ next.archiyou.com {
 		reverse_proxy api:4100
 	}
 
+	# --- Links: /go/<key> redirects to a copy that may still be being made (routes/links.ts) ---
+	handle /go/* {
+		reverse_proxy api:4100
+	}
+
 	# --- Editor SPA ---
 	handle {
 		root * /srv/app

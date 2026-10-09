@@ -21,15 +21,20 @@
  * file, so the copies made here in the last minute count too. Copies of one script and
  * sheet are decided one after the other, so a burst of runs cannot race to make two.
  *
- * Drive is slow, so a run waits for as little as possible: Drive is searched once per
- * script and sheet every few minutes (the copies made here are added meanwhile), and the
- * run gets the copy's url as soon as it exists — its values are written and it is shared
- * in the background (secretManager.copySheet()). What goes wrong there is said on the
- * script's next run.
+ * Drive is slow (files.copy alone takes 4–5 s), so a run waits for as little as possible:
+ * Drive is searched once per script and sheet every few minutes (the copies made here are
+ * added meanwhile), and a signed-in user's run does not wait for the copy at all. It gets an
+ * Archiyou link at once (`…/go/<key>`, reserved on the server: plans/LINKS.md) that shows
+ * "almost ready" until the copy exists and redirects to it after; the copy is made, its
+ * values written and shared in the background, and the link's target set when Drive has it.
+ * Signed out there is no link to reserve, so the run waits for files.copy and gets Drive's
+ * url. What goes wrong in the background is said on the script's next run.
  */
 import type { AyContentItem, AyContentNeed, AyGoogleSheetCopy, AyGoogleSheetCopyResult } from '@archiyou/core/src/modules/sdkTypes';
 import type { ScriptData } from '@archiyou/core/src/ScriptSchema';
 
+import { api } from './api.js';
+import { currentUser } from './auth-service.js';
 import { secretManager, type EarlierCopy, type RunTrust } from './secret-manager.js';
 import { scriptKey } from './content-needs.js';
 
@@ -50,7 +55,19 @@ const deciding = new Map<string, Promise<unknown>>();
 const searched = new Map<string, { at: number; copies: EarlierCopy[] }>();
 /** The answers so far, per script and need id, handed to every later run of the script.
  *  `later`: what went wrong after the run got its answer, to say on the next run. */
-const answers = new Map<string, Map<string, { result: AyGoogleSheetCopyResult; keyName?: string; at: number; later: string[] }>>();
+const answers = new Map<string, Map<string, Answer>>();
+
+interface Answer
+{
+  result: AyGoogleSheetCopyResult;
+  keyName?: string;
+  at: number;
+  later: string[];
+}
+
+/** What finishing a copy in the background came to: nothing to say, a problem with a copy
+ *  that exists, or no copy at all (`lost`) — then the script may ask again. */
+type Finished = { problem: string; lost: boolean } | null;
 
 /** The answers this script got before, as run content. A copy made then is 'existing' now,
  *  without its messages: they were said when it was made. */
@@ -64,6 +81,8 @@ export function knownCopies(d: Partial<ScriptData>): Record<string, AyContentIte
       const said = a.result.status === 'copied' ? { ...a.result, status: 'existing' as const, messages: [] } : a.result;
       const result = { ...said, messages: [...said.messages, ...a.later] };
       a.later = [];
+      // A copy that was never made is said once; the run after asks for it again
+      if (a.result.status === 'failed') answers.get(scriptKey(d))!.delete(id);
       return [`google-sheet-copy:${id}`, item(id, result, a.keyName)];
     }));
 }
@@ -86,13 +105,14 @@ export async function resolveCopies(needs: AyContentNeed[], d: Partial<ScriptDat
     const { result, keyName, done } = await decideInTurn(`${script}|${need.copy!.id}`, () => decide(need.copy!, trust, script));
     if (result.status !== 'failed')
     {
-      const entry = { result, keyName, at: Date.now(), later: [] as string[] };
+      const entry: Answer = { result, keyName, at: Date.now(), later: [] };
       known.set(need.id, entry);
-      void done?.then((problem) =>
+      void done?.then((finished) =>
       {
-        if (!problem) return;
-        console.warn(`cloudcopy(): ${problem}`);
-        entry.later.push(`workbook.cloudcopy(): ${problem}`);
+        if (!finished) return;
+        console.warn(`cloudcopy(): ${finished.problem}`);
+        entry.later.push(`workbook.cloudcopy(): ${finished.problem}`);
+        if (finished.lost) entry.result = { ...result, status: 'failed', url: null, messages: [] };
       });
     }
     return [`google-sheet-copy:${need.id}`, item(need.id, result, keyName)] as const;
@@ -136,7 +156,7 @@ export function defaultTitle(sourceTitle: string | undefined, at: Date = new Dat
   return `${(sourceTitle || 'Sheet').slice(0, 170)}_COPY_${stamp}`;
 }
 
-async function decide(copy: AyGoogleSheetCopy, trust: RunTrust, script: string): Promise<{ result: AyGoogleSheetCopyResult; keyName?: string; done?: Promise<string | null> }>
+async function decide(copy: AyGoogleSheetCopy, trust: RunTrust, script: string): Promise<{ result: AyGoogleSheetCopyResult; keyName?: string; done?: Promise<Finished> }>
 {
   try
   {
@@ -160,10 +180,24 @@ async function decide(copy: AyGoogleSheetCopy, trust: RunTrust, script: string):
       return { result: { status: 'blocked', url: earlier[0]!.url, title: earlier[0]!.title, messages: [blocked(earlier[0]!)] }, keyName };
     }
 
+    const title = copy.title ?? defaultTitle(copy.sourceTitle);
+    const link = await reserveLink(copy, trust, title);
+    if (link)
+    {
+      // The run goes on with the link; the copy is made behind it
+      const done = finishBehind(link, copy, trust, { script, inputs }, title, search, () =>
+        made.set(key, (made.get(key) ?? []).filter((c) => c.id !== link.key)));
+      made.set(key, [...recent, { id: link.key, url: link.url, title, createdTime: new Date().toISOString(), inputs }]);
+      return {
+        result: { status: 'copied', url: link.url, title, messages: [`workbook.cloudcopy(): copying to '${title}', next to the sheet in Google Drive — ${link.url} opens it once Google has made it`] },
+        keyName,
+        done,
+      };
+    }
+
     const copying = performance.now();
-    const copied = await secretManager.copySheet(copy, trust, { script, inputs }, copy.title ?? defaultTitle(copy.sourceTitle));
+    const copied = await secretManager.copySheet(copy, trust, { script, inputs }, title);
     console.info(`cloudcopy(): ${search}, files.copy ${Math.round(performance.now() - copying)} ms`);
-    void copied.done.then(() => console.info(`cloudcopy(): values written${copy.share ? ' and shared' : ''} ${Math.round(performance.now() - copying)} ms after the copy started`));
     made.set(key, [...recent, { id: copied.id, url: copied.url, title: copied.title, createdTime: new Date().toISOString(), inputs }]);
     return {
       result: {
@@ -173,13 +207,55 @@ async function decide(copy: AyGoogleSheetCopy, trust: RunTrust, script: string):
         messages: [`workbook.cloudcopy(): copied to '${copied.title}', next to the sheet in Google Drive — ${copied.url}`, ...(copied.warning ? [`workbook.cloudcopy(): ${copied.warning}`] : [])],
       },
       keyName: copied.keyName,
-      done: copied.done,
+      done: copied.done.then((problem) => problem ? { problem, lost: false } : null),
     };
   }
   catch (e)
   {
     return { result: { status: 'failed', url: null, title: copy.title ?? copy.sourceTitle ?? '', messages: [`workbook.cloudcopy(): ERROR: ${(e as Error)?.message ?? e}`] } };
   }
+}
+
+/**
+ * A link for a copy about to be made (POST /links), or null: signed out, or the server
+ * cannot be reached — then the run waits for the copy itself. Checks the key first, so a
+ * copy that cannot be made fails now rather than behind a link.
+ */
+async function reserveLink(copy: AyGoogleSheetCopy, trust: RunTrust, title: string): Promise<{ key: string; url: string } | null>
+{
+  secretManager.checkCopy(copy, trust);
+  if (!currentUser.get()) return null;
+  try
+  {
+    const res = await api.post<{ data: { key: string; url: string } }>('/links', { kind: 'google-sheet-copy', title: title.slice(0, 300) });
+    return res.data;
+  }
+  catch (e)
+  {
+    console.warn(`cloudcopy(): no link could be reserved, so the run waits for the copy (${(e as Error)?.message ?? e})`);
+    return null;
+  }
+}
+
+/** Make the copy behind a link: copy, point the link at it, write the values and share.
+ *  Resolves to what went wrong, if anything; never rejects. */
+function finishBehind(link: { key: string; url: string }, copy: AyGoogleSheetCopy, trust: RunTrust, tag: { script: string; inputs: string }, title: string, search: string, forget: () => void): Promise<Finished>
+{
+  const started = performance.now();
+  return (async (): Promise<Finished> =>
+  {
+    const copied = await secretManager.copySheet(copy, trust, { ...tag, link: link.url }, title);
+    await api.put(`/links/${link.key}`, { target: copied.url });
+    console.info(`cloudcopy(): ${search}, ${link.url} ready after ${Math.round(performance.now() - started)} ms`);
+    const problem = await copied.done;
+    return problem ? { problem, lost: false } : null;
+  })().catch(async (e): Promise<Finished> =>
+  {
+    const why = (e as Error)?.message ?? String(e);
+    forget();
+    await api.put(`/links/${link.key}`, { error: why.slice(0, 1000) }).catch(() => undefined);
+    return { problem: `ERROR: the copy '${title}' could not be made, so ${link.url} leads nowhere: ${why}`, lost: true };
+  });
 }
 
 function blocked(last: EarlierCopy): string

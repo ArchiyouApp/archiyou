@@ -262,6 +262,29 @@ export const config = {
   },
 
   /**
+   * Links (`/go/<key>`, routes/links.ts). `baseUrl` is what a link starts with; unset, it is
+   * the origin the editor reached the API on (behind Caddy the app's own domain, which routes
+   * /go/* here; in dev the API itself). A link may only point at `targets` (URL prefixes),
+   * so an Archiyou link can never send anyone to a page of someone else's choosing.
+   */
+  links: {
+    baseUrl: process.env.SERVER_LINKS_BASE_URL || null,
+    targets: ['https://docs.google.com/', 'https://drive.google.com/'],
+    /** A link still pending after this was never finished: the editor making it is gone. */
+    pendingMs: 15 * 60_000,
+    /** Per IP, on reserving and setting links (signed in). */
+    writeRateLimit: {
+      max: Number(process.env.SERVER_LINKS_RATE_LIMIT ?? 120),
+      timeWindow: '10 minutes',
+    },
+    /** Per IP, on following them (anyone). */
+    readRateLimit: {
+      max: Number(process.env.SERVER_GO_RATE_LIMIT ?? 300),
+      timeWindow: '1 minute',
+    },
+  },
+
+  /**
    * Maximum request body size. Fastify's default is 1 MiB, which script bodies were
    * already approaching (code + params + presets) — a 413 on publish is not a failure
    * mode worth having. (Thumbnails travel as their own `image/png` body, see plugin.ts.)

@@ -29,6 +29,7 @@ import { registerProxyRoutes } from './routes/proxy';
 import { registerModuleRoutes } from './routes/modules';
 import { registerAdminRoutes } from './routes/admin';
 import { registerFeedbackRoutes } from './routes/feedback';
+import { registerLinkRoutes } from './routes/links';
 import { moduleHost } from './modules/ModuleHost';
 import { ValidationError } from './validate';
 import { UserError, userService } from './services/UserService';
@@ -202,6 +203,7 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   await fastify.register(registerProxyRoutes);    // /proxy?url= (asset proxy for $import)
   await fastify.register(registerModuleRoutes);   // /modules/* (gated script modules; inert when none is installed)
   await fastify.register(registerFeedbackRoutes); // POST /feedback (public, rate limited)
+  await fastify.register(registerLinkRoutes);     // /links (authed), /go/:key (public redirect)
   await fastify.register(registerAdminRoutes);    // /admin/* (operator only — users.is_admin)
 }
 

@@ -333,6 +333,24 @@ describe('copies', () =>
     expect(search.searchParams.get('corpora')).toBe('allDrives');
   });
 
+  it('tags a copy with its Archiyou link, and answers earlier copies with that link', async () =>
+  {
+    const sm = await fresh();
+    await sm.put({ name: 'urbuild', kind: 'google-service-account', value: serviceAccountJson });
+    const link = 'https://next.archiyou.com/go/7Kp3xQm9Zb';
+    await sm.copySheet(offer(), { own: true }, { ...TAG, link }, 'Offer 42');
+    expect(posted[`https://www.googleapis.com/drive/v3/files/${PRIVATE}/copy?supportsAllDrives=true&fields=id,name,webViewLink`].appProperties)
+      .toEqual({ archiyouTemplate: PRIVATE, archiyouScript: TAG.script, archiyouInputs: TAG.inputs, archiyouLink: link });
+
+    earlierFiles = [
+      { id: 'C2', name: 'Offer 42', webViewLink: 'https://docs.google.com/spreadsheets/d/C2/edit', createdTime: '2026-10-09T09:00:00Z', appProperties: { archiyouInputs: TAG.inputs, archiyouLink: link } },
+      { id: 'C3', name: 'Offer 43', webViewLink: 'https://docs.google.com/spreadsheets/d/C3/edit', createdTime: '2026-10-09T08:00:00Z', appProperties: { archiyouInputs: TAG.inputs, archiyouLink: 'https://evil.example.com/x' } },
+    ];
+    expect((await sm.earlierCopies(offer(), { own: true }, TAG.script)).map((c) => c.url))
+      .toEqual([link, 'https://docs.google.com/spreadsheets/d/C3/edit']);   // only what looks like an Archiyou link
+    await expect(sm.copySheet(offer(), { own: true }, { ...TAG, link: 'https://evil.example.com/login' }, 'Offer 42')).rejects.toThrow(/Not an Archiyou link/);
+  });
+
   it('never copies for someone else\'s script, and never acts on a malformed offer', async () =>
   {
     const sm = await fresh();

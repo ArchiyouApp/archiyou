@@ -2,16 +2,22 @@
  * cloud-copies.test.ts — a script copies a sheet once (cloudcalc's cloudcopy()), and gets
  * the answer back as content for its next run.
  *
- * The secret manager (Drive) is a stub; the rules are real.
+ * The secret manager (Drive) and the API (links) are stubs; the rules are real. Signed out,
+ * a run waits for the copy; signed in, it gets a link at once (plans/LINKS.md).
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const earlierCopies = vi.fn();
 const copySheet = vi.fn();
 const copyKeyName = vi.fn(() => 'urbuild');
+const checkCopy = vi.fn();
+const post = vi.fn();
+const put = vi.fn();
+let user: { id: string } | null = null;
 
-vi.mock('../src/services/secret-manager', () => ({ secretManager: { earlierCopies, copySheet, copyKeyName } }));
-vi.mock('../src/services/auth-service', () => ({ currentUser: { get: () => null } }));
+vi.mock('../src/services/secret-manager', () => ({ secretManager: { earlierCopies, copySheet, copyKeyName, checkCopy } }));
+vi.mock('../src/services/auth-service', () => ({ currentUser: { get: () => user } }));
+vi.mock('../src/services/api', () => ({ api: { post, put } }));
 
 const SHEET = 'OFFERTEMPLATE'.padEnd(44, 'x');
 const OWN = { own: true };
@@ -29,10 +35,15 @@ function need(writes: unknown[][], options: Record<string, unknown> = {}, hash =
 }
 
 let copies = 0;
+let links = 0;
 const cc = () => import('../src/services/cloud-copies');
 beforeEach(async () =>
 {
   (await cc()).forgetMadeCopies();
+  user = null;
+  checkCopy.mockReset();
+  post.mockReset().mockImplementation(async () => ({ success: true, data: { key: `K${++links}`.padEnd(10, 'x'), url: `https://app.example.com/go/${`K${links}`.padEnd(10, 'x')}` } }));
+  put.mockReset().mockResolvedValue(undefined);
   earlierCopies.mockReset().mockResolvedValue([]);
   copySheet.mockReset().mockImplementation(async (_copy: any, _trust: any, _tag: any, title: string) =>
   {
@@ -167,5 +178,77 @@ describe('cloudcopy() in the editor', () =>
     const bad = { ...need([[1]]), id: 'not an id' };
     expect(await (await cc()).resolveCopies([bad, { kind: 'google-sheet', id: SHEET }], DRAFT, OWN)).toEqual({});
     expect(earlierCopies).not.toHaveBeenCalled();
+  });
+});
+
+describe('cloudcopy() signed in: a link at once, the copy behind it', () =>
+{
+  beforeEach(() => { user = { id: 'u1' }; });
+
+  /** Let the background work run. */
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  it('answers with a reserved link without waiting for Drive, then points the link at the copy', async () =>
+  {
+    let copied!: () => void;
+    copySheet.mockImplementationOnce((_c: any, _t: any, _g: any, title: string) => new Promise((r) =>
+    {
+      copied = () => r({ id: 'COPY', url: 'https://docs.google.com/spreadsheets/d/COPY/edit', title, keyName: 'urbuild', done: Promise.resolve(null) });
+    }));
+    const item = await answer(need([[120]]));
+    expect(post).toHaveBeenCalledWith('/links', { kind: 'google-sheet-copy', title: 'Offer' });
+    expect(item.copy).toMatchObject({ status: 'copied', url: expect.stringMatching(/^https:\/\/app\.example\.com\/go\//), title: 'Offer', messages: [expect.stringMatching(/opens it once Google has made it/)] });
+    expect(put).not.toHaveBeenCalled();
+
+    const [, , tag] = copySheet.mock.calls[0]!;
+    expect(tag.link).toBe(item.copy!.url);                      // the copy carries its link
+    copied();
+    await settle();
+    expect(put).toHaveBeenCalledWith(`/links/${item.copy!.url!.split('/go/')[1]}`, { target: 'https://docs.google.com/spreadsheets/d/COPY/edit' });
+  });
+
+  it('gives later runs the same link, and counts the copy while it is still being made', async () =>
+  {
+    copySheet.mockImplementationOnce(() => new Promise(() => {}));   // Drive never answers
+    const first = await answer(need([[120]]));
+    expect((await answer(need([[120]]))).copy).toMatchObject({ status: 'existing', url: first.copy!.url });
+    expect((await answer(need([[130]]))).copy).toMatchObject({ status: 'blocked', url: first.copy!.url });
+    expect(copySheet).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails the link when the copy cannot be made, says so on the next run, and copies again on the one after', async () =>
+  {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    copySheet.mockRejectedValueOnce(new Error('no room in the shared drive'));
+    const n = need([[120]]);
+    const first = await answer(n);
+    expect(first.copy!.status).toBe('copied');
+    await settle();
+    expect(put).toHaveBeenCalledWith(`/links/${first.copy!.url!.split('/go/')[1]}`, { error: 'no room in the shared drive' });
+
+    const next = (await cc()).knownCopies(DRAFT)[`google-sheet-copy:${n.id}`]!;
+    expect(next.copy).toMatchObject({ status: 'failed', url: null, messages: [expect.stringMatching(/could not be made.*no room/)] });
+    expect((await cc()).knownCopies(DRAFT)).toEqual({});
+    expect((await answer(n)).copy!.status).toBe('copied');
+    expect(copySheet).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+
+  it('reserves no link for a copy that cannot be made: no key, or not the user\'s script', async () =>
+  {
+    checkCopy.mockImplementationOnce(() => { throw new Error("Can't make a copy without access."); });
+    const item = await answer(need([[120]]));
+    expect(item.copy).toMatchObject({ status: 'failed', messages: [expect.stringMatching(/without access/)] });
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('waits for the copy as before when no link can be reserved', async () =>
+  {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    post.mockRejectedValueOnce(new Error('API error 503'));
+    const item = await answer(need([[120]]));
+    expect(item.copy).toMatchObject({ status: 'copied', url: expect.stringMatching(/docs\.google\.com.*COPY\d+\/edit/) });
+    expect(copySheet.mock.calls[0]![2].link).toBeUndefined();
+    warn.mockRestore();
   });
 });
