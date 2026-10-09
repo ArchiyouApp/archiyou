@@ -71,7 +71,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const BUILT = join(HERE, 'data');
 
 /** The API reference, guide, examples, skill and font. Built: copied into dist/data by tsup.
- *  From source: read where they live in the repo. */
+ *  From source: read where they live in the repo, with the script modules checkout next to it. */
 export const DATA = existsSync(BUILT)
     ? {
         api: join(BUILT, 'api.json'),
@@ -81,6 +81,7 @@ export const DATA = existsSync(BUILT)
         skill: join(BUILT, 'skill', 'SKILL.md'),
         font: join(BUILT, 'fonts', 'PlusJakartaSans-Regular.ttf'),
         evals: null as string | null,
+        modules: null as string | null,
     }
     : {
         api: join(HERE, '../../ui/src/editor/help/api.generated.json'),
@@ -90,6 +91,7 @@ export const DATA = existsSync(BUILT)
         skill: join(HERE, '../skill/SKILL.md'),
         font: join(HERE, '../assets/PlusJakartaSans-Regular.ttf'),
         evals: join(HERE, '../evals/evals.json') as string | null,
+        modules: join(HERE, '../../../modules/archiyou-modules') as string | null,
     };
 
 //// ARGUMENTS ////

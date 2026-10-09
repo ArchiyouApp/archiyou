@@ -29,13 +29,16 @@ const USAGE = `archiyou <command>
       --clash                 list parts that share volume (touching does not count)
       --check <inventory.json>  compare the parts with an inventory (counts, axes, floor, relations)
       --kernel mesh|brep      default mesh
+      --modules <dir>         script modules for $module(): a module directory, or one that holds
+                              them (repeatable; client modules, built to bundle.js or dist/bundle.js;
+                              in the Archiyou repo the modules checkout is used without it)
       --out <dir>             default <tmp>/archiyou/<name>
       --parts                 list every part, even in a large model
       --json                  everything as one JSON object
       --verbose               core's own logging on stderr
   sweep <file.js>           the defaults and every parameter at its extremes, one table;
                             --corners: every combination of the extremes instead;
-                            takes -p, --clash, --check, --json; exit 1 unless clean
+                            takes -p, --clash, --check, --modules, --json; exit 1 unless clean
   api <name>                the API reference: a function, Class.member, or a class's members
   docs [topic]              the guide and tutorials, as Markdown
   examples [name]           example scripts

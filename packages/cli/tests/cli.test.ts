@@ -224,6 +224,21 @@ describe.skipIf(!MESHUP_BUILT)('run (needs pnpm build:meshup)', () =>
 
 describe.skipIf(!MESHUP_BUILT)('sweep and mark', () =>
 {
+    it('--modules loads a built client module that the script declares', () =>
+    {
+        const r = cli(['run', join(FIXTURES, 'twice.js'), '--modules', join(FIXTURES, 'modules'), '--views', 'none']);
+        expect(r.status).toBe(0);
+        expect(r.stdout).toContain('size 100 x 10 x 10');
+        expect(r.stdout).toContain('print: doubled 42');
+    });
+
+    it('a module that is not in --modules fails at its declaration', () =>
+    {
+        const r = cli(['run', join(FIXTURES, 'twice.js'), '--modules', FIXTURES, '--views', 'none']); // no module in it
+        expect(r.status).toBe(1);
+        expect(r.stdout).toContain("ERROR  twice.js  line 1: $module('twice'): no such module");
+    });
+
     it('sweep runs the defaults and every parameter at its extremes', () =>
     {
         const r = cli(['sweep', join(EXAMPLES, 'programmaticparams.js'), '--clash']);

@@ -30,7 +30,7 @@ export { Script } from './Script';
 // capabilities. Inert unless a run is given a module catalog. See modules/README.md.
 export { ModuleRegistry, RESERVED_SCOPE_NAMES } from './modules/ModuleRegistry';
 export type { ModuleRegistryOptions } from './modules/ModuleRegistry';
-export { ModuleLoadError } from './modules/loadClientModule';
+export { ModuleLoadError, loadClientModule } from './modules/loadClientModule';
 export { ServerModuleCallError } from './modules/serverModuleStub';
 export { ModuleUnavailableError } from './modules/unavailableStub';
 // The module contract itself, so a consumer can name what it passes in a catalog. Authored in

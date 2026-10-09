@@ -155,6 +155,7 @@ edges), `model-org` (layers, names, colours), `surface`.
 | `check` lists mismatches | the model differs from the inventory: fix the model, or the inventory if the photos say otherwise (ask) |
 | A primitive is missing | some exist only in the brep kernel: `--kernel brep` |
 | Unnamed parts | `.name()` them |
+| `$module('x'): no such module` | the script uses a script module: `--modules <dir>` with the module's directory (or the one that holds it); it must be built (`dist/bundle.js`) |
 
 ## 6. Output files
 

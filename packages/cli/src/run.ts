@@ -6,7 +6,7 @@
  *  One Runner per process, reused for every run like the editor does.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 
@@ -60,6 +60,7 @@ interface RunOptions
     inventory?: Inventory;
     expect?: Vec3;           // the size asked for: a mismatch line when the model is off
     outDir: string | null;   // null: write no files (sweep, eval)
+    modules: Array<string>;  // directories with script modules, for $module()
     verbose: boolean;
 }
 
@@ -118,27 +119,86 @@ const SOLIDS = new Set(['Mesh', 'Solid']);
 //// RUNNER ////
 
 let runner: any = null;
+/** The script modules this process can load, as the server's catalog would list them */
+let catalog: Array<any> = [];
 
-async function loadRunner(verbose: boolean): Promise<any>
+async function loadRunner(verbose: boolean, moduleDirs: Array<string>): Promise<any>
 {
     if (!runner)
     {
         const core: any = await quiet(verbose, () => import('@archiyou/core'));
         runner = await quiet(verbose, () => new core.Runner().load());
+        const modules = localModules(moduleDirs);
+        catalog = modules.map(m => m.entry);
+        runner.modules.setOptions({
+            loadClient: (entry: any, opts: any) => loadLocalModule(core, modules.find(m => m.entry.id === entry.id)!, opts.factoryContext),
+        });
     }
     return runner;
+}
+
+//// MODULES ////
+
+/** A script module on disk: its manifest as a catalog entry, and its built bundle */
+interface LocalModule { entry: any; bundle: string | null }
+
+/** --modules, else the modules checkout next to the engine when run from this repo */
+function moduleDirs(args: Args): Array<string>
+{
+    const given = (args.values.modules ?? []).map(userPath);
+    const missing = given.find(dir => !existsSync(dir));
+    if (missing) { throw new Error(`--modules: no such directory ${missing}`); }
+    return given.length ? given : (DATA.modules && existsSync(DATA.modules) ? [DATA.modules] : []);
+}
+
+/** The client modules in these directories: each is a module (it has a manifest.json) or holds
+ *  modules. A server module runs in the Archiyou backend, so it is left out here */
+function localModules(dirs: Array<string>): Array<LocalModule>
+{
+    return dirs
+        .flatMap(dir => existsSync(join(dir, 'manifest.json'))
+            ? [dir]
+            : readdirSync(dir, { withFileTypes: true })
+                .filter(d => d.isDirectory() && existsSync(join(dir, d.name, 'manifest.json')))
+                .map(d => join(dir, d.name)))
+        .map(dir => ({ dir, manifest: JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) }))
+        .filter(m => m.manifest.runtime === 'client')
+        .map(({ dir, manifest }) => ({
+            // A module on your own disk is yours to run, as a public one is on the server
+            entry: { ...manifest, entitled: true },
+            // Where the server looks for it too (ModuleHost)
+            bundle: [join(dir, 'bundle.js'), join(dir, 'dist', 'bundle.js')].find(path => existsSync(path)) ?? null,
+        }));
+}
+
+/** Load a module the way the editor does (core's loadClientModule), with the bundle read from
+ *  disk instead of fetched from the server */
+function loadLocalModule(core: any, module: LocalModule, factoryContext: any): Promise<any>
+{
+    if (!module.bundle)
+    {
+        return Promise.reject(new core.ModuleLoadError(module.entry.id, 'is not built: no bundle.js or dist/bundle.js in its directory'));
+    }
+    const bundle = module.bundle;
+    return core.loadClientModule(module.entry, {
+        moduleApiUrl: '',
+        fetchImpl: async () => new Response(readFileSync(bundle, 'utf8')),
+        importImpl: (source: string) => import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`),
+        factoryContext,
+    });
 }
 
 /** Run a script once and gather everything the summary, checks and pictures need */
 async function runOnce(o: RunOptions): Promise<RunResult>
 {
-    const r = await loadRunner(o.verbose);
+    const r = await loadRunner(o.verbose, o.modules);
     const name = basename(o.file, extname(o.file));
     const started = performance.now();
     const res: any = await quiet(o.verbose, () => r.execute({
         kernel: o.kernel,
         script: { name, code: o.code },
         params: o.params,
+        modules: catalog,
         outputs: o.outDir ? ['default/model/glb', 'default/metrics/*/json'] : ['default/metrics/*/json'],
         messages: ['user', 'warn'],
     }));
@@ -721,6 +781,7 @@ function optionsFrom(args: Args, file: string, outDir: string | null): RunOption
         inventory: readInventory(args.values.check?.[0]),
         expect: parseSize(args.values.expect?.[0]),
         outDir,
+        modules: moduleDirs(args),
         verbose: args.bools.has('verbose'),
     };
 }
@@ -857,7 +918,7 @@ export async function evaluate(args: Args): Promise<number>
             file, code: readFileSync(file, 'utf8'), params: {}, kernel: 'mesh', views: [], refs: [], overlays: [],
             clash: Boolean(item.sweepClean),
             inventory: item.inventory ? JSON.parse(readFileSync(resolve(dirname(evalsFile), item.inventory), 'utf8')) : undefined,
-            outDir: null, verbose,
+            outDir: null, modules: moduleDirs(args), verbose,
         };
         const rows = item.sweepClean ? await sweepRuns(base) : [{ param: '(defaults)', value: '', result: await runOnce(base) }];
         const r = rows[0].result;
