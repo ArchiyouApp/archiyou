@@ -35,12 +35,6 @@ export interface DocData {
 }
 
 
-export interface DocPipeline
-{
-    fn:() => any
-    done: boolean
-}
-
 /** Context passed down from Page.toSVG() into each Container.toSVG() call. */
 export interface PageSVGContext
 {

@@ -40,6 +40,7 @@ import type { PageOrientation, ScaleInput, ImageOptions, TextOptions,
 import type { UnitSystem } from '../units/UnitConverter'
 
 import { Document } from './Document'
+import { Pipeline } from '../execution/Pipeline'
 import { Instruct } from './instruct/Instruct'
 import { PDFExporter } from './PDFExporter'
 
@@ -70,6 +71,7 @@ export class Docs
 
     _runUnitSystem?:UnitSystem; // the run's system for documents (request.docUnitSystem), see Document.resolveUnitSystem()
 
+    _missingPipelines:Set<string> = new Set(); // pipeline names a document uses but the script lacks, warned once
     _instructs:Array<Instruct> = []; // instructables (see instruct/Instruct.ts)
 
     _assetsCache:Record<string,any> = {}; // keep assets like images in cache to avoid reloading on every toData() call
@@ -155,6 +157,7 @@ export class Docs
         this._activeDoc = null;
         this._runUnitSystem = undefined;
         this._instructs = [];
+        this._missingPipelines = new Set();
     }
 
     _setDefaults():Docs
@@ -163,103 +166,80 @@ export class Docs
         return this;
     }
 
-    /** Execute pipeline for docs in worker scope
-     *  @param include list of docs to include (if empty all)
-     *  @param exclude list of docs to include (if empty exclude none)
-     *
-     *  NOTE: this is pretty black magic. We should give more structure to Workers, execution and scopes.
-    */
-    executePipelines(include:Array<string> = [], exclude:Array<string> = [])
+    //// PIPELINES ////
+
+    /** Add a document's pipeline (doc.pipeline(fn)): to the script's pipelines when a Runner
+     *  runs it, so it can be picked and exported like any other, else on its own
+     *  @internal */
+    _registerPipeline(name:string, fn:(mainScope?:any) => any):Pipeline
     {
-        this._docs.forEach((doc) =>
-        {
-            const docName = doc._name;
-
-            doc._pipelines.forEach((pipeline) =>
-            {
-                    const pipelineFn = pipeline.fn;
-                    const pipelineDone = pipeline.done;
-
-                    if (
-                            !pipelineDone // avoid double execution
-                            &&
-                            typeof pipelineFn === 'function' &&
-                            (include.length === 0 || include.includes(docName)) &&
-                            (exclude.length === 0 || !exclude.includes(docName))
-                    )
-                    {
-                        try {
-                            console.info(`Docs::executePipelines(): Executing pipeline of document "${docName}" ====`)
-
-                            /* IMPORTANT:
-
-                                On variables and scopes defined inside the pipeline function:
-
-                                We call functions on the execution scope: ay.scope.call(fn)
-
-                                1. On functions defined with function(){ var1 = ..., let var2 = ... }
-                                    - without let/var/const: will be placed on scope (non-script mode)
-                                        ==> Old scripts use this and it works!
-                                    - with let/var/const: will be local to function and not available in scope
-
-                                2. On functions define with arrows: docPipeline = () => { var1 = ..., let var2 = ... }
-                                    - without let/var/const: will be placed on global scope (window in browser, global in node)
-                                    - with let/var/const: will be local to function and not available in scope
-
-                                There are ways to get this working, using the above.
-
-                                But we introduce return values for clarity and to avoid confusion:
-                                Any variables that should be available in the scope after execution of the pipeline function
-                                are exported by using return { var1, var2, ...} using object shorthand notation
-
-
-                            */
-
-                            const startTime = Date.now();
-                            const outputs = pipelineFn.call(this._archiyou.runner.getActiveScope(),this._archiyou.runner.getActiveScope());
-
-                            if(!outputs || typeof outputs !== 'object')
-                            {
-                                console.warn(`Docs:executePipelines(): Your pipeline function did not return anything! This can work in some cases (for example with function(){ var1 = ...} ). But advised to return { var1, var2 } `);
-                            }
-                            else {
-                                console.info(`Docs:executePipelines(): Loading pipeline vars into execution scope: "${Object.keys(outputs).join(', ')}"`);
-
-                                // get returned variables and set them on scope
-                                Object.entries(outputs).forEach(([key, value]) =>
-                                {
-                                    if(this._archiyou.runner.getActiveScope()[key] !== undefined)
-                                    {
-                                         console.warn(`Docs:executePipelines(): Overwriting existing variable "${key}" on execution scope!`);
-                                    }
-
-                                    // TODO: protect against overwriting important variables!
-                                    console.info(`Docs:executePipelines(): Setting variable "${key}" on execution scope from pipeline of doc "${docName}"`);
-                                    this._archiyou.runner.getActiveScope()[key] = value;
-                                });
-                            }
-                            console.info(`Docs:executePipelines(): Pipeline of document "${docName}" executed in ${Date.now() - startTime}ms`);
-
-                            doc._pipelineError = null;
-                            pipeline.done = true; // set done
-                        }
-                        catch(e)
-                        {
-                            // The document can still be made, but whatever the pipeline should have
-                            // returned is missing: say what went wrong where the author looks, and
-                            // keep it so a view that misses a variable can name the cause
-                            doc._pipelineError = e as Error;
-                            const message = `The pipeline of document "${docName}" failed: ${(e as Error)?.name ?? 'Error'}: ${(e as Error)?.message ?? e}`;
-                            console.error(`Docs:executePipelines(): ${message}`);
-                            this._archiyou?.console?.error?.(message);
-                        }
-                    }
-                });
-
-        })
-
+        const runner = this._archiyou?.runner as any;
+        return (typeof runner?.pipeline === 'function')
+            ? runner.pipeline(name, fn, runner.getActiveScope(), true)
+            : new Pipeline(name, fn);
     }
 
+    /** The pipelines a document uses, names looked up in the script's pipelines
+     *  @param warn say so when a name is not found
+     *  @internal */
+    _pipelinesOf(doc:Document, warn:boolean = true):Array<Pipeline>
+    {
+        const runner = this._archiyou?.runner as any;
+        return doc._pipelines
+            .map(p =>
+            {
+                if(typeof p !== 'string'){ return p }
+                const found = runner?.getPipelineByName?.(p) as Pipeline|undefined;
+                if(!found && warn && !this._missingPipelines.has(p))
+                {
+                    this._missingPipelines.add(p);
+                    const message = `Document "${doc._name}" uses pipeline '${p}', but there is no $pipeline('${p}', ...) in this script`;
+                    console.warn(`Docs::_pipelinesOf(): ${message}`);
+                    this._archiyou?.console?.warn?.(message);
+                }
+                return found;
+            })
+            .filter(Boolean);
+    }
+
+    /** Names of the documents that use pipeline `name`
+     *  @internal */
+    _pipelineDocs(name:string):Array<string>
+    {
+        return this._docs
+            .filter(doc => this._pipelinesOf(doc, false).some(p => p.name === name))
+            .map(doc => doc._name);
+    }
+
+    /** Run the pipelines of the documents that are not done yet, right away
+     *  @param include names of the documents (all when empty)
+     *  @param exclude names of the documents to leave out
+     *  @internal */
+    executePipelines(include:Array<string> = [], exclude:Array<string> = []):void
+    {
+        const scope = this._archiyou?.runner?.getActiveScope?.();
+        this._pipelinesToRun(include, exclude).forEach(p => p.runSync(scope, this._archiyou));
+    }
+
+    /** Run the pipelines of the documents that are not done yet, awaiting async ones
+     *  @param include names of the documents (all when empty)
+     *  @internal */
+    async _runPipelines(include:Array<string> = []):Promise<void>
+    {
+        const scope = this._archiyou?.runner?.getActiveScope?.();
+        await this._pipelinesToRun(include, []).reduce(
+            async (previous, p) => { await previous; await p.run(scope, this._archiyou); },
+            Promise.resolve());
+    }
+
+    _pipelinesToRun(include:Array<string>, exclude:Array<string>):Array<Pipeline>
+    {
+        const all = include.length === 0 || include.includes('*');
+        const pipelines = this._docs
+            .filter(doc => (all || include.includes(doc._name)) && !exclude.includes(doc._name))
+            .flatMap(doc => this._pipelinesOf(doc));
+        return [...new Set(pipelines)].filter(p => !p.done);
+    }
 
     //// DOCS API ////
 
@@ -353,7 +333,7 @@ export class Docs
     pageSize(size:PageSize):Document { return this.checkAndMakeDefaultDoc().pageSize(size); }
     pageOrientation(o:PageOrientation):Document { return this.checkAndMakeDefaultDoc().pageOrientation(o); }
     page(name:string):Document { return this.checkAndMakeDefaultDoc().page(name); }
-    pipeline(fn: () => any):Document { return this.checkAndMakeDefaultDoc().pipeline(fn); }
+    pipeline(pipeline:string|Pipeline|((mainScope?:any) => any)):Document { return this.checkAndMakeDefaultDoc().pipeline(pipeline); }
     size(size:PageSize):Document { return this.checkAndMakeDefaultDoc().size(size); }
     padding(w:WidthHeightInput, h?:WidthHeightInput):Document { return this.checkAndMakeDefaultDoc().padding(w,h); }
     orientation(o:PageOrientation):Document { return this.checkAndMakeDefaultDoc().orientation(o); }
@@ -412,7 +392,7 @@ export class Docs
         only = (Array.isArray(only)) ? only : [];
         const doFilter = only.length > 0 && only.includes('*') === false; // if onlyDocs is empty or includes '*', we export all docs
 
-        this.executePipelines();
+        this.executePipelines(doFilter ? only : []);
 
         if(doFilter)
         {
@@ -442,7 +422,7 @@ export class Docs
 
         console.info(`Docs::toData(): Exporting docs: ${onlyDocs.length > 0 ? onlyDocs.join(', ') : 'all'}`);
 
-        this.executePipelines();
+        this.executePipelines(doFilter ? onlyDocs : []);
 
         const docs = {};
 

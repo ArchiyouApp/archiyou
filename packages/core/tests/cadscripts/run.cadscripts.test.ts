@@ -21,6 +21,12 @@ const SCRIPTS = fs.readdirSync('./tests/cadscripts/scripts')
                     .slice(0,MAX)
 const KERNEL = 'mesh' // default kernel for all tests, can be set per test in request
 
+/** Scripts whose document pipeline uses API that changed since (found 2026-10-09, when this
+ *  suite started exporting documents): lineWidth(), moveToOrigin(), line() of a vertex
+ *  collection, autoDim() without levels, an empty first(), named members of a flattened copy.
+ *  Take a script off once it is updated. */
+const DOCS_KNOWN_BROKEN = ['gardenchair', 'kakpinchedstool', 'sedia', 'simplestep', 'timberwall', 'tomy']
+
 
 describe('cadscripts - mesh mode', () =>
 {
@@ -56,7 +62,22 @@ describe('cadscripts - mesh mode', () =>
             expect(result.outputs[0].path.resolvedPath).toBe('default/model/gltf');
 
             save(TEST_OUTPUTS_PATH + 'test.' + filename.replace('.js','.gltf'), result.outputs[0].output as Uint8Array);
-            
+
+            // Its pipelines and documents: every pipeline has an output, no pipeline fails
+            const pipelines = result.meta?.pipelines ?? [];
+            if (pipelines.length === 0 && (result.meta?.docs ?? []).length === 0) { return }
+            if (DOCS_KNOWN_BROKEN.includes(filename.replace('.js', ''))) { return }
+
+            const extra = await runner.execute({
+                ...request,
+                outputs: [...pipelines.map(p => `${p}/model/glb`), 'default/docs/*/svg'],
+            })
+            expect(extra.status, `${filename}: ${extra.errors?.[0]?.message ?? ''}`).toBe('success')
+            expect((extra.warnings ?? []).filter(w => / failed/.test(w)), filename).toEqual([])
+            pipelines.forEach(p =>
+            {
+                expect(extra.outputs.some(o => o.path.pipeline === p && o.path.category === 'model'), `${filename}: pipeline '${p}'`).toBe(true)
+            })
         })
     })
 })

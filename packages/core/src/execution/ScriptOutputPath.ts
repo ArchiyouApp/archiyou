@@ -58,7 +58,7 @@ import { convertStringValue, recordToUrlParams } from '../utils'; // utils
         {
             this.pipeline = match.groups.pipeline;
 
-            if(match.groups.format === '*' || isScriptOutputCategory(match.groups.category))
+            if(match.groups.category === '*' || isScriptOutputCategory(match.groups.category))
             {
                 this.category = match.groups.category as ScriptOutputCategory | '*';
             }

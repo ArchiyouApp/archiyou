@@ -234,7 +234,9 @@ calc.metric('timber volume/length', roundTo(TIMBER_VOLUME/(WALL_LENGTH*1e-3),2),
 
 //// DOC
 
-function docPipeline()
+// The drawings. A pipeline runs after the model and keeps what it makes apart from it:
+// pick 'techdraw' next to the run button to see them, or export them as DXF
+$pipeline('techdraw', function()
 {
     visibleShapes = all().onlyVisible();
     iso = visibleShapes.iso().move(WALL_LENGTH*2);
@@ -248,14 +250,9 @@ function docPipeline()
                         })
     frontElevation.bbox().right().dim({ offset: 200 });
     frontElevation.bbox().front().dim({ offset: 200 });
-}
 
-$pipeline('techdraw', 
-  function()
-  {
-    docPipeline();
-  }
-);
+    return { iso, frontElevation };
+});
 
 
 // TODO: table 'parts' needs to be evaluated later
@@ -265,7 +262,7 @@ make.partList(all().onlyVisible(), 'parts')
 doc
     .create('spec')
     .page('spec')
-    .pipeline(docPipeline)
+    .pipeline('techdraw')
     .titleblock({ title: 'Straw Wall', designer: 'Archiyou' })
     .view('iso')
     .shapes('iso')

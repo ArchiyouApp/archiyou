@@ -822,7 +822,7 @@ function layerNameOf(node: any): string
  *  separates a colour somebody chose from SHAPE_DEFAULT_STYLE's red — a DXF should not be
  *  flooded with a colour nobody asked for, and CAD's own default (ByLayer, index 7) is the
  *  right answer for an unstyled shape. */
-function cascadedStyleData(node: any, shape?: any): Partial<Record<string, any>>
+export function cascadedStyleData(node: any, shape?: any): Partial<Record<string, any>>
 {
     const merged = node?.effectiveStyle?.()
     if (!merged) { return shape?.style?.explicitData?.() ?? {} }

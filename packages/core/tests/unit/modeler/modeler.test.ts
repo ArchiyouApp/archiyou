@@ -4,7 +4,7 @@ import { Modeler } from '../../../src/modeler/Modeler'
 import { Curve as SmartMeshCurve, Mesh as SmartMesh, Polygon as SmartMeshPolygon, Vertex as SmartMeshVertex } from '@archiyou/meshup';
 import { ShapeCollection as SmartShapeCollection } from '@archiyou/meshup';
 import { ShapeCollection } from '@archiyou/meshup';
-import { Mesh } from '@archiyou/meshup';
+import { Mesh, SceneNode } from '@archiyou/meshup';
 
 import { save } from '@archiyou/meshup/src/utils';
 
@@ -520,4 +520,65 @@ describe('Modeler — mesh mode methods', () =>
 
     //// TODO: sketch
     //// TODO: test in brep
+});
+
+
+describe('Modeler — pipeline capture', () =>
+{
+    let m: Modeler;
+
+    beforeAll(async () =>
+    {
+        m = new Modeler();
+        await m.load();
+    });
+
+    it('captures what is made, from scratch or from the model, and leaves the model alone', () =>
+    {
+        m.reset();
+        const model = m.box(100);
+        const legs = m.layer('legs');
+
+        const capture = m.beginCapture('drawings');
+        const made = m.box(10);
+        const iso = (model as any).iso();
+        m.layer('extra');
+        const extra = m.box(5);
+        expect(m.endCapture()).toBe(capture);
+
+        expect(m.all().toArray()).toEqual([model]);
+        expect(m.activeLayer()).toBe(legs);
+        expect(capture.shapes().toArray()).toEqual(expect.arrayContaining([made, extra, ...iso.toArray()]));
+    });
+
+    it('moves the shapes a pipeline made into its output, and only refers to the model', () =>
+    {
+        m.reset();
+        const model = m.box(100);
+        const modelNode = (model as any)._node;
+
+        const capture = m.beginCapture('drawings');
+        const iso = (model as any).iso();
+        m.endCapture();
+
+        const output = m.pipelineScene('drawings', capture, { iso, model });
+
+        expect(output.children().map(c => c.name)).toEqual(['iso', 'model']);
+        expect(output.find('iso')!.shapes().length).toBe(iso.toArray().length);
+        expect((model as any)._node).toBe(modelNode);
+        expect(output.find('model')!.shapes().toArray()).toEqual([model]);
+    });
+
+    it('exports another scene within withScene(), and gets its own back even when it throws', async () =>
+    {
+        m.reset();
+        const scene = m.scene();
+        const other = SceneNode.root<SceneNode>('other');
+
+        await expect(m.withScene(other, () => { throw new Error('boom') })).rejects.toThrow('boom');
+        expect(m.scene()).toBe(scene);
+
+        expect(await m.withScene(other, () => m.scene())).toBe(other);
+        expect(m.scene()).toBe(scene);
+    });
 });

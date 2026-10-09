@@ -39,10 +39,11 @@ import { isKernelShapeOrCollection } from '../modeler/typeguards'
 
 import { ScriptParam } from '../execution/ScriptParam'
 import type { ScriptParamData } from '../execution/types'
+import { Pipeline } from '../execution/Pipeline'
 
 import type { DataRows } from '../calc/types'
 
-import type { DocUnits, PageSize, PageOrientation, DocPipeline, DocData,
+import type { DocUnits, PageSize, PageOrientation, DocData,
     PageSide, ContainerSide, ContainerSizeRelativeTo, ScaleInput, ImageOptions, TextOptions,
     AnyPageContainer, TableContainerOptions as TableOptions, DocPathStyle,
     ContainerAlignment, ContainerHAlignment, ContainerVAlignment,
@@ -86,9 +87,8 @@ export class Document
 
     _docs:Docs; // reference to Docs module
     _pages:Array<Page> = []; // pages in this document
-    _pipelines:Array<DocPipeline> = []; // pipelines for this document, see DocPipeline
-    /** The error the last run of this document's pipeline threw, if it did (see Docs.executePipelines) */
-    _pipelineError:Error|null = null;
+    /** The pipelines this document uses: a Pipeline (doc.pipeline(fn)) or the name of one ($pipeline) */
+    _pipelines:Array<Pipeline|string> = [];
     _activePage?:Page; // active page in this document
     _activeContainer:AnyPageContainer; // active container in this document
     _lastBlock:ContainerBlock; // keep track of latest created block
@@ -123,14 +123,24 @@ export class Document
         return !!(this._pages.find(p => p.name === name));
     }
 
-    addPipeline(p:DocPipeline):this
+    /** The error the last run of one of this document's pipelines threw, if it did */
+    get _pipelineError():Error|null
     {
-        if(!p || !p.fn || typeof p.fn !== 'function')
-        {
-            throw new Error(`Document::addPipeline(): Invalid pipeline function. Please provide a valid function.`);
-        }
-        this._pipelines.push(p);
-        return this;
+        return this._docs._pipelinesOf(this).map(p => p.error()).find(Boolean) ?? null;
+    }
+
+    /** A variable made by a pipeline, for a view that names it (`.shapes('iso')`): this
+     *  document's pipelines first, then those of the other documents that ran
+     *  @internal */
+    _pipelineVar(name:string):{ found:boolean, value?:any }
+    {
+        const own = this._docs._pipelinesOf(this);
+        const others = this._docs._docs
+                        .filter(doc => doc !== this)
+                        .flatMap(doc => this._docs._pipelinesOf(doc, false))
+                        .filter(p => p.done);
+        const pipeline = [...own, ...others].find(p => name in p.vars());
+        return pipeline ? { found: true, value: pipeline.vars()[name] } : { found: false };
     }
 
     //// DOCUMENT SETTINGS API ////
@@ -234,25 +244,35 @@ export class Document
         return this;
     }
 
-    /** A function to run before this document is generated, to make what it shows (shapes
-     *  for a view, given by name). Use a regular function and `return { name, … }` to hand
-     *  its results to the document.
-     *  @param fn  The function to run.
+    /** The pipeline that makes what this document shows: the name of a `$pipeline`, or a
+     *  function, which becomes a pipeline named after the document. Its views name what it
+     *  returns: `.pipeline(fn)` with `return { iso }` and `.view('iso').shapes('iso')`.
+     *  Like any pipeline it can be picked in the editor and exported, like 'spec/model/dxf'.
+     *  @param pipeline  Name of a `$pipeline`, or a function that returns `{ name: shapes, … }`.
+     *
+     *  @example
+     *  $pipeline('drawings', function(){ return { iso: all().iso() } })
+     *  docs.create('spec').pipeline('drawings').page('main').view('iso').shapes('iso')
+     *
+     *  @example
+     *  docs.create('spec')
+     *      .pipeline(function(){ return { iso: all().iso() } })
+     *      .page('main').view('iso').shapes('iso')
      */
-    pipeline(fn: () => any):this
+    pipeline(pipeline:string|Pipeline|((mainScope?:any) => any)):this
     {
-        if(typeof fn !== 'function')
+        if(typeof pipeline === 'function')
         {
-            throw new Error(`Document::pipeline(): Please supply a function that is executed before generating this Document!`);
+            this._pipelines.push(this._docs._registerPipeline(this._name, pipeline));
         }
-
-        if(!fn.hasOwnProperty('prototype'))
+        else if(typeof pipeline === 'string' || pipeline instanceof Pipeline)
         {
-            console.warn(`Document::pipeline(): You supplied a function defined with arrows. Use return { var1, var2 } to export variables to execution scope!`);
+            this._pipelines.push(pipeline); // a name is looked up when the document is made, so $pipeline() can come later
         }
-
-        this.addPipeline({ fn: fn, done: false } as DocPipeline);
-
+        else
+        {
+            throw new Error(`Document::pipeline(): Please give the name of a pipeline, or a function that returns what the document shows: .pipeline(function(){ return { iso: all().iso() } })`);
+        }
         return this;
     }
 
@@ -1954,7 +1974,7 @@ export class Document
     /** Remove all references that tie this Document instance to the execution scope */
     resolveScopeReferences():this
     {
-        this._docs.executePipelines(); // make sure pipelines are executed before moving around
+        this._docs.executePipelines([this._name]); // make sure pipelines are executed before moving around
         this._pages.forEach( p =>
         {
             p?.resolveScopeReferences();

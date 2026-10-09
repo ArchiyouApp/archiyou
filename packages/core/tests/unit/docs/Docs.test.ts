@@ -10,6 +10,7 @@ import { DOC_DEFAULT_SVG_FONT_FAMILY, DOC_TEXT_HEIGHT_TO_FONT_SIZE_FACTOR } from
 
 import { Modeler } from '../../../src/modeler/Modeler'
 import { Docs } from '../../../src/docs/Docs'
+import { Pipeline } from '../../../src/execution/Pipeline'
 import { pointsToMm, mmToPoints, imageAspectRatio } from '../../../src/docs/utils'
 import { isPageSize } from '../../../src/docs/typeguards'
 import { ShapeCollection as SmartShapeCollection } from '@archiyou/meshup'
@@ -114,7 +115,7 @@ describe('Doc', () =>
 		expect(page?._padding).toEqual([0.1, 0.1])
 	})
 
-	it('executes included pipelines and exposes returned values on the runner scope', () =>
+	it('executes included pipelines and keeps returned values with the pipeline, not on the scope', () =>
 	{
 		const { doc, scope } = createDoc()
 
@@ -133,11 +134,26 @@ describe('Doc', () =>
 
 		doc.executePipelines(['primary'])
 
-		expect(scope.result).toBe(42)
-		expect(scope.copied).toBe('keep')
-		expect(scope.skipped).toBeUndefined()
-		expect(doc.getDoc('primary')?._pipelines[0].done).toBe(true)
-		expect(doc.getDoc('secondary')?._pipelines[0].done).toBe(false)
+		const primary = doc.getDoc('primary')!
+		expect(primary._pipelineVar('result')).toEqual({ found: true, value: 42 })
+		expect(primary._pipelineVar('copied')).toEqual({ found: true, value: 'keep' })
+		expect(scope.result).toBeUndefined()
+		expect(primary._pipelineVar('skipped').found).toBe(false)
+		expect((primary._pipelines[0] as Pipeline).done).toBe(true)
+		expect((doc.getDoc('secondary')?._pipelines[0] as Pipeline).done).toBe(false)
+	})
+
+	it('runs only the pipelines of the documents asked for', () =>
+	{
+		const { doc } = createDoc()
+		const ran: Array<string> = []
+
+		doc.create('a').pipeline(function(){ ran.push('a'); return {} })
+		doc.create('b').pipeline(function(){ ran.push('b'); return {} })
+
+		doc.getDocs(['a'])
+
+		expect(ran).toEqual(['a'])
 	})
 
 	it('filters getDocs() output and does not rerun completed pipelines', () =>
@@ -159,7 +175,8 @@ describe('Doc', () =>
 		expect(filteredDocs.map(curDoc => curDoc._name)).toEqual(['first'])
 		expect(filteredDocsAgain.map(curDoc => curDoc._name)).toEqual(['first'])
 		expect(executions).toBe(1)
-		expect(scope.runCount).toBe(1)
+		expect(doc.getDoc('first')!._pipelineVar('runCount').value).toBe(1)
+		expect(scope.runCount).toBeUndefined()
 	})
 
 	it('builds metric, param and version summaries from Archiyou state', () =>

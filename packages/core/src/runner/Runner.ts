@@ -127,13 +127,25 @@ export interface ScriptGlobals
      *  @param params Parameter values for the component, same as `.params()`
      */
     $component(name?: string, params?: Record<string, any>): RunnerComponentImporter;
-    /** Register a pipeline: a named step that runs after the model, for instance to
-     *  prepare shapes for a drawing.
+    /** Add a pipeline: a named step that runs after the model, like making the drawings of it.
+     *  What it returns is its output, kept apart from the model: `return { iso, front }` gives
+     *  the layers 'iso' and 'front'. Pick it in the editor next to the run button to see it,
+     *  export it (as DXF for instance), or give it to a document with `doc.pipeline('name')`.
+     *  It reads the model and your variables; the variables and shapes it makes stay with it.
      *
-     *  @param name Name of the pipeline, referred to by docs and outputs
-     *  @param fn The function to run
+     *  @param name Name of the pipeline, referred to by docs and outputs ('drawings/model/dxf')
+     *  @param fn The function to run. Return the shapes to output: `return { iso, front }`
+     *
+     *  @example
+     *  $pipeline('drawings', function()
+     *  {
+     *      iso = all().iso();
+     *      front = all().elevation('front').autoDim();
+     *      return { iso, front };
+     *  })
+     *  docs.create('spec').pipeline('drawings').page('main').view('iso').shapes('iso')
      */
-    $pipeline(name: string, fn: () => any): void;
+    $pipeline(name: string, fn: (mainScope?: any) => any): Pipeline;
     /** Declare a script module (an optional extension installed on the server) and get it.
      *
      *  @param name Name of the module, e.g. `'cloudcalc'`
@@ -240,7 +252,6 @@ export class Runner
      *  it caches loaded module instances so editor re-runs don't re-fetch a
      *  bundle. Empty and inert unless the request carries a module catalog. */
     private _moduleRegistry: ModuleRegistry = new ModuleRegistry();
-    private _pipelines:Array<Pipeline> = []; // keep track of defined pipelines
 
 
     //// SETTINGS ////
@@ -294,6 +305,11 @@ export class Runner
 
         state._archiyou.console.setParent(parentScope?._archiyou?.console);
 
+        state._pipelines = new Map(); // pipelines of this scope, see pipeline()
+        // While a pipeline runs, the variables it assigns go here instead of on the scope, and are
+        // read from here first. Set by Pipeline.run(); see the proxy below
+        state._overlay = null;
+
         /*
                 Proxy is used to isolate scope changes
                 and allow settings variables without var/let/const
@@ -338,7 +354,10 @@ export class Runner
         const scope = new Proxy(state as Record<string|symbol, any>,
         {
             has: () => true, // Allows access to any variable (avoids ReferenceError) - this enabled users to omit var/let/const
-            get: (target, key) => target[key], // Retrieves values from scope
+            // Retrieves values from scope - or from the overlay of the pipeline that is running
+            get: (target, key) => (target._overlay && typeof key === 'string' && key in target._overlay)
+                                    ? target._overlay[key]
+                                    : target[key],
             set: (target, key, value) =>
             {
                 // Auto-name shapes/collections after the variable they are assigned to.
@@ -368,6 +387,13 @@ export class Runner
                 if(typeof value === 'function')
                 {
                     console.warn(`Runner: Detected a function definition in scope '${name}' with name '${String(key)}'. \nPlease make sure you don't use variables from outside the function scope, \nbecause they will be locked in at the time of function creation (lexical closure). \nUse explicit arguments instead!`);
+                }
+
+                // A running pipeline keeps the variables it assigns to itself (see Pipeline.ts)
+                if (target._overlay && typeof key === 'string' && !key.startsWith('_'))
+                {
+                    target._overlay[key] = value;
+                    return true;
                 }
 
                 // Plain rebinding. NEVER Object.assign onto the value already under `key`:
@@ -597,15 +623,8 @@ export class Runner
             return componentImporter;
         }
 
-        state.$pipeline = (name:string, func: () => Promise<any>|any) =>
-        {
-            console.info(`$pipeline: Registering pipeline: '${name}'`);
-
-            // Detect if given function has no arguments
-
-            // Pipelines are registered on the Runner instance
-            this.pipeline(name, func);
-        }
+        // Pipelines are registered on the scope (see pipeline())
+        state.$pipeline = (name:string, func: (mainScope?:any) => any) => this.pipeline(name, func, this.getActiveScope());
 
         // Declare a script module (see modules/README.md). Returns the module, so
         // both forms work:
@@ -657,24 +676,75 @@ export class Runner
 
     //// PIPELINES ////
 
-    /** Make a new pipeline. Use .do(fn) to set function later */
-    pipeline(name?:string, fn?:() => any):Pipeline
+    /** Add a pipeline to a scope (see Pipeline.ts). Each scope has its own, so every run
+     *  starts without any and a component's pipelines stay its own.
+     *
+     *  A second pipeline with the same name replaces the first. A document's pipeline
+     *  (`auto`, from doc.pipeline(fn)) is named after the document and gives way: it gets
+     *  another name when the name is taken. One function given to several documents is one
+     *  pipeline, so it runs once. */
+    pipeline(name:string, fn:(mainScope?:any) => any, scope:RunnerScriptScope = this.getActiveScope(), auto:boolean = false):Pipeline
     {
-        const p = new Pipeline(name);
-        if (fn){ p.do(fn); } // attach function if given
-        if(!this._pipelines.includes(p)) this._pipelines.push(p);
-        console.info(`Brep::pipeline: Created new pipeline '${p.name}'`);
-        return p;
+        const registry = scope._pipelines as Map<string, Pipeline>;
+        if(auto)
+        {
+            const same = [...registry.values()].find(p => p._auto && p._function === fn);
+            if(same){ return same }
+        }
+
+        const cleanName = auto ? String(name).replace(/[\/?*]/g, '_') : name;
+        if(typeof cleanName !== 'string' || !cleanName.trim() || cleanName === 'default' || /[\/?*]/.test(cleanName))
+        {
+            throw new Error(`$pipeline('${name}'): Please give the pipeline a name without / ? or *, and not 'default' (that is the model itself)`);
+        }
+
+        const freeName = (n:number):string =>
+        {
+            const candidate = (n === 1) ? cleanName : `${cleanName}-${n}`;
+            return registry.has(candidate) ? freeName(n + 1) : candidate;
+        }
+
+        const existing = registry.get(cleanName);
+        if(existing && auto)
+        {
+            return this._registerPipeline(registry, new Pipeline(freeName(2), fn), scope, auto);
+        }
+        if(existing?._auto)
+        {
+            // The document keeps its pipeline under another name
+            registry.delete(cleanName);
+            existing.name = freeName(2);
+            registry.set(existing.name, existing);
+        }
+        else if(existing)
+        {
+            console.warn(`$pipeline('${cleanName}'): There is already a pipeline with this name. The new one replaces it.`);
+        }
+        return this._registerPipeline(registry, new Pipeline(cleanName, fn), scope, auto);
     }
 
-    getPipelineNames():Array<string>
+    _registerPipeline(registry:Map<string, Pipeline>, pipeline:Pipeline, scope:RunnerScriptScope, auto:boolean):Pipeline
     {
-        return Array.from( new Set(this._pipelines.map( p => p.name)))
+        pipeline._auto = auto;
+        pipeline.onError = (e) => scope?._archiyou?.console?.error?.(`Pipeline '${pipeline.name}' failed: ${this._describeThrown(e)}`);
+        registry.set(pipeline.name, pipeline);
+        console.info(`Runner::pipeline(): Added pipeline '${pipeline.name}'`);
+        return pipeline;
     }
 
-    getPipelineByName(name:string):Pipeline
+    getPipelines(scope:RunnerScriptScope = this.getActiveScope()):Array<Pipeline>
     {
-        return this._pipelines.find(p => p.name === name);
+        return Array.from((scope?._pipelines as Map<string, Pipeline>)?.values() ?? []);
+    }
+
+    getPipelineNames(scope:RunnerScriptScope = this.getActiveScope()):Array<string>
+    {
+        return this.getPipelines(scope).map(p => p.name);
+    }
+
+    getPipelineByName(name:string, scope:RunnerScriptScope = this.getActiveScope()):Pipeline|undefined
+    {
+        return (scope?._pipelines as Map<string, Pipeline>)?.get(name);
     }
 
     //// MANAGING EXECUTION SCOPES 
@@ -2395,80 +2465,6 @@ ${contextLines.join('\n')}
         return state;
     }
 
-    //// PIPELINE ////
-
-    async executePipeline(pipeline:Pipeline, request:RunnerScriptExecutionRequest): Promise<RunnerScriptExecutionResult|null>
-    {
-        if(!pipeline){ console.error(`Runner::_executePipeline(): No pipeline object given!`); return null; }
-
-        const result = await this._executePipelineIsolated(pipeline, request); // start run and output
-        this.deleteLocalScope(`pipeline:${pipeline.name}`); // delete scope after execution
-        console.info(`******* Runner::executePipeline(): Finished executing pipeline '${pipeline.name}' *****`);
-        return result;
-    }
-
-    /** Execute a Pipeline in a isolated scope and extract requested outputs
-     *  NOTE: Based on _executeLocal() but simplified for ease of use
-     */
-    private async _executePipelineIsolated(pipeline:Pipeline, request:RunnerScriptExecutionRequest):Promise<RunnerScriptExecutionResult|null>
-    {
-        console.info(`Runner::_executePipelineIsolated(): Executing pipeline '${pipeline.name}' in seperate scope!`);
-
-        const mainScope = this.getActiveScope();
-
-        const executeStartTime = performance.now()
-
-        const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-
-        const scopeName = `pipeline:${pipeline.name}`;
-
-        this.createScope(scopeName); // isolated pipeline scope, automatically becomes current scope
-        const pipelineScope = this.getActiveScope();
-
-        // IMPORTANT: Needs to be async !!!
-        const outputFunc = async (scope:RunnerScriptScope) => { return await this.getScopeResults(scope, request); };
-
-        const exec = async () =>
-        {
-            try 
-            {
-                return await (new AsyncFunction(  
-                        'mainScope',
-                        'pipelineScope',
-                        'pipeline',
-                        'outputFunc',
-                            // function body
-                            `
-                            console.log('***** EXECUTING PIPELINE '${pipeline.name}' IN ISOLATED SCOPE (ASYNC) *****');
-                            // run pipeline function in own scope, and supplying mainScope as argument
-                            await pipeline._function.call(pipelineScope, mainScope); 
-                            
-                            // export results
-                            /*
-                            asyncOutput = outputFunc.constructor.name === 'AsyncFunction'; 
-                            
-                            return (asyncOutput) 
-                                        ? Promise.resolve(outputFunc(pipelineScope)) // avoid await keyword - again for Webpack 4
-                                        : outputFunc(pipelineScope);
-                            */
-                            return await outputFunc(pipelineScope);
-            
-                            `
-                    ))(mainScope, pipelineScope, pipeline, outputFunc) as Promise<RunnerScriptExecutionResult>|RunnerScriptExecutionResult;    
-            }
-            catch(e)
-            {
-               return this._handleExecutionError(pipelineScope, request, outputFunc.toString(), e);
-            }
-        }
-
-        const result = await exec();
-        
-        this._finalizeExecutionDuration(result, executeStartTime);
-
-        return result;
-    }
-
     //// EXECUTION UTILS ////
 
     /** Execute from URL of Archiyou library */
@@ -2545,7 +2541,7 @@ ${contextLines.join('\n')}
         result.meta = {
             units: scope.modeler.units(),
             docs : scope.docs.docs(), // available doc names
-            pipelines: this.getPipelineNames(),  // names of defined pipelines
+            pipelines: this.getPipelineNames(scope),  // names of defined pipelines
             tables: scope.calc.getTableNames(), // names of available tables
             metrics : scope.calc.getMetricNames(),
             bbox : bboxArr, 
@@ -2617,60 +2613,88 @@ ${contextLines.join('\n')}
      *  NOTE: There is a recursive aspect here, because in the default pipeline (main scope) we run pipelines first 
      *      in a seperate scope and get its results. Here this function is used too.
     */
-    async getScopeResultOutputs(scope:RunnerScriptScope, 
-            request:RunnerScriptExecutionRequest, 
+    async getScopeResultOutputs(scope:RunnerScriptScope,
+            request:RunnerScriptExecutionRequest,
             result:RunnerScriptExecutionResult):Promise<Array<ScriptOutputData>>
     {
-        const outputs = [] as Array<ScriptOutputData>;
-        const outputManager = new ScriptOutputManager().loadRequest(request, result);
-        const requestedPipelineNames = outputManager.getPipelines(); 
+        // The pipeline names come from the requested paths: a pipeline's wildcards ('drawings/docs/*/svg')
+        // can only be resolved after it ran. 'default' comes first, so what pipelines make can never
+        // end up in the model's outputs.
+        const pipelineNames = new ScriptOutputManager().loadRequest(request, undefined, false).getRequestedPipelines();
+        console.info(`**** Runner::getScopeResultOutputs(): Getting results from execution scope '${scope._scope}'. Requested pipelines: '${pipelineNames.join(', ') || 'none'}' ****`);
 
-        // If we are in main scope, we need to run other pipelines first and get their results
-        console.info(`**** Runner::getScopeResultOutputs(): Getting results from execution scope '${scope._scope}'. Requested pipelines: '${requestedPipelineNames.length ? requestedPipelineNames.join('') : 'none'}' ****`);
+        return pipelineNames.reduce(
+            async (acc, name) => [...await acc, ...await this._exportPipeline(scope, request, name, result)],
+            Promise.resolve([] as Array<ScriptOutputData>));
+    }
 
-        for(let i = 0; i < requestedPipelineNames.length; i++)
+    /** Export the requested outputs of one pipeline. A named one runs first (once), and its
+     *  outputs are what it has: its own scene, its documents, the tables and metrics it made */
+    async _exportPipeline(scope:RunnerScriptScope, request:RunnerScriptExecutionRequest, name:string, result:RunnerScriptExecutionResult):Promise<Array<ScriptOutputData>>
+    {
+        if(name === 'default')
         {
-            const pipelineName = requestedPipelineNames[i];
-
-            // Execute this pipeline if needed (when it is not the default)
-            if(pipelineName !== 'default' && scope._main === true) // IMPORTANT: Only pipelines from main/default scope - otherwise loops happen
-            {
-                // Default pipeline is already run, only run others    
-                const curPipeline = this.getPipelineByName(pipelineName);
-
-                if(!curPipeline) // TODO: check valid
-                {
-                    console.warn(`Runner::getScopeResultOutputs: Can't get pipeline '${pipelineName}'`);
-                }
-                else 
-                {
-
-                    console.info(`'Runner::getScopeResultOutputs(): Running extra pipeline: '${pipelineName}'`);
-                    /* NOTE: executePipeline actually uses this same function (so there is recursion here)
-                        It's important that we create a specific request with only the outputs of current pipeline
-                        Otherwise we would end up in infinite loops
-                    */
-                    const pipelineOutputs = outputManager.getOutputsByPipeline(pipelineName).map(p => p.resolvedPath);
-                    const pipelineResults = await this.executePipeline(curPipeline, { ...request, outputs: pipelineOutputs });
-                    if(!pipelineResults){ console.error(`Runner::getScopeResultOutputs: No results from pipeline '${pipelineName}'`); }
-                    else { // Add the results to outputs of main scope
-                        outputs.push(...pipelineResults.outputs);
-                    }
-                }
-            }
-            else {
-                // Gather results per pipeline and add to array
-                console.info(`**** Runner::getScopeResultOutputs(): Exporting outputs for pipeline '${pipelineName}' ****`);
-                outputs.push(...await this._exportPipelineModels(scope, request, pipelineName, result));
-                outputs.push(...await this._exportPipelineMetrics(scope, request, pipelineName, result));
-                outputs.push(...await this._exportPipelineTables(scope, request, pipelineName, result));
-                outputs.push(...await this._exportPipelineDocs(scope, request, pipelineName, result));
-            }
+            return [
+                ...await this._exportPipelineModels(scope, request, name, result),
+                ...await this._exportPipelineMetrics(scope, request, name, result),
+                ...await this._exportPipelineTables(scope, request, name, result),
+                ...await this._exportPipelineDocs(scope, request, name, result),
+            ];
         }
-        
-        return outputs;        
-        
-    }    
+
+        result.warnings ??= [];
+        const pipeline = this.getPipelineByName(name, scope);
+        if(!pipeline)
+        {
+            const warning = `There is no pipeline '${name}' in this script. Its pipelines: ${this.getPipelineNames(scope).join(', ') || '(none)'}`;
+            console.warn(`Runner::_exportPipeline(): ${warning}`);
+            result.warnings.push(warning);
+            return [];
+        }
+
+        await pipeline.run(scope, scope._archiyou);
+        const run = pipeline.result();
+        if(run.error)
+        {
+            result.warnings.push(`Pipeline '${name}' failed: ${this._describeThrown(run.error)}`);
+            return [];
+        }
+
+        // Only this pipeline's paths. step and buffer come from the kernel's own scene, not
+        // the pipeline's: those are for the model only
+        const legacyFormat = (path:string) => /^[^/]+\/model\/(step|buffer)(\?|$)/.test(path);
+        const paths = new ScriptOutputManager().loadRequest(request, undefined, false).getRequestedPathsOfPipeline(name);
+        paths.filter(legacyFormat).forEach(path => result.warnings.push(`'${path}': this format is only made for the model ('default/model/...')`));
+
+        const pipelineRequest = { ...request, outputs: paths.filter(path => !legacyFormat(path)) };
+        const pipelineResult = { ...result, meta: this._pipelineMeta(scope, pipeline, result.meta) } as RunnerScriptExecutionResult;
+
+        const models = run.output
+            ? await scope.modeler.withScene(run.output, () => this._exportPipelineModels(scope, pipelineRequest, name, pipelineResult), run.annotations)
+            : [];
+
+        return [
+            ...models,
+            ...await this._exportPipelineMetrics(scope, pipelineRequest, name, pipelineResult),
+            ...await this._exportPipelineTables(scope, pipelineRequest, name, pipelineResult),
+            ...await this._exportPipelineDocs(scope, pipelineRequest, name, pipelineResult),
+        ];
+    }
+
+    /** What a pipeline has to output: the documents bound to it or made in it, the tables and
+     *  metrics it made */
+    _pipelineMeta(scope:RunnerScriptScope, pipeline:Pipeline, meta?:ScriptMeta):ScriptMeta
+    {
+        const created = pipeline.result()?.created ?? { docs: [], tables: [], metrics: [] };
+        const boundDocs = (scope.docs as Docs)?._pipelineDocs?.(pipeline.name) ?? [];
+        return {
+            ...(meta ?? {}),
+            docs: [...new Set([...boundDocs, ...created.docs])],
+            tables: created.tables,
+            metrics: created.metrics,
+            pipelines: [],
+        } as ScriptMeta;
+    }
 
     /**
      * Get results out of local execution scope synchronously for Components
@@ -3061,11 +3085,15 @@ ${contextLines.join('\n')}
 
         // Check if we need anything to export for current pipeline and tables
         if(outputPathsDocs.length === 0)
-        { 
+        {
             console.info(`Runner::_exportPipelineDocs(): No docs to export`);
             return []; // no docs to export
-        } 
-        
+        }
+
+        // Run the pipelines of these documents (only these: a pipeline can change the model),
+        // awaiting async ones, before the (synchronous) document code needs what they return
+        await (scope.docs as Docs)?._runPipelines?.(outputPathsDocs.map(o => o.entityName));
+
         // Now generate the docs
         for(let d = 0; d < outputPathsDocs.length; d++)
         {
@@ -3096,7 +3124,7 @@ ${contextLines.join('\n')}
                     if (typeof svgResult === 'string')
                     {
                         // Single doc returned as a plain string; retrieve the real name from scope
-                        const docName = (scope.doc as Docs).docs()[0] ?? 'document';
+                        const docName = outputPathDoc.entityName ?? (scope.doc as Docs).docs()[0] ?? 'document';
                         outputs.push({
                             path: { ...outputPathDoc.toData(), entityName: docName },
                             output: svgResult,
@@ -3120,7 +3148,7 @@ ${contextLines.join('\n')}
                     if (Array.isArray(svgPagesResult))
                     {
                         // Single doc returned as a plain array; retrieve the real name from scope
-                        const docName = (scope.doc as Docs).docs()[0] ?? 'document';
+                        const docName = outputPathDoc.entityName ?? (scope.doc as Docs).docs()[0] ?? 'document';
                         outputs.push({
                             path: { ...outputPathDoc.toData(), entityName: docName },
                             output: svgPagesResult,
