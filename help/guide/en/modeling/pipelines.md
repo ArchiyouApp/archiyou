@@ -56,6 +56,15 @@ docs.create('spec')
 
 A pipeline only runs when one of its outputs is asked for, or a document that uses it is made, and then only once.
 
+## Pipelines of a component
+
+A component's pipelines are yours to use too: pick one before you take its model or documents.
+
+```js
+cutting = $component('./panel').pipeline('cut').model();     // what pipeline 'cut' of the component returns
+sheets = $component('./panel').pipeline('cut').docs();       // the documents that use it
+```
+
 ## Outputs by path
 
 Outside the editor (the API, the publish menu, components) outputs are asked for by path: `pipeline/category/name/format`. The model is the `default` pipeline:

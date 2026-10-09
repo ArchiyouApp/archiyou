@@ -257,6 +257,8 @@ Then check the editor in the browser with strawwall:
 - Flat pipeline output in the existing 3D viewer, top-down orthographic.
 - Asked why the isolated pipeline scope was dropped and how components isolate; chose overlay isolation over main scope, component-like recompile or re-running the script.
 - Implementation in a separate worktree on branch `pipelines`.
+- Approved the two commits (core, editor) and their texts.
+- After the first round, asked to also do the optional items: `$component().pipeline()`, the CLI `--pipeline` flag, and ticking off the `_pipelines` reset in `plans/SAFE_EXEC.md` (untracked, edited in the main checkout).
 
 ## Commits
 | Commit | Subject | Prompt it answers |

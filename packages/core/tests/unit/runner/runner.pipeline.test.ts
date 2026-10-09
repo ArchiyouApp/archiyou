@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll } from 'vitest'
 
 import type { RunnerScriptExecutionResult } from '../../../src/runner/types'
 import { Runner } from '../../../src/runner/Runner'
+import { Script } from '../../../src/Script'
 
 let runner: Runner
 
@@ -224,6 +225,36 @@ describe('Runner pipelines', () =>
         expect(svg).toContain('<svg')
         expect(svg).not.toContain('was not found')
         expect(runner.getScope('default').iso).toBeUndefined()
+    })
+
+    it("gives a component's pipeline with $component().pipeline()", async () =>
+    {
+        runner.linkComponentScripts([Script.fromData({
+            name: 'panel',
+            code: `
+                p = box(300, 20, 600);
+                $pipeline('cut', function(){ return { outline: p.elevation('front') } });
+                docs.create('cutsheet').pipeline('cut').page('p').view('outline').shapes('outline');
+                docs.create('other').page('p').text('not the pipeline');
+            `,
+        })!])
+
+        const result = await run(`
+            model = $component('./panel').model();
+            cut = $component('./panel').pipeline('cut').model();
+            cutDocs = $component('./panel').pipeline('cut').docs();
+        `, ['default/model/glb'])
+
+        expect(result.status, result.errors?.[0]?.message).toBe('success')
+        const scope = runner.getScope('default')
+        expect(scope.model.length).toBe(1)
+        expect(scope.cut.length).toBeGreaterThan(0)
+        expect(scope.cut.toArray().every((s: any) => s.type !== 'Mesh')).toBe(true) // the drawing, not the box
+        expect(scope.cutDocs.map((d: any) => d._name)).toEqual(['cutsheet'])
+
+        const missing = await run(`$component('./panel').pipeline('nope').model();`, ['default/model/glb'])
+        expect(missing.status).toBe('error')
+        expect(missing.errors?.[0]?.message).toContain(`no pipeline 'nope'`)
     })
 
     it('works on the brep kernel', async () =>

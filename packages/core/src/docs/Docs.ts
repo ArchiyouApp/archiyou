@@ -403,12 +403,15 @@ export class Docs
         }
     }
 
-    /** For moving Docs internally around from component scopes */
-    toInternalData():Array<Document>
+    /** For moving Docs internally around from component scopes
+     *  @param only names of the documents (all when not given) */
+    toInternalData(only?:Array<string>):Array<Document>
     {
         if(typeof this._docs !== 'object' || this._docs.length === 0) return [];
 
-        return Object.values(this._docs).map( curDoc => curDoc.resolveScopeReferences());
+        return Object.values(this._docs)
+            .filter(curDoc => !only || only.includes(curDoc._name))
+            .map( curDoc => curDoc.resolveScopeReferences());
 
     }
 

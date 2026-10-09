@@ -3192,12 +3192,18 @@ ${contextLines.join('\n')}
         {
             const pipeline = pipelines[i];
             
-            // Default pipeline is already run, only run others
+            // The default pipeline (the component's model) already ran. Another one runs now,
+            // synchronously ($component() does not await), and its outputs are what it has:
+            // its own scene, the documents bound to it or made in it, the metrics it made
             if(pipeline !== 'default')
             {
-                console.info(`Runner::getScopeResultOutputsInternal(): Running extra pipeline: '${pipelines[i]}'`);
-                console.error(`Runner::getScopeResultOutputsInternal(): Running pipeline '${pipeline}' not implemented yet`);
-                // TODO: run specific pipeline
+                const own = this._runPipelineInternal(scope, pipeline);
+
+                outputs.push(...this._exportPipelineModelsInternal(scope, request, pipeline, result, own.output));
+                outputs.push(...this._exportPipelineMetricsInternal(scope, request, pipeline, result, own.metrics));
+                outputs.push(...this._exportPipelineTablesInternal(scope,request, pipeline, result));
+                outputs.push(...this._exportPipelineDocsInternal(scope, request, pipeline, result, own.docs));
+                continue;
             }
 
             // Gather raw results from pipeline
@@ -3215,8 +3221,29 @@ ${contextLines.join('\n')}
         return outputs;
     }
 
-    /** Get internal Obj/Shape model data from local execution scope */
-    _exportPipelineModelsInternal(scope:any, request:RunnerScriptExecutionRequest, pipeline:string, result:RunnerScriptExecutionResult):Array<ScriptOutputData>
+    /** Run a pipeline of a component synchronously (see Pipeline.runSync()). Throws when
+     *  there is no such pipeline or it failed, like any other error of a component */
+    _runPipelineInternal(scope:any, name:string):{ output:any, docs:Array<string>, metrics:Array<string> }
+    {
+        const pipeline = this.getPipelineByName(name, scope);
+        if(!pipeline)
+        {
+            throw new Error(`There is no pipeline '${name}' in this component. Its pipelines: ${this.getPipelineNames(scope).join(', ') || '(none)'}`);
+        }
+
+        const run = pipeline.runSync(scope, scope._archiyou).result();
+        if(run.error)
+        {
+            throw new Error(`Pipeline '${name}' of this component failed: ${this._describeThrown(run.error)}`);
+        }
+
+        const meta = this._pipelineMeta(scope, pipeline);
+        return { output: run.output, docs: meta.docs, metrics: meta.metrics };
+    }
+
+    /** Get internal Obj/Shape model data from local execution scope
+     *  @param root the scene to export: the model, or the output of a pipeline */
+    _exportPipelineModelsInternal(scope:any, request:RunnerScriptExecutionRequest, pipeline:string, result:RunnerScriptExecutionResult, root?:any):Array<ScriptOutputData>
     {
         const outputManager = new ScriptOutputManager().loadRequest(request,result, false);
         const outputPaths = outputManager.getOutputsByPipelineEntityFormats(pipeline, 'model', ['internal']); // get the models to export for current pipeline
@@ -3233,7 +3260,7 @@ ${contextLines.join('\n')}
                 // Shapes still carry their _modeler from the component scope;
                 // RunnerComponentImporter rebinds them when reconstructing the
                 // tree under the parent scope's modeler.
-                output: scope.modeler.scene().toComponentGraph(request.component)
+                output: (root ?? scope.modeler.scene()).toComponentGraph(request.component)
             })
         }
         console.info(`Runner::_exportPipelineModelsInternal(): Exported ${outputs.length} models of Pipeline '${pipeline}'`);
@@ -3242,7 +3269,7 @@ ${contextLines.join('\n')}
     }
 
     /** Get internal Metric data from local execution scope and set in result tree */
-    _exportPipelineMetricsInternal(scope:any, request:RunnerScriptExecutionRequest, pipeline:string, result:RunnerScriptExecutionResult):Array<ScriptOutputData>
+    _exportPipelineMetricsInternal(scope:any, request:RunnerScriptExecutionRequest, pipeline:string, result:RunnerScriptExecutionResult, only?:Array<string>):Array<ScriptOutputData>
     {
         const outputManager = new ScriptOutputManager().loadRequest(request,result, false);
         const outputPathsForMetrics = outputManager.getOutputsByPipelineEntityFormats(pipeline, 'metrics', ['internal']); // get the metrics to export for current pipeline
@@ -3251,14 +3278,15 @@ ${contextLines.join('\n')}
 
         // We result all metrics per pipeline (no per-metric export here)
         
-        const metrics = scope.calc.getMetrics();
+        // only: the metrics a pipeline made (none is none, not all)
+        const metrics = (only && only.length === 0) ? [] : scope.calc.getMetrics(only);
         if(typeof metrics === 'object' && Object.keys(metrics).length > 0 )
         {
             outputPathsForMetrics.forEach((outputPath) => 
             {
                 outputs.push({
                     path: outputPath.toData(),
-                    output: scope.calc.getMetrics(),
+                    output: metrics,
                 });
             });
             console.info(`Runner::_exportPipelineMetricsInternal(): Exported ${Object.keys(metrics).length} metrics of Pipeline '${pipeline}' for output paths '${outputPathsForMetrics.map(m => m.entityName).join(', ')}'`);
@@ -3298,14 +3326,14 @@ ${contextLines.join('\n')}
     /** Get internal Doc data from local execution scope and set in result tree 
      *  Because of the Doc module is tied to the execution scope, we export raw data here (Doc.toData())
     */
-    _exportPipelineDocsInternal(scope:RunnerScriptScope, request:RunnerScriptExecutionRequest, pipeline:string, result:RunnerScriptExecutionResult):Array<ScriptOutputData>
+    _exportPipelineDocsInternal(scope:RunnerScriptScope, request:RunnerScriptExecutionRequest, pipeline:string, result:RunnerScriptExecutionResult, only?:Array<string>):Array<ScriptOutputData>
     {
         const outputManager = new ScriptOutputManager().loadRequest(request,result, false);
         const outputPathsForDocs = outputManager.getOutputsByPipelineEntityFormats(pipeline, 'docs', ['internal']); // get the docs to export for current pipeline
         
         const outputs = [] as Array<ScriptOutputData>;
 
-        const docNames = scope.docs.docs();
+        const docNames = scope.docs.docs().filter(name => !only || only.includes(name));
 
         if(docNames.length > 0)
         {
@@ -3320,7 +3348,7 @@ ${contextLines.join('\n')}
                         This applies to shapes mostly, which are turned into SVG's
                         NOTE: doc.toData() is not possible because it's async
                     */
-                    output: (scope.docs as Docs).toInternalData(), 
+                    output: (scope.docs as Docs).toInternalData(only), 
                 });     
             });
 

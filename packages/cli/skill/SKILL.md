@@ -166,4 +166,6 @@ edges), `model-org` (layers, names, colours), `surface`.
 `archiyou run` writes `model.glb` and `views.png` to `--out` (default `<tmp>/archiyou/<name>/`), and each
 overlay full size. The sheet shows the photos and overlays first, then the views; front, side and top
 views are drawn at one scale so their sizes compare. `--json` prints everything as one object; `--parts`
-lists every part of a large model. `mark` writes to `--out` too (default `<tmp>/archiyou/marks/`).
+lists every part of a large model. `--pipeline drawings:dxf,svg` also writes what pipeline
+`drawings` makes as `drawings.dxf` and `drawings.svg` (default dxf); the summary lists the script's
+pipelines. `mark` writes to `--out` too (default `<tmp>/archiyou/marks/`).
