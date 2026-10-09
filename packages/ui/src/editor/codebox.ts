@@ -17,6 +17,9 @@ import '@awesome.me/webawesome/dist/components/split-panel/split-panel.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/checkbox/checkbox.js';
+import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
+import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
+import '@awesome.me/webawesome/dist/components/divider/divider.js';
 
 // CodeMirror imports
 import { EditorView, basicSetup } from 'codemirror';
@@ -27,13 +30,13 @@ import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { autocompletion, acceptCompletion, completionStatus } from '@codemirror/autocomplete';
-import { archiyouCompletions, registerModuleCompletions, registerComponentNames } from './completions.js';
+import { archiyouCompletions, registerModuleCompletions, registerComponentNames, registerPipelineNames } from './completions.js';
 import { moduleCatalog } from '@archiyou/editor/src/services/module-service';
 import { authService } from '@archiyou/editor/src/services/auth-service';
 import { fetchPublicShared, fetchSharedWithMe } from '@archiyou/editor/src/services/sharing';
 
 import { SignalWatcher } from '@lit-labs/signals';
-import { executing, executionResult, perStatement, autoRun, kernel, scripts, editorScript, selectedPath, selectedStatement } from '@archiyou/editor/src/state/workspace';
+import { executing, executionResult, perStatement, autoRun, kernel, activePipeline, scripts, editorScript, selectedPath, selectedStatement } from '@archiyou/editor/src/state/workspace';
 
 // ── Shared components for $component() completions ───────────────────────────
 /** How long a fetched list of shared components is used before fetching it again. */
@@ -205,6 +208,7 @@ export class CodeBox extends SignalWatcher(LitElement)
             }
           </span>
           <span class="spacer"></span>
+          ${this._renderPipelineChip()}
           <button class="execute-button" data-help="run"
               @click=${this._handleRunClick} title="Run (Ctrl+Enter)">
               <wa-icon library="lucide" name="play" label="Execute"></wa-icon>
@@ -270,6 +274,8 @@ export class CodeBox extends SignalWatcher(LitElement)
   /** When true the document is read-only (e.g. a foreign shared script). Run
    *  stays available; only editing is blocked. */
   @property({ type: Boolean }) readonly = false;
+  /** Pipelines of the script, as of the last run that said (see _renderPipelineChip()) */
+  private _pipelines: string[] = [];
 
   // ── 3. Lifecycle ──
   override firstUpdated()
@@ -292,6 +298,9 @@ export class CodeBox extends SignalWatcher(LitElement)
         .map(label => ({ label, own: false }));
       return [...own, ...shared];
     });
+
+    // .pipeline('… completions: the pipelines of the last run (this script's, as it was)
+    registerPipelineNames(() => executionResult.get()?.meta?.pipelines ?? this._pipelines);
 
     const container = this.renderRoot.querySelector<HTMLElement>('.cm-container')!;
 
@@ -571,6 +580,46 @@ export class CodeBox extends SignalWatcher(LitElement)
   {
     e.stopPropagation(); // same reason as _handlePerStatementChange
     autoRun.set((e.target as HTMLInputElement).checked);
+  }
+
+  /** The chip next to Run that picks what the viewer shows and Export exports: the model,
+   *  or one of the script's pipelines (see activePipeline). Only there when the script has
+   *  pipelines; it keeps the ones of the last run that had them through a failing run. */
+  private _renderPipelineChip()
+  {
+    const meta = executionResult.get()?.meta;
+    if (meta) { this._pipelines = meta.pipelines ?? []; }
+    const active = activePipeline.get();
+    if (this._pipelines.length === 0 && active === 'default') { return '' }
+
+    return html`
+      <wa-dropdown
+          class="pipeline-dropdown"
+          placement="bottom-end"
+          hoist
+          @wa-select=${this._handlePipelineSelect}
+          @change=${(e: Event) => e.stopPropagation()}
+      >
+        <button slot="trigger"
+            class="pipeline-chip ${active === 'default' ? '' : 'active'}"
+            data-help="pipelines"
+            title="What to show and export: the model, or a pipeline of the script">
+          <wa-icon library="lucide" name="workflow"></wa-icon>
+          <span class="pipeline-name">${active === 'default' ? 'model' : active}</span>
+          <wa-icon library="lucide" name="chevron-down"></wa-icon>
+        </button>
+        <wa-dropdown-item type="checkbox" value="default" ?checked=${active === 'default'}>Model</wa-dropdown-item>
+        <wa-divider></wa-divider>
+        ${this._pipelines.map(p => html`
+          <wa-dropdown-item type="checkbox" value=${p} ?checked=${active === p}>${p}</wa-dropdown-item>`)}
+      </wa-dropdown>
+    `;
+  }
+
+  private _handlePipelineSelect(e: CustomEvent)
+  {
+    e.stopPropagation(); // keep it inside the codebox, like the option checkboxes
+    activePipeline.set((e.detail.item as { value: string }).value); // the editor runs for it
   }
 
   /** Mesh / BREP segmented control — picks the geometry kernel for the next run.
@@ -949,6 +998,42 @@ export class CodeBox extends SignalWatcher(LitElement)
       font-size: var(--text-xs, 0.75rem);
       color: var(--color-text);
       padding-inline-start: 0.3rem;
+    }
+
+    .pipeline-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      max-width: 10rem;
+      padding: 0.1rem 0.45rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-full);
+      background: var(--color-bg);
+      color: var(--color-text-muted);
+      font-family: var(--font-sans);
+      font-size: var(--text-xs, 0.75rem);
+      line-height: 1.5;
+      cursor: pointer;
+    }
+
+    .pipeline-chip:hover {
+      background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg));
+    }
+
+    .pipeline-chip.active {
+      border-color: var(--color-primary);
+      background: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg));
+      color: var(--color-text);
+    }
+
+    .pipeline-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .pipeline-dropdown wa-dropdown-item {
+      font-size: var(--text-sm);
     }
 
     .execute-button {

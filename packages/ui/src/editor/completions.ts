@@ -318,6 +318,41 @@ function componentNameCompletion(context: CompletionContext): CompletionResult |
   };
 }
 
+/** The pipelines of the script being edited (`$pipeline('name', …)`), for `.pipeline('…`.
+ *  Known from its last run, so the editor registers a provider like the component names. */
+let pipelineNamesProvider: () => ReadonlyArray<string> = () => [];
+
+/** Set where the pipeline names come from. Called by the editor. */
+export function registerPipelineNames(provider: () => ReadonlyArray<string>): void
+{
+  pipelineNamesProvider = provider;
+}
+
+/** Completion inside `doc.pipeline(` / `.pipeline('dr`: the script's pipelines. Not on a
+ *  `$component(…)` chain, whose pipelines are the component's own. */
+function pipelineNameCompletion(context: CompletionContext): CompletionResult | null
+{
+  const m = context.matchBefore(/\.pipeline\(\s*['"`]?[\w -]*$/);
+  if (!m) return null;
+  if (endsInComponentImporter(context.state.doc.sliceString(0, m.from))) return null;
+
+  const names = [...new Set(pipelineNamesProvider())];
+  if (names.length === 0) return null;
+
+  const quoted = /\(\s*['"`]/.test(m.text);
+  const nameStart = m.text.search(/[\w -]*$/);
+  return {
+    from: m.from + nameStart,
+    options: names.map(name => ({
+      label: name,
+      type: 'constant',
+      detail: 'pipeline',
+      apply: quoted ? name : `'${name}'`,
+    })),
+    validFor: /^[\w -]*$/,
+  };
+}
+
 /** True when `textBefore` (up to a `.`) ends in `$component(...)`, optionally followed by
  *  importer methods that return the importer (params, pipeline, …). */
 function endsInComponentImporter(textBefore: string): boolean
@@ -486,6 +521,10 @@ export function archiyouCompletions(
   // $component('… → the names of the workspace components
   const componentNames = componentNameCompletion(context);
   if (componentNames) return componentNames;
+
+  // .pipeline('… → the pipelines of the script
+  const pipelineNames = pipelineNameCompletion(context);
+  if (pipelineNames) return pipelineNames;
 
   // ClassName. → static completions (Point.from, Vector.from, etc.)
   const dotMatch = context.matchBefore(/\b([A-Z]\w*)\.(\w*)$/);

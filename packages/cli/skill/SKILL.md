@@ -47,6 +47,11 @@ print('seat area', seat.area());               // shows in the run summary
 - Shapes you only cut or merge with stay in the model: `a.subtract(b)` and `a.union(b)` change `a` and
   leave `b`. Make `b` with `.tmp()`, as in
   `plate.subtract(cylinder(5, 40).move(15, 15, -10).tmp())` (a hole through a 20 mm plate at z 0–20).
+- Drawings (and other outputs made from the model) go in a **pipeline**, so they stay out of the
+  model, its views and the checks: `$pipeline('drawings', function(){ return { iso: all().iso(),
+  front: all().elevation('front') } })`. What it returns is its output, one layer per key; a
+  document shows it with `docs.create('spec').pipeline('drawings').page('p').view('iso').shapes('iso')`.
+  Don't move or hide model shapes inside a pipeline: copy them first.
 - The mesh kernel is the default. A few primitives (spiral, helix, cone, basePlane) need `--kernel brep`.
 - **Axis convention** (the checks assume it): x is width, y is depth with the front at y = 0 and the
   back positive, z is up, the floor is z = 0.

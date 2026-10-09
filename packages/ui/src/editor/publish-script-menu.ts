@@ -796,10 +796,10 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
     return { pipeline: this._pipelines()[0], category: 'model', entity: OUTPUT_WILDCARD, formats: formatsForGroup('model') };
   }
 
+  /** The model ('default') and the script's own pipelines (meta lists only those) */
   private _pipelines(): string[]
   {
-    const p = this._meta?.pipelines;
-    return p && p.length ? Array.from(new Set<string>(p)) : ['default'];
+    return Array.from(new Set<string>(['default', ...(this._meta?.pipelines ?? [])]));
   }
 
   private _entityNames(group: PublishEntityGroup): string[]
