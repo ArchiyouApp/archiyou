@@ -364,13 +364,17 @@ export class View extends Container
             return null;
         }
 
-        if(!(shapesRef in workerScope))
+        // What a pipeline of the document made comes first (see Pipeline.ts: a pipeline keeps
+        // its variables to itself); then the scope, for shapes of the model
+        const fromPipeline = this._page?._doc?._pipelineVar?.(shapesRef) ?? { found: false };
+
+        if(!fromPipeline.found && !(shapesRef in workerScope))
         {
             const scopeKeys = Object.keys(workerScope).filter(k => !k.startsWith('_')).slice(0, 40);
             throw new Error(`View::resolveShapeNameToSVG(): Variable "${shapesRef}" was not found in the execution scope for view "${this.name}". Make sure your pipeline function returns it, e.g. \`pipeline(() => { ${shapesRef} = ...; return { ${shapesRef} } })\`. Available top-level scope keys: ${scopeKeys.join(', ') || '(none)'}.`);
         }
 
-        const realShapes = workerScope[shapesRef];
+        const realShapes = fromPipeline.found ? fromPipeline.value : workerScope[shapesRef];
 
         if(realShapes === undefined || realShapes === null)
         {

@@ -5,11 +5,15 @@
  *  This is essential for complicated parametric models and assemblies
  * 
  *  Script execution and outputs are organized as follows:
- *  - Every script has one or more pipelines: These are basically functions with some management on top.
- *      - One can define a pipeline with:
- *        pipeline(<name>, <function>); See Geom.pipeline and Pipeline class
- *      - If there is no implicit pipeline defined we call that the default pipeline, which is always run
- *      - Any non-default pipelines are only run on request from the user
+ *  - The script itself is the 'default' pipeline: it always runs and builds the model.
+ *  - A script can add named pipelines with $pipeline('<name>', function(){ ... return { iso, front } })
+ *      or by giving a document a function: doc.create('spec').pipeline(fn) (a pipeline named 'spec').
+ *      A named pipeline only runs when an output path asks for it, after the default outputs are exported.
+ *      It reads the main model and variables, but its own variables and the shapes it makes stay with
+ *      the pipeline (see Pipeline.ts). Its outputs:
+ *        - model: the shapes it returns, one layer per returned key (or the shapes it made when it returns nothing)
+ *        - docs: the documents bound to it (doc.pipeline('<name>')) or made in it
+ *        - tables, metrics: the ones it made
  * 
  *  Outputs are organized primary based on the pipelines. Every pipeline outputs the following categories.
  *   There is always only one model (which is the active Scene) but these categories have multiple entities with unique names.
@@ -166,6 +170,20 @@
     public getPipelines():Array<string>
     {
         return Array.from(new Set(this.resolvedOutputsPaths.map(o => o.pipeline)));
+    }
+
+    /** Names of the pipelines the request asks for, 'default' first. Taken from the requested
+     *  (unresolved) paths: a pipeline's wildcards can only be resolved after it ran */
+    public getRequestedPipelines():Array<string>
+    {
+        const names = Array.from(new Set(this.requestedOutputPaths.map(o => o.pipeline)));
+        return names.includes('default') ? ['default', ...names.filter(n => n !== 'default')] : names;
+    }
+
+    /** The requested (unresolved) paths of one pipeline, as strings */
+    public getRequestedPathsOfPipeline(pipeline:string):Array<string>
+    {
+        return this.requestedOutputPaths.filter(o => o.pipeline === pipeline).map(o => o.requestedPath);
     }
 
     public getOutputsByPipeline(pipeline:string):Array<ScriptOutputPath>

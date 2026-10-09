@@ -39,7 +39,7 @@ import '@archiyou/ui/editor/modules-menu.js';
 import '@archiyou/ui/editor/keys-menu.js';
 import type { ToolDef } from '@archiyou/ui/editor/toolbar.js';
 
-import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystemOverride, docUnitSystemOverride, perStatement, kernel, autoRun, wasActiveScriptRestored } from '../state/workspace';
+import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystemOverride, docUnitSystemOverride, perStatement, kernel, autoRun, wasActiveScriptRestored, activePipeline, pipelineModelPath, forActivePipeline } from '../state/workspace';
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
 import { registerScheduleExecution, triggerResetCamera } from '../state/viewer';
 import { registerHelpRunner, openHelpDoc, claimOnboarding, setHelpCursor, lookupHelpAtCursor, ONBOARDING_PATH } from '../state/help';
@@ -64,6 +64,7 @@ export class PageEditor extends SignalWatcher(LitElement)
     { id: 'scene',   icon: 'network',    name: 'Scene',     exclusive: false, component: 'editor-scene-tool',    width: 30, height: 50 },
     { id: 'data',    icon: 'table',      name: 'Data',      exclusive: false, component: 'editor-data-tool',     width: 30, height: 50 },
     { id: 'metrics', icon: 'chart-bar',  name: 'Metrics',   exclusive: false, component: 'editor-metrics-tool',  width: 30, height: 50,  outputs: ['default/metrics/*/json'] },
+    // Documents of the picked pipeline (see _toolOutputs()): the model's are all of them
     { id: 'docs',    icon: 'file-text',  name: 'Documents', exclusive: false, component: 'editor-document-tool', width: 40, height: 60, outputs: ['default/docs/*/svg', 'default/docs/*/svg-pages'] },
     { id: 'instruct', icon: 'list-ordered', name: 'Instructions', exclusive: false, component: 'editor-instruct-tool', width: 30, height: 50 },
     { id: 'profiling', icon: 'timer',    name: 'Profiling', exclusive: false, component: 'editor-profiling-tool', width: 30, height: 50 },
@@ -79,6 +80,8 @@ export class PageEditor extends SignalWatcher(LitElement)
     this._pendingUnitSystem = `${scriptUnitSystemOverride.get() ?? ''}/${docUnitSystemOverride.get() ?? ''}`;
     // Same for the geometry kernel — read here so SignalWatcher tracks it.
     this._pendingKernel = kernel.get();
+    // And the pipeline picked next to the Run button
+    this._pendingPipeline = activePipeline.get();
     // Phones: viewer on top, params + code below, rails as bars, tools in a sheet.
     // The same elements in every layout, so the viewer and the editor survive a rotation.
     const compact = compactLayout.get();
@@ -316,12 +319,25 @@ export class PageEditor extends SignalWatcher(LitElement)
     {
       this._lastKernel = this._pendingKernel;
     }
+
+    // Another pipeline picked: run for its output (always, also without automatic execute)
+    if (this._lastPipeline !== null && this._pendingPipeline !== this._lastPipeline)
+    {
+      this._lastPipeline = this._pendingPipeline;
+      void this.execute();
+    }
+    else
+    {
+      this._lastPipeline = this._pendingPipeline;
+    }
   }
 
   private _pendingUnitSystem: string | null = null;
   private _lastUnitSystem: string | null = null;
   private _pendingKernel: string | null = null;
   private _lastKernel: string | null = null;
+  private _pendingPipeline: string | null = null;
+  private _lastPipeline: string | null = null;
 
   // ── Script deep links (/editor/{name}[:{version}], /editor/{author}/{name}[:{version}]) ──
 
@@ -643,17 +659,27 @@ export class PageEditor extends SignalWatcher(LitElement)
   private _rerun = false;
   private _runCount = 0; // lets a tool's own run see that a full run started after it
 
-  /** The outputs the open tools show (metrics, documents), each once */
+  /** The outputs the open tools show (metrics, documents), each once. Documents are those
+   *  of the picked pipeline */
   private _toolOutputs(): string[]
   {
-    return [...new Set(this._activeTools.flatMap(t => t.outputs ?? []))];
+    return [...new Set(this._activeTools.flatMap(t => this._outputsOf(t)))];
+  }
+
+  /** The outputs of a tool, documents those of the picked pipeline */
+  private _outputsOf(tool: ToolDef): string[]
+  {
+    return (tool.outputs ?? []).map(path => path.startsWith('default/docs/') ? forActivePipeline(path) : path);
   }
 
   private async _executeOnce(): Promise<RunnerScriptExecutionResult | undefined>
   {
     this._runCount++;
+    // The model always (the thumbnail is of the model), and the output of the picked pipeline
+    const pipeline = activePipeline.get();
+    const pipelineModel = (pipeline === 'default') ? [] : [pipelineModelPath(pipeline)];
     const result = await runScript(
-      this._buildRequest(['default/model/glb', 'default/tables/*/json', ...this._toolOutputs()])
+      this._buildRequest(['default/model/glb', ...pipelineModel, 'default/tables/*/json', ...this._toolOutputs()])
     );
 
     if (result)
@@ -920,27 +946,29 @@ export class PageEditor extends SignalWatcher(LitElement)
 
   /** Download filename for exports: <scriptname>_<version>.<ext>.
    *  Unpublished/working scripts have no version yet — those fall back to 0.0.0. */
-  private _exportFilename(ext: string): string
+  private _exportFilename(ext: string, suffix = ''): string
   {
     const script = editorScript.get();
-    const name = (script?.name ?? 'model').replace(/[\\/:*?"<>|\s]+/g, '-');
+    const clean = (s: string) => s.replace(/[\\/:*?"<>|\s]+/g, '-');
+    const name = clean(script?.name ?? 'model');
     const version = script?.version ?? '0.0.0';
-    return `${name}_${version}.${ext}`;
+    return `${name}_${version}${suffix ? `_${clean(suffix)}` : ''}.${ext}`;
   }
 
-  private _downloadFile(data: string|Uint8Array|ArrayBuffer, ext: string, mimeType: string)
+  private _downloadFile(data: string|Uint8Array|ArrayBuffer, ext: string, mimeType: string, suffix = '')
   {
     const blob = new Blob([data as BlobPart], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = this._exportFilename(ext);
+    anchor.download = this._exportFilename(ext, suffix);
     anchor.click();
     URL.revokeObjectURL(url);
   }
 
   /** Main menu ▸ Export to… — run a lean export-only request for the given model format
-   *  and download the result as <scriptname>_<version>.<ext>.
+   *  and download the result as <scriptname>_<version>.<ext>: of the model, or of the
+   *  pipeline picked next to the Run button (<scriptname>_<version>_<pipeline>.<ext>).
    *  DXF gets `?annotations=true` so Modeler.toDXF() bakes in the dimension lines. */
   private async _exportModel(format: ExportModelFormat)
   {
@@ -959,7 +987,9 @@ export class PageEditor extends SignalWatcher(LitElement)
       btlx: { path: 'default/model/btlx', mimeType: 'application/xml', emptyMsg: 'the model produced no timber parts.' },
     };
 
-    const { path: requestPath, mimeType, emptyMsg, ext } = EXPORT_FORMATS[format];
+    const { path: modelPath, mimeType, emptyMsg, ext } = EXPORT_FORMATS[format];
+    const requestPath = forActivePipeline(modelPath);
+    const pipeline = activePipeline.get();
 
     const result = await runScript(
       this._buildRequest([requestPath], ['error'])
@@ -976,11 +1006,11 @@ export class PageEditor extends SignalWatcher(LitElement)
     if (!output || size === 0)
     {
       console.error(`${format.toUpperCase()} export produced no output`, result);
-      window.alert(`${format.toUpperCase()} export failed — ${emptyMsg}`);
+      window.alert(`${format.toUpperCase()} export failed — ${(pipeline === 'default') ? emptyMsg : `pipeline '${pipeline}' has no output in this format.`}`);
       return;
     }
 
-    this._downloadFile(output, ext ?? format, mimeType);
+    this._downloadFile(output, ext ?? format, mimeType, (pipeline === 'default') ? '' : pipeline);
   }
 
   private _handleScriptImporterImport(e: CustomEvent<ScriptData>)
@@ -1069,7 +1099,7 @@ export class PageEditor extends SignalWatcher(LitElement)
     // run a lean extra execute immediately to populate its data.
     if (tool.outputs?.length && executionResult.get())
     {
-      this._executeToolOutputs(tool.outputs);
+      this._executeToolOutputs(this._outputsOf(tool));
     }
   }
 

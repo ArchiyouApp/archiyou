@@ -36,8 +36,9 @@ import { Type } from 'typebox'
 
 import { validate, optional } from "../decorators";
 import { type AnyShape, isAnyShape } from "./types";
+import { isKernelShapeCollection, isKernelShapeOrCollection } from "./typeguards";
 
-import { buildDXF, type toDXFOptions } from "./DXFExporter";
+import { buildDXF, cascadedStyleData, type toDXFOptions } from "./DXFExporter";
 import { detectExportFrame } from "./utils";
 import { buildSVG, buildProjectionSVG, buildThumbnailSVG, buildThumbnailSVGFromCurves,
     type toSVGOptions, type toProjectionSVGOptions,
@@ -126,6 +127,13 @@ export class Modeler
      *  run and every $component() activation number independently and cannot interleave.
      *  Rebased by reset(); the scene root pulls from it via setSidProvider(). */
     private _sidSeq = 0
+
+    /** Open captures (see beginCapture), innermost last, each with the active layer to go
+     *  back to when it ends */
+    private _captures: Array<{ node: meshup.SceneNode, previous: meshup.SceneNode | null }> = []
+
+    /** Annotations the exporters use instead of the Annotator's, set by withScene() */
+    private _exportAnnotations: Array<any> | null = null
     
     stats:Record<string,any> = {}; // stats of last operation
 
@@ -177,6 +185,8 @@ export class Modeler
         this._scene = meshup.SceneNode.root<meshup.SceneNode>('root'); // new scene root
         this._sidSeq = 0; // a run starts numbering from 1 again
         this._scene.setSidProvider(() => this._nextSid());
+        this._captures = [];
+        this._exportAnnotations = null;
         this._setActiveLayer(this._scene);
         this.setMake();
     }
@@ -202,6 +212,8 @@ export class Modeler
     {
         this._activeLayer = node;
         this._scene?.setActiveLayer(node);
+        // Shapes made from captured shapes resolve their layer through the capture root
+        this._captures?.at(-1)?.node.setActiveLayer(node);
     }
 
     /** Adopt a freshly-created meshup shape into this modeler: tag it with the modeler
@@ -1101,6 +1113,92 @@ export class Modeler
 
     //// OUTPUT ////
 
+    //// PIPELINE OUTPUT ////
+
+    /** Start a capture: shapes made from now on land in a detached root of their own instead
+     *  of the scene, until endCapture(). A pipeline (see Pipeline.ts) runs inside one, so the
+     *  drawings it makes from the model never end up in the model. Captures nest. */
+    beginCapture(name: string): meshup.SceneNode
+    {
+        const capture = meshup.SceneNode.root<meshup.SceneNode>(name);
+        capture.setSidProvider(() => this._nextSid());
+        this._captures.push({ node: capture, previous: this._activeLayer });
+        this._setActiveLayer(capture);
+        return capture;
+    }
+
+    /** End the innermost capture and go back to the layer that was active before it */
+    endCapture(): meshup.SceneNode | null
+    {
+        const capture = this._captures.pop();
+        if (!capture) { return null }
+        this._setActiveLayer(capture.previous);
+        return capture.node;
+    }
+
+    /** The scene a pipeline outputs: a root named after the pipeline with a layer per key it
+     *  returned (`return { iso, front }` gives layers 'iso' and 'front').
+     *
+     *  Shapes the pipeline made are moved out of its capture into those layers, with the style
+     *  their capture layers gave them baked in (DXF reads layers and colours from the node a
+     *  shape sits in). Shapes of the model it returned are only referenced, so the model stays
+     *  whole. When nothing it returned is a shape, the capture itself is the output: old
+     *  pipelines that only assign variables still show what they made. */
+    pipelineScene(name: string, capture: meshup.SceneNode | null, returned: Record<string, any> | null): meshup.SceneNode
+    {
+        const entries = Object.entries(returned ?? {}).filter(([, v]) => isKernelShapeOrCollection(v));
+        if (entries.length === 0)
+        {
+            const root = capture ?? meshup.SceneNode.root<meshup.SceneNode>(name);
+            root.name = name;
+            return root;
+        }
+
+        const root = meshup.SceneNode.root<meshup.SceneNode>(name);
+        entries.forEach(([key, value]) =>
+        {
+            const layer = root.ensureLayer(key);
+            const shapes: Array<any> = isKernelShapeCollection(value) ? (value as any).toArray() : [value];
+            shapes.forEach(shape =>
+            {
+                const node = shape?._node ?? null;
+                if (capture && node?.root?.() === capture)
+                {
+                    shape.style?.merge?.(cascadedStyleData(node, shape));
+                    layer.addShape(shape);
+                }
+                else
+                {
+                    const ref = new meshup.SceneNode(meshup.SceneNode.getName(shape));
+                    (ref as any)._shape = shape;
+                    layer.addChild(ref);
+                }
+            });
+        });
+        return root;
+    }
+
+    /** Run `fn` with `root` as the scene (and `annotations` as the ones to export), then put
+     *  the scene back. Every exporter reads scene(), so this is how a pipeline's output scene
+     *  is exported in all formats without touching the model. */
+    async withScene<T>(root: meshup.SceneNode, fn: () => T | Promise<T>, annotations?: Array<any>): Promise<T>
+    {
+        const [scene, activeLayer, exportAnnotations] = [this._scene, this._activeLayer, this._exportAnnotations];
+        this._scene = root;
+        this._activeLayer = root;
+        this._exportAnnotations = annotations ?? [];
+        try
+        {
+            return await fn();
+        }
+        finally
+        {
+            this._scene = scene;
+            this._activeLayer = activeLayer;
+            this._exportAnnotations = exportAnnotations;
+        }
+    }
+
     toGraph():SceneNodeGraphNode
     {
         return this.scene().toGraph()
@@ -1326,7 +1424,7 @@ export class Modeler
     toDXF(options?: toDXFOptions): string | null
     {
         const shapes = this._exportScene().shapes().toArray()
-        const annotations = this._modules?.annotator?.getAnnotations?.() ?? []
+        const annotations = this._exportAnnotations ?? this._modules?.annotator?.getAnnotations?.() ?? []
         return buildDXF(shapes as any, annotations, { units: this.units(), ...(options ?? {}) })
     }
 
@@ -1563,9 +1661,9 @@ export class Modeler
         // Mirrors RunnerScriptExecutionResult.state so a standalone .glb still
         // carries the data the viewer/scene-navigator need. Legacy `annotations`
         // key is also written for one back-compat cycle on the read side.
-        const anns = options?.annotations
-            ? (this._modules?.annotator?.getAnnotationsData?.() ?? [])
-            : [];
+        const anns = !options?.annotations ? []
+            : this._exportAnnotations ? this._exportAnnotations.map(a => a?.toData?.()).filter(Boolean)
+            : (this._modules?.annotator?.getAnnotationsData?.() ?? []);
         const archiyouState = this.toArchiyouState(anns);
         await builder.addData({ state: archiyouState });
         if (anns.length)

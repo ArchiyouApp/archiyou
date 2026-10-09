@@ -236,6 +236,25 @@ export const autoRun          = signal<boolean>(true);
  *  on first use, so the first brep run is slower. */
 export const kernel           = signal<ModelMode>('mesh');
 
+/** The pipeline whose output the viewer shows and Export exports: 'default' is the model,
+ *  any other a `$pipeline` of the script (drawings, a cutting plan). Picked with the chip
+ *  next to the Run button. Session-only, like `kernel`; goes back to 'default' when the
+ *  script no longer has it. */
+export const activePipeline   = signal<string>('default');
+
+/** The output path of the GLB the viewer shows for a pipeline. A pipeline's own
+ *  annotations go into its GLB: the viewer's annotations from result.state are the model's */
+export function pipelineModelPath(pipeline: string): string
+{
+  return (pipeline === 'default') ? 'default/model/glb' : `${pipeline}/model/glb?annotations=true`;
+}
+
+/** A model output path ('default/model/dxf?annotations=true') for the active pipeline */
+export function forActivePipeline(path: string): string
+{
+  return path.replace(/^default\//, `${activePipeline.get()}/`);
+}
+
 /** Combined view — use when you need the full core shape. */
 export const core = computed<WorkspaceCoreState>(() => ({
   user:      userState.get(),
@@ -574,6 +593,12 @@ export function setExecutionResult(result: RunnerScriptExecutionResult): void
       !_scriptIsForeign(activeScript),
     );
     if (evaluateParamBehaviours(activeScript)) bumpScript();
+  }
+  // The script no longer has the pipeline that was picked: back to the model
+  const pipeline = activePipeline.get();
+  if (pipeline !== 'default' && result.status !== 'error' && result.meta && !(result.meta.pipelines ?? []).includes(pipeline))
+  {
+    activePipeline.set('default');
   }
   executionResult.set(result);
 }

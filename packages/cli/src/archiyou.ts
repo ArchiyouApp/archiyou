@@ -26,6 +26,8 @@ const USAGE = `archiyou <command>
       --overlay <photo>@<view>@x0,y0,x1,y1   the model drawn over a photo, fitted into the
                               object's rectangle in it (fractions or pixels; repeatable)
       --expect WxDxH          the size asked for, e.g. 200x120x20: a line when the model is off
+      --pipeline <name>[:dxf,svg,glb]   write what a pipeline of the script makes (its drawings)
+                              to --out as <name>.<format>; default dxf (repeatable)
       --clash                 list parts that share volume (touching does not count)
       --check <inventory.json>  compare the parts with an inventory (counts, axes, floor, relations)
       --kernel mesh|brep      default mesh

@@ -153,6 +153,22 @@ describe.skipIf(!MESHUP_BUILT)('run (needs pnpm build:meshup)', () =>
         expect(r.stdout).toMatch(/ {2}a x d {2}8000 mm3/);
     });
 
+    it('--pipeline writes what a pipeline makes; the parts stay those of the model', () =>
+    {
+        const script = join(tmp, 'drawn.js');
+        writeFileSync(script, `${readFileSync(join(FIXTURES, 'plate.js'), 'utf8')}
+$pipeline('drawings', function(){ return { front: all().elevation('front') } });`);
+        const outDir = join(tmp, 'drawn');
+
+        const r = cli(['run', script, '--views', 'none', '--pipeline', 'drawings:dxf,svg', '--pipeline', 'nope', '--out', outDir]);
+        expect(r.status).toBe(0);
+        expect(r.stdout).toContain('pipelines drawings');
+        expect(r.stdout).toContain(`no pipeline 'nope'`);
+        expect(r.stdout).toContain('parts 3');
+        expect(readFileSync(join(outDir, 'drawings.dxf'), 'utf8')).toContain('front');
+        expect(readFileSync(join(outDir, 'drawings.svg'), 'utf8')).toContain('<svg');
+    });
+
     it('--check compares the parts with an inventory', () =>
     {
         const ok = cli(['run', join(FIXTURES, 'plate.js'), '--check', join(FIXTURES, 'plate.inventory.json'), '--views', 'none']);

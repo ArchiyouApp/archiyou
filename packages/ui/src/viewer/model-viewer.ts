@@ -6,7 +6,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { buildScenegraphPath, executionResult, scenegraph, scriptParams, updateParam, selectedPath, setSelectedPath, interactiveShapes, activeParamEntry, setActiveParamEntry, isObjectListParam, paramItemSchema } from '@archiyou/editor/src/state/workspace';
+import { buildScenegraphPath, executionResult, activePipeline, pipelineModelPath, scenegraph, scriptParams, updateParam, selectedPath, setSelectedPath, interactiveShapes, activeParamEntry, setActiveParamEntry, isObjectListParam, paramItemSchema } from '@archiyou/editor/src/state/workspace';
 import { formatDimensionValue } from './gltf-annotations.js';
 import { scheduleExecution, viewerParamStore, resetCameraCounter,
          instructName, instructStep, setInstructAvailable } from '@archiyou/editor/src/state/viewer';
@@ -159,10 +159,17 @@ export class ModelViewer extends SignalWatcher(LitElement)
   // ── 1. Render ──
   override render()
   {
-    // Read signals so SignalWatcher tracks them and re-renders on change
-    this._pendingGlbOutput = executionResult.get()?.outputs
-      ?.find(o => o.path.requestedPath === 'default/model/glb');
-    this._pendingScenegraph = scenegraph.get();
+    // Read signals so SignalWatcher tracks them and re-renders on change.
+    // The output of the pipeline picked next to Run: the model, or a pipeline's own scene,
+    // which has none of the model's scenegraph, annotations and handles
+    const result = executionResult.get();
+    this._pendingPipeline = activePipeline.get();
+    const glbPath = pipelineModelPath(this._pendingPipeline);
+    this._pendingGlbOutput = result?.outputs?.find(o => o.path.requestedPath === glbPath);
+    // Asked for but not made (the pipeline failed or has no shapes): show nothing, not the model
+    this._pendingNoOutput = this._pendingPipeline !== 'default' && result?.status !== 'error'
+      && !this._pendingGlbOutput && !!result?.request?.outputs?.includes(glbPath);
+    this._pendingScenegraph = (this._pendingPipeline === 'default') ? scenegraph.get() : null;
     this._pendingResetCount = resetCameraCounter.get();
     this._pendingSelectedPath = selectedPath.get();
     this._interactiveShapes = interactiveShapes.get();
@@ -177,6 +184,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
         @dim-param-change=${this._onDimParamChange}
       ></viewer-labels-overlay>
       <viewer-handles-overlay
+        ?hidden=${this._pendingPipeline !== 'default'}
         .activeId=${this._activeHandleIdFor(this._pendingActiveEntry)}
         @handle-drag-start=${this._onHandleDragStart}
         @handle-drag-move=${this._onHandleDragMove}
@@ -255,6 +263,21 @@ export class ModelViewer extends SignalWatcher(LitElement)
       this._lastHandledResetCount = this._pendingResetCount;
       this._forceFrameOnNextLoad  = true;
       this._hasFramedCamera       = false;
+    }
+
+    // Another pipeline picked: frame its output when it comes
+    if (this._pendingPipeline !== this._lastPipeline)
+    {
+      this._lastPipeline = this._pendingPipeline;
+      this._forceFrameOnNextLoad = true;
+      this._hasFramedCamera      = false;
+    }
+
+    if (this._pendingNoOutput && this._currentModel && this._renderer)
+    {
+      this._disposeModel();
+      this._lastGlbOutput = undefined;
+      this._dirty = true;
     }
 
     const glbOutput = this._pendingGlbOutput;
@@ -443,6 +466,16 @@ export class ModelViewer extends SignalWatcher(LitElement)
   private _projV = new THREE.Vector3(); // reused for world→screen projection
   private _lastGlbOutput?: ScriptOutputData;
   private _pendingGlbOutput?: ScriptOutputData;
+  /** The pipeline whose output is shown (see activePipeline): 'default' is the model */
+  private _pendingPipeline = 'default';
+  private _lastPipeline = 'default';
+  /** The last run asked for the pipeline's GLB but did not get one */
+  private _pendingNoOutput = false;
+  /** Axis a flat pipeline output (a drawing) is looked at along; null for 3D output */
+  private _flatAxis: 'x' | 'y' | 'z' | null = null;
+  /** Orthographic or not, and the view direction, before a flat output changed them */
+  private _orthoBeforeFlat = false;
+  private _viewBeforeFlat: THREE.Vector3 | null = null;
   /** GLB fed imperatively via load() (standalone use, no editor signals). Kept
    *  separate from _pendingGlbOutput because render() recomputes that from the
    *  executionResult signal each cycle and would clobber a direct load. */
@@ -2109,6 +2142,9 @@ export class ModelViewer extends SignalWatcher(LitElement)
 
     this._updateCameraRangesForObject(model);
 
+    // A drawing (a flat pipeline output) is looked at straight on
+    this._applyFlatView((this._pendingPipeline === 'default') ? null : flatAxis(new THREE.Box3().setFromObject(model)));
+
     if ((shouldFrameCamera || this._forceFrameOnNextLoad) && !this._hasFramedCamera)
     {
       this._frameCamera(model);
@@ -2142,7 +2178,9 @@ export class ModelViewer extends SignalWatcher(LitElement)
     // Render annotations: prefer the live execution result; fall back to GLB
     // extras for standalone .glb loads. Dimensions become 3D arrows + HTML
     // overlay value text; labels become HTML overlay elements.
-    const anns = executionResult.get()?.state?.annotations as any[] | undefined;
+    const anns = (this._pendingPipeline === 'default')
+      ? executionResult.get()?.state?.annotations as any[] | undefined
+      : undefined; // a pipeline's annotations are in its GLB
     // Same scene-size scale factor as the origin gizmo (computed just above),
     // so dimension arrows stay proportionally legible across model sizes too.
     const { htmlLabels } = await applyAnnotations(gltf, model, anns, this._gizmoScale || 1);
@@ -2160,7 +2198,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
     // when the set of handle ids changes (add/delete ops). A quiet param re-exec
     // emits [] and leaves all handles untouched.
     const managedHandles = executionResult.get()?.state?.managedHandles as ManagedHandlesData | undefined;
-    if (managedHandles)
+    if (managedHandles && this._pendingPipeline === 'default')
     {
       this._reconcileHandles(managedHandles);
     }
@@ -2405,6 +2443,38 @@ export class ModelViewer extends SignalWatcher(LitElement)
   private static readonly _REFRAME_GROWTH_FACTOR = 2.5;
   /** Camera counts as "too close" within this multiple of the bounding radius. */
   private static readonly _REFRAME_PROXIMITY_FACTOR = 1.25;
+
+  /** Look straight along `axis` at a flat output, orthographic, the right way up; with null
+   *  go back to how it was. The camera is framed after this (the view direction stays). */
+  private _applyFlatView(axis: 'x' | 'y' | 'z' | null)
+  {
+    if (axis === this._flatAxis) return;
+    if (axis && this._flatAxis === null)
+    {
+      this._orthoBeforeFlat = this._isOrtho;
+      this._viewBeforeFlat = this._camera.position.clone().sub(this._controls.target);
+    }
+    this._flatAxis = axis;
+    this._forceFrameOnNextLoad = true;
+    this._hasFramedCamera = false;
+
+    if (!axis)
+    {
+      this._isOrtho = this._orthoBeforeFlat;
+      this._camera.up.set(0, 0, VIEWER_MODEL_COORDSYSTEM.up === 'z' ? 1 : 0);
+      if (this._viewBeforeFlat) this._camera.position.copy(this._controls.target.clone().add(this._viewBeforeFlat));
+      this._controls.update();
+      return;
+    }
+
+    // Z-up (see _snapCameraToAxis): a plan is seen from above with y up on screen, an
+    // elevation from the front or the side with z up
+    const direction = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, -1, 0), z: new THREE.Vector3(0, 0, 1) }[axis];
+    this._camera.up.copy(axis === 'z' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1));
+    this._camera.position.copy(this._controls.target.clone().add(direction));
+    this._controls.update();
+    this._isOrtho = true;
+  }
 
   private _frameCamera(obj: THREE.Object3D)
   {
@@ -3112,6 +3182,17 @@ function hideByScenegraph(root: THREE.Object3D, graph: SceneNodeData): void
 
 /** The bounding box of what is actually VISIBLE under `root` — Box3.setFromObject() takes
  *  hidden subtrees along, and a hidden shape must not leave air in the frame either. */
+/** The axis along which a box has (next to) no size, when it is flat: a drawing in the
+ *  XY plane gives 'z'. Null for a box with depth on every axis, or an empty one. */
+export function flatAxis(box: THREE.Box3, tolerance = 1e-3): 'x' | 'y' | 'z' | null
+{
+  if (box.isEmpty()) return null;
+  const size = box.getSize(new THREE.Vector3());
+  const largest = Math.max(size.x, size.y, size.z);
+  if (largest <= 0) return null;
+  return (['z', 'y', 'x'] as const).find(axis => size[axis] <= largest * tolerance) ?? null;
+}
+
 function visibleBox(root: THREE.Object3D): THREE.Box3
 {
   const box = new THREE.Box3();

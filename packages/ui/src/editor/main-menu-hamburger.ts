@@ -10,7 +10,7 @@ import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '@awesome.me/webawesome/dist/components/divider/divider.js';
 
-import { editorScript, isReadOnly } from '@archiyou/editor/src/state/workspace';
+import { editorScript, isReadOnly, activePipeline } from '@archiyou/editor/src/state/workspace';
 import { APP_VERSION } from '@archiyou/editor/src/settings';
 
 @customElement('editor-main-menu-hamburger')
@@ -63,6 +63,7 @@ export class MainMenuHamburger extends SignalWatcher(LitElement)
         <wa-dropdown-item value="export">
           <wa-icon slot="icon" library="lucide" name="file-output"></wa-icon>
           ${msg('Export to...')}
+          ${activePipeline.get() !== 'default' ? html`<span class="export-pipeline">${activePipeline.get()}</span>` : ''}
           <wa-dropdown-item slot="submenu" value="export-glb">
             <wa-icon slot="icon" library="lucide" name="boxes"></wa-icon>
             GLB 3D
@@ -171,6 +172,15 @@ export class MainMenuHamburger extends SignalWatcher(LitElement)
   static override styles = css`
     :host {
       display: contents;
+    }
+
+    /* The pipeline Export exports, when it is not the model (picked next to Run) */
+    .export-pipeline {
+      margin-inline-start: var(--space-xs, 0.25rem);
+      padding: 0 0.4rem;
+      border-radius: var(--radius-full);
+      background: color-mix(in srgb, var(--color-primary) 25%, transparent);
+      font-size: var(--text-xs, 0.75rem);
     }
 
     wa-dropdown {

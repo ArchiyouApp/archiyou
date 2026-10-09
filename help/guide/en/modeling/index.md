@@ -16,3 +16,5 @@ order: 300
 * ✏️ [Sketching](/guide/modeling/sketching/)
 * 📐 [Advanced surface modeling](/guide/modeling/surface/)
 * 💣 [Misc](/guide/modeling/misc/)
+
+4. 🖨 [Pipelines: drawings and other outputs](/guide/modeling/pipelines/)

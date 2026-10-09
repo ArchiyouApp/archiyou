@@ -120,7 +120,7 @@ export class EditorDataTool extends SignalWatcher(LitElement)
   {
     const outputs = executionResult.get()?.outputs ?? [];
     return outputs
-      .filter(o => o.path.category === 'tables' && Array.isArray(o.output))
+      .filter(o => o.path.category === 'tables' && o.path.pipeline === 'default' && Array.isArray(o.output))
       .reduce<TableMap>((map, o) =>
       {
         const name = o.path.entityName ?? 'table';

@@ -755,19 +755,14 @@ function docPipeline()
     return { isoLeftFront, floorplanWithDrawings };
 }
 
-//docPipeline();
-
-$pipeline('techdraw',
-  function()
-  {
-    docPipeline();
-  }
-);
+// The drawings run as a pipeline: after the model, kept apart from it. Pick 'techdraw'
+// next to the run button to see them, or export them as DXF
+$pipeline('techdraw', docPipeline);
 
 doc
     .create('spec')
     .page('spec')
-    .pipeline(docPipeline)
+    .pipeline('techdraw')
     .titleblock({
         title: 'URHOUSE',
         designer: 'URBUILD'

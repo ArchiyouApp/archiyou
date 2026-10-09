@@ -71,6 +71,7 @@ export const HELP_TARGETS = Object.freeze([
   'params',
   'code',
   'run',
+  'pipelines',
   'viewer',
   'toolbar',
   'tool-console',

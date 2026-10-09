@@ -45,6 +45,8 @@ interface Inventory
 }
 
 type ViewSpec = { label: string; cam: Vec3; ortho: boolean };
+/** `--pipeline drawings:dxf,svg`: a pipeline of the script and the model formats to write */
+type PipelineSpec = { name: string; formats: Array<string> };
 type OverlaySpec = { photo: string; view: ViewSpec; rect: [number, number, number, number] };
 
 interface RunOptions
@@ -59,6 +61,7 @@ interface RunOptions
     clash: boolean;
     inventory?: Inventory;
     expect?: Vec3;           // the size asked for: a mismatch line when the model is off
+    pipelines: Array<PipelineSpec>;   // pipelines whose output is written to outDir
     outDir: string | null;   // null: write no files (sweep, eval)
     modules: Array<string>;  // directories with script modules, for $module()
     verbose: boolean;
@@ -75,6 +78,7 @@ interface RunResult
     size?: Vec3;
     min?: Vec3;
     params: Array<ParamDef>;
+    pipelines: Array<string>;   // the script's pipelines ($pipeline, doc.pipeline)
     parts: Array<Part>;
     unnamed: number;
     messages: Array<string>;
@@ -111,6 +115,8 @@ const OVERLAY_FILE_PX = 1600;   // the longest side of the full-size overlay fil
 const EXPECT_TOLERANCE = 0.01;  // --expect: 1 % per axis
 const MAX_CORNERS = 128;        // sweep --corners: every min/max combination, up to this many
 const MARK_COLOR = '#e6007e';
+/** --pipeline without formats */
+const DEFAULT_PIPELINE_FORMATS = ['dxf'];
 /** Core warnings about its own setup, not about the script */
 const INTERNAL_WARNING = /^Runner::|ShapeCollection::getGroup\(\)/;
 /** Shapes with a volume: meshes, and brep solids */
@@ -199,10 +205,12 @@ async function runOnce(o: RunOptions): Promise<RunResult>
         script: { name, code: o.code },
         params: o.params,
         modules: catalog,
-        outputs: o.outDir ? ['default/model/glb', 'default/metrics/*/json'] : ['default/metrics/*/json'],
+        outputs: o.outDir
+            ? ['default/model/glb', 'default/metrics/*/json', ...o.pipelines.flatMap(p => p.formats.map(f => pipelinePath(p.name, f)))]
+            : ['default/metrics/*/json'],
         messages: ['user', 'warn'],
     }));
-    const base = { file: o.file, kernel: o.kernel, seconds: (performance.now() - started) / 1000, params: [], parts: [], unnamed: 0, messages: [], warnings: [], metrics: {}, files: {} };
+    const base = { file: o.file, kernel: o.kernel, seconds: (performance.now() - started) / 1000, params: [], pipelines: [], parts: [], unnamed: 0, messages: [], warnings: [], metrics: {}, files: {} };
 
     if (res.status !== 'success')
     {
@@ -223,10 +231,14 @@ async function runOnce(o: RunOptions): Promise<RunResult>
         size: box ? sub(box.max, box.min) : undefined,
         min: box?.min,
         params: paramDefs(scope),
+        pipelines: res.meta?.pipelines ?? [],
         parts,
         unnamed: parts.filter(p => /^(Mesh|Curve|Polygon|Vertex|Shape)(\[\d+\]|:\w+)$/.test(p.name)).length,
         messages: messages.filter(m => m.type === 'user').map(m => String(m.message)),
-        warnings: [...new Set(messages.filter(m => m.type === 'warn' && !INTERNAL_WARNING.test(String(m.message))).map(m => String(m.message)))],
+        warnings: [...new Set([
+            ...messages.filter(m => m.type === 'warn' && !INTERNAL_WARNING.test(String(m.message))).map(m => String(m.message)),
+            ...(res.warnings ?? []).filter((w: string) => /pipeline/i.test(w)),   // a pipeline that failed or is not there
+        ])],
         metrics: Object.fromEntries(outputs
             .filter(op => /^default\/metrics\/.+\/json$/.test(op.path?.resolvedPath ?? ''))
             .flatMap(op => Object.values(op.output ?? {}) as Array<any>)
@@ -242,6 +254,19 @@ async function runOnce(o: RunOptions): Promise<RunResult>
             result.files.model = join(o.outDir, 'model.glb');
             writeFileSync(result.files.model, glb);
         }
+        // Each asked pipeline format as <pipeline>.<format>; one that made nothing gets a line
+        o.pipelines.flatMap(p => p.formats.map(f => ({ name: p.name, format: f }))).forEach(({ name, format }) =>
+        {
+            const output = outputs.find(op => op.path?.requestedPath === pipelinePath(name, format))?.output;
+            if (!output)
+            {
+                if (result.pipelines.includes(name)) { result.warnings.push(`pipeline '${name}' made no ${format} (nothing ${format === 'dxf' || format === 'svg' ? '2D' : 'to export'} in what it returns?)`); }
+                return;
+            }
+            const file = join(o.outDir as string, `${name}.${format}`);
+            writeFileSync(file, typeof output === 'string' ? output : Buffer.from(output));
+            result.files[`${name}.${format}`] = file;
+        });
         if (o.views.length > 0 || o.refs.length > 0 || o.overlays.length > 0)
         {
             const sheet = await quiet(o.verbose, () => viewsSheet(modeler, o));
@@ -265,6 +290,20 @@ async function runOnce(o: RunOptions): Promise<RunResult>
         result.expect = { size: o.expect, ok: o.expect.every((v, i) => Math.abs(size[i] - v) <= Math.max(EXPECT_TOLERANCE * Math.abs(v), 0.5)) };
     }
     return result;
+}
+
+/** The output path of a pipeline's model in a format. DXF and GLB carry the pipeline's dimensions */
+function pipelinePath(name: string, format: string): string
+{
+    return `${name}/model/${format}${format === 'dxf' || format === 'glb' ? '?annotations=true' : ''}`;
+}
+
+/** `drawings` or `drawings:dxf,svg` */
+function parsePipeline(spec: string): PipelineSpec
+{
+    const [name, formats] = spec.split(':');
+    if (!name || name === 'default' || /[/?*]/.test(name)) { throw new Error(`--pipeline takes a pipeline name and formats, as in drawings:dxf,svg, got "${spec}"`); }
+    return { name, formats: formats ? formats.split(',').map(f => f.trim().toLowerCase()).filter(Boolean) : DEFAULT_PIPELINE_FORMATS };
 }
 
 /** Core formats an error as a block with the message, line and context; keep the message */
@@ -693,6 +732,7 @@ function printRun(r: RunResult, allParts: boolean): void
     out(`OK  ${basename(r.file)}  ${r.kernel}  ${round(r.seconds, 2)}s  units ${r.units}`);
     out(`size ${fmtSize(r.size)}   min ${r.min ? r.min.map(fmt).join(', ') : '-'}   parts ${r.parts.length}`);
     if (r.params.length > 0) { out(`params ${r.params.map(p => `${p.name}=${fmtValue(p.value)}`).join(' ')}`); }
+    if (r.pipelines.length > 0) { out(`pipelines ${r.pipelines.join(', ')}   (--pipeline <name>:dxf,svg writes their output)`); }
 
     const grouped = !allParts && r.parts.length > MAX_PART_ROWS;
     const rows = grouped
@@ -780,6 +820,7 @@ function optionsFrom(args: Args, file: string, outDir: string | null): RunOption
         clash: args.bools.has('clash'),
         inventory: readInventory(args.values.check?.[0]),
         expect: parseSize(args.values.expect?.[0]),
+        pipelines: (args.values.pipeline ?? []).map(parsePipeline),
         outDir,
         modules: moduleDirs(args),
         verbose: args.bools.has('verbose'),
@@ -798,7 +839,7 @@ function scriptFile(args: Args, usage: string): string | null
 /** `run <file.js>`: exit 1 when the script fails */
 export async function run(args: Args): Promise<number>
 {
-    const file = scriptFile(args, 'archiyou run <file.js> [-p NAME=value]... [--views iso,front,cam:x,y,z] [--ref photo]... [--overlay photo@view@x0,y0,x1,y1]... [--clash] [--check inventory.json]');
+    const file = scriptFile(args, 'archiyou run <file.js> [-p NAME=value]... [--views iso,front,cam:x,y,z] [--ref photo]... [--overlay photo@view@x0,y0,x1,y1]... [--pipeline name:dxf,svg]... [--clash] [--check inventory.json]');
     if (!file) { return 1; }
     const outDir = userPath(args.values.out?.[0] ?? join(tmpdir(), 'archiyou', basename(file, extname(file))));
     const result = await runOnce(optionsFrom(args, file, outDir));
@@ -918,7 +959,7 @@ export async function evaluate(args: Args): Promise<number>
             file, code: readFileSync(file, 'utf8'), params: {}, kernel: 'mesh', views: [], refs: [], overlays: [],
             clash: Boolean(item.sweepClean),
             inventory: item.inventory ? JSON.parse(readFileSync(resolve(dirname(evalsFile), item.inventory), 'utf8')) : undefined,
-            outDir: null, modules: moduleDirs(args), verbose,
+            pipelines: [], outDir: null, modules: moduleDirs(args), verbose,
         };
         const rows = item.sweepClean ? await sweepRuns(base) : [{ param: '(defaults)', value: '', result: await runOnce(base) }];
         const r = rows[0].result;

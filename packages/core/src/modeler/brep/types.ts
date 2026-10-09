@@ -567,12 +567,6 @@ export interface DocData {
 }
 
 
-export interface DocPipeline
-{
-    fn:() => any
-    done: boolean
-}
-
 //// DOC:PAGE ////
 
 // One list of page sizes: the docs module's

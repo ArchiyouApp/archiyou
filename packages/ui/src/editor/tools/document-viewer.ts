@@ -14,7 +14,7 @@ import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '../../unit-switch.js';
 
-import { executionResult, docUnitSystem, setDocUnitSystem } from '@archiyou/editor/src/state/workspace';
+import { executionResult, activePipeline, docUnitSystem, setDocUnitSystem } from '@archiyou/editor/src/state/workspace';
 import { formatLength, systemOfUnit } from '@archiyou/core/src/units/UnitConverter';
 import type { UnitSystem } from '@archiyou/core/src/units/UnitConverter';
 import type { ModelUnits } from '@archiyou/core/src/modeler/types';
@@ -217,7 +217,8 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
   {
     const outputs = executionResult.get()?.outputs ?? [];
     return outputs
-      .filter(o => o.path.category === 'docs' && o.path.format === 'svg' && typeof o.output === 'string')
+      // the documents of the pipeline picked next to Run (all of them for the model)
+      .filter(o => o.path.category === 'docs' && o.path.pipeline === activePipeline.get() && o.path.format === 'svg' && typeof o.output === 'string')
       .reduce<SvgMap>((map, o) =>
       {
         const name = o.path.entityName ?? 'document';
@@ -232,7 +233,7 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
   {
     const outputs = executionResult.get()?.outputs ?? [];
     return outputs
-      .filter(o => o.path.category === 'docs' && o.path.format === 'svg-pages' && Array.isArray(o.output))
+      .filter(o => o.path.category === 'docs' && o.path.pipeline === activePipeline.get() && o.path.format === 'svg-pages' && Array.isArray(o.output))
       .reduce<SvgPagesMap>((map, o) =>
       {
         const name = o.path.entityName ?? 'document';

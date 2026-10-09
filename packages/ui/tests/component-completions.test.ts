@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { EditorState } from '@codemirror/state';
 import { CompletionContext } from '@codemirror/autocomplete';
 
-import { archiyouCompletions, registerComponentNames } from '../src/editor/completions';
+import { archiyouCompletions, registerComponentNames, registerPipelineNames } from '../src/editor/completions';
 import { shapeClasses } from '../src/editor/completions-data.generated';
 
 /** Completions at the end of `doc`. */
@@ -194,5 +194,29 @@ describe('make completions', () =>
     // documented: the info is built on demand (a DOM node), not a plain string
     const option = complete(`make.`)!.options.find(o => o.label === 'partList')!;
     expect(typeof option.info).toBe('function');
+  });
+});
+
+describe('.pipeline( completions', () =>
+{
+  beforeEach(() => registerPipelineNames(() => ['drawings', 'cutting plan', 'drawings']));
+
+  it("offers the script's pipelines, quoted, in doc.pipeline(", () =>
+  {
+    expect(applied(`docs.create('spec').pipeline(`)).toEqual([
+      `docs.create('spec').pipeline('drawings'`, `docs.create('spec').pipeline('cutting plan'`,
+    ]);
+    expect(applied(`doc.pipeline('dr`)).toContain(`doc.pipeline('drawings`);
+  });
+
+  it('leaves the pipelines of a component alone', () =>
+  {
+    expect(complete(`$component('@mark/wall').pipeline('`)).toBeNull();
+  });
+
+  it('offers nothing when the script has no pipelines', () =>
+  {
+    registerPipelineNames(() => []);
+    expect(complete(`doc.pipeline('`)).toBeNull();
   });
 });

@@ -44,7 +44,7 @@ export class EditorMetricsTool extends SignalWatcher(LitElement)
     const metrics: Metric[] = [];
 
     outputs
-      .filter(o => o.path.category === 'metrics')
+      .filter(o => o.path.category === 'metrics' && o.path.pipeline === 'default')
       .forEach(o =>
       {
         const raw = o.output;
