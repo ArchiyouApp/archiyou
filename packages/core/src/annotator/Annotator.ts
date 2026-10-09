@@ -860,7 +860,6 @@ export class Annotator
                                     }, {} as Record<string,Annotation>); // NOTE: first ones are keps                                
 
         const uniqueAnnotations = Object.values(annotationsById);
-        console.info(`Annotator::filterOutSame(annotations): Returned ${uniqueAnnotations.length}/${annotations.length} unique annotations!`)
 
         return uniqueAnnotations;
     }
@@ -902,8 +901,6 @@ export class Annotator
             }
         })
 
-        console.info(`Annotator::removeSameAtSmallDistance(): Removed ${this.getAnnotations().length - selectedAnnotations.length}/${this.getAnnotations().length} annotations within distance ${d}`);
-        
         this.setAnnotations(selectedAnnotations);
         return this;
     }

@@ -34,7 +34,6 @@ export async function init():Promise<any>
     await ocLoader.loadAsync();
 
     // Set basic global _oc 
-    console.info(`OcLoader::_onOcLoaded(): Setting global _oc`);
 
     setOc(ocLoader._oc);
 

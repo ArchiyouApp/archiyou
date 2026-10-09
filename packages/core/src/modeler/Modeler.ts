@@ -135,8 +135,6 @@ export class Modeler
         this._units = units;
 
         this.reset();
-
-        console.info('Modeler initialized. Please use load() to load primary shape kernel. Use setArchiyou() to set archiyou modules.')
     }
 
     setArchiyou(modules: ArchiyouModules)
@@ -282,17 +280,14 @@ export class Modeler
 
     async _loadMeshup()
     {
-        console.info('Modeler: Loading Meshup kernel...');
         const t = performance.now();
         this._kernels.mesh = (await import('@archiyou/meshup')) as Meshup;
         await this._kernels.mesh.init(); // load wasm
-        console.info(`Modeler: Meshup loaded successfully in ${Math.round(performance.now() - t)} ms.`);
-        console.info(`With these methods/classes: "${Object.keys(this._kernels.mesh)}"`);
+        console.info(`Meshup kernel loaded in ${Math.round(performance.now() - t)} ms`);
     }
 
     async _loadBrep()
     {
-        console.info('Modeler: Loading BREP kernel...');
         const t = performance.now();
         this._kernels.brep = (await import('./brep/index')) as Brep;
         const oc = await this._kernels.brep.init(); // load wasm
@@ -301,8 +296,7 @@ export class Modeler
         // Done here, not at import time, so a mesh-only run never touches the OC barrel.
         applyShapeAnnotations(this._kernels.brep.Shape, this._kernels.brep.ShapeCollection, 'brep');
 
-        console.info(`Modeler: BREP kernel loaded successfully in ${Math.round(performance.now() - t)} ms.`);
-        console.info(`With these methods/classes: "${Object.keys(this._kernels.brep)}"`);
+        console.info(`BREP kernel loaded in ${Math.round(performance.now() - t)} ms`);
     }
 
     /* At least one kernel is loaded */
@@ -875,7 +869,6 @@ export class Modeler
         const layer = new meshup.SceneNode(name);
         (this._activeLayer!.parent() || this._activeLayer!).addChild(layer);
         this._setActiveLayer(layer);
-        console.info(`Modeler::layer(): Created and switched to layer "${name}".`);
         return this._activeLayer!;
     }
 
@@ -1513,8 +1506,6 @@ export class Modeler
                 build: (layouter: Layouter) => layouter.rowOrtho(),
             },
         ]
-
-        console.info(`Modeler::toGLB(): exporting scene with ${this.scene().shapes().length} shapes...`);
 
         // Remove empty container nodes before export (e.g. pre-allocated Make group slots)
         this.scene().pruneEmptyNodes();

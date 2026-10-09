@@ -1772,8 +1772,6 @@ import { getOc } from './index' // OC global getter
                         // Remove old ones from Collection and add new upgraded
                         this.remove(grouped);
                         this.add(combinedShape);
-
-                        console.info(`ShapeCollection: upgradeShapesByType(): Combined ${grouped.length} Shapes of type ${curType} into higher order Shape of type ${curUpgradeType}"`);
                      }
                   }
                })
@@ -1901,14 +1899,12 @@ import { getOc } from './index' // OC global getter
             if (newOcType != 'Compound')
             {
                // sewing created one new Shape of one type
-               console.info(`ShapeCollection:: sewed: Sewing was succesfull and created one Shape of type '${newOcType}'!`); // TODO: geom
                let sewedShape = new Shape()._fromOcShape(ocSewedShapeOrCompound);
                return sewedShape as AnyShape;
             }
             else {
                // we got a Compound Shape: make a ShapeCollection out of it!
                let newShapeCollection = new Shape()._extractShapesFromOcCompound(ocSewedShapeOrCompound);
-               console.info(`ShapeCollection:: sewed: Sewing resulting in more than one Shape. Returned a collection`); // TODO: geom
                return newShapeCollection as ShapeCollection;
             }
          }
@@ -1960,8 +1956,6 @@ import { getOc } from './index' // OC global getter
             }
          });
 
-         console.info(`ShapeCollection::_connectLinearShapes: Created ${this.getShapesByType('Wire').length} Wire(s). Remaining ${this.getShapesByType('Edge').length} Edges`);
-         
          return this;
       }
 
@@ -2664,8 +2658,6 @@ import { getOc } from './index' // OC global getter
                shapeMeshes.push(meshShape);
             }
          });
-
-         console.info(`ShapeCollection:toMeshShapes: Output ${shapeMeshes.length} meshes of ${this.shapes.length} shapes!`);
 
          return shapeMeshes;
       }

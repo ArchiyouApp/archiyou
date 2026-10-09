@@ -427,23 +427,16 @@ export class CodeParser
     {
         // pop one of the queue
         this.importedScriptQueue.pop();
-
-        if (this.importedScriptQueue.length == 0)
-        {
-            console.info('CodeParser::checkImportScriptQueueDone: All import components loaded!')
-        }
     }
 
     placeImportScriptInCache(script:ScriptData)
     {
-        console.info(`CodeParser::placeImportScriptInCache: Succesfully places imported script in cache: "${script.name}"`);
         this.importedScriptCache[script.name] = script; // place in cache
     }
 
     /** Get import script from cache */
     async getImportScriptFromCache(name:string):Promise<ScriptData>
     {
-        console.info(`CodeParser::getImportScriptFromCache: Fetching import script from cache: "${name}"`)
         // to have it consistent with fetch we return a promise
         let promise = new Promise((resolve, reject) => {
             resolve(this.importedScriptCache[name]);

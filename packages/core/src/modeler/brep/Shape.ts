@@ -737,9 +737,6 @@ export class Shape
         if(!box) return false;
         const boxLikeCheck = (this.volume() / box.volume() >= BEAM_VOLUME_PERC); 
         if(!boxLikeCheck) return false;
-        console.log([obbox.width(), obbox.height(), obbox.depth()]
-        .sort((a,b) => a - b)
-        .slice(0,2));
 
         // Check reasonable section area
         return [obbox.width(), obbox.height(), obbox.depth()]
@@ -4108,8 +4105,6 @@ export class Shape
                 }
             });
 
-        console.info(`Shape::_selectorOfSubType: Selected ${selectedShapes.length} of subtype ${subType}`);
-
         return new ShapeCollection(selectedShapes); // force collection (filter can return single)
         
     }
@@ -4149,8 +4144,6 @@ export class Shape
                 break; 
             }
         }
-
-        console.info(`Shape::_selectorClosestOrFurtherstTo: Selected ${selectedShapes.length} shapes that are ${prevDistance} from Vertex (${toVec.toArray()})`);
 
         return selectedShapes;
     }
@@ -4192,8 +4185,6 @@ export class Shape
         const selectedShapes = new ShapeCollection(
                                 shapes.filter( shape => comparatorFunc(shape.distance(point._toVertex()), pointRange.range )));
 
-        console.info(`Shape::_selectorWithinRange: Selected ${selectedShapes.length} shapes that are within (${pointRange.operator}) of range ${pointRange.range} from Vertex (${point.toArray()})`);
-
         return selectedShapes;
 
     }
@@ -4225,8 +4216,6 @@ export class Shape
         const flush = this._sideFlushShapes(subShapes, sides);
         const selectedShapes = new ShapeCollection(
             (flush.length > 0) ? flush : this._sideFacingShapes(subShapes, sides));
-
-        console.info(`Shape::_selectorSide: Selected ${selectedShapes.length} shapes that belong to given sides "${sidesString}" of main Shape.`);
 
         return selectedShapes;
     }
@@ -4316,8 +4305,6 @@ export class Shape
             return vertexNotOnCoord == undefined;
         }))
 
-        console.info(`Shape::_selectorAtAxisCoord: Selected ${selectedShapes.length} shapes that have all vertices on coordate "${axisCoord.axis}"=${axisCoord.coord} with tolerance ${tolerance}`);
-
         return selectedShapes;
     }
 
@@ -4328,8 +4315,6 @@ export class Shape
         let bbox = new Bbox(bboxSelector.from, bboxSelector.to);
         
         let selectedShapes = new ShapeCollection(shapes.filter( shape => bbox.contains(shape ))).unique(); // avoid doubles (based on geometry)
-
-        console.info(`Shape::_selectorInBbox: Selected ${selectedShapes.length} shapes that are within BoundingBox [${bboxSelector.from}][${bboxSelector.to}]`);
 
         return selectedShapes;
 
@@ -5308,7 +5293,6 @@ export class Shape
 
     toMeshEdges(quality:MeshingQualitySettings):Array<EdgeMesh>
     {
-        const startMeshEdges = performance.now();
         const meshEdges:Array<EdgeMesh> = [];
         const edges = this.edges();
 
@@ -5373,8 +5357,6 @@ export class Shape
             }
         });
 
-        console.info(`Shape::toMeshEdges: Meshed ${meshEdges.length} Edges for Shape ${this._hashcode()} in ${Math.round(performance.now() - startMeshEdges)}ms`);
-
         this._meshCache.edges = meshEdges;
 
         return meshEdges;
@@ -5409,7 +5391,6 @@ export class Shape
             WARNING: Mirroring a cloned object does not work yet
         */
         
-        const startMeshFaces = performance.now();
         let meshedShape = this as AnyShape;
         let ocMesher = null;
 
@@ -5591,8 +5572,6 @@ export class Shape
 
         // clean up
         ocMesher?.delete()
-
-        console.info(`Shape::toMeshFaces: Meshed ${meshFaces.length} Faces in ${Math.round(performance.now() - startMeshFaces)}ms`);
 
         this._meshCache.faces = meshFaces;
 

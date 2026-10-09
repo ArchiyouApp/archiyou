@@ -165,7 +165,6 @@ export class ParamManagerOperator
     /** Directly enable Param */
     enable()
     {
-        console.info(`ParamManagerOperator::enable(): Enabled param "${this.targetParam.name}"`)
         this.targetParam.enabled = true;
         this.setOperation('updated');
     }
@@ -173,7 +172,6 @@ export class ParamManagerOperator
     /** Directly disable Param */
     disable()
     {
-        console.info(`ParamManagerOperator::disable(): Disabled "${this.targetParam.name}"`)
         this.targetParam.enabled = false;
         this.setOperation('updated');
     }
@@ -287,7 +285,6 @@ export class ParamManagerOperator
                     const newValue = fn(this.targetParam, params);
                     this.targetParam[propName] = newValue; // directly plug in the test result to target param
                     changedParam = this.targetParam;
-                    console.info(`ParamEntryController::evaluateBehaviours: Updated Param "${this.targetParam.name}" attribute "${propName}" = "${newValue}"`);
                 }
                 else {
                     console.error(`ParamEntryController::evaluateBehaviours [${this.getScope()}]: Given behaviour for property "${propName}" is not a function, but a "${typeof fn}"`);

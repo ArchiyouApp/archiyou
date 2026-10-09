@@ -28,9 +28,7 @@ export const MODELER_METHODS_INTO_GLOBAL = [
     'layer', 'collection', 'group',
     'layerShapes',
     // sketch
-    'sketch', 'all', 'isTemp', 'select', 'atVertices', 'moveTo', 'lineTo', 'splineTo', 'arcTo', 
-    'rectTo', 'rect', 'circleTo', 'circle', 'mirror', 'offset', 'offsetted', 'fillet', 'chamfer', 'thicken', 'thickened','combine',
-    'close', 'importSketch',
+    'sketch', 'all', 'select', 'atVertices',
     // export
     'explainIFC',
 ];

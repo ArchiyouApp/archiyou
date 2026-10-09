@@ -87,7 +87,6 @@ export class View extends Container
     {
         if(this._resolvedShapesSVG)
         {
-            console.info(`DocPageContainerView::resolveShapesToSVG(): Got svg from cache!`);
             return this._resolvedShapesSVG
         }
 

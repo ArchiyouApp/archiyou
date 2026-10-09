@@ -107,7 +107,6 @@ export class Container
      */
     setContent(v:any):this
     {
-        console.info(`Container::setContent(): Setting content of container "${this.name}" from "${this._content}" to: ${v}`);
         this._content = v;
         return this;
     }

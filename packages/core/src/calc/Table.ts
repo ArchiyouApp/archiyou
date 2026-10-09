@@ -47,14 +47,12 @@ export class Table
         {
             // only rows with values [[r1v1,r1v2],[r2v1,r2v2]], make up column names
             // Set the columns later with setColumns()
-            console.info(`Table::constructor(): Creating table with ${data.length} rows and ${data[0].length} columns`);
             this._dataRows = data.map((row,rowIndex) => row.reduce((acc,val,valIndex) => 
             {
                 // accumulator is the new row
                 acc[`${this.DEFAULT_COL_NAME}${valIndex}`] = val;
                 return acc
             }, {}))
-            console.info(`Table::constructor(): Created table with data ${JSON.stringify(this._dataRows)}`);
         }
         else if(isDataRowsColumnValue(data))
         {

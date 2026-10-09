@@ -264,7 +264,6 @@ export class Exporter
             return this._export2DToSVG(shapesToExport, options);
         }
         else {
-            console.info(`Exporter::exportToSVG(): Exporting from 3D to 2D using isometry. If you want only the 2D set only2D to true`)
             return this._export3DToSVG(shapesToExport, options);
         }
 

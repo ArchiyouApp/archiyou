@@ -114,7 +114,6 @@ export class Document
         const newPage = new Page(this._docs, this, name);
         this._pages.push(newPage);
         this._activePage = newPage; // set active page if not set
-        console.info(`Document::createPage(): Created new page "${name}" in document "${this._name}" [#${this._pages.length}] with default settings [${this._units} - ${this._pageSize} - ${this._pageOrientation}]`);
         return newPage;
     }
 
@@ -1571,7 +1570,6 @@ export class Document
                 {
                     page.name = mergedPageName;
                     this._pages.push(page); // add page to this document
-                    console.info(`Document::merge: Merged page "${page.name}" from Document "${mergedDocName}" into Document "${this._name}"`);
                 }
                 else {
                     // NOTE: this should not happen!

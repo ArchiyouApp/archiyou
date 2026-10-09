@@ -73,28 +73,13 @@ export class Pipeline
         {
             this._function = fn;
             
-            // Some IMPORTANT warnings about how pipelines work based on the function analysis
+            // A pipeline runs later in its own scope: variables it closes over hold the values
+            // they had when it was defined, so it should read the script through mainScope
             const funcInfo = analyzeFunc(fn);
-            if(funcInfo.argCount === 0)
+            if(funcInfo.argCount !== 1 || !funcInfo.hasMainScopeParam)
             {
-                console.warn(`Pipeline::do(): Pipeline "${this.name}": The pipeline function has no arguments. 
-                It is strongly advised to define at least one argument (mainScope) 
-                to ensure proper access to the script's main scope.
-                Relying on external variables can lead to unexpected behavior.`);
+                console.warn(`Pipeline "${this.name}": use one argument and read the script's shapes from it: (mainScope) => { mainScope.someShape ... }`);
             }
-            if(!funcInfo.hasMainScopeParam)
-            {
-                console.warn(`Pipeline::do(): Pipeline "${this.name}": You don't seem to use a mainScope reference.
-                    Please only access variables from main scope using this mainScope argument to avoid issues!
-                    Use: function(mainScope) { ... } and access shapes via mainScope.someShape ...`);
-            }
-            if(funcInfo.argCount > 1)
-            {
-                console.warn(`Pipeline::do(): Pipeline "${this.name}": You have defined multiple arguments in your pipeline function.
-                    It is strongly advised to only use one argument (mainScope) to ensure proper access to the script's main scope.
-                    Relying on external variables can lead to unexpected behavior.`);
-            }
-            
 
             return this;
         }

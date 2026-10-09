@@ -260,8 +260,6 @@ export class Script
 
         for(const [key, value] of Object.entries(paramValues))
         {
-            console.info(`Script.checkParamValues(): Checking param "${key}" with value:`, value);
-
             const keyUpper = key.toUpperCase();
             const param = this.params[keyUpper];
 
@@ -375,8 +373,6 @@ export class Script
 
         // TODO: see is this still works after change to hash function instead of crypto
         const id = variantHash.substring(0, HASH_LENGTH_TRUNCATE);
-
-        console.log(`Script::getVariantId(): Generated variant id "${id}" for param values: ${input}`);
 
         return id;
     }

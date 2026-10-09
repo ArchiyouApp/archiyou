@@ -255,10 +255,8 @@ export class PageEditor extends SignalWatcher(LitElement)
     if (tour) void openHelpDoc(ONBOARDING_PATH);
     if (tutorial || tour) this._activeTools = this.TOOLS.filter(t => t.id === 'help');
 
-    console.info('Editor::connectedCallback(): Warming up worker…');
     warmupWorker()
       .then(() => {
-        console.info('Editor::connectedCallback(): Worker ready');
         this.checkAutoRun(true);
       })
       .catch(err => {
@@ -515,7 +513,6 @@ export class PageEditor extends SignalWatcher(LitElement)
 
   private _handleCodeChange(e: CustomEvent<string>)
   {
-    console.log('Code change event:', e.detail);
     this._code = e.detail;
     updateScriptCode(this._code);
     this.checkAutoRun();
@@ -1078,8 +1075,7 @@ export class PageEditor extends SignalWatcher(LitElement)
     setExecuting(true);
 
     try { 
-      const executionResult = await this.execute();
-      console.log(executionResult);
+      await this.execute();
     }
     catch (err)
     {

@@ -19,8 +19,6 @@ export class RunnerOps
      */
     async saveBlobToFile(data: Blob|ArrayBuffer|Uint8Array|string, filePath: string, overwrite:boolean=true): Promise<string|undefined> 
     {
-        console.info(`saveBlobToFile::saveBlobToFile(): Saving data to ${filePath}`);
-
         // Avoid problems in browser contexts
         const FS_LIB = 'fs'; // avoid problems with older build systems preparsing import(..) statements
         const PATH_LIB = 'path'

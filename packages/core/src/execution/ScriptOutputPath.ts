@@ -116,7 +116,6 @@ import { convertStringValue, recordToUrlParams } from '../utils'; // utils
             console.error(`ScriptOutputPath::fromData(): Invalid data provided!`);
             return this;
         }
-        console.info(`ScriptOutputPath::fromData(): Loading output path from data: `, data);
 
         this.requestedPath = data.requestedPath;
         this.resolvedPath = data.resolvedPath;

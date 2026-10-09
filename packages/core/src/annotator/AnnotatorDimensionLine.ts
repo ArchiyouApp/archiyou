@@ -95,9 +95,7 @@ export class DimensionLine extends BaseAnnotation
         {
             this.init(start,end, options)
         }
-        else {
-            console.warn(`DimensionLine::constructor(): DimensionLine not initialized. Use methods init(start,end,options) or fromEdge(shape, options) later!`)
-        }
+        // Without start and end: init() or fromEdge() follows
 
     }
 

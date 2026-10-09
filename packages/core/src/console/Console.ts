@@ -26,6 +26,7 @@ export class Console
         user: '\x1b[35m', // magenta
         debug: '\x1b[90m', // gray
     } as Record<ConsoleMessageType, string>;
+    NATIVE_ECHO_TYPES:Array<ConsoleMessageType> = ['warn', 'error']; // buffered messages also sent to the native console
     
     //// END SETTINGS ////
 
@@ -37,8 +38,6 @@ export class Console
     constructor(output:any)
     {
         this.connect(output);
-        this.info(`**** INIT AY CONSOLE - MODE: ${this._getOutputType()} ****`);
-        // this.component = curScope.prototype.name;
     }
 
     /** Binds either to Vuex store, WebWorker, direct console or an internal array */
@@ -144,9 +143,11 @@ export class Console
 
             default: // put in buffer
                 this.buffer.push(message);
-                if(echoToNative)
+                // The buffer is read out into the app's console. Only problems are worth repeating
+                // in the native one; set Runner.LOGGING_DEBUG to send everything there instead.
+                if(echoToNative && this.NATIVE_ECHO_TYPES.includes(message.type))
                 {
-                    this._originalConsole[MESSAGE_TO_CONSOLE_TYPE[message.type] || 'log'](this._wrapMessageStringWithColor(message)); // also put into normal console for debug
+                    this._originalConsole[MESSAGE_TO_CONSOLE_TYPE[message.type] || 'log'](this._wrapMessageStringWithColor(message));
                 }
         }
     }

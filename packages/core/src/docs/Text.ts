@@ -38,7 +38,6 @@ export class Text extends Container
     /** Set content of this Text Container */
     setContent(v:any):this
     {
-        console.info(`Text::setContent(): Setting content of container "${this.name}" from "${this._content}" to: ${v}`);
         this._text = v;
         return this;
     }

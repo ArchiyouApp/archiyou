@@ -70,15 +70,12 @@ export class Layouter
     */
     exploded(options: ExplodedViewOptions = {}): this
     {
-        const t = performance.now();
-        console.info('Layouter::exploded(): Starting exploded view layout...');
 
         let distance = options?.distance;
         if(!distance)
         {
             // auto distance based on bbox size
             distance = this.shapeCollection().bbox().maxSize()/10.0;
-            console.info(`Layouter.explodedView: auto distance set to ${distance.toFixed(2)}`);
         }
 
         // Step to increase distance for each shape to ensure separation
@@ -104,7 +101,6 @@ export class Layouter
         // Now iterate over Shapes and move along explode vector until no collision with previously placed shapes
         shapeNodes.forEach(({ node, shape }, index) =>
         {
-            const ts = performance.now();
 
             const explodeDir = shape.center().toVector().subtract(colCenter).normalize();
             // If shape is at the center, assign an arbitrary direction
@@ -131,7 +127,6 @@ export class Layouter
                     shapeBbox = shape.bbox(); // update bbox after moving
                 }
                 // done with this shape, add to placed list
-                console.info(`Placed shape ${index} after ${iterations} iterations. Took ${(performance.now() - ts).toFixed(2)} ms.`);
                 placedShapeNodes.push({ node, shape });
             }
         });
@@ -154,8 +149,6 @@ export class Layouter
             transforms
         }
 
-        console.info(`Layouter::exploded(): Completed in ${(performance.now() - t).toFixed(2)} ms.`);
-
         return this
     }
 
@@ -164,8 +157,6 @@ export class Layouter
      */
     rowOrtho(options: LayoutViewOptions = {}): this
     {
-        const t = performance.now();
-        console.info('Layouter::rowOrtho(): Starting orthographic row layout...');
 
         const spacing = options.spacing ?? 5;
 
@@ -193,8 +184,6 @@ export class Layouter
             translationMode: 'relative',
             transforms,
         }
-
-        console.info(`Layouter::rowOrtho(): Completed in ${(performance.now() - t).toFixed(2)} ms.`);
 
         return this;
     }
@@ -224,8 +213,6 @@ export class Layouter
      */
     partStack(options: PartStackLayoutOptions = {}): this
     {
-        const t = performance.now();
-        console.info('Layouter::partStack(): Starting part stack layout...');
 
         const spacing = options.spacing ?? 5;
         const gap = options.gap ?? 0;
@@ -296,10 +283,6 @@ export class Layouter
             translationMode: 'relative',
             transforms,
         }
-
-        console.info(`Layouter::partStack(): ${ordered.length} part${ordered.length === 1 ? '' : 's'}, `
-            + `${transforms.length} piece${transforms.length === 1 ? '' : 's'}, in `
-            + `${(performance.now() - t).toFixed(2)} ms.`);
 
         return this
     }

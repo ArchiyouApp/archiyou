@@ -32,10 +32,9 @@ const api: ArchiyouCoreApi = {
     try
     {
       const t = performance.now();
-      console.info('runner.worker: init() called. Starting Archiyou core Runner');
       runner = new Runner();
       await runner.load();
-      console.info(`runner.worker: Archiyou core Runner initialized in ${(performance.now() - t).toFixed(2)} ms`);
+      console.info(`Archiyou runner ready in ${Math.round(performance.now() - t)} ms`);
     }
     catch (err)
     {

@@ -2781,7 +2781,6 @@ export class ModelViewer extends SignalWatcher(LitElement)
           if (check(p)) newVal = fix(newVal, p);
         }
         if (!p.validateValue(newVal)) { console.warn(`Handle params fn: invalid value for "${p.name}":`, newVal); continue; }
-        console.info('Handle updated param', p.name, '→', newVal);
         changed[p.name] = newVal;
       }
       if (Object.keys(changed).length > 0) this._commitParams(changed);
@@ -2946,7 +2945,6 @@ export class ModelViewer extends SignalWatcher(LitElement)
       return;
     }
 
-    console.info('Handle updated param', handle.param, '→', next);
     this._commitParams({ [param.name]: value });
 
     // Re-base the drag zone on the position just reached. Execution is async (50ms debounce
@@ -2982,7 +2980,6 @@ export class ModelViewer extends SignalWatcher(LitElement)
       console.warn(`Handle map function returned invalid value:`, next);
       return;
     }
-    console.info('Handle updated param', param.name, '→', next);
     this._commitParams({ [param.name]: next });
   };
 

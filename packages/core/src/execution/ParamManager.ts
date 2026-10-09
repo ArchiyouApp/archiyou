@@ -224,7 +224,6 @@ export class ParamManager
                 return true;
             }
             else {
-                console.info(`ParamManager::updateParam: No update needed. Same params!"`);
                 return false;
             }
         }
@@ -786,9 +785,6 @@ export class ParamManager
                                         }, 
                                         { new: [] as Array<ScriptParamData>, updated: [] as Array<ScriptParamData>, deleted: [] as Array<ScriptParamData> })
 
-        console.info('**** ParamManager::getOperatedParamsByOperation ****')
-        console.info(changedParamsByOperation);
-
         return changedParamsByOperation
     }
 
@@ -852,7 +848,6 @@ export class ParamManager
         // Set value of param reference ${PARAM_NAME} on scope
         curParams.forEach( p => 
         {
-            console.info(`ParamManager::setParamGlobalsInScope(): Setting global param "${this.PARAM_SIGNIFIER + p.name}" with value "${p._value ?? p.default}"`);
             scope[this.PARAM_SIGNIFIER + p.name] = p._value ?? p.default;
         })
     }

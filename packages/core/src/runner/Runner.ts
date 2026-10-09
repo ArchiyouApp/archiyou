@@ -250,12 +250,6 @@ export class Runner
     
     DEFAULT_OUTPUTS = ['default/model/glb'];
 
-    /** Create a new Runner instance on main thread */
-    constructor() 
-    {
-       console.info(`Created new Runner instance. Use .load() to load the Runner and its dependencies before executing any scripts.`);
-    }
-
     /** Loading Archiyou library with WASM module */
     async load():Promise<this>  
     {
@@ -305,9 +299,9 @@ export class Runner
                     This is called lexical closure. This results in pipelines that have 
                     'previous' parameters/results
                     
-                    ==> WARN THE USER to avoid inline functions 
-                    that use variables from outside the function scope! So for pipelines and re-usable functions, 
-                    always use explicit arguments instead.
+                    ==> Avoid inline functions that use variables from outside the function scope!
+                    So for pipelines and re-usable functions, always use explicit arguments instead.
+                    Pipeline::do() warns when a pipeline function doesn't take mainScope.
 
                     pipelineFunc = (mainScope) => { mainScope.someShapeVar.move() ... }
                     otherFunc = (arg1, arg2) => { arg1.doSomething() ... }
@@ -362,12 +356,6 @@ export class Runner
                             (value as any).name(key);
                         }
                     } catch { /* never let naming break assignment */ }
-                }
-
-                // Give warning about using functions (see above)
-                if(typeof value === 'function')
-                {
-                    console.warn(`Runner: Detected a function definition in scope '${name}' with name '${String(key)}'. \nPlease make sure you don't use variables from outside the function scope, \nbecause they will be locked in at the time of function creation (lexical closure). \nUse explicit arguments instead!`);
                 }
 
                 // Plain rebinding. NEVER Object.assign onto the value already under `key`:
@@ -489,7 +477,6 @@ export class Runner
             throw new Error(`Runner:: _addModulesToScopeState(): Archiyou modules not found in state object`); 
         }
 
-        console.info(`Runner::_addModulesToScopeState(): Adding Archiyou modules to scope state`);
         Object.assign(state,
         {
             console: state._archiyou.console,
@@ -523,7 +510,6 @@ export class Runner
         const names = Object.keys(globals);
         if(names.length === 0) return state;
 
-        console.info(`Runner::_addScriptModulesToScopeState(): Adding script module(s): ${names.join(', ')}`);
         Object.assign(state, globals);
         // The read side of recipes, for modules that declare `recipes` (see _syncRecipeRecording)
         if(this._recipe) state._archiyou.recipes = this._recipe.recipeApi;
@@ -536,7 +522,6 @@ export class Runner
     {
         // Overwrite global console methods with Archiyou console
         // That console still has a reference for global console for debugging
-        console.info(`Runner::_addLoggingToScopeState(): Overwriting global console methods with Archiyou console`);
 
         globalThis.console = state.console;
 
@@ -561,7 +546,6 @@ export class Runner
     _addModelingMethodsToScopeState(state:Record<string,any>):Record<string,any>
     {
         // TODO: can we do TS typing of state that knows what we add here?
-        console.info(`Runner::_addModelingMethodsToScopeState(): Adding modeling methods to scope state`);        
         
 
         // Some shortcuts to important methods on Modeler
@@ -599,8 +583,6 @@ export class Runner
 
         state.$pipeline = (name:string, func: () => Promise<any>|any) =>
         {
-            console.info(`$pipeline: Registering pipeline: '${name}'`);
-
             // Detect if given function has no arguments
 
             // Pipelines are registered on the Runner instance
@@ -663,7 +645,6 @@ export class Runner
         const p = new Pipeline(name);
         if (fn){ p.do(fn); } // attach function if given
         if(!this._pipelines.includes(p)) this._pipelines.push(p);
-        console.info(`Brep::pipeline: Created new pipeline '${p.name}'`);
         return p;
     }
 
@@ -734,8 +715,6 @@ export class Runner
         // scope's Console stays installed globally and every later run stacks another one on top.
         globalThis.console = this._localScopes[target]?._archiyou?.console ?? NATIVE_CONSOLE;
 
-        console.info(`Runner::deleteLocalScope(): Deleted scope: '${name}'. Returned to '${target}'.`);
-
         return this;
     }
 
@@ -780,9 +759,8 @@ export class Runner
         // that building the scope stays synchronous.
         await this._prepareModules(request);
 
-        // Names only: logging every component's full source on each run was tens of KB of
-        // console text per execution, which is not free in a Web Worker.
-        console.info(`Runner::execute(): ${Object.keys(this._componentScripts).length} prefetched component(s): ${Object.values(this._componentScripts).map(s => s._component).join(', ')}`);
+        const componentNames = Object.values(this._componentScripts).map(s => s._component);
+        if(componentNames.length > 0) console.info(`Components: ${componentNames.join(', ')}`);
 
         if (missing.length > 0)
         {
@@ -888,11 +866,6 @@ export class Runner
         // Check request structure (including params defs and values)
         this._activeExecRequest = this._checkRequestAndAddDefaults(request);
 
-        console.info(`**** Runner::_execute(): Executing script '${JSON.stringify((request as any)?.script?.name || request)}', return result ${result} ****`);
-        console.info(` params: ${JSON.stringify((request as any)?.params || {})} --- outputs: ${JSON.stringify((request as any)?.outputs)}
-                       kernel: ${request.kernel }`);
-        console.info(`***************************************`);
-
         return await this._executeLocal(this._activeExecRequest, startRun, result);
     }
 
@@ -924,7 +897,6 @@ export class Runner
     /** Check execution request */
     _checkRequestAndAddDefaults(request:RunnerScriptExecutionRequest):RunnerScriptExecutionRequest
     {
-        console.info(`Runner::_checkRequestAndAddDefaults(): Checking Execution Request with code '${request.script.code.slice(0, 150)}...'`);
         // check params defs and inputs
         // DONT VALIDATE
         // this._checkRequestParams(request);
@@ -1018,7 +990,6 @@ export class Runner
         // Create a fresh scope if this is a new execute run
         if(startRun)
         {
-            console.info('**** CREATING FRESH SCOPE STATE FOR NEW RUN ****');
             this.createScope('default'); // resets all scope variables
         }
 
@@ -1027,12 +998,6 @@ export class Runner
         // shared promise, so any Make instance works and this only blocks once (cached).
         try { await this._modeler?.make?.packReady?.(); }
         catch(e){ console.warn(`Runner::_executeLocal(): BinPacker WASM failed to load: ${e}`); }
-
-        console.info(`Runner: Executing script in active local context: '${this._activeScope.name}'`);
-        console.info(`* With param values: ${JSON.stringify(request.params)} *`);
-        console.info(`====== code ======`)
-        console.info(`${request.script.code}`)
-        console.info(`===================`)
 
         this._activeExecRequest = request;
         const executeStartTime = performance.now()
@@ -1287,8 +1252,6 @@ ${description === '***** CODE ****\nUnexpected end of input' ? code : ''}
             return this._handleExecutionError(scope, request, request.script.code, e as Error);
         }
 
-        console.info(`Runner::_executeLocalInScriptStatements(): Executing ${statements.length} statements in scope '${this._activeScope?.name}'`);
-
         const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
         const statementResults:Array<ScriptStatementResult> = [];
         let failed:ScriptStatementResult | null = null;
@@ -1434,8 +1397,6 @@ ${contextLines.join('\n')}
             pd._value = (n !== undefined) ? paramValues[n] : pd.default;
         });
 
-        console.info(`Runner::_executionStartRunInScope()[in execution context]: Setting up ParamManager in scope with params '${JSON.stringify(paramDefsWithValues)}'`);
-
         // NOTE: ParamManager sets values in scope 
         scope._paramManager = new ParamManager(paramDefsWithValues).setParent(scope);
         // for params the script only declares in code ($PARAMS.define) and that have no stored definition
@@ -1558,8 +1519,6 @@ ${contextLines.join('\n')}
      */
     _executeComponentScript(request:RunnerScriptExecutionRequest): RunnerScriptExecutionResult
     {
-        console.info(`Runner::_executeComponentScript(): Executing component script '${request.component}' in separate scope!`);
-
         // Refuse a component that is already executing further up the chain. Without this a
         // cycle (a uses b, b uses a) recurses until the JS stack blows, which surfaces as an
         // unrelated-looking RangeError. The static walk in _prefetchComponentScripts cannot
@@ -1612,9 +1571,6 @@ ${contextLines.join('\n')}
          { 
              throw new Error(`Runner::_executeLocalComponent(): Modeler kernel not loaded yet`);
          }
-
-         console.info(`Runner:_executeLocalComponent(): Executing script in active component context: '${this._activeScope.name}'`);
-         console.info(`* With execution request settings: { params: ${JSON.stringify(request.params)} and outputs: ${JSON.stringify(request.outputs)} }`);
 
          this._activeExecRequest = request;
          const executeStartTime = performance.now()
@@ -1787,7 +1743,6 @@ ${contextLines.join('\n')}
         // _sharedComponentFetches, and it keeps the log readable.
         if(level < MAX_COMPONENT_DEPTH)
         {
-            console.info(`Runner::_prefetchComponentScripts(): Recursing nested $component() references. Recursion level: ${level + 1}`);
             for(const cs of preparedComponentScripts)
             {
                 const nested = await this._prefetchComponentScripts(cs, level + 1, visited);
@@ -1799,8 +1754,6 @@ ${contextLines.join('\n')}
         else {
             console.error(`Runner::_prefetchComponentScript: Quit recursion after level ${MAX_COMPONENT_DEPTH}. Try to flatten your component tree.`)
         }
-
-        console.log(`Runner::_prefetchComponentScripts(): Fetched ${Object.keys(this._componentScripts).length} component scripts: ${Object.keys(this._componentScripts).join(', ')}`);
 
         return { scripts: this._componentScripts, missing: Array.from(new Set(missing)) }; // return all fetched component scripts
     }
@@ -1891,7 +1844,6 @@ ${contextLines.join('\n')}
         const urls = this._extractImportUrls(code).filter(u => !this._importAssets[u]);
         if(urls.length === 0) return;
 
-        console.info(`Runner::_prefetchImportAssets(): fetching ${urls.length} asset(s): ${urls.join(', ')}`);
         await Promise.all(urls.map(async (url) =>
         {
             this._importAssets[url] = await AssetImporter.fetch(url, { proxyUrl });
@@ -1962,8 +1914,6 @@ ${contextLines.join('\n')}
             {
                 throw new Error(`$component('${path}')::_prepareComponentScript(): Cannot fetch component script from local file in the browser!`);    
             }
-
-            console.info(`$component('${path}')::_prepareComponentScript(): Fetching local component script at '${path}'...`);
 
             // Load dynamically to avoid issues in browser
             const FS_PROMISES_LIB = 'fs/promises'; // avoid problems with older build systems preparsing import ScriptStatement
@@ -2076,7 +2026,6 @@ ${contextLines.join('\n')}
         const linked = this._linkedComponentScripts.find(s => s.name === localName);
         if (linked)
         {
-            console.info(`$component('./${localName}')::_resolveLocalComponentScript(): Resolved against linked component '${linked.name}'.`);
             return linked;
         }
 
@@ -2164,7 +2113,6 @@ ${contextLines.join('\n')}
         // Not renamed, just not linked: the latest stored version of the own script
         if(script.name === localName)
         {
-            console.info(`$component('./${localName}')::_getRenamedComponentScript(): Resolved to the latest stored version of own script '${script.name}'.`);
             return script;
         }
 
@@ -2197,7 +2145,6 @@ ${contextLines.join('\n')}
         {
             try
             {
-                console.info(`$component('./${localName}')::_getSharedComponentScript(): Fetching from the author's shared library at '${url}'...`);
                 // A token lets a share restricted to this user (onlyUsers) through
                 const res = await fetch(url, lib.authToken ? { headers: { Authorization: `Bearer ${lib.authToken}` } } : undefined);
                 if(!res.ok)
@@ -2214,7 +2161,7 @@ ${contextLines.join('\n')}
                     console.error(`$component('./${localName}')::_getSharedComponentScript(): Invalid script data returned by '${url}'.`);
                     return null;
                 }
-                console.info(`$component('./${localName}')::_getSharedComponentScript(): Resolved to shared '${author}/${script.name}:${script.version ?? 'latest'}'.`);
+                console.info(`$component('./${localName}'): using shared '${author}/${script.name}:${script.version ?? 'latest'}'`);
                 return script;
             }
             catch(e)
@@ -2238,9 +2185,6 @@ ${contextLines.join('\n')}
         if(!this._componentScripts[nameHash])
         {
             console.warn(`Runner::getComponentScriptFromCache(): Component script '${name}' [hash=${nameHash}] not found in cache. `);
-            console.info(`Current cache: ****`);
-            Object.entries(this._componentScripts)
-                        .forEach(([key, script]) => console.log(` - ${key}: '${script._component}'`));
 
             return null;
         }
@@ -2323,7 +2267,6 @@ ${contextLines.join('\n')}
     {
         if(key === undefined)
         {
-            console.info(`Runner::clearComponentResultCache(): Dropped all ${this._componentResults.size} memoised component results.`);
             this._componentResults.clear();
         }
         else {
@@ -2403,7 +2346,6 @@ ${contextLines.join('\n')}
 
         const result = await this._executePipelineIsolated(pipeline, request); // start run and output
         this.deleteLocalScope(`pipeline:${pipeline.name}`); // delete scope after execution
-        console.info(`******* Runner::executePipeline(): Finished executing pipeline '${pipeline.name}' *****`);
         return result;
     }
 
@@ -2412,8 +2354,6 @@ ${contextLines.join('\n')}
      */
     private async _executePipelineIsolated(pipeline:Pipeline, request:RunnerScriptExecutionRequest):Promise<RunnerScriptExecutionResult|null>
     {
-        console.info(`Runner::_executePipelineIsolated(): Executing pipeline '${pipeline.name}' in seperate scope!`);
-
         const mainScope = this.getActiveScope();
 
         const executeStartTime = performance.now()
@@ -2439,7 +2379,6 @@ ${contextLines.join('\n')}
                         'outputFunc',
                             // function body
                             `
-                            console.log('***** EXECUTING PIPELINE '${pipeline.name}' IN ISOLATED SCOPE (ASYNC) *****');
                             // run pipeline function in own scope, and supplying mainScope as argument
                             await pipeline._function.call(pipelineScope, mainScope); 
                             
@@ -2485,8 +2424,6 @@ ${contextLines.join('\n')}
             outputs: outputs || this.DEFAULT_OUTPUTS, // default output
         };
         
-        console.info(`Runner::executeUrl(): Executing script from URL '${url}' with params ${JSON.stringify(request.params)}`);
-
         const r = await this.executeInScriptStatements(request); // execute script in active scope
         return r;
     }
@@ -2512,8 +2449,6 @@ ${contextLines.join('\n')}
         const libUrl = this._getLibUrlFromScriptUrl(url);
 
         if(!libUrl){ throw new Error(`Runner::getScriptFromUrl(): Cannot extract library URL from script URL '${url}'`); }
-
-        console.info(`Runner::getScriptFromUrl(): Fetching script from '${url}' at library '${libUrl}'`);
 
         const _LibraryConnector = (globalThis as any).LibraryConnector; // TODO: LibraryConnector not yet implemented
         const library = new _LibraryConnector(libUrl);
@@ -2552,8 +2487,6 @@ ${contextLines.join('\n')}
             numShapes: shapes.length,
         } as ScriptMeta;
 
-        console.info(`****Runner::_addMetaToResult(): Added meta to result: ${JSON.stringify(result.meta)} ****`);
-
         return result;
     }
 
@@ -2562,10 +2495,6 @@ ${contextLines.join('\n')}
     */
     async getScopeResults(scope:RunnerScriptScope, request:RunnerScriptExecutionRequest):Promise<RunnerScriptExecutionResult>
     {
-        console.info(`****Runner::getScopeResults(): Getting results from execution scope '${scope._scope}' ****`);
-        console.info(`Request outputs:`)
-            request.outputs?.forEach(o => console.info(` * ${o}`));
-   
         const result = {} as RunnerScriptExecutionResult;
 
         // Basic data
@@ -2626,7 +2555,6 @@ ${contextLines.join('\n')}
         const requestedPipelineNames = outputManager.getPipelines(); 
 
         // If we are in main scope, we need to run other pipelines first and get their results
-        console.info(`**** Runner::getScopeResultOutputs(): Getting results from execution scope '${scope._scope}'. Requested pipelines: '${requestedPipelineNames.length ? requestedPipelineNames.join('') : 'none'}' ****`);
 
         for(let i = 0; i < requestedPipelineNames.length; i++)
         {
@@ -2645,7 +2573,6 @@ ${contextLines.join('\n')}
                 else 
                 {
 
-                    console.info(`'Runner::getScopeResultOutputs(): Running extra pipeline: '${pipelineName}'`);
                     /* NOTE: executePipeline actually uses this same function (so there is recursion here)
                         It's important that we create a specific request with only the outputs of current pipeline
                         Otherwise we would end up in infinite loops
@@ -2660,7 +2587,6 @@ ${contextLines.join('\n')}
             }
             else {
                 // Gather results per pipeline and add to array
-                console.info(`**** Runner::getScopeResultOutputs(): Exporting outputs for pipeline '${pipelineName}' ****`);
                 outputs.push(...await this._exportPipelineModels(scope, request, pipelineName, result));
                 outputs.push(...await this._exportPipelineMetrics(scope, request, pipelineName, result));
                 outputs.push(...await this._exportPipelineTables(scope, request, pipelineName, result));
@@ -2677,7 +2603,6 @@ ${contextLines.join('\n')}
      * For special cases like importing components we want to avoid async methods  */
     getScopeResultsComponent(scope:any, request:RunnerScriptExecutionRequest):RunnerScriptExecutionResult
     {
-        console.info('**** DEBUG - Runner::getScopeResultsComponent(): Getting results from execution scope for Component ****');
         const result = {} as RunnerScriptExecutionResult;
 
         this._addMetaToResult(scope, request, result);
@@ -2688,8 +2613,6 @@ ${contextLines.join('\n')}
         // Outputs
         if(request.outputs)
         {
-            console.log('**** DEBUG OUTPUT');
-            console.info(`Runner::getScopeResultsComponent(): Getting results from execution scope. Requested outputs: '${request.outputs.join('')}'`);
             result.outputs = this.getScopeResultOutputsInternal(scope, request, result);
         }
         return result;
@@ -2947,11 +2870,8 @@ ${contextLines.join('\n')}
             }
 
             // Check if any output was added
-            if(startNumOutputs + 1 === outputs.length)
+            if(startNumOutputs + 1 !== outputs.length)
             {
-                console.info(`Runner::_exportPipelineModels(): Exported model at '${outputPath.resolvedPath}' to format '${outputPath.format}' with size ${((outputs[outputs.length -1].output as any)?.length ?? (outputs[outputs.length -1].output as ArrayBuffer)?.byteLength) ?? '<unknown>'} bytes`);
-            }
-            else {
                 console.warn(`Runner::_exportPipelineModels(): No output generated for model at '${outputPath.resolvedPath}' to format '${outputPath.format}'`);
             }
         }
@@ -2971,7 +2891,6 @@ ${contextLines.join('\n')}
         // Check if we need anything to export for current request and pipeline
         if(outputPathsMetrics.length === 0)
         { 
-            console.info(`Runner::_exportPipelineMetrics(): No metrics to export`);
             return []; // no metrics to export
         } 
 
@@ -3000,21 +2919,16 @@ ${contextLines.join('\n')}
 
     async _exportPipelineTables(scope: any, request: RunnerScriptExecutionRequest, pipeline: string, result:RunnerScriptExecutionResult): Promise<Array<ScriptOutputData>>
     {
-        console.log('==== EXPORT PIPELINE TABLES ====');
-
         const outputManager = new ScriptOutputManager().loadRequest(request, result);
         // All table output paths for this pipeline
         const outputPathsTables = outputManager.getOutputsByPipelineCategory(pipeline, 'tables') as Array<ScriptOutputPath>;
 
-        console.log(outputPathsTables);
-        
         // real table outputs
         const outputs = [] as Array<ScriptOutputData>;
 
         // Check if we need anything to export for current request and pipeline
         if(outputPathsTables.length === 0)
         { 
-            console.info(`Runner::_exportPipelineTables(): No tables to export`);
             return [];
         } 
         
@@ -3062,7 +2976,6 @@ ${contextLines.join('\n')}
         // Check if we need anything to export for current pipeline and tables
         if(outputPathsDocs.length === 0)
         { 
-            console.info(`Runner::_exportPipelineDocs(): No docs to export`);
             return []; // no docs to export
         } 
         
@@ -3156,8 +3069,6 @@ ${contextLines.join('\n')}
         const outputManager = new ScriptOutputManager().loadRequest(request,result,false); // IMPORTANT: don't resolve because we don't have entity names
         const pipelines = outputManager.getPipelines();
 
-        console.info(`Runner::getScopeResultOutputsInternal(): Getting results from execution scope. Running pipelines: ${pipelines.join(',')}`);
-
         const outputs = [] as Array<ScriptOutputData>;
 
         for(let i = 0; i < pipelines.length; i++)
@@ -3167,7 +3078,6 @@ ${contextLines.join('\n')}
             // Default pipeline is already run, only run others
             if(pipeline !== 'default')
             {
-                console.info(`Runner::getScopeResultOutputsInternal(): Running extra pipeline: '${pipelines[i]}'`);
                 console.error(`Runner::getScopeResultOutputsInternal(): Running pipeline '${pipeline}' not implemented yet`);
                 // TODO: run specific pipeline
             }
@@ -3177,11 +3087,6 @@ ${contextLines.join('\n')}
             outputs.push(...this._exportPipelineMetricsInternal(scope, request, pipeline, result));
             outputs.push(...this._exportPipelineTablesInternal(scope,request, pipeline, result));
             outputs.push(...this._exportPipelineDocsInternal(scope, request, pipeline, result));
-
-            console.info(`**** Runner::getScopeResultOutputsInternal(): Finished exporting '${outputs.length}' internal outputs for pipeline '${pipeline}' ****`);
-            outputs.forEach(o => {
-                console.info(`  - ${o.path.resolvedPath} : ${(typeof o.output)}`);
-            });
         };
 
         return outputs;
@@ -3208,7 +3113,6 @@ ${contextLines.join('\n')}
                 output: scope.modeler.scene().toComponentGraph(request.component)
             })
         }
-        console.info(`Runner::_exportPipelineModelsInternal(): Exported ${outputs.length} models of Pipeline '${pipeline}'`);
 
         return outputs;
     }
@@ -3233,10 +3137,6 @@ ${contextLines.join('\n')}
                     output: scope.calc.getMetrics(),
                 });
             });
-            console.info(`Runner::_exportPipelineMetricsInternal(): Exported ${Object.keys(metrics).length} metrics of Pipeline '${pipeline}' for output paths '${outputPathsForMetrics.map(m => m.entityName).join(', ')}'`);
-        }
-        else {
-            console.info(`Runner::_exportPipelineMetricsInternal(): No metrics to export for Pipeline '${pipeline}'`);
         }
 
         return outputs;
@@ -3260,8 +3160,6 @@ ${contextLines.join('\n')}
             });
 
         });
-
-        console.info(`Runner::_exportPipelineTablesInternal(): Exported ${outputs.length} tables of Pipeline '${pipeline}' with output request: '${outputPathsForTables.map(o => o.entityName).join(', ')}'`);
 
         return outputs;
     }
@@ -3295,11 +3193,6 @@ ${contextLines.join('\n')}
                     output: (scope.docs as Docs).toInternalData(), 
                 });     
             });
-
-            console.info(`Runner::_exportPipelineDocsInternal(): Exported ${docNames.length} docs of Pipeline '${pipeline}' with output requests: '${outputPathsForDocs.map(d => d.entityName).join(', ')}'`);   
-        }
-        else {
-            console.info(`Runner::_exportPipelineDocsInternal(): No docs in scope to export for Pipeline '${pipeline}'`);
         }
 
         return outputs;

@@ -84,16 +84,9 @@ export class Docs
         this._setDefaults();
 
         //// SETTINGS AND CHECKS ////
+        // No settings is fine: getAssetProxyUrl() falls back to the running
+        // request's assetProxyUrl, which is how the editor supplies it.
         this._settings = settings;
-        if(!settings)
-        {
-            // Not a problem by itself: getAssetProxyUrl() falls back to the running
-            // request's assetProxyUrl, which is how the editor supplies it.
-            console.info(`Docs::constructor(settings,ay): No settings ({ proxy: string }) given; taking the asset proxy from the active run.`);
-        }
-        else {
-            console.info(`Docs::constructor(settings, ay): Init Docs module with settings: "${JSON.stringify(settings)};`)
-        }
     }
 
     /** BASE url of the asset proxy for anything this document fetches (images).
@@ -189,8 +182,6 @@ export class Docs
                     )
                     {
                         try {
-                            console.info(`Docs::executePipelines(): Executing pipeline of document "${docName}" ====`)
-
                             /* IMPORTANT:
 
                                 On variables and scopes defined inside the pipeline function:
@@ -215,7 +206,6 @@ export class Docs
 
                             */
 
-                            const startTime = Date.now();
                             const outputs = pipelineFn.call(this._archiyou.runner.getActiveScope(),this._archiyou.runner.getActiveScope());
 
                             if(!outputs || typeof outputs !== 'object')
@@ -223,8 +213,6 @@ export class Docs
                                 console.warn(`Docs:executePipelines(): Your pipeline function did not return anything! This can work in some cases (for example with function(){ var1 = ...} ). But advised to return { var1, var2 } `);
                             }
                             else {
-                                console.info(`Docs:executePipelines(): Loading pipeline vars into execution scope: "${Object.keys(outputs).join(', ')}"`);
-
                                 // get returned variables and set them on scope
                                 Object.entries(outputs).forEach(([key, value]) =>
                                 {
@@ -234,11 +222,9 @@ export class Docs
                                     }
 
                                     // TODO: protect against overwriting important variables!
-                                    console.info(`Docs:executePipelines(): Setting variable "${key}" on execution scope from pipeline of doc "${docName}"`);
                                     this._archiyou.runner.getActiveScope()[key] = value;
                                 });
                             }
-                            console.info(`Docs:executePipelines(): Pipeline of document "${docName}" executed in ${Date.now() - startTime}ms`);
 
                             doc._pipelineError = null;
                             pipeline.done = true; // set done
@@ -284,8 +270,6 @@ export class Docs
         this._docs.push(newDoc); // create new Document with default name
         this._activeDoc = newDoc; // set active Document
 
-        console.info(`Docs::create(): Created new Document "${this._activeDoc._name}" with default settings [${newDoc._units} - ${newDoc._pageSize} - ${newDoc._pageOrientation}]`)
-
         return newDoc;
     }
 
@@ -314,8 +298,6 @@ export class Docs
 
         const made = new Instruct(this, name);
         this._instructs.push(made);
-
-        console.info(`Docs::instruct(): Created instructable "${name}"`);
 
         return made;
     }
@@ -440,8 +422,6 @@ export class Docs
 
         const doFilter = onlyDocs.length > 0 && onlyDocs.includes('*') === false; // if onlyDocs is empty or includes '*', we export all docs
 
-        console.info(`Docs::toData(): Exporting docs: ${onlyDocs.length > 0 ? onlyDocs.join(', ') : 'all'}`);
-
         this.executePipelines();
 
         const docs = {};
@@ -455,7 +435,6 @@ export class Docs
                 if(docData)
                 {
                     docs[doc._name] = docData;
-                    console.info(`Docs::toData(): Exporting doc "${doc._name}" with ${docData?.pages?.length || 0} pages.`);
                 }
             }
             else {
@@ -472,8 +451,6 @@ export class Docs
      */
     async toPDF(only:string|Array<string>=[]):Promise<ArrayBuffer | Record<string, ArrayBuffer>>
     {
-        console.info(`Docs::toPDF(): Exporting docs to PDF: ${only ? ((Array.isArray(only) && only.length > 1) ? only.join(', ') : only) : 'all'}`);
-
         const onlyDocs = (Array.isArray(only)) ? only : (typeof only === 'string') ? [only] : [];
         const docs = this.getDocs(onlyDocs);
 
@@ -521,8 +498,6 @@ export class Docs
      */
     async toSVG(only:string|Array<string>=[]):Promise<string | Record<string, string>>
     {
-        console.info(`Docs::toSVG(): Exporting docs to SVG: ${only ? ((Array.isArray(only) && only.length > 1) ? (only as Array<string>).join(', ') : only) : 'all'}`);
-
         const onlyDocs = (Array.isArray(only)) ? only : (typeof only === 'string') ? [only] : [];
         const docs = this.getDocs(onlyDocs);
 

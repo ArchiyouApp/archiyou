@@ -156,7 +156,6 @@
                         }
                     }
                 });
-            console.info(`ScriptOutputManager::fromResult: Loaded ${this.resolvedOutputsPaths.length} output paths from result: "${this.resolvedOutputsPaths.map(o => o.resolvedPath).join(', ')}"`);
         }
 
         return this;

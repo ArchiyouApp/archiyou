@@ -103,9 +103,6 @@ export class PDFExporter
             this.blobs[docName] = await this._renderDoc(docName, pages);
         }
 
-        console.info(`PDFExporter::export(): Exported documents:`);
-        Object.keys(this.blobs).forEach(k => console.info(` - ${k}: ${this.blobs[k]?.size} bytes`));
-
         // NOTE: callers handle saving/downloading (e.g. the document-viewer downloads
         // the returned buffer); _saveBlobToBrowserFile() is available for File System
         // Access API saves but is not auto-invoked here.
@@ -141,7 +138,6 @@ export class PDFExporter
         this._jsPDFDoc.API.events.push(['addFonts', addCustomFonts]);
 
         this._hasJsPDF = true;
-        console.info(`PDFExporter::loadJsPDF(): jsPDF loaded!`)
         return this;
     }
 

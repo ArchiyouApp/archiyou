@@ -131,7 +131,6 @@ export class GLTFBuilder
         if (glb)
         {
             this._initialGlb = (glb instanceof ArrayBuffer) ? new Uint8Array(glb) : glb;
-            console.info(`GLTFBuilder: Initialized with GLB of size ${this._initialGlb.byteLength} bytes.`)
         }
         this.doc = new Document();
         this.scene = this.doc.createScene('scene');

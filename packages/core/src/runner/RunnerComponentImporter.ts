@@ -163,8 +163,6 @@ export class RunnerComponentImporter
         this._scope = scope; // main scope to import into
         this.ref = ref ?? ''; // name of the component ('archiyou/testcomponent:0.5'). Empty for $component().list()
         this.label = this.generateName();
-
-        console.info(`RunnerComponentImporter: Created importer for component from ref "${this.ref}"`);
     }
 
     /** Set the component's parameters, by name. Parameters left out keep their default.
@@ -282,8 +280,6 @@ export class RunnerComponentImporter
         });
 
         this._requestedOutputs = outputPaths;
-
-        console.info(`$component("${this.label}")::get(): Requested outputs:"${this._requestedOutputs.join(',')}"`);
 
         return this._getAndExecute();
     }
@@ -512,15 +508,12 @@ export class RunnerComponentImporter
                 // Special import for model category - recreate SceneNode tree in main scope
                 if(outPathObj.category === 'model' && outPathObj._output)
                 {
-                    console.info(`$component("${this.label}")::_executeComponentScript(): Recreating component scene tree in main scope for pipeline "${pl}"...`);
                     const recreatedNode = this._recreateComponentObjTree(outPathObj._output as ComponentGraphNode, undefined, true, this._useCache);
                     // result is SmartShapeCollection of all (visible) shapes in the recreated subtree
                     const col = recreatedNode.shapes();
                     // Attach the root node so that .name() on the collection renames the scene node
                     col._layer = recreatedNode;
                     pipelineResult['model'] = col;
-
-                    console.info(`$component("${this.label}")::_executeComponentScript(): Recreated component scene tree in main scope for pipeline "${pl}".`);
                 }
             });
         });
@@ -535,8 +528,6 @@ export class RunnerComponentImporter
             {
                 const singleOutput = outputManager.getOutputsByPipeline(singlePipeline)[0];
                 result = result[singleOutput.category];
-                const resultType = result?.constructor?.name || typeof result;
-                console.info(`$component("${this.label}")::_executeComponentScript(): Returning single output of category "${singleOutput.category}" with result of type "${resultType}".`);
             }
         }
         
@@ -594,14 +585,8 @@ export class RunnerComponentImporter
         let r = this._useCache ? this._runner.getComponentResultFromCache(cacheKey) : null;
         this._fromCache = !!r;
 
-        if(r)
+        if(!r)
         {
-            console.info(`$component("${this.label}")::_executeComponentScript(): Cache hit - reusing memoised result for outputs: "${request.outputs.join(',')}"`);
-        }
-        else
-        {
-            console.info(`$component("${this.label}")::_executeComponentScript(): Executing component script with outputs: "${request.outputs.join(',')}"`);
-
             r = this._runner._executeComponentScript(request);
 
             // Check for errors. Before caching: a component that threw gets another chance.

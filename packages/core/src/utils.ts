@@ -325,7 +325,6 @@ export function restoreBinaryFromBase64(obj: ScriptOutputDataWrapper, forceBuffe
         console.error('utils::restoreBinaryFromBase64(): Invalid input');
         return null;
     }
-    console.info(`utils::restoreBinaryFromBase64(): Restoring to binary "${obj?.type}" with length ${obj?.length}`);
 
     // Handle primitives
     if (typeof obj !== 'object')

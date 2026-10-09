@@ -259,8 +259,6 @@ export class Wire extends Shape
     {
         let vertexCollection = vertices as VertexCollection; // auto converted
         
-        console.info(`Wire::fromVertices: Got ${vertexCollection.length} vertices to create Wire`);
-
         let edges = [];
         vertexCollection.forEach((curVert,i) => 
         {

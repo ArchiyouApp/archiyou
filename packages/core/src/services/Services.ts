@@ -153,7 +153,6 @@ export class Services
     /** Node.js multipart upload */
     private async _uploadAndConvertNode(data: ArrayBuffer, fromExt: string, toExt: string): Promise<ArrayBuffer>
     {
-        console.info(`Services::_uploadAndConvertNode(): Using Node.js environment`);
         await this._loadNodeModules();
 
         const formData = new this._nodeFormDataModule();
@@ -165,8 +164,6 @@ export class Services
         });
         formData.append('from_ext', fromExt);
         formData.append('to_ext', toExt);
-
-        console.log('📤 Node.js FormData upload with node-fetch');
 
         const fetch = this._nodeFormFetchModule;
 
@@ -281,8 +278,6 @@ export class Services
         }
 
         try {
-            console.log(`🌐 API Request: ${method} ${url}`);
-
             const response = await fetch(url, config);
 
             if (!response.ok) {
