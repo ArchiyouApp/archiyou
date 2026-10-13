@@ -37,7 +37,7 @@ import { authService } from '@archiyou/editor/src/services/auth-service';
 import { fetchPublicShared, fetchSharedWithMe } from '@archiyou/editor/src/services/sharing';
 
 import { SignalWatcher } from '@lit-labs/signals';
-import { executing, executionResult, perStatement, autoRun, kernel, activePipeline, scripts, editorScript, selectedPath, selectedStatement } from '@archiyou/editor/src/state/workspace';
+import { executing, executionResult, perStatement, autoRun, kernel, activePipeline, scripts, editorScript, selectedPath, selectedStatement, codeMenuCollapsed, setCodeMenuCollapsed } from '@archiyou/editor/src/state/workspace';
 
 // ── Shared components for $component() completions ───────────────────────────
 /** How long a fetched list of shared components is used before fetching it again. */
@@ -190,6 +190,8 @@ export class CodeBox extends SignalWatcher(LitElement)
   {
     const result = executionResult.get();
     const error = result?.errors?.[0];
+    const collapsed = codeMenuCollapsed.get();
+    this.toggleAttribute('collapsed', collapsed);
 
     return html`
       <div class="wrapper">
@@ -247,6 +249,13 @@ export class CodeBox extends SignalWatcher(LitElement)
               </div>
             ` : ''}
           </div>
+          <button class="collapse-button"
+              @click=${this._toggleCollapse}
+              title=${collapsed ? 'Show code editor' : 'Minimize code editor'}
+              aria-label=${collapsed ? 'Show code editor' : 'Minimize code editor'}
+              aria-expanded=${!collapsed}>
+            <wa-icon library="lucide" name=${collapsed ? 'chevron-down' : 'chevron-up'}></wa-icon>
+          </button>
         </div>
         ${result?.status === 'error'
           ? html`
@@ -649,6 +658,11 @@ export class CodeBox extends SignalWatcher(LitElement)
     `;
   }
 
+  private _toggleCollapse()
+  {
+    setCodeMenuCollapsed(!codeMenuCollapsed.get());
+  }
+
   private _toggleOptions()
   {
     this._optionsOpen ? this._closeOptions() : this._openOptions();
@@ -866,7 +880,8 @@ export class CodeBox extends SignalWatcher(LitElement)
       align-items: center;
     }
 
-    .options-button {
+    .options-button,
+    .collapse-button {
       display: flex;
       align-items: center;
       justify-content: center;
@@ -882,8 +897,28 @@ export class CodeBox extends SignalWatcher(LitElement)
     }
 
     .options-button:hover,
-    .options-button.active {
+    .options-button.active,
+    .collapse-button:hover {
       background: color-mix(in srgb, var(--color-border) 40%, transparent);
+    }
+
+    /* Minimized: only the title bar. The editor is hidden, not removed, so CodeMirror keeps
+       its state (undo, selection, scroll) for when it opens again. */
+    :host([collapsed]) {
+      flex: 0 0 auto;
+    }
+
+    :host([collapsed]) .wrapper {
+      flex: 0 0 auto;
+    }
+
+    :host([collapsed]) .title-bar {
+      border-bottom: none;
+    }
+
+    :host([collapsed]) .subheader,
+    :host([collapsed]) .cm-container {
+      display: none;
     }
 
     .options-menu {
@@ -1079,6 +1114,12 @@ export class CodeBox extends SignalWatcher(LitElement)
     .cm-line,
     .cm-gutters {
       font-size: 0.72rem !important;
+    }
+
+    /* Completion list and its info box */
+    .cm-editor .cm-tooltip.cm-tooltip-autocomplete,
+    .cm-editor .cm-tooltip.cm-completionInfo {
+      font-size: var(--text-xs, 0.75rem);
     }
 
     /* Touch: 16px code (iOS zooms into anything smaller on focus) and title-bar

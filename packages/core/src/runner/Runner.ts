@@ -2979,7 +2979,7 @@ ${contextLines.join('\n')}
                     case 'json':
                         outputs.push({
                             path: outputPathMetric.toData(),
-                            output: scope.calc.toMetricsData(outputPathMetric.entityName) // by name
+                            output: scope.calc.toMetricsData([outputPathMetric.entityName]) // by name: '*' or the one metric
                         });
                         break;
                     // TODO: more

@@ -100,11 +100,12 @@ export class EditorMetricsTool extends SignalWatcher(LitElement)
       min-height: 0;
     }
 
+    /* As wide as its label (and value), up to a maximum; a longer label ends in … */
     editor-metric-card
     {
-      flex: 1 1 140px;
-      min-width: 120px;
-      max-width: 240px;
+      flex: 0 0 auto;
+      min-width: 0;
+      max-width: 250px;
     }
 
     /* ─── Empty state ─── */

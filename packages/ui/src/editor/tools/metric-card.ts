@@ -76,6 +76,7 @@ export class EditorMetricCard extends LitElement
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      min-width: 0;
     }
 
     .card-value

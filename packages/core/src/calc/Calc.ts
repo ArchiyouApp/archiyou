@@ -116,7 +116,7 @@
         return this?.db?.toTableData(only); 
     }
 
-    toMetricsData(only:Array<string>=null):Record<string, Metric>
+    toMetricsData(only:Array<string>|string=null):Record<string, Metric>
     {
         const metrics = this.getMetrics(only);
         return metrics.reduce((acc, metric) => {
@@ -134,12 +134,14 @@
     }   
     
     /** Get internal metric objects with filtering
-     * @param only - array of metric names to filter by, or '*' to get all metrics
+     * @param only - metric names to filter by (one name or an array), or '*' to get all metrics
       */
-    getMetrics(only?:Array<string>):Array<Metric>
+    getMetrics(only?:Array<string>|string):Array<Metric>
     {
-        if(!only || only.length === 0 || only.includes('*')) return Object.values(this._metrics); // all
-        return Object.values(this._metrics).filter(m => only.includes(m.name));
+        // One name as an array: on a string includes() would match substrings ('BALANCE' in 'BALANCE PER HOUSE')
+        const names = (typeof only === 'string') ? [only] : only;
+        if(!names || names.length === 0 || names.includes('*')) return Object.values(this._metrics); // all
+        return Object.values(this._metrics).filter(m => names.includes(m.name));
     }
 
     /** Show a key number of the design, like its weight or price, in the Metrics tool and

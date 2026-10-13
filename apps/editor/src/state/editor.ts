@@ -71,6 +71,7 @@ export const activeBottomPanel = signal<'console' | 'scene' | 'none'>('console')
 export const fileManagerCollapsed = signal<boolean>(true);
 export const paramMenuCollapsed   = signal<boolean>(false);
 export const presetMenuCollapsed  = signal<boolean>(true);
+export const codeMenuCollapsed    = signal<boolean>(false);
 
 /** Window narrower than BREAKPOINT_COMPACT (phones): the editor stacks the viewer
  *  over params + code, lays its rails out as bars and opens tools in a bottom sheet. */
@@ -316,6 +317,11 @@ export function setParamMenuCollapsed(collapsed: boolean): void
 export function setPresetMenuCollapsed(collapsed: boolean): void
 {
   presetMenuCollapsed.set(collapsed);
+}
+
+export function setCodeMenuCollapsed(collapsed: boolean): void
+{
+  codeMenuCollapsed.set(collapsed);
 }
 
 export function updateScriptMetadata(_scriptId: string, metadata: ScriptMetadata): void

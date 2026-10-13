@@ -61,8 +61,9 @@ export class ConfiguratorMetricCard extends LitElement
       padding: var(--space-sm) var(--space-xl);
       background: var(--color-bg-elevated);
       border-right: 1px solid var(--color-border);
-      min-width: 160px;
-      max-width: 240px;
+      /* As wide as its label (and value), up to a maximum; a longer label ends in … */
+      width: max-content;
+      max-width: 250px;
       height: 100%;
       box-sizing: border-box;
     }
@@ -94,6 +95,7 @@ export class ConfiguratorMetricCard extends LitElement
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      min-width: 0;
     }
 
     /* Value left, unit pushed to the card's right edge. */
@@ -126,12 +128,11 @@ export class ConfiguratorMetricCard extends LitElement
       white-space: nowrap;
     }
 
-    /* Compact configurator: narrower cards, so a phone shows about three. */
+    /* Compact configurator: less padding, so a phone shows more cards. */
     @container configurator (width < ${unsafeCSS(BREAKPOINT_COMPACT)})
     {
       .card
       {
-        min-width: 112px;
         padding: var(--space-xs) var(--space-md);
       }
     }

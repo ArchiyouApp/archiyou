@@ -1293,6 +1293,15 @@ export class PageEditor extends SignalWatcher(LitElement)
       min-height: 0;
     }
 
+    /* Minimized code editor: its header at the bottom of the panel, also when the params
+       are collapsed too (the param menu fills the height otherwise) */
+    .left-panel editor-code-box[collapsed],
+    :host([compact]) .left-panel editor-code-box[collapsed] {
+      flex: 0 0 auto;
+      min-height: 0;
+      margin-top: auto;
+    }
+
 
     wa-split-panel::part(divider) {
       background-color: var(--color-divider);

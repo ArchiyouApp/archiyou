@@ -21,6 +21,7 @@ import {
   scriptParams,
   paramMenuCollapsed,
   setParamMenuCollapsed,
+  codeMenuCollapsed,
   addParamDirect,
   updateParamDirect,
   updateParam,
@@ -74,6 +75,8 @@ export class ParamMenu extends SignalWatcher(LitElement)
   {
     const collapsed = paramMenuCollapsed.get();
     this.toggleAttribute('collapsed', collapsed);
+    // The code editor minimized: the params take the height it leaves
+    this.toggleAttribute('fill', codeMenuCollapsed.get() && !collapsed);
 
     // Read here, act on it in updated(): signal reads belong in render() so SignalWatcher
     // tracks them. Clicking an opening's handle in the 3D view activates its entry, but the
@@ -879,6 +882,18 @@ export class ParamMenu extends SignalWatcher(LitElement)
          unbounded growth would eat the editor; the scrollbar covers the rest. */
       max-height: 30vh;
       overflow-y: auto;
+    }
+
+    /* With the code editor minimized the menu fills the left panel and the list scrolls in it */
+    :host([fill]) {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    :host([fill]) .param-list {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
     }
 
     param-item.drag-over {

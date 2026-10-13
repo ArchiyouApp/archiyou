@@ -132,3 +132,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-10-06 | [Configurator translations: params, options and metrics, language codes, server-owned sets; boolean switches](./records/2026-10-06-configurator-translations.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-10-06 | [Configurator chrome in eleven languages: @lit/localize set up, buttons and labels translated](./records/2026-10-06-configurator-chrome-i18n.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-10-13 | [Merged component documents: every page shown, also on re-runs](./records/2026-10-13-merged-component-docs.md) | Claude Opus 5.5 | develop | 1 |
+| 2026-10-13 | [Editor: menu UI tweaks (code editor minimize, metric cards, completions)](./records/2026-10-13-editor-ui-tweaks.md) | Claude Opus 5.5 | develop | 1 |
