@@ -1292,8 +1292,7 @@ export class Make
 
         if (!options?.width || !options?.height)
         {
-            console.warn(`Make::_layout2DBoxes(): Zero or nullish width and height given: returned an empty ShapeCollection`);
-            return this.modeler.collection();
+            throw new Error(`make.boarding(): Please give the area to cover, like make.boarding({ width: 3000, height: 2400 })`);
         }
 
         const o = this._checkLayoutOptions(options);
@@ -1387,12 +1386,13 @@ export class Make
             return this.stats;
         }
 
+        // Only for the stats: show the nesting with make.stats.fitted.addToScene()
         this.stats.fitted = this.pack(this.stats.cut, {
             width: o.stockWidth,
             height: o.stockHeight,
             kerf: o.cutMargin,
             rotation: false,
-        });
+        }).tmp();
 
         // pack() groups its results per sheet (sheet1, sheet2, …): one sheet = one stock piece
         let sheets = 0;
@@ -1418,7 +1418,9 @@ export class Make
      * a `grid` is given — snapped so their ends land on that grid (how boarding meets the studs
      * behind it). With `leftover: true` the off-cut of a row starts the next one.
      *
-     * Statistics on cuts, stock count and waste land on `make.stats` afterwards.
+     * Statistics on cuts, stock count and waste land on `make.stats` afterwards. The cut
+     * elements nested onto stock are at `make.stats.fitted`, out of the scene; show them with
+     * `make.stats.fitted.addToScene()`.
      *
      * @param options  The area and the stock:
      *   - width, height: the area to cover, from the origin (needed)
@@ -1612,12 +1614,14 @@ export class Make
             reference: gi
         }));
 
+        // Every part carries one kerf, so the sheet does too: n parts then fit when the parts
+        // plus the n - 1 cuts between them do, and a part as wide as the sheet still fits
         const instance: Instance = {
             name: 'pack',
             sheets: [
                 {
-                    length: Math.round(opts.width),
-                    height: Math.round(opts.height),
+                    length: Math.round(opts.width + kerf),
+                    height: Math.round(opts.height + kerf),
                     cost: 1,
                     stock: null
                 }
@@ -1638,14 +1642,13 @@ export class Make
         for (let pi = 0; pi < solution.patterns.length; pi++)
         {
             const pattern = solution.patterns[pi];
-            const sheet = solution.sheets[pattern.sheet];
-            const offsetX = pi * (sheet.length + SHEET_MARGIN);
+            const offsetX = pi * (opts.width + SHEET_MARGIN);
             const groupShapes: any[] = [];
 
-            // Sheet outline
-            const sheetRect = this.modeler.rect(sheet.length, sheet.height, [
-                sheet.length / 2,
-                sheet.height / 2,
+            // Sheet outline: the real sheet, without the kerf the solver got
+            const sheetRect = this.modeler.rect(opts.width, opts.height, [
+                opts.width / 2,
+                opts.height / 2,
                 0
             ]);
             sheetRect.translate(offsetX, 0, 0);
@@ -1655,7 +1658,6 @@ export class Make
             const placements: ItemPlacement[] = [];
             extractPlacements(pattern.root, 0, 0, placements);
 
-            const halfKerf = kerf / 2;
             const tol = Math.max(1, kerf);
 
             for (const pl of placements)
@@ -1678,8 +1680,8 @@ export class Make
                 if (!bb) continue;
 
                 shape.translate(
-                    pl.x + halfKerf - bb.minX() + offsetX,
-                    pl.y + halfKerf - bb.minY(),
+                    pl.x - bb.minX() + offsetX,
+                    pl.y - bb.minY(),
                     0
                 );
 
