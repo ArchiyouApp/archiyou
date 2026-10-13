@@ -388,6 +388,31 @@ describe('mesh ↔ brep parity', () =>
         }, 60_000)
     })
 
+    describe('filling a span: rowFill()', () =>
+    {
+        /*  One placement for both kernels (meshup's rowFillOffsets): studs on a 600 grid with a
+            closing stud, joists in equal bays up to a wall, and a row along a minus axis. */
+        const minAlong = (col: any, axis: 'x' | 'y') => col.toArray().map((s: any) => +s.bbox().min()[axis].toFixed(6))
+
+        it('studs on the grid, joists in equal bays up to a wall, a row along -x', () =>
+        {
+            [mesh, brep].forEach(m =>
+            {
+                const studs = (m.boxBetween([0, 0, 0], [38, 140, 2400]) as any).name('stud').rowFill(3000, 600)
+                expect(minAlong(studs, 'x')).toEqual([0, 600, 1200, 1800, 2400, 2962])
+                expect(studs.toArray().map((s: any) => s.name())).toEqual(['stud1', 'stud2', 'stud3', 'stud4', 'stud5', 'stud6'])
+
+                const wallB = m.boxBetween([0, 2000, 0], [3000, 2140, 300])
+                const joists = (m.boxBetween([0, 0, 0], [3000, 50, 200]) as any).rowFill(wallB, 400, 'y', 'even', false)
+                expect(minAlong(joists, 'y')).toEqual([0, 390, 780, 1170, 1560])
+
+                const back = (m.boxBetween([-38, 0, 0], [0, 140, 2400]) as any).rowFill(1000, 400, '-x')
+                expect(minAlong(back, 'x')).toEqual([-38, -438, -838, -1000])
+                expect(() => (m.boxBetween([0, 0, 0], [38, 140, 2400]) as any).rowFill(3000, 20)).toThrow(/overlap/)
+            })
+        }, 60_000)
+    })
+
     describe('the chain runner itself', () =>
     {
         it('aborts a chain instead of reporting noise once the kernels diverge grossly', () =>

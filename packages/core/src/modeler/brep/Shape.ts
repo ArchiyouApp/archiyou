@@ -15,7 +15,7 @@
 import { USE_GARBAGE_COLLECTION, MESHING_RELATIVE_DEFLECTION, MESHING_ANGULAR_DEFLECTION, MESHING_MINIMUM_POINTS, MESHING_TOLERANCE, MESHING_EDGE_MIN_LENGTH,
             DEFAULT_WORKPLANE, SHAPE_ARRAY_DEFAULT_OFFSET, SHAPE_EXTRUDE_DEFAULT_AMOUNT, SHAPE_SWEEP_DEFAULT_SOLID,
             SHAPE_SWEEP_DEFAULT_AUTOROTATE, SHAPE_SCALE_DEFAULT_FACTOR, SHAPE_ALIGNMENT_DEFAULT, SHAPE_SHELL_AMOUNT,
-            SIDES, SIDE_TO_AXIS, SIDE_SELECTOR_TOLERANCE,
+            SIDES, SIDE_TO_AXIS, SIDE_SELECTOR_TOLERANCE, AXIS_TO_VECS,
             } from './constants'
 
 import type {
@@ -40,7 +40,8 @@ import { Vector, Point, Bbox, OBbox, Vertex, Edge, Wire, Face,
 // Scene + style come from the MESH kernel: both kernels share one SceneNode graph and one
 // Style model, which is what lets the scene navigator and the GLTF exporter stay kernel-agnostic.
 import { SceneNode } from '@archiyou/meshup'
-import { nodeToString, gridCounts, moveUntilTouching } from '@archiyou/meshup'
+import { nodeToString, gridCounts, moveUntilTouching, rowFillOffsets } from '@archiyou/meshup'
+import type { RowFillDistribute } from '@archiyou/meshup'
 import { Style } from '@archiyou/meshup'
 import type { StyleData } from '@archiyou/meshup'
 import { Color } from '@archiyou/meshup'
@@ -4704,6 +4705,58 @@ export class Shape
             shape._nameInRow(name, i);
             shapes.add(shape);
         }
+
+        return shapes;
+    }
+
+    /** Fill a span with a row of copies of this Shape, like studs in a wall or joists in a floor.
+     *  The same contract as the mesh kernel's rowFill() (one shared placement, in meshup).
+     *
+     *  This Shape is the first member. The span runs from its back face along `direction`: over a
+     *  length, or up to the near face of another shape. By default the members sit every `spacing`
+     *  from the start with a closing member flush at the end, so sheet edges land on them.
+     *
+     *  NOTE: `spacing` is centre to centre here, while in row() it is the gap between copies.
+     *
+     *  @param until      - the span: a length from the back of this Shape to the far side of the
+     *                      last member, or a shape (or collection) to fill up to
+     *  @param spacing    - centre-to-centre distance of the members; with 'even' the largest one
+     *  @param direction  - direction of the row: an axis ('x', '-y', ...) or a vector (default: 'x')
+     *  @param distribute - 'grid' (default): every `spacing` from the start, what is left in the
+     *                      last bay; 'even': the span split in equal bays of at most `spacing`.
+     *                      The number of bays rounds up, so a bay is `spacing` or a bit less:
+     *                      a 3000 span of 38 studs at 600 gives 5 bays of 592.4.
+     *  @param close      - end with a member flush with the end of the span (default: true). Use
+     *                      false when `until` carries that end already, like a wall under joists.
+     *  @returns ShapeCollection of all members, this Shape the first
+     *
+     *  @example
+     *    stud = box(38, 140, 2400)
+     *    studs = stud.rowFill(3000, 600)                        // studs 600 c/c, one at 3000
+     *    joist = box(3000, 50, 200)
+     *    wallB = box(3000, 140, 300).move(0, 4000, 0)
+     *    joists = joist.rowFill(wallB, 400, 'y', 'even', false) // equal bays up to wallB
+     */
+    @sceneAdd
+    rowFill(until:number|AnyShapeOrCollection, spacing:number, direction:PointLike='x', distribute:RowFillDistribute='grid', close:boolean=true):ShapeCollection
+    {
+        const bbox = this.bbox();
+        if (!bbox) { throw new Error(`${this.type}.rowFill(): this ${this.type} has no size`); }
+        // '-x' would read as a relative coordinate as a PointLike: take the axes as directions first
+        const axis = (typeof direction === 'string') ? AXIS_TO_VECS[direction] : undefined;
+        const dirVec = Vector.fromPointLike(axis ?? direction).normalized();
+        const target = (typeof until === 'number') ? until : (until as any)?.bbox?.();
+        const offsets = rowFillOffsets(bbox, target, spacing, dirVec.toArray() as [number, number, number], distribute, close, `${this.type}.rowFill()`);
+
+        const name = this.name();
+        const shapes = new ShapeCollection();
+        offsets.forEach((offset, i) =>
+        {
+            const shape = (i === 0) ? this : this.copy(false); // copy() without auto-adding: the decorator places the result
+            shape.move(dirVec.scaled(offset));
+            shape._nameInRow(name, i);
+            shapes.add(shape);
+        });
 
         return shapes;
     }
