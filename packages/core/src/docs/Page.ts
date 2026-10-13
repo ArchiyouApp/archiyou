@@ -222,6 +222,20 @@ export class Page
         } as PageData;
     }
 
+    /** A copy of this page under another name in another Document, for Document.merge().
+     *  The original is left alone: the Document it belongs to can be the memoised result of a
+     *  component, that is merged again on the next run. The containers are shared, and keep
+     *  resolving their views against the Document they were made in */
+    _copyTo(doc:Document, name:string):Page
+    {
+        const copy = Object.assign(Object.create(Page.prototype), this) as Page;
+        copy.name = name;
+        copy._doc = doc;
+        copy._containers = [...this._containers];
+        copy._variables = { ...this._variables };
+        return copy;
+    }
+
     //// COMPONENTS ////
 
     resolveScopeReferences():this

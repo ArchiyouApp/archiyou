@@ -1579,22 +1579,21 @@ export class Document
 
         docsArray.forEach((doc, i) =>
         {
-            if(!(doc instanceof Document)){ console.error(`Document::merge: Encountered a object of type ${typeof doc} which is not a Document at index ${i}. Skipping it!`)};
+            if(!(doc instanceof Document))
+            {
+                console.error(`Document::merge: Encountered a object of type ${typeof doc} which is not a Document at index ${i}. Skipping it!`);
+                return;
+            }
             const mergedDocName= `${doc?._component || ''}:${doc._name}`; // use component name if available
-            // Now just add the pages of incoming document to this one
+            // Add copies of the pages of incoming document to this one: the incoming document can be
+            // the memoised one of a component, that is merged again on the next run
             doc._pages.forEach((page) =>
             {
                 // Page name in format {{prefix}}[{{component}}]-{{pagename}} like: leftWall[WallComponent]-workdrawings
-                const mergedPageName = `${namePrefix}${(doc?._component) ? '[' + doc?._component + ']' : ''}-${page.name}`;
-                if(!this.pageExists(mergedPageName))
-                {
-                    page.name = mergedPageName;
-                    this._pages.push(page); // add page to this document
-                }
-                else {
-                    // NOTE: this should not happen!
-                    console.warn(`Document::merge: Page "${page.name}" already exists in Document "${this._name}". Skipping it!`);
-                }
+                // The same component used more than once gives the same name: number those
+                const origin = `${namePrefix}${(doc?._component) ? '[' + doc?._component + ']' : ''}`;
+                const mergedPageName = this._uniquePageName(origin ? `${origin}-${page.name}` : page.name);
+                this._pages.push(page._copyTo(this, mergedPageName));
             });
 
             // Take over the variables so they can be set on this document after merging
@@ -1620,6 +1619,16 @@ export class Document
     }
 
     //// UTILS ////
+
+    /** The name itself if no page has it yet, otherwise numbered: main, main2, main3 */
+    _uniquePageName(name:string):string
+    {
+        if(!this.pageExists(name)){ return name; }
+        // One more number than there are pages always has a free one
+        return [...Array(this._pages.length + 1).keys()]
+            .map(n => `${name}${n + 2}`)
+            .find(candidate => !this.pageExists(candidate)) as string;
+    }
 
     /* count containers of a type on active page
                 and check how many are called table{x}, image{x} etc

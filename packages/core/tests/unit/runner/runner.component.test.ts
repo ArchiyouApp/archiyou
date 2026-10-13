@@ -241,6 +241,50 @@ describe('Runner.linkComponentScripts (local component lookup)', () =>
         expect(JSON.stringify(none.errors)).toContain('No vars available');
     })
 
+    /** The same component used several times: every merged page shows up, and keeps doing so
+     *  on re-runs, which serve the component's docs from the result cache */
+    it('Merges the docs of the same component used several times, also on re-runs', async () =>
+    {
+        const runner = await new Runner().load()
+        runner.linkComponentScripts([
+            Script.fromData({
+                name: 'wall',
+                // Passed values only reach params the saved script defines
+                params: { WIDTH: { name: 'WIDTH', type: 'number', default: 1000, schema: { type: 'number', default: 1000, minimum: 1, maximum: 10000 } } } as any,
+                code: `docs.create('plan').page('main').text('WALL' + $WIDTH);`,
+            }),
+            Script.fromData({ name: 'floor', code: `docs.create('plan').page('plan').text('FLOOR');` }),
+        ])
+
+        const code = `
+            docs.create('project').page('cover').text('cover')
+                .merge($component('./floor').get('default/docs/plan'))
+                .merge($component('./wall', { WIDTH: 1000 }).get('default/docs/plan'))
+                .merge($component('./wall', { WIDTH: 2000 }).get('default/docs/plan'))
+                .merge($component('./wall', { WIDTH: 3000 }).get('default/docs/plan'));
+        `;
+        const pageLabels = (svg:string) => [...svg.matchAll(/<g id="(layer\d+)"\s+inkscape:label="([^"]*)"/g)].map(m => `${m[1]}:${m[2]}`);
+
+        const runs = await [1, 2, 3].reduce(async (acc) =>
+        {
+            const result = await runner.execute({ kernel: 'mesh', script: { code }, outputs: ['default/docs/*/svg'] });
+            expect(result.status).toBe('success');
+            return [...(await acc), result.outputs?.find(o => o.path.format === 'svg')?.output as string];
+        }, Promise.resolve([] as Array<string>));
+
+        runs.forEach(svg =>
+        {
+            expect(pageLabels(svg)).toEqual([
+                'layer1:cover',
+                'layer2:[floor]-plan',
+                'layer3:[wall]-main',
+                'layer4:[wall]-main2',
+                'layer5:[wall]-main3',
+            ]);
+            ['FLOOR', 'WALL1000', 'WALL2000', 'WALL3000'].forEach(t => expect(svg).toContain(t));
+        });
+    })
+
     /** get() with docs paths: all, by name, without format */
     it('Gets all or specific docs of a component with get()', async () =>
     {

@@ -502,6 +502,8 @@ export class RunnerComponentImporter
                 // Docs are exported as Array<Document>. A doc without docs exports nothing
                 if(outPathObj.category === 'docs')
                 {
+                    // Named after the component, so pages merged from it say where they came from
+                    ((outPathObj._output ?? []) as Array<Document>).forEach(d => { d._component = script.name ?? this.label; });
                     pipelineResult['docs'] = this._selectDoc(pl, (outPathObj._output ?? []) as Array<Document>);
                 }
 
