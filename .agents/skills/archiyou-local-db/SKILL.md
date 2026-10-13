@@ -53,7 +53,7 @@ npx tsx .claude/skills/archiyou-local-db/scripts/save-script.ts \
 | `--name <name>` | required; the name shown in the editor |
 | `--code-file <path>` | required; the `.js` file to store as the code |
 | `--description <text>` | optional |
-| `--new-version` | append a version to the existing file of that name instead of creating a new one |
+| `--new-version` | append a version to the existing file of that name instead of creating a new one. Only the code (and `--description`, if given) changes; params, presets, tags and details carry over from the latest row. It is always a row of its own (a checkpoint), never merged into a recent editor save |
 | `--db <url>` | override the database (a `postgres://` or `pglite://` URL) |
 
 It refuses to overwrite: saving a name that already exists errors and tells you to
@@ -145,6 +145,9 @@ DELETE FROM script_versions WHERE author = 'archiyou' AND name = 'object_test';
   reorders object keys, and `params` key order *is* the parameter order the editor
   renders. Do not "tidy" those two columns to jsonb.
 - **No restart needed.** A new row shows up on the next request.
+- **An open editor overwrites you.** An editor tab that has the script open still holds
+  the old code, and its next save becomes the latest version again. Ask the user to
+  reload the script in the editor before they save there.
 - **Close the connection in a one-off script.** `await closeDb()` — otherwise a pg
   pool keeps the process alive for its idle timeout.
 - Owner-only lists need auth, so `curl` against the API returns 401 for

@@ -14,7 +14,9 @@
  *   --code-file <path>    required; the .js file to store as the script code
  *   --description <text>  optional
  *   --new-version         append a version to the existing file of that name
- *                         instead of creating a new file
+ *                         instead of creating a new file; only the code (and the
+ *                         description, if given) changes, params/presets/tags are
+ *                         kept, and it is always a row of its own
  *   --db <url>            override the database (else SERVER_DATABASE_URL, else the
  *                         PGlite directory apps/server/data/pglite)
  *
@@ -112,13 +114,29 @@ if (existing && !newVersion)
     process.exit(1);
 }
 
-// `description` is OMITTED when unset, never null: Script.fromData() validates
-// it as an optional string and rejects an explicit null.
-const payload: Record<string, unknown> = { name, code, tags: [], params: {}, presets: {} };
-if (description) payload.description = description;
+// A new version only replaces the code: params (the editor-authored parameter
+// definitions and their values), presets, tags, description and details carry over
+// from the file's latest row. Starting from {} would wipe what the editor saved.
+const latest = (existing && newVersion) ? await store.getFile(author, existing.fileId) : undefined;
 
-const saved = (existing && newVersion)
-    ? await store.saveVersion(author, existing.fileId, payload)
+// `description` and `details` are OMITTED when unset, never null: Script.fromData()
+// validates them as optional and rejects an explicit null.
+const payload: Record<string, unknown> = {
+    name,
+    code,
+    tags: latest?.tags ?? [],
+    params: latest?.params ?? {},
+    presets: latest?.presets ?? {},
+};
+const keptDescription = description ?? latest?.description ?? undefined;
+if (keptDescription) payload.description = keptDescription;
+if (latest?.details) payload.details = latest.details;
+
+// `checkpoint` makes it a row of its own. Without it, saveVersion() merges into a
+// latest row created less than 10 minutes ago, and an editor that still has that
+// file open then saves its old code over this version.
+const saved = latest
+    ? await store.saveVersion(author, existing!.fileId, payload, { checkpoint: true })
     : await store.create(author, payload);
 
 console.log(`${existing && newVersion ? 'new version of' : 'created'} "${name}" for ${author}`);
