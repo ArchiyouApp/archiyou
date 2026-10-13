@@ -23,6 +23,9 @@ caddy/
 .env.*
 !.env.example
 
+# Database dumps (pg_dump output) — user data, never in git.
+*.dump
+
 # Editor/IDE local settings
 .vscode/
 .idea/
