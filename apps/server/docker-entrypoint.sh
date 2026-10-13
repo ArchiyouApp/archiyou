@@ -185,7 +185,12 @@ if [ "$should_build" = '1' ]; then
     #
     # NODE_ENV is forced to production for the build regardless of how the
     # container was started, so the SPA gets minified, dev-warning-free output.
-    build() {
+    #
+    # Run from $REPO, in a subshell: pnpm resolves a path filter like
+    # './modules/**' against the current directory, NOT against --dir, and the
+    # image's WORKDIR is apps/server, where it silently matched nothing.
+    build() (
+      cd "$REPO"
       env -i \
         PATH="$PATH" \
         HOME="$HOME" \
@@ -194,11 +199,13 @@ if [ "$should_build" = '1' ]; then
         COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
         TURBO_TELEMETRY_DISABLED=1 \
         pnpm --dir "$REPO" "$@"
-    }
+    )
 
     # `--filter './modules/**'` matches nothing in a checkout without the module
-    # overlay and exits 0 with a notice, so this needs no guard. Two levels of
-    # glob because one repo may hold several modules (modules/private/fem).
+    # overlay and exits 0 with a notice, so this needs no guard. That is also why
+    # a wrong directory went unnoticed: with the overlay present, check the log for
+    # the modules being built. Two levels of glob because one repo may hold
+    # several modules (modules/private/fem).
     if   ! build --filter @archiyou/meshup build \
       || ! build --filter @archiyou/editor build \
       || ! build --filter './modules/**'  build; then
