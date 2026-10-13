@@ -203,10 +203,13 @@ directory on disk, so the result still installs cleanly here, with the overlay p
 If you forget, the `no private module may appear in the lockfile` step of the
 `private-modules-boundary` CI job fails the build and names the leaked importers.
 
-One consequence to expect: while the overlay is cloned in, `pnpm install --frozen-lockfile` fails
-locally, because those importers are deliberately absent from the committed lockfile. Plain
-`pnpm install` is the local command; frozen is for CI and the server image, which never see
-`modules/`.
+One consequence to expect: while the overlay is cloned in, `pnpm install --frozen-lockfile` fails,
+because those importers are deliberately absent from the committed lockfile. Plain
+`pnpm install` is the local command; frozen is for CI and public checkouts. The server's
+entrypoint (`apps/server/docker-entrypoint.sh`) does the same: with the overlay present it installs
+unfrozen, so the public packages keep their locked versions and only the modules' own dependencies
+are resolved, then puts the tracked `pnpm-lock.yaml` back so the next `git pull` stays clean. It
+also reinstalls when a module's `package.json` changes, which the lockfile cannot show.
 
 ---
 
@@ -679,7 +682,7 @@ per request, so there is no restart, no re-login, and no token to expire.
 | Edits have no effect, old code keeps running | Dev mode is off. Check for `👀 Watching script modules` at boot and `"rev"` in `GET /modules`; force with `SERVER_MODULES_DEV=1`. |
 | Edits have no effect, and `rev` *is* changing | The build did not run. Check the `build` pane of `pnpm dev:modules`. |
 | `pnpm-lock.yaml` shows hundreds of changed lines after `pnpm install` | Expected — pnpm wrote an importer per overlay module. Run `pnpm lockfile:public`; never commit it. |
-| `pnpm install --frozen-lockfile` fails locally | Also expected while the overlay is cloned in. Use plain `pnpm install`; frozen is for CI and the server image. |
+| `pnpm install --frozen-lockfile` fails locally | Also expected while the overlay is cloned in. Use plain `pnpm install`; frozen is for CI and public checkouts. The server entrypoint installs unfrozen when the overlay is present. |
 
 ---
 

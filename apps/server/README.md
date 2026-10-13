@@ -217,6 +217,10 @@ step quiet, but not the build:
 docker compose run --rm --user 0 --entrypoint pnpm api install --frozen-lockfile
 ```
 
+With the private module overlay in `modules/` that frozen install fails (the committed
+lockfile leaves the modules out on purpose, see `modules/README.md`): use
+`install --no-frozen-lockfile` and then `git checkout pnpm-lock.yaml`, as the entrypoint does.
+
 Note this installs the **whole workspace** — editor, Vite, the WASM packages —
 not just the server's dependencies, because the mount is the whole monorepo.
 

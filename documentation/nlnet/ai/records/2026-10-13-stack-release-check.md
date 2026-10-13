@@ -37,9 +37,24 @@ The small fixes, the only changes of this unit:
   `main` and still read `0.9.0`.
 - `apps/server/_v.mts`, an untracked one-off query script, deleted.
 
+Then the lockfile, on request. Two options were put to the human: an unfrozen install on the
+server when the overlay is present, or a full lockfile kept in the private modules repo. They
+chose the first:
+
+- `apps/server/docker-entrypoint.sh`: with `modules/*` (or `modules/*/*`) manifests present, the
+  install runs `--no-frozen-lockfile` and copies the tracked `pnpm-lock.yaml` back afterwards, so
+  `git pull` stays clean; without them it stays frozen. A changed module `package.json` now
+  also triggers an install, since the lockfile cannot show it. Checked by running the step against
+  this checkout (overlay present): the install passes, the lockfile is byte-identical after, a
+  second run skips, and touching a module manifest installs again.
+- `modules/README.md`, `apps/server/README.md`: no longer say the server never sees `modules/`;
+  the manual install with the overlay.
+
 ## Review and decisions by the human
 
 - Asked for the small fixes after reading the report.
+- Chose the unfrozen server install (option 1) for the lockfile; the private modules' own
+  dependencies are not pinned on the server.
 
 ## Commits
 

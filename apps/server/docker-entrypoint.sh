@@ -39,28 +39,55 @@ fi
 # Reasons to install. Missing store = never installed. Stamp older than the
 # lockfile = a `git pull` changed dependencies since the last install, which
 # would otherwise surface much later as a missing or wrong-version module.
+#
+# The private module overlay (modules/*, see modules/README.md) is not in the
+# committed lockfile, on purpose: its importers would leak the module names and
+# their dependencies. With the overlay present a frozen install always fails, so
+# it is installed unfrozen: pnpm keeps the lockfile's resolutions for every
+# public package and only resolves the modules' own dependencies. The tracked
+# lockfile is put back afterwards, so the next `git pull` finds no local change.
+# Without the overlay (a public checkout) the install stays frozen.
+module_manifests=$(find "$REPO/modules" -mindepth 2 -maxdepth 3 -name package.json \
+  -not -path '*/node_modules/*' 2>/dev/null || true)
+
 need_install=''
 if [ ! -d "$REPO/node_modules/.pnpm" ]; then
   need_install='node_modules is missing'
 elif [ ! -f "$STAMP" ] || [ "$REPO/pnpm-lock.yaml" -nt "$STAMP" ]; then
   need_install='pnpm-lock.yaml changed since the last install'
+elif [ -n "$module_manifests" ] && [ -n "$(find $module_manifests -newer "$STAMP" -print -quit)" ]; then
+  # The lockfile does not see the modules' dependencies, so their manifests are checked too
+  need_install='a module package.json changed since the last install'
 fi
 
 if [ -n "$need_install" ]; then
   echo "==> Installing dependencies ($need_install)" >&2
 
+  if [ -n "$module_manifests" ]; then
+    install_flags='--no-frozen-lockfile'
+    echo "    Private modules present: unfrozen install, the tracked pnpm-lock.yaml is restored after" >&2
+    cp "$REPO/pnpm-lock.yaml" /tmp/pnpm-lock.tracked.yaml
+  else
+    install_flags='--frozen-lockfile'
+  fi
+
   # Needs write access to the mounted checkout. The container runs as uid 1000
   # (USER node); if the checkout is owned by root on the host this fails, and
   # the fix is on the host, not here.
-  if ! pnpm install --frozen-lockfile --dir "$REPO"; then
+  install_ok=1
+  pnpm install $install_flags --dir "$REPO" || install_ok=0
+  [ -n "$module_manifests" ] && cp /tmp/pnpm-lock.tracked.yaml "$REPO/pnpm-lock.yaml"
+
+  if [ "$install_ok" = '0' ]; then
     echo "FATAL: pnpm install failed." >&2
     echo "  If it could not write, the checkout is not owned by uid 1000:" >&2
     echo "    sudo chown -R 1000:1000 <checkout>" >&2
     echo "  Or install once by hand, then restart:" >&2
-    echo "    docker compose run --rm --user 0 --entrypoint pnpm api install --frozen-lockfile" >&2
+    echo "    docker compose run --rm --user 0 --entrypoint pnpm api install $install_flags" >&2
     exit 1
   fi
 
+  # After the restore: the copy back makes the lockfile newer, and the stamp must not be older
   touch "$STAMP"
   echo "==> Dependencies ready" >&2
 fi
