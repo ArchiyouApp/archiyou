@@ -134,3 +134,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-10-13 | [Merged component documents: every page shown, also on re-runs](./records/2026-10-13-merged-component-docs.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-10-13 | [Editor: menu UI tweaks (code editor minimize, metric cards, completions)](./records/2026-10-13-editor-ui-tweaks.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-10-13 | [make.boarding(): an error without an area, and the kerf in pack()](./records/2026-10-13-boarding.md) | Claude Opus 5.5 | develop | 1 |
+| 2026-10-24 | [Caddy: published configurators may be framed by other sites](./records/2026-10-24-configurator-embedding.md) | Claude Opus 5.5 | develop | 1 |
