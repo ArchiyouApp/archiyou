@@ -1356,11 +1356,11 @@ export class DimensionLine extends BaseAnnotation
         return text;
     }
 
-    /** Export this dimension line as a real ALIGNED DXF dimension.
-     *  Delegates the DXF encoding (DIMENSION entity + baked *D block) to the
-     *  DXFDocument; this method only supplies the geometry + value text.
-     *  See DXFExporter.DXFDocument.addAlignedDim(). */
     /** Write this dimension into a DXF document.
+     *
+     *  Delegates the DXF encoding (DIMENSION entity + baked *D block) to the DXFDocument,
+     *  which also sizes and places the text for the drawing's scale; this method only supplies
+     *  the geometry and the value text. See DXFExporter.DXFDocument.addDimension().
      *
      *  `to` maps model coordinates into the drawing's plane (DXFExporter's Projector) — a
      *  dimension on a wall elevation modelled on XZ has to travel to XY with the wall, or it
@@ -1372,20 +1372,11 @@ export class DimensionLine extends BaseAnnotation
     {
         const flat = (p:any) => { const v = to ? to.point(p) : p; return { x: v.x, y: v.y, z: 0 }; };
 
-        const dimStart = flat(this._calculatePoint('start', to?.normal));
-        const dimEnd = flat(this._calculatePoint('end', to?.normal));
-        const textPos = {
-            x: (dimStart.x + dimEnd.x) / 2,
-            y: (dimStart.y + dimEnd.y) / 2,
-            z: 0,
-        };
-
-        doc.addAlignedDim(
+        doc.addDimension(
             flat(this.targetStart), // extension origin 1
             flat(this.targetEnd),   // extension origin 2
-            dimStart,               // dim-line endpoint 1
-            dimEnd,                 // dim-line endpoint 2
-            textPos,
+            flat(this._calculatePoint('start', to?.normal)), // dim-line endpoint 1
+            flat(this._calculatePoint('end', to?.normal)),   // dim-line endpoint 2
             this._formatValueText(),
             layer,
         );

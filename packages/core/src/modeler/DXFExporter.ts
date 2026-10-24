@@ -10,12 +10,13 @@
  *    - Maps scene layers onto DXF layers and resolves the style cascade, so the colour and
  *      linetype an author set on `layer('rafters')` reach the file — see LAYERS & STYLE.
  *    - Emits DXF R2000 (AC1015) so we can use true-colour (group 420) styling and
- *      real ALIGNED DIMENSION entities (which reference an anonymous *D block).
+ *      real DIMENSION entities (which reference an anonymous *D block).
  *    - Native geometry entities: LINE, LWPOLYLINE (with bulges), CIRCLE, ARC, ELLIPSE,
  *      SPLINE (spans the kernel cannot describe fall back to chords).
- *    - Aligned dimensions are written both as a DIMENSION entity (CAD-editable)
- *      AND as a baked *D block (lines + arrow SOLIDs + MTEXT) so every viewer
- *      renders them even without regenerating.
+ *    - Dimensions are written both as a DIMENSION entity (CAD-editable, a rotated linear
+ *      dimension) AND as a baked *D block (lines + arrow SOLIDs + MTEXT) so every viewer
+ *      renders them even without regenerating. Text and arrows are sized on paper and
+ *      scaled by the drawing scale (DIMSCALE), see DXFDocument.drawingScale().
  *
  *  This file is dependency-free and pure-TS (no WASM, no meshup edits). Geometry comes
  *  from meshup Curve's exportSpans(), which reports what each exact span is along with
@@ -32,6 +33,7 @@ import type * as meshup from '@archiyou/meshup'
 import type { SpanParams, SpanPoint } from '@archiyou/meshup'
 import type { ModelUnits } from './types'
 import type { AnyShape } from './types'
+import { MM_PER_UNIT } from '../units/UnitConverter'
 import { detectExportFrame, isOnPlane, planeTolerance, projectorFor, shapeBox, IDENTITY_PROJECTOR,
     PLANE_TOLERANCE, type Box, type ExportPlane, type Projector, type Vec3 } from './utils'
 
@@ -45,6 +47,7 @@ export interface toDXFOptions
     annotations?: boolean  // include dimension lines
     units?: ModelUnits     // model unit (for $INSUNITS)
     plane?: ExportPlane    // drawing plane (default 'auto' — detected from the geometry)
+    scale?: number         // drawing scale for dimension text and arrows: 50 for 1:50 (default: from the drawing's size)
 }
 
 type RGB = [number, number, number]
@@ -107,6 +110,10 @@ export interface EntityStyle { colorRgb: RGB | null; dashed: boolean }
 
 interface LayerDef extends EntityStyle { name: string; handle: string }
 interface DimBlock { blockName: string; recordHandle: string; body: string }
+interface DimData { defStart: Vec3; defEnd: Vec3; dimStart: Vec3; dimEnd: Vec3; text: string; layer: string }
+
+/** Drawing scales a drawing gets: 1, 2, 2.5 and 5 per decade, so 1:20, 1:25, 1:50, ... and 2:1 */
+const SCALE_STEPS = [1, 2, 2.5, 5]
 
 /**
  *  Minimal DXF R2000 (AC1015) document. Handles are allocated monotonically as
@@ -114,10 +121,18 @@ interface DimBlock { blockName: string; recordHandle: string; body: string }
  */
 export class DXFDocument
 {
-    // Settings for dimension styling (model units).
-    ARROW_SIZE = 2.5
-    TEXT_HEIGHT = 2.5
-    EXT_GAP = 0.625 // gap between shape and start of extension line
+    /*  Dimension styling, in millimeters ON PAPER (ISO-25). CAD multiplies these by DIMSCALE,
+        which is the drawing scale expressed in model units per paper millimeter, and the baked
+        blocks are drawn the same way. They used to be model units, so a 3 m wall in mm got
+        2.5 mm text: invisible next to the geometry, and invisible again in CAD on a regen. */
+    ARROW_SIZE = 2.5   // DIMASZ
+    TEXT_HEIGHT = 2.5  // DIMTXT
+    TEXT_GAP = 0.625   // DIMGAP: between the dimension line and its text
+    EXT_OFFSET = 0.625 // DIMEXO: gap between the measured shape and the extension line
+    EXT_EXTEND = 1.25  // DIMEXE: extension line past the dimension line
+
+    /** Drawing scale (50 for 1:50); null picks one from the drawing's size, see drawingScale() */
+    scale: number | null = null
 
     private _units: ModelUnits = 'mm'
     private _handleSeq = 0x100
@@ -125,8 +140,10 @@ export class DXFDocument
     private _layers = new Map<string, LayerDef>()
     private _entityStyle: EntityStyle | null = null   // per-entity override, see withEntityStyle()
     private _entities: string[] = []          // ENTITIES section body (geometry + DIMENSION)
+    private _dims: DimData[] = []              // dimensions, written at stringify() once the scale is known
     private _dimBlocks: DimBlock[] = []        // anonymous *D blocks
     private _dimSeq = 0
+    private _extent: { min: Vec3; max: Vec3 } | null = null  // of the drawing, in drawing coordinates
 
     // Forward-referenced handles.
     private _modelSpaceRecord!: string
@@ -145,6 +162,44 @@ export class DXFDocument
     private _nextHandle(): string { return (this._handleSeq++).toString(16).toUpperCase() }
 
     private _pair(code: number, value: string | number): string { return `${code}\n${value}\n` }
+
+    //// SCALE ////
+
+    /** Grow the drawing's extent by a point in drawing coordinates. The geometry's is given by
+     *  buildDXF(); dimensions add their own points. */
+    includeExtent(p: Vec3): void
+    {
+        const e = this._extent
+        this._extent = e
+            ? { min: { x: Math.min(e.min.x, p.x), y: Math.min(e.min.y, p.y), z: 0 },
+                max: { x: Math.max(e.max.x, p.x), y: Math.max(e.max.y, p.y), z: 0 } }
+            : { min: { x: p.x, y: p.y, z: 0 }, max: { x: p.x, y: p.y, z: 0 } }
+    }
+
+    /** The drawing scale, as its denominator: 50 for 1:50, 0.5 for 2:1.
+     *
+     *  Without one set it fits the drawing to a ~200 mm wide view, as SVG export does when it
+     *  has no page (DimensionLine.toSVG(): text at drawing/80), then snaps to the nearest
+     *  usual scale so DIMSCALE reads as one in CAD. */
+    drawingScale(): number
+    {
+        if (this.scale && this.scale > 0) return this.scale
+        const e = this._extent
+        const size = e ? Math.max(e.max.x - e.min.x, e.max.y - e.min.y) * (MM_PER_UNIT[this._units] ?? 1) : 0
+        if (!(size > 0)) return 1
+        const wanted = size / 200
+        const decade = Math.floor(Math.log10(wanted))
+        const candidates = [decade - 1, decade, decade + 1]
+            .flatMap(d => SCALE_STEPS.map(m => m * 10 ** d))
+        return candidates.reduce((best, c) =>
+            Math.abs(Math.log(c / wanted)) < Math.abs(Math.log(best / wanted)) ? c : best)
+    }
+
+    /** Model units per millimeter on paper: DIMSCALE */
+    private _unitsPerMm(): number
+    {
+        return this.drawingScale() / (MM_PER_UNIT[this._units] ?? 1)
+    }
 
     //// LAYERS ////
 
@@ -339,7 +394,7 @@ export class DXFDocument
             + this._pair(11, fmt(b.x)) + this._pair(21, fmt(b.y)) + this._pair(31, 0)
     }
 
-    private _blockMText(at: Vec3, text: string, angleRad: number, layer: string): string
+    private _blockMText(at: Vec3, text: string, angleRad: number, height: number, layer: string): string
     {
         return this._pair(0, 'MTEXT')
             + this._pair(5, this._nextHandle())
@@ -347,59 +402,97 @@ export class DXFDocument
             + this._pair(8, layer)
             + this._pair(100, 'AcDbMText')
             + this._pair(10, fmt(at.x)) + this._pair(20, fmt(at.y)) + this._pair(30, 0)
-            + this._pair(40, fmt(this.TEXT_HEIGHT))
+            + this._pair(40, fmt(height))
             + this._pair(71, 5) // attachment: middle-center
             + this._pair(7, 'STANDARD')
             + this._pair(1, text)
-            + this._pair(50, fmt(angleRad)) // MTEXT rotation, group 50 is in radians (unlike TEXT, which is degrees)
+            // The text direction as a vector (group 11), not as a rotation (group 50): the DXF
+            // reference says 50 is in radians, AutoCAD and ezdxf read degrees, so vertical text
+            // came out level. A direction vector means the same to everyone and wins over 50.
+            + this._pair(11, fmt(Math.cos(angleRad))) + this._pair(21, fmt(Math.sin(angleRad))) + this._pair(31, 0)
     }
 
     /**
-     *  Add an ALIGNED dimension between two definition points, plus a baked *D block.
+     *  Add a dimension between two definition points. It is written at stringify(), when the
+     *  drawing's extent and so its scale are known: the text, arrows and the text position
+     *  in the DIMENSION entity all depend on it.
      *  @param defStart first extension-line origin (on the measured shape)
      *  @param defEnd   second extension-line origin
      *  @param dimStart offset dimension-line endpoint above defStart
      *  @param dimEnd   offset dimension-line endpoint above defEnd
-     *  @param textPos  MTEXT insertion point (midpoint of the dimension line)
      *  @param valueText text to show (already formatted, incl. units if wanted)
      */
-    addAlignedDim(
+    addDimension(
         defStart: Vec3, defEnd: Vec3,
         dimStart: Vec3, dimEnd: Vec3,
-        textPos: Vec3, valueText: string,
+        valueText: string,
         layer = 'dimensions',
     ): void
     {
         this.ensureLayer(layer)
+        this._dims.push({ defStart, defEnd, dimStart, dimEnd, text: valueText, layer });
+        [defStart, defEnd, dimStart, dimEnd].forEach(p => this.includeExtent(p))
+    }
+
+    /**
+     *  Write one dimension: a DIMENSION entity, plus a baked *D block (lines + arrow SOLIDs +
+     *  MTEXT) so every viewer renders it even without regenerating.
+     *
+     *  Written as a ROTATED linear dimension along its own dimension line (type 0, angle in
+     *  group 50), as AutoCAD's DIMLINEAR and ezdxf write one, not as an ALIGNED one (type 1):
+     *  readers that regenerate dimensions take the direction from group 50, which an aligned
+     *  dimension does not carry, so ezdxf drew every vertical one as a horizontal "0". It is
+     *  also what the dimension measures: with `ortho` the dimension line runs along an axis
+     *  while the points it measures are not level, and an aligned one would measure the slant.
+     */
+    private _writeDim(d: DimData, k: number): void
+    {
+        const { defStart, defEnd, dimStart, dimEnd, text, layer } = d
         const blockName = `*D${this._dimSeq++}`
         const recordHandle = this._nextHandle()
 
-        // ---- Baked block body (visible geometry) ----
-        const dir = { x: dimEnd.x - dimStart.x, y: dimEnd.y - dimStart.y }
-        const len = Math.hypot(dir.x, dir.y) || 1
-        const ux = dir.x / len, uy = dir.y / len          // along dim line
-        const px = -uy, py = ux                            // perpendicular
-        const a = this.ARROW_SIZE
+        const len = Math.hypot(dimEnd.x - dimStart.x, dimEnd.y - dimStart.y)
+        const ux = len > 0 ? (dimEnd.x - dimStart.x) / len : 1
+        const uy = len > 0 ? (dimEnd.y - dimStart.y) / len : 0
+        const px = -uy, py = ux // perpendicular
+
+        // Paper sizes into model units
+        const h = this.TEXT_HEIGHT * k, a = this.ARROW_SIZE * k, gap = this.TEXT_GAP * k
+
+        // Text reads along the line, never upside down: a vertical dimension reads bottom to
+        // top with its text on the left, as ISO has it (and DimensionLine._labelAngle()).
+        const flip = ux < -1e-9 || (Math.abs(ux) <= 1e-9 && uy < 0)
+        const rx = flip ? -ux : ux, ry = flip ? -uy : uy
+        const textPos = {
+            x: (dimStart.x + dimEnd.x) / 2 - ry * (gap + h / 2),
+            y: (dimStart.y + dimEnd.y) / 2 + rx * (gap + h / 2),
+            z: 0,
+        }
+
+        // Arrows go outside when two of them do not fit between the extension lines (DIMTOFL off)
+        const inside = len >= 3 * a
         const arrow = (tip: Vec3, sign: number): string =>
         {
-            const bx = tip.x + sign * ux * a, by = tip.y + sign * uy * a
+            const s = inside ? sign : -sign
+            const bx = tip.x + s * ux * a, by = tip.y + s * uy * a
             const p1 = { x: bx + px * a * 0.3, y: by + py * a * 0.3, z: 0 }
             const p2 = { x: bx - px * a * 0.3, y: by - py * a * 0.3, z: 0 }
             return this._solidTriangle(tip, p1, p2, layer)
         }
+        const outside = inside ? 0 : a
+        const lineStart = { x: dimStart.x - ux * outside, y: dimStart.y - uy * outside, z: 0 }
+        const lineEnd = { x: dimEnd.x + ux * outside, y: dimEnd.y + uy * outside, z: 0 }
 
-        const textAngle = Math.atan2(dir.y, dir.x)
         let body = ''
-        body += this._blockLine(defStart, dimStart, layer)   // extension line 1
-        body += this._blockLine(defEnd, dimEnd, layer)       // extension line 2
-        body += this._blockLine(dimStart, dimEnd, layer)     // dimension line
+        body += this._extensionLine(defStart, dimStart, k, layer)
+        body += this._extensionLine(defEnd, dimEnd, k, layer)
+        body += this._blockLine(lineStart, lineEnd, layer)
         body += arrow(dimStart, +1)
         body += arrow(dimEnd, -1)
-        body += this._blockMText(textPos, valueText, textAngle, layer)
+        body += this._blockMText(textPos, text, Math.atan2(ry, rx), h, layer)
 
         this._dimBlocks.push({ blockName, recordHandle, body })
 
-        // ---- DIMENSION entity referencing the block ----
         this._entities.push(
             this._pair(0, 'DIMENSION')
             + this._pair(5, this._nextHandle())
@@ -408,15 +501,35 @@ export class DXFDocument
             + this._pair(8, layer)
             + this._pair(100, 'AcDbDimension')
             + this._pair(2, blockName)
-            + this._pair(10, fmt(dimStart.x)) + this._pair(20, fmt(dimStart.y)) + this._pair(30, 0)
+            // the dimension line, where it crosses the second extension line
+            + this._pair(10, fmt(dimEnd.x)) + this._pair(20, fmt(dimEnd.y)) + this._pair(30, 0)
             + this._pair(11, fmt(textPos.x)) + this._pair(21, fmt(textPos.y)) + this._pair(31, 0)
-            + this._pair(70, 1)           // aligned
-            + this._pair(1, valueText)    // text override
+            + this._pair(70, 32)          // rotated (0), its block used by this dimension only (32)
+            + this._pair(71, 5)           // text attachment: middle center
+            + this._pair(42, fmt(len))    // actual measurement
+            + this._pair(1, text)         // text override
             + this._pair(3, 'AY')         // dimstyle
             + this._pair(100, 'AcDbAlignedDimension')
             + this._pair(13, fmt(defStart.x)) + this._pair(23, fmt(defStart.y)) + this._pair(33, 0)
-            + this._pair(14, fmt(defEnd.x)) + this._pair(24, fmt(defEnd.y)) + this._pair(34, 0),
+            + this._pair(14, fmt(defEnd.x)) + this._pair(24, fmt(defEnd.y)) + this._pair(34, 0)
+            + this._pair(50, fmt(degOf(Math.atan2(uy, ux))))
+            + this._pair(100, 'AcDbRotatedDimension'),
         )
+    }
+
+    /** An extension line from the measured point to just past the dimension line, starting
+     *  a little off the shape (DIMEXO, DIMEXE). None when the dimension line runs over the
+     *  point it measures, as a chain inside a frame does. */
+    private _extensionLine(from: Vec3, to: Vec3, k: number, layer: string): string
+    {
+        const len = Math.hypot(to.x - from.x, to.y - from.y)
+        const offset = this.EXT_OFFSET * k, extend = this.EXT_EXTEND * k
+        if (len <= offset) return ''
+        const dx = (to.x - from.x) / len, dy = (to.y - from.y) / len
+        return this._blockLine(
+            { x: from.x + dx * offset, y: from.y + dy * offset, z: 0 },
+            { x: to.x + dx * extend, y: to.y + dy * extend, z: 0 },
+            layer)
     }
 
     //// SERIALISATION ////
@@ -485,9 +598,14 @@ export class DXFDocument
             + this._pair(0, 'DIMSTYLE') + this._pair(105, this._nextHandle())
             + this._pair(100, 'AcDbSymbolTableRecord') + this._pair(100, 'AcDbDimStyleTableRecord')
             + this._pair(2, 'AY') + this._pair(70, 0)
+            + this._pair(40, fmt(this._unitsPerMm())) // DIMSCALE: model units per paper mm
             + this._pair(41, fmt(this.ARROW_SIZE))   // DIMASZ arrow size
+            + this._pair(42, fmt(this.EXT_OFFSET))   // DIMEXO
+            + this._pair(44, fmt(this.EXT_EXTEND))   // DIMEXE
             + this._pair(140, fmt(this.TEXT_HEIGHT)) // DIMTXT text height
-            + this._pair(147, fmt(this.EXT_GAP))     // DIMGAP
+            + this._pair(147, fmt(this.TEXT_GAP))    // DIMGAP
+            + this._pair(73, 0) + this._pair(74, 0)  // DIMTIH, DIMTOH off: text along the line
+            + this._pair(77, 1)                      // DIMTAD: text above the line
             + this._pair(0, 'ENDTAB')
 
         // --- BLOCK_RECORD table ---
@@ -547,6 +665,10 @@ export class DXFDocument
     stringify(): string
     {
         // Order matters: sections that allocate handles run before HEADER emits $HANDSEED.
+        // Dimensions first: they add the *D blocks the tables list, at the drawing's scale.
+        const k = this._unitsPerMm()
+        this._dims.forEach(d => this._writeDim(d, k))
+        this._dims = []
         const tables = this._tablesSection()
         const blocks = this._blocksSection()
         const entities = this._entitiesSection()
@@ -901,6 +1023,12 @@ export function buildDXF(
 
     const to = projectorFor(frame)
     const doc = new DXFDocument(options.units)
+    doc.scale = options.scale ?? null
+
+    // The drawing's size picks the scale its dimensions are drawn at
+    exportShapes.map(shapeBox).filter((b): b is Box => b !== null).forEach(b =>
+        [b.min.x, b.max.x].forEach(x => [b.min.y, b.max.y].forEach(y => [b.min.z, b.max.z].forEach(z =>
+            doc.includeExtent(to.point({ x, y, z }))))))
 
     exportShapes.forEach(shape =>
     {

@@ -292,10 +292,10 @@ async function runOnce(o: RunOptions): Promise<RunResult>
     return result;
 }
 
-/** The output path of a pipeline's model in a format. DXF and GLB carry the pipeline's dimensions */
+/** The output path of a pipeline's model in a format. DXF, SVG and GLB carry the pipeline's dimensions */
 function pipelinePath(name: string, format: string): string
 {
-    return `${name}/model/${format}${format === 'dxf' || format === 'glb' ? '?annotations=true' : ''}`;
+    return `${name}/model/${format}${['dxf', 'svg', 'glb'].includes(format) ? '?annotations=true' : ''}`;
 }
 
 /** `drawings` or `drawings:dxf,svg` */

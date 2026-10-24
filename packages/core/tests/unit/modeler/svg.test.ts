@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
 
 import { Modeler } from '../../../src/modeler/Modeler'
+import { Annotator } from '../../../src/annotator/Annotator'
 import type { ArchiyouModules } from '../../../src/types'
 
 /** SVG export for the Modeler pipeline — see Modeler.toSVG(). */
@@ -238,4 +239,81 @@ describe('Modeler SVG export', () =>
         })
     })
 
+    /**
+     * Dimension lines over the scene drawing, asked for with `annotations: true` (the
+     * `?annotations=true` of an svg output path). Its own Modeler: dimensions need an Annotator,
+     * which the tests above run without.
+     */
+    describe('dimensions', () =>
+    {
+        let dimModeler: Modeler
+        let annotator: Annotator
+
+        beforeAll(async () =>
+        {
+            dimModeler = new Modeler()
+            await dimModeler.load()
+            annotator = new Annotator()
+            const modules = { modeler: dimModeler, annotator } as unknown as ArchiyouModules
+            dimModeler.setArchiyou(modules)
+            annotator.setArchiyou(modules)
+        })
+
+        beforeEach(() =>
+        {
+            dimModeler.reset()
+            annotator.reset()
+            dimModeler.units('mm')
+        })
+
+        const viewBox = (svg: string): number[] =>
+            (svg.match(/viewBox="([^"]+)"/)?.[1] ?? '').split(' ').map(Number)
+
+        it('draws no dimensions unless asked', () =>
+        {
+            ;(dimModeler.line([0, 0, 0], [3000, 0, 0]) as any).dim()
+            const svg = dimModeler.toSVG() as string
+            expect(svg).not.toContain('dimensionline')
+            expect(svg).not.toContain('id="dimensions"')
+        })
+
+        it('draws the dimension lines as a group of their own when asked', () =>
+        {
+            dimModeler.rect(3000, 2000)
+            ;(dimModeler.line([0, 0, 0], [3000, 0, 0]) as any).dim({ offset: 600 })
+
+            const svg = dimModeler.toSVG({ annotations: true }) as string
+            expect(svg).toContain('class="dimensionline"')
+            expect(svg).toContain('3000')
+            // After the scene's root group, not in it: drawn over the scene, a layer of its own
+            expect(svg).toMatch(/<\/g>\n<g id="dimensions" class="annotations">.*<\/g>\n<\/svg>$/s)
+        })
+
+        it('frames the dimensions with the geometry', () =>
+        {
+            dimModeler.rect(3000, 2000)   // y from -1000 to 1000
+            const plain = viewBox(dimModeler.toSVG() as string)
+            ;(dimModeler.line([-1500, -1000, 0], [1500, -1000, 0]) as any).dim({ offset: 600 })
+
+            const [, y, , h] = viewBox(dimModeler.toSVG({ annotations: true }) as string)
+            // SVG's y points down: the dimension 600 below the rect is at svg y 1600
+            expect(y + h).toBeGreaterThan(1600)
+            expect(h).toBeGreaterThan(plain[3])
+        })
+
+        it('takes the dimensions to the drawing plane with an elevation', () =>
+        {
+            const drawing = (stand: boolean): string =>
+            {
+                dimModeler.reset()
+                annotator.reset()
+                const wall = dimModeler.rect(3000, 2000, [1500, 1000, 0]) as any
+                const base = dimModeler.line([0, 0, 0], [3000, 0, 0]) as any
+                if (stand) { wall.rotateX(90, [0, 0, 0]); base.rotateX(90, [0, 0, 0]) }
+                base.dim({ offset: 600 })
+                return (dimModeler.toSVG({ annotations: true }) as string).replace(/ id="[^"]*"/g, '')
+            }
+            expect(drawing(true)).toBe(drawing(false))
+        })
+    })
 })

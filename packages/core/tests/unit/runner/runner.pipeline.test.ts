@@ -186,6 +186,21 @@ describe('Runner pipelines', () =>
         expect(output(result, 'dimensioned/model/dxf') as string).toContain('DIMENSION')
     })
 
+    it('draws the dimensions of the drawing in SVG when asked', async () =>
+    {
+        const result = await run(`
+            plate = rect(200, 100);
+            plate.dim();
+            $pipeline('plain', function(){ return { outline: rect(50, 20).moveX(500) } });
+            $pipeline('dimensioned', function(){ r = rect(50, 20).moveX(500); r.dim(); return { r } });
+        `, ['plain/model/svg?annotations=true', 'dimensioned/model/svg?annotations=true', 'dimensioned/model/svg'])
+
+        expect(output(result, 'plain/model/svg?annotations=true') as string).not.toContain('dimensionline')
+        expect(output(result, 'dimensioned/model/svg?annotations=true') as string).toContain('id="dimensions"')
+        // Without the option the scene is drawn as it always was
+        expect(output(result, 'dimensioned/model/svg') as string).not.toContain('dimensionline')
+    })
+
     it('turns a document pipeline function into a pipeline named after the document', async () =>
     {
         const result = await run(`

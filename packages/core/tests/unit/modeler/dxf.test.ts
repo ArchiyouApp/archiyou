@@ -7,7 +7,7 @@ import type { ArchiyouModules } from '../../../src/types'
 
 /**
  * DXF export for the Modeler pipeline (SmartSceneNode / SmartShapeCollection).
- * Covers native geometry entities, ALIGNED dimensions, unit header, 2D-only
+ * Covers native geometry entities, dimensions, unit header, 2D-only
  * filtering, and structural well-formedness. See src/modeler/DXFExporter.ts.
  */
 describe('Modeler DXF export', () =>
@@ -54,7 +54,7 @@ describe('Modeler DXF export', () =>
         expect(countEntity(s, 'LINE')).toBeGreaterThanOrEqual(1)
     })
 
-    it('writes ALIGNED DIMENSION entities + baked *D block + DIMSTYLE', () =>
+    it('writes DIMENSION entities + baked *D block + DIMSTYLE', () =>
     {
         const line = modeler.line([0, 0, 0], [120, 0, 0])
         ;(line as any).dim()
@@ -64,6 +64,7 @@ describe('Modeler DXF export', () =>
 
         expect(countEntity(dxf, 'DIMENSION')).toBe(1)
         expect(dxf).toContain('AcDbAlignedDimension')
+        expect(dxf).toContain('AcDbRotatedDimension')
         expect(dxf).toContain('*D0')      // anonymous dim block
         expect(dxf).toContain('DIMSTYLE') // dimstyle table
         expect(dxf).toContain('AY')       // our dimstyle name
@@ -116,6 +117,124 @@ describe('Modeler DXF export', () =>
         expect(dxf).not.toBeNull()
         expect(countEntity(dxf, 'CIRCLE')).toBe(1)
         expect(countEntity(dxf, 'LWPOLYLINE')).toBeGreaterThanOrEqual(1)
+    })
+
+    /**
+     * Dimensions as CAD reads them: sized on paper and scaled by the drawing scale (DIMSCALE),
+     * and written as rotated linear dimensions so readers that regenerate them get the
+     * direction from the file. Pinned after the timberwall elevation exported 2.5 mm text on
+     * a 3 m wall, and ezdxf redrew its vertical dimensions as horizontal zeros.
+     */
+    describe('dimensions', () =>
+    {
+        type Entity = { type: string; block: string | null; groups: Array<[number, string]> }
+
+        /** Every entity in the file, with the block it is in (null in the ENTITIES section). */
+        const entitiesOf = (dxf: string): Entity[] =>
+        {
+            const lines = dxf.split('\n')
+            const pairs = Array.from({ length: Math.floor(lines.length / 2) },
+                (_, i) => [Number(lines[2 * i]), lines[2 * i + 1]] as [number, string])
+            return pairs.reduce((acc, [code, value]) =>
+            {
+                if (code === 0)
+                {
+                    const inBlock = value === 'BLOCK' ? undefined
+                        : value === 'ENDBLK' || value === 'ENDSEC' ? null
+                        : acc.block
+                    acc.entities.push({ type: value, block: inBlock ?? null, groups: [] })
+                    acc.block = inBlock === undefined ? acc.block : inBlock
+                    acc.pendingBlock = value === 'BLOCK'
+                }
+                else
+                {
+                    const current = acc.entities[acc.entities.length - 1]
+                    current?.groups.push([code, value])
+                    if (acc.pendingBlock && code === 2) { acc.block = value; acc.pendingBlock = false }
+                }
+                return acc
+            }, { entities: [] as Entity[], block: null as string | null, pendingBlock: false }).entities
+        }
+        const group = (e: Entity, code: number): number => Number(e.groups.find(([c]) => c === code)?.[1])
+        const dimensions = (dxf: string): Entity[] => entitiesOf(dxf).filter(e => e.type === 'DIMENSION')
+        const dimstyle = (dxf: string): Entity => entitiesOf(dxf).find(e => e.type === 'DIMSTYLE')!
+        const blockOf = (dxf: string, dim: Entity): Entity[] =>
+        {
+            const name = dim.groups.find(([c]) => c === 2)?.[1]
+            return entitiesOf(dxf).filter(e => e.block === name && e.type !== 'BLOCK')
+        }
+        const lineLength = (e: Entity): number =>
+            Math.hypot(group(e, 11) - group(e, 10), group(e, 21) - group(e, 20))
+
+        // reset() keeps the model unit, and the scale is picked in millimeters on paper
+        beforeEach(() => { modeler.units('mm') })
+
+        it('writes a vertical dimension as a rotated one at 90 degrees', () =>
+        {
+            ;(modeler.line([0, 0, 0], [0, 500, 0]) as any).dim()
+
+            const [dim] = dimensions(modeler.toDXF() as string)
+            expect(group(dim, 70)).toBe(32)        // rotated, block used by this dimension only
+            expect(group(dim, 50)).toBeCloseTo(90)
+            expect(group(dim, 42)).toBeCloseTo(500) // actual measurement
+        })
+
+        it('reads vertical text along its line, bottom to top', () =>
+        {
+            ;(modeler.line([0, 0, 0], [0, 500, 0]) as any).dim()
+
+            const dxf = modeler.toDXF() as string
+            const text = blockOf(dxf, dimensions(dxf)[0]).find(e => e.type === 'MTEXT')!
+            // Direction vector (group 11), not a rotation (group 50) readers disagree on
+            expect(group(text, 11)).toBeCloseTo(0)
+            expect(group(text, 21)).toBeCloseTo(1)
+            expect(text.groups.some(([c]) => c === 50)).toBe(false)
+        })
+
+        it('picks a usual drawing scale from the size of the drawing', () =>
+        {
+            ;(modeler.line([0, 0, 0], [3000, 0, 0]) as any).dim()   // a 3 m wall, in mm
+
+            const dxf = modeler.toDXF() as string
+            expect(group(dimstyle(dxf), 40)).toBe(20)     // DIMSCALE: 1:20
+            expect(group(dimstyle(dxf), 140)).toBe(2.5)   // DIMTXT stays on paper
+            const text = blockOf(dxf, dimensions(dxf)[0]).find(e => e.type === 'MTEXT')!
+            expect(group(text, 40)).toBeCloseTo(2.5 * 20) // the baked text matches a CAD regen
+        })
+
+        it('honours an explicit scale', () =>
+        {
+            ;(modeler.line([0, 0, 0], [3000, 0, 0]) as any).dim()
+
+            const dxf = modeler.toDXF({ scale: 50 }) as string
+            expect(group(dimstyle(dxf), 40)).toBe(50)
+            const text = blockOf(dxf, dimensions(dxf)[0]).find(e => e.type === 'MTEXT')!
+            expect(group(text, 40)).toBeCloseTo(2.5 * 50)
+        })
+
+        it('scales by the model unit: the same wall in meters gets the same paper size', () =>
+        {
+            modeler.units('m')
+            // An explicit offset: the default is 10 model units, which in meters stands the
+            // dimension 10 m off the wall and makes the drawing bigger than the wall
+            ;(modeler.line([0, 0, 0], [3, 0, 0]) as any).dim({ offset: 0.3 })
+
+            const dxf = modeler.toDXF() as string
+            expect(group(dimstyle(dxf), 40)).toBeCloseTo(20 / 1000)  // model units per paper mm
+            const text = blockOf(dxf, dimensions(dxf)[0]).find(e => e.type === 'MTEXT')!
+            expect(group(text, 40)).toBeCloseTo(2.5 * 20 / 1000)
+        })
+
+        it('puts the arrows outside a dimension too short to hold them', () =>
+        {
+            modeler.line([0, 0, 0], [3000, 0, 0])                    // the drawing: 1:20
+            ;(modeler.line([0, 500, 0], [20, 500, 0]) as any).dim() // 20 mm, arrows 50 mm
+
+            const dxf = modeler.toDXF() as string
+            const lengths = blockOf(dxf, dimensions(dxf)[0]).filter(e => e.type === 'LINE').map(lineLength)
+            // The dimension line runs out past both extension lines, one arrow each side
+            expect(lengths.some(l => Math.abs(l - (20 + 2 * 2.5 * 20)) < 1e-6)).toBe(true)
+        })
     })
 
     /**

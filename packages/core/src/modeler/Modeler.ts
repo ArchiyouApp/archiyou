@@ -40,7 +40,7 @@ import { isKernelShapeCollection, isKernelShapeOrCollection } from "./typeguards
 
 import { buildDXF, cascadedStyleData, type toDXFOptions } from "./DXFExporter";
 import { detectExportFrame } from "./utils";
-import { buildSVG, buildProjectionSVG, buildThumbnailSVG, buildThumbnailSVGFromCurves,
+import { buildSVG, buildProjectionSVG, buildThumbnailSVG, buildThumbnailSVGFromCurves, sceneSVG,
     type toSVGOptions, type toProjectionSVGOptions,
     type ThumbnailSVGOptions, type ThumbnailSVGResult } from "./SVGExporter";
 // Type-only: ./DAEExporter is reached through a dynamic import in toDAE() so the COLLADA
@@ -1226,9 +1226,14 @@ export class Modeler
      *  where it is rather than being folded into it. See runner.svg.test.ts, which pins it.
      *
      *  Pass options to opt into the richer serializer (padding, square framing, relative
-     *  coordinate precision, theme-aware stroke) — that one is the assembler. */
-    toSVG(options?: toSVGOptions): string | null
+     *  coordinate precision, theme-aware stroke) — that one is the assembler.
+     *
+     *  `annotations: true` draws the dimension lines over the scene, as a `dimensions` group
+     *  of their own: the same ones toDXF() writes (a pipeline's, inside withScene()). It keeps
+     *  the scene drawing; on its own it does not switch to the assembler. */
+    toSVG(options?: toSVGOptions & { annotations?: boolean }): string | null
     {
+        const { annotations, ...drawingOptions } = options ?? {}
         const exportScene = this._exportScene();
         // Asked of the drawing plane, not of is2D(): that tests a bbox extent for an EXACT
         // zero, and a rect rotated onto XZ keeps ~1e-15 of it, so a model built by rotation
@@ -1238,12 +1243,17 @@ export class Modeler
             console.warn('Modeler::toSVG(): No 2D shapes in scene. Nothing to export.')
             return null
         }
-        if (!options || Object.keys(options).length === 0) return exportScene.toSVG()
+        if (Object.keys(drawingOptions).length === 0)
+        {
+            return annotations
+                ? sceneSVG(exportScene, 'auto', this._exportAnnotations ?? this._modules?.annotator?.getAnnotations?.() ?? [])
+                : exportScene.toSVG()
+        }
 
         // The whole collection, not just its curves(): the exporter picks the drawable shapes
         // itself (curves and flat faces alike), and curves() strips the projection groups it
         // reads hidden lines from — a copy is a new collection with no groups on it.
-        return buildSVG(exportScene.shapes(), { units: this.units(), ...options })
+        return buildSVG(exportScene.shapes(), { units: this.units(), ...drawingOptions })
     }
 
     /** Hidden-line projection of every Mesh in the scene to a 2D SVG line drawing.

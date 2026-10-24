@@ -2760,7 +2760,8 @@ ${contextLines.join('\n')}
                             ? (scope.modeler.toThumbnailSVG(svgOpts)?.svg ?? null)
                          : (svgOpts.view || svgOpts.cam)
                             ? scope.modeler.toProjectionSVG(svgOpts)
-                            : scope.modeler.toSVG();
+                            // `annotations` draws the dimension lines too, as for dxf and glb
+                            : scope.modeler.toSVG(svgOpts.annotations ? { annotations: true } : undefined);
                     if(outp)
                     {
                         outputs.push({

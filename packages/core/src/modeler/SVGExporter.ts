@@ -1094,8 +1094,13 @@ function nodeElem(node: any, drawn: Map<any, any>): string
 /** The scene under `root` as a self-contained SVG, or null when it holds nothing drawable.
  *
  *  @param plane forces a view instead of detecting one. Default 'auto'.
+ *  @param annotations dimension lines (and labels) to draw over the scene, as one more group
+ *      `<g id="dimensions">` after the scene's own: a layer of its own once in Illustrator,
+ *      as the `dimensions` layer is in a DXF. Sized relative to the drawing, as a drawing
+ *      without a page sizes them (see renderDrawingFromLayer). None by default, so the scene
+ *      is drawn exactly as it always was.
  */
-export function sceneSVG(root: any, plane: ExportPlane = 'auto'): string | null
+export function sceneSVG(root: any, plane: ExportPlane = 'auto', annotations: Array<any> = []): string | null
 {
     const shapes: Array<any> = root?.shapes?.()?.toArray?.() ?? []
     const frame = detectExportFrame(shapes, plane)
@@ -1125,12 +1130,35 @@ export function sceneSVG(root: any, plane: ExportPlane = 'auto'): string | null
         })
         if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 1; maxY = 1 }
 
+        // The annotations go to the drawing's plane with the geometry: the copies above were
+        // turned by the same frame the projector maps through
+        const size = Math.max(maxX - minX, maxY - minY) || 1
+        const dims = annotations.length > 0
+            ? annotationLayer(annotations, {
+                drawingSize: size,
+                projector: isPlanFrame(frame) ? undefined : projectorFor(frame),
+            })
+            : null
+        if (dims?.box)
+        {
+            // Room for the value text and arrowheads, which stick out of a dimension line's
+            // own box; the same margin a drawing without a page gets
+            const margin = Math.max(10, size / 30)
+            minX = Math.min(minX, dims.box.minX - margin)
+            minY = Math.min(minY, dims.box.minY - margin)
+            maxX = Math.max(maxX, dims.box.maxX + margin)
+            maxY = Math.max(maxY, dims.box.maxY + margin)
+        }
+        const dimsElem = dims && dims.elements.length > 0
+            ? `\n<g id="dimensions" class="annotations">${dims.elements.join('')}</g>`
+            : ''
+
         const w = maxX - minX
         const h = maxY - minY
         const pad = Math.max(w, h) * SCENE_PADDING || 1
 
         return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${fmt(minX - pad)} ${fmt(minY - pad)} `
-            + `${fmt(w + 2 * pad)} ${fmt(h + 2 * pad)}">\n${nodeElem(root, drawn)}\n</svg>`
+            + `${fmt(w + 2 * pad)} ${fmt(h + 2 * pad)}">\n${nodeElem(root, drawn)}${dimsElem}\n</svg>`
     })
 }
 
