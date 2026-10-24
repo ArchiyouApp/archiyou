@@ -13,6 +13,8 @@
  * The decision has to be made here, before <page-configurator> mounts and calls
  * warmupWorker(). `?exec=client` forces the browser kernel for debugging (comparing
  * the two backends is how you check a server result renders identically).
+ *
+ * `?embed=1` marks a configurator shown inside another site (see isEmbedded()).
  */
 
 import { LitElement, html, css } from 'lit';
@@ -28,7 +30,7 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@archiyou/ui/configurator/configurator.js';
 
 import { openSharedScript } from '../state/workspace';
-import { applyConfiguratorParamsFromQuery } from '../state/configurator-url';
+import { applyConfiguratorParamsFromQuery, isEmbedded } from '../state/configurator-url';
 import { applyLocaleFromQuery, detectPreferredLocale } from '../state/locale';
 import { setChromeLocale } from '../i18n/locale-config';
 import { allLocales } from '../i18n/locale-codes';
@@ -44,6 +46,8 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
   @state() private _status: 'loading' | 'ready' | 'error' = 'loading';
   /** Why the configurator could not be shown: a known case, or the server's own words. */
   @state() private _error: { reason: 'invalid' | 'not-found' | 'failed', detail?: string } | null = null;
+  /** Shown inside another site's page (`?embed=1`). */
+  private _embedded = false;
 
   override connectedCallback()
   {
@@ -51,6 +55,7 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
     // ?lang=de wins over the browser's preference: a link shared in one language should
     // open in that language for whoever follows it.
     applyLocaleFromQuery(window.location.search);
+    this._embedded = isEmbedded(window.location.search);
     // Until the script is here, its languages are unknown: the visitor's own language
     // for the loading and error states. The configurator takes over once it mounts.
     void setChromeLocale(detectPreferredLocale([...allLocales]));
@@ -148,7 +153,7 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
           <p>${this._errorText()}</p>
         </div>`;
     }
-    return html`<page-configurator></page-configurator>`;
+    return html`<page-configurator ?embedded=${this._embedded}></page-configurator>`;
   }
 
   static override styles = css`

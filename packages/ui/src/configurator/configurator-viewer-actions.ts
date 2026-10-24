@@ -7,7 +7,9 @@
  *     working copy that is not out in the world yet.
  *   • published (the standalone /configurators/… page) — "View source", only
  *     when the published script is *also* shared, i.e. its code is public, and
- *     "Embed", which opens a ready-to-paste <iframe> snippet.
+ *     "Embed", which opens a ready-to-paste <iframe> snippet. Neither when the
+ *     page is embedded in another site (`embedded`, from `?embed=1`): that site
+ *     offers its own links.
  */
 
 import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
@@ -52,8 +54,8 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
 
   private _renderPublished()
   {
-    const sourceUrl = this._sourceUrl();
-    const embedUrl  = this._embedUrl();
+    const sourceUrl = this.embedded ? null : this._sourceUrl();
+    const embedUrl  = this.embedded ? null : this._embedUrl();
 
     // Nothing to offer → stay out of the way entirely rather than show dead buttons.
     this.toggleAttribute('hidden', !sourceUrl && !embedUrl);
@@ -118,6 +120,9 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
 
   /** True inside the editor's Configurator Preview; false on the public page. */
   @property({ type: Boolean, reflect: true }) preview = false;
+
+  /** Shown inside another site's page (`?embed=1`): no "View source" or "Embed". */
+  @property({ type: Boolean, reflect: true }) embedded = false;
 
   @state() private _embedOpen = false;
   @state() private _copied = false;

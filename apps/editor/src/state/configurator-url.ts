@@ -31,6 +31,17 @@ import { configuratorParams, configuratorValues, configuratorValueFor } from './
 // for a configurator's social card, and must read them exactly as this page does.
 export { decodeParamValues, encodeParamValues };
 
+/**
+ * `?embed=1` (or a bare `?embed`): the configurator is shown inside another site's page,
+ * which offers its own links. The configurator then leaves out the buttons that send the
+ * visitor elsewhere ("View source", "Embed"). `?embed=0` or no key: the standalone page.
+ */
+export function isEmbedded(search: string): boolean
+{
+  const value = new URLSearchParams(search).get('embed');
+  return value !== null && value !== '0' && value !== 'false';
+}
+
 //// SIGNALS + ADDRESS BAR ////
 
 /** Seed the configurator's values from a link. Call once, AFTER the script is loaded:

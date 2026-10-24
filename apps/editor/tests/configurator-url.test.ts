@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 import { ScriptParam } from '@archiyou/core/src/execution/ScriptParam';
-import { decodeParamValues, encodeParamValues } from '../src/state/configurator-url.js';
+import { decodeParamValues, encodeParamValues, isEmbedded } from '../src/state/configurator-url.js';
 
 /** The params a small configurator would have. */
 const WIDTH = ScriptParam.fromData({
@@ -192,5 +192,27 @@ describe('number-ranges in the URL', () =>
     quiet();
     expect(decodeParamValues('?BAYS=30,50,30', [BAYS])).toEqual({});
     expect(decodeParamValues('?BAYS=20,,60', [BAYS])).toEqual({});
+  });
+});
+
+describe('?embed', () =>
+{
+  it('marks a configurator shown inside another site', () =>
+  {
+    expect(isEmbedded('?embed=1')).toBe(true);
+    expect(isEmbedded('?WIDTH=200&embed=true&lang=nl')).toBe(true);
+    expect(isEmbedded('?embed')).toBe(true);
+    expect(isEmbedded('?embed=0')).toBe(false);
+    expect(isEmbedded('?embed=false')).toBe(false);
+    expect(isEmbedded('?WIDTH=200')).toBe(false);
+    expect(isEmbedded('')).toBe(false);
+  });
+
+  it('is neither read as a param value nor dropped when the configuration is written back', () =>
+  {
+    expect(decodeParamValues('?embed=1&WIDTH=200', PARAMS)).toEqual({ WIDTH: 200 });
+    const query = encodeParamValues('?embed=1&lang=nl', PARAMS, { WIDTH: 300, ROUNDED: false, STYLE: 'modern', LABEL: '', SIZES: [1, 2] });
+    expect(new URLSearchParams(query).get('embed')).toBe('1');
+    expect(new URLSearchParams(query).get('WIDTH')).toBe('300');
   });
 });

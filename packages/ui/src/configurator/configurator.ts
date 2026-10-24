@@ -52,6 +52,7 @@ export class PageConfigurator extends SignalWatcher(LitElement)
           <configurator-viewer-actions
             class="viewer-actions"
             ?preview=${this.preview}
+            ?embedded=${this.embedded}
           ></configurator-viewer-actions>
           <configurator-attribution class="viewer-attribution"></configurator-attribution>
         </div>
@@ -67,6 +68,10 @@ export class PageConfigurator extends SignalWatcher(LitElement)
    *  viewer offers "Publish as configurator" instead of the embed/view-source
    *  actions a published configurator gets. */
   @property({ type: Boolean, reflect: true }) preview = false;
+
+  /** True when a published configurator is shown inside another site's page
+   *  (`?embed=1`): the viewer leaves out its "View source" and "Embed" actions. */
+  @property({ type: Boolean, reflect: true }) embedded = false;
 
   /** Below BREAKPOINT_COMPACT: parameters in a bottom sheet instead of a sidebar.
    *  The styles follow the same breakpoint with a container query. */
