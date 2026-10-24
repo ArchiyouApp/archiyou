@@ -30,6 +30,34 @@ export interface ComputedFooterRow
     fill?: string;
 }
 
+//// TABLE STYLE ////
+
+/** The look of one cell, as a spreadsheet has it (see Table.style()) */
+export interface CellStyle
+{
+    fill?: string;                     // background colour, '#rrggbb'
+    color?: string;                    // text colour, '#rrggbb'
+    bold?: boolean;
+    italic?: boolean;
+    align?: 'left'|'center'|'right';
+    format?: string;                   // Excel number format, like '#,##0.00' or '0%'
+}
+
+/** The look of a column: the style of most of its cells, and its width */
+export interface ColumnStyle extends CellStyle
+{
+    width?: number;                    // in px
+}
+
+/** The look of a table: header, columns and the cells that differ from their column */
+export interface TableStyle
+{
+    header?: CellStyle;
+    columns?: Record<string, ColumnStyle>;
+    cells?: Array<Record<string, CellStyle>|null>; // per data row: only the overrides of the column style
+    locale?: string;                   // shows formatted numbers with this locale's separators, like 'nl-NL' (default: the viewer's)
+}
+
 export type MetricName = 'cost_material' | 'cost_labor' | 'production_time' | 'price_est' | 'price' | 'weight' | 'volume' | 'size' | 'r-value' | 'carbon' // TODO: more
 
 /** Metric is a element that outputs data in some way */

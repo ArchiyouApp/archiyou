@@ -1,5 +1,5 @@
 import type { ModelUnits } from "../modeler/types";
-import type { ComputedFooterRow } from "../calc/types";
+import type { ComputedFooterRow, TableStyle } from "../calc/types";
 import { type Static } from 'typebox';
 
 import { ScriptParamSchema } from './schemas';
@@ -80,6 +80,7 @@ export interface ScriptOutputData
     path:ScriptOutputPathData
     output: string|ArrayBuffer|Record<string,any>|Array<any>|ScriptOutputDataWrapper // raw data or wrapped data with metadata
     footer?: Array<ComputedFooterRow> // optional computed table footer rows (aggregations), kept separate from output rows
+    style?: TableStyle // optional table look (header, columns, cells), see Table.style()
 }
 
 

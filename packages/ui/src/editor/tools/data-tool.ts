@@ -7,11 +7,81 @@ import '@awesome.me/webawesome/dist/components/option/option.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 import { executionResult } from '@archiyou/editor/src/state/workspace';
-import type { ComputedFooterRow } from '@archiyou/core/src/calc/types';
+import type { ComputedFooterRow, CellStyle, TableStyle } from '@archiyou/core/src/calc/types';
+import { formatNumber } from '@archiyou/core/src/calc/numfmt';
+import { cellStyleOf } from '@archiyou/core/src/calc/style';
 
 type DataRow = Record<string, any>;
-type TableData = { rows: DataRow[]; footer: ComputedFooterRow[] };
+type TableData = { rows: DataRow[]; footer: ComputedFooterRow[]; style?: TableStyle };
 type TableMap = Record<string, TableData>;
+
+/** Gives each distinct cell look a class name and collects the CSS for them */
+class StyleClasses
+{
+  private _byKey = new Map<string, string>();
+  private _rules: string[] = [];
+
+  /** The class for a style ('' for none); widths in px */
+  get(style: CellStyle & { width?: number } | undefined, numeric = false): string
+  {
+    const decls = styleDeclarations(style ?? {}, numeric);
+    if (decls.length === 0) return '';
+    const key = decls.join(';');
+    if (!this._byKey.has(key))
+    {
+      const name = `s${this._byKey.size}`;
+      this._byKey.set(key, name);
+      // doubled class to win over the default th/td/tfoot rules
+      this._rules.push(`.${name}.${name} { ${key} }`);
+    }
+    return this._byKey.get(key)!;
+  }
+
+  css(): string
+  {
+    return this._rules.join('\n');
+  }
+}
+
+/** CSS declarations for a cell style. Colours are checked, as they come from the script or a sheet. */
+function styleDeclarations(style: CellStyle & { width?: number }, numeric: boolean): string[]
+{
+  const color = (c?: string) => (c && /^#[0-9a-f]{3,8}$/i.test(c)) ? c : undefined;
+  const fill = color(style.fill);
+  // text on a fill without its own colour: pick dark or light so it stays readable in dark mode too
+  const text = color(style.color) ?? (fill ? contrastText(fill) : undefined);
+  const align = style.align ?? (numeric ? 'right' : undefined);
+  return [
+    fill ? `background: ${fill}` : '',
+    text ? `color: ${text}` : '',
+    style.bold === true ? 'font-weight: 600' : style.bold === false ? 'font-weight: 400' : '',
+    style.italic ? 'font-style: italic' : '',
+    (align && ['left', 'center', 'right'].includes(align)) ? `text-align: ${align}` : '',
+    (typeof style.width === 'number' && style.width > 0) ? `min-width: ${Math.round(style.width)}px` : '',
+  ].filter(Boolean);
+}
+
+/** The locale if the runtime knows it, else undefined (the viewer's own) */
+function validLocale(locale?: string): string | undefined
+{
+  if (!locale) return undefined;
+  try
+  {
+    return Intl.NumberFormat.supportedLocalesOf([locale]).length ? locale : undefined;
+  }
+  catch
+  {
+    return undefined;
+  }
+}
+
+/** Black or white text, whichever reads better on a '#rrggbb' fill */
+function contrastText(fill: string): string
+{
+  const hex = fill.length <= 5 ? [...fill.slice(1, 4)].map(c => c + c).join('') : fill.slice(1, 7);
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) > 0.55 ? '#1a1a1a' : '#ffffff';
+}
 
 @customElement('editor-data-tool')
 export class EditorDataTool extends SignalWatcher(LitElement)
@@ -38,8 +108,17 @@ export class EditorDataTool extends SignalWatcher(LitElement)
       ? this._selectedTable
       : tableNames[0];
 
-    const { rows, footer } = tableMap[selected] ?? { rows: [], footer: [] };
+    const { rows, footer, style } = tableMap[selected] ?? { rows: [], footer: [] };
     const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+    // a table with a style (from a sheet or Table.style()) shows that look instead of the striping
+    const classes = new StyleClasses();
+    this._tableCss = classes;
+    const cell = (value: any, cellStyle: CellStyle | undefined, extra = '') =>
+    {
+      const formatted = (cellStyle?.format) ? formatNumber(value, cellStyle.format, validLocale(style?.locale)) : null;
+      const cls = [classes.get(cellStyle, !!style && typeof value === 'number'), extra].filter(Boolean).join(' ');
+      return html`<td class=${cls} title=${String(value ?? '')}>${formatted ?? value ?? ''}</td>`;
+    };
 
     return html`
       <div class="toolbar">
@@ -59,16 +138,16 @@ export class EditorDataTool extends SignalWatcher(LitElement)
         ${columns.length === 0
           ? html`<p class="empty-msg">Table is empty</p>`
           : html`
-            <table>
+            <table class=${style ? 'styled' : ''}>
               <thead>
                 <tr>
-                  ${columns.map(col => html`<th>${col}</th>`)}
+                  ${columns.map(col => html`<th class=${classes.get({ ...(style?.header ?? {}), width: style?.columns?.[col]?.width })}>${col}</th>`)}
                 </tr>
               </thead>
               <tbody>
-                ${rows.map(row => html`
+                ${rows.map((row, i) => html`
                   <tr>
-                    ${columns.map(col => html`<td title=${String(row[col] ?? '')}>${row[col] ?? ''}</td>`)}
+                    ${columns.map(col => cell(row[col], style ? cellStyleOf(style, i, col) : undefined))}
                   </tr>
                 `)}
               </tbody>
@@ -81,7 +160,9 @@ export class EditorDataTool extends SignalWatcher(LitElement)
                         ${columns.map(col =>
                         {
                           const val = fRow.values?.[col] ?? '';
-                          return html`<td class=${fRow.bold !== false ? 'footer-bold' : ''} title=${String(val)}>${val}</td>`;
+                          // footers take the column's number format and alignment, and their own fill
+                          const { fill, color, bold, italic, ...colLook } = style?.columns?.[col] ?? {};
+                          return cell(val, { ...colLook, width: undefined, fill: fRow.fill } as CellStyle, fRow.bold !== false ? 'footer-bold' : '');
                         })}
                       </tr>
                     `)}
@@ -98,8 +179,21 @@ export class EditorDataTool extends SignalWatcher(LitElement)
   @query('.table-select') private _select!: HTMLElement & { value: string };
 
   // ── 3. Lifecycle ──
+  override firstUpdated()
+  {
+    // the table's own look goes in a sheet of its own, so cells need no inline styles
+    this.shadowRoot!.adoptedStyleSheets = [...this.shadowRoot!.adoptedStyleSheets, this._styleSheet];
+  }
+
   override updated()
   {
+    const css = this._tableCss?.css() ?? '';
+    if (css !== this._appliedCss)
+    {
+      this._styleSheet.replaceSync(css);
+      this._appliedCss = css;
+    }
+
     const tableNames = Object.keys(this._buildTableMap());
     if (tableNames.length === 0) return;
 
@@ -116,6 +210,10 @@ export class EditorDataTool extends SignalWatcher(LitElement)
   }
 
   // ── 4. Behaviour & Methods ──
+  private _styleSheet = new CSSStyleSheet();
+  private _tableCss: StyleClasses | null = null;
+  private _appliedCss = '';
+
   private _buildTableMap(): TableMap
   {
     const outputs = executionResult.get()?.outputs ?? [];
@@ -127,6 +225,7 @@ export class EditorDataTool extends SignalWatcher(LitElement)
         map[name] = {
           rows: o.output as DataRow[],
           footer: (o.footer ?? []) as ComputedFooterRow[],
+          style: o.style,
         };
         return map;
       }, {});
@@ -246,11 +345,17 @@ export class EditorDataTool extends SignalWatcher(LitElement)
       text-overflow: ellipsis;
     }
 
-    tbody tr:nth-child(even) td { background: var(--color-neutral-50, #f8fafc); }
+    table:not(.styled) tbody tr:nth-child(even) td { background: var(--color-neutral-50, #f8fafc); }
 
-    tbody tr:hover td
+    table:not(.styled) tbody tr:hover td
     {
       background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+    }
+
+    /* A styled table shows its own fills: no striping, and the hover tints over the fill */
+    table.styled tbody tr:hover td
+    {
+      box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--color-primary) 8%, transparent);
     }
 
     /* ─── Footer (aggregations) ─── */
@@ -277,3 +382,4 @@ declare global
     'editor-data-tool': EditorDataTool;
   }
 }
+

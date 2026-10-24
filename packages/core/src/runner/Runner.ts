@@ -3017,10 +3017,12 @@ ${contextLines.join('\n')}
                     const tableData = scope.calc.toTableData(outputPathTable.entityName); // table data by name
                     // computed footer rows (aggregations) for this table, kept separate from the data rows
                     const footerRows = scope.calc?.db?.table(outputPathTable.entityName)?.computeFooterRows?.() ?? [];
+                    const tableStyle = scope.calc?.db?.table(outputPathTable.entityName)?.style?.() ?? undefined;
                     outputs.push({
                         path: outputPathTable.toData(),
                         output: (typeof tableData === 'object') ? Object.values(tableData)[0] : null, // force only one table without name key
-                        footer: footerRows
+                        footer: footerRows,
+                        ...(tableStyle ? { style: tableStyle } : {})
                     } as ScriptOutputData);
                     break;
                 case 'xlsx':

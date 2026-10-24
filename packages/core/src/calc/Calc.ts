@@ -8,7 +8,7 @@
  import { Db } from './Db'
  import { Table } from './Table'
  import type { Metric, MetricName, MetricOptions, TableLocation, DataRows } from './types' 
- import { isDataRows } from './typeguards'
+ import { isDataRows, isTableStyle } from './typeguards'
 
 
  declare var WorkerGlobalScope: any; // avoid TS errors with possible unknown variable
@@ -99,6 +99,9 @@
         if(!isDataRows(data)){ throw new Error(`Calc::table: Please supply data in format [{ col1: val1, col2: val2}] or [val1,val2] and supply column names as third parameter!`); }
         
         const newTable = new Table(data);
+        // rows read from a spreadsheet (like the cloudcalc module's) carry the sheet's look on the array
+        const style = (data as any).style;
+        if(isTableStyle(style)){ newTable.style(style); }
         if(Array.isArray(columns))
         {
             newTable.setColumns(columns)

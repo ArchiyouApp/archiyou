@@ -11,8 +11,10 @@ import { Check, Errors } from 'typebox/value'
 import { Db } from './Db';
 import { STANDARD_SCHEMAS } from './schemas';
 import type { DataRowColumnValue, DataRows, DataRowsColumnValue,
-    FooterSpec, FooterOptions, FooterColumnSpec, FooterAggKeyword, ComputedFooterRow } from './types'
-import { isDataRowsValues, isDataRowsColumnValue } from './typeguards';
+    FooterSpec, FooterOptions, FooterColumnSpec, FooterAggKeyword, ComputedFooterRow,
+    TableStyle, CellStyle } from './types'
+import { isDataRowsValues, isDataRowsColumnValue, isTableStyle } from './typeguards';
+import { cellStyleOf } from './style';
 
 import writeXlsxFile from 'write-excel-file/universal' // see: https://www.npmjs.com/package/write-excel-file
 
@@ -30,6 +32,7 @@ export class Table
     _component:string; // component name if this table came from a component
     _footers:Array<{ spec:FooterSpec, options:FooterOptions }> = []; // footer aggregation blocks, kept separate from row data
     _xlsx:ArrayBuffer = null; // a ready-made workbook that replaces the generated one in toExcel() — see xlsx()
+    _style:TableStyle = null; // the look of header, columns and cells, like a spreadsheet has it — see style()
 
     KNOWN_AGG_KEYWORDS:Array<FooterAggKeyword> = ['sum','average','avg','mean'];
 
@@ -235,6 +238,7 @@ export class Table
             throw new Error(`Table::setColumns(columns): Please names of columns in an Array!`)    
         }
 
+        const oldNames = this.columns();
         this._dataRows = this._dataRows.map( row => {
             const newRow = {};
             for (const [colName,val] of Object.entries(row))
@@ -244,6 +248,13 @@ export class Table
             } 
             return newRow;
         })
+        if(this._style)
+        {
+            // the style is keyed by column name too: rename by the table's column positions
+            const renamed = (k:string) => names[oldNames.indexOf(k)] || k;
+            const rename = (rec:Record<string, any>) => rec && Object.fromEntries(Object.entries(rec).map(([k, v]) => [renamed(k), v]));
+            this._style = { ...this._style, columns: rename(this._style.columns), cells: this._style.cells?.map(rename) };
+        }
         return this;
     }
 
@@ -434,25 +445,26 @@ export class Table
     {
         const dir = (order === 'desc') ? -1 : 1;
 
-        if(typeof by === 'function')
-        {
-            this._dataRows.sort((a,b) => by(a,b) * dir);
-            return this;
-        }
-
-        if(!this._checkColumn(by))
+        if(typeof by !== 'function' && !this._checkColumn(by))
         {
             throw new Error(`Table::sort(by): No column '${by}'. Columns: ${this.columns().join(', ')}`);
         }
-        this._dataRows.sort((a,b) =>
+        const compare = (typeof by === 'function') ? by : (a:DataRowColumnValue, b:DataRowColumnValue) =>
         {
             const va = a[by];
             const vb = b[by];
-            const cmp = (this._isNumeric(va) && this._isNumeric(vb))
+            return (this._isNumeric(va) && this._isNumeric(vb))
                 ? parseFloat(va) - parseFloat(vb)
                 : String(va ?? '').localeCompare(String(vb ?? ''));
-            return cmp * dir;
-        });
+        };
+
+        // sort the row positions, so the cell styles move along with their rows
+        const positions = this._dataRows.map((_, i) => i).sort((a, b) => compare(this._dataRows[a], this._dataRows[b]) * dir);
+        this._dataRows = positions.map(i => this._dataRows[i]);
+        if(this._style?.cells)
+        {
+            this._style = { ...this._style, cells: positions.map(i => this._style.cells[i] ?? null) };
+        }
         return this;
     }
 
@@ -500,6 +512,11 @@ export class Table
             });
             return out;
         });
+        if(this._style?.cells)
+        {
+            // grouped rows are new rows: only the column styles still apply
+            this._style = { ...this._style, cells: undefined };
+        }
         return this;
     }
 
@@ -513,6 +530,38 @@ export class Table
             this._dataRows.push(copy);
         });
         return this;
+    }
+
+    //// STYLE ////
+
+    /** Get or set the look of the table: header, column and cell fills, fonts, alignment,
+     *  number formats and column widths. The Data tool shows it, and the xlsx export carries it.
+     *  `locale` sets the separators of formatted numbers ('nl-NL': 1.000,50), like the sheet shows them.
+     *  Tables from a spreadsheet (like the cloudcalc module's) get the sheet's style this way.
+     *  Pass {} to clear it.
+     *
+     *  @example
+     *  calc.table('parts', [{ part: 'leg', price: 12.5 }, { part: 'top', price: 80 }])
+     *      .style({ header: { fill: '#1f4e78', color: '#ffffff', bold: true },
+     *               columns: { price: { format: '"€ "#,##0.00', align: 'right', width: 100 } }, locale: 'nl-NL' })
+     */
+    style():TableStyle|null;
+    style(style:TableStyle):this;
+    style(style?:TableStyle):TableStyle|null|this
+    {
+        if(style === undefined){ return this._style; }
+        if(!isTableStyle(style))
+        {
+            throw new Error(`Table::style(style): Please supply a style like { header: { bold: true }, columns: { price: { format: '#,##0.00' } } }`);
+        }
+        this._style = (Object.keys(style).length === 0) ? null : style;
+        return this;
+    }
+
+    /** The style of one body cell: its column style with the cell's own overrides on top */
+    cellStyle(rowIndex:number, column:string):CellStyle
+    {
+        return cellStyleOf(this._style, rowIndex, column);
     }
 
     //// OUTPUT ////
@@ -564,13 +613,18 @@ export class Table
     {
         if(this._xlsx){ return this._xlsx; }
 
-        // header row
-        const headerRow = this.columns().map( colName => ({ value: colName, fontWeight: 'bold' }) );
-        const dataRows = this._dataRows.map( row => 
-            this.columns().map( colName => ({ value: row[colName] }) ) // no type, automatic detection
+        const cols = this.columns();
+        // header row: bold unless the style says otherwise
+        const headerRow = cols.map( colName => ({ value: colName, ...excelCellProps({ bold: true, ...(this._style?.header ?? {}) }) }) );
+        const dataRows = this._dataRows.map( (row, rowIndex) => 
+            cols.map( colName => ({ value: row[colName], ...excelCellProps(this.cellStyle(rowIndex, colName)) }) ) // no type, automatic detection
         );
+        // column widths in Excel character units (about 7px each)
+        const columns = this._style?.columns
+            ? cols.map(c => this._style.columns[c]?.width ? { width: Math.round(this._style.columns[c].width / 7) } : {})
+            : undefined;
 
-        const blob = await writeXlsxFile([headerRow, ...dataRows], {}); // see options: https://gitlab.com/catamphetamine/write-excel-file
+        const blob = await writeXlsxFile([headerRow, ...dataRows] as any, columns ? { columns } : {}); // see options: https://gitlab.com/catamphetamine/write-excel-file
         return blob.arrayBuffer();
     }
 
@@ -678,6 +732,19 @@ export class Table
     {
         return Array.from({length: (endIndex - startIndex)}, (v, k) => k + startIndex);
     }
+}
+
+/** A CellStyle as write-excel-file cell properties */
+function excelCellProps(style:CellStyle):Record<string, any>
+{
+    const props:Record<string, any> = {};
+    if(style.fill){ props.backgroundColor = style.fill; }
+    if(style.color){ props.textColor = style.color; }
+    if(style.bold){ props.fontWeight = 'bold'; }
+    if(style.italic){ props.fontStyle = 'italic'; }
+    if(style.align){ props.align = style.align; }
+    if(style.format){ props.format = style.format; }
+    return props;
 }
 
 /** Decode base64 into an ArrayBuffer, in the browser (atob) and in Node (Buffer). */
