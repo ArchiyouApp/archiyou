@@ -24,6 +24,7 @@ import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 
 import { editorScript } from '@archiyou/editor/src/state/workspace';
 import { translate } from '@archiyou/editor/src/state/locale';
+import { currentConfiguration, postToHost } from '@archiyou/editor/src/services/host-events';
 import {
   downloadFulfillment, fulfillmentCategories, fulfillmentFormats, isFreeDownload,
 } from '@archiyou/editor/src/services/fulfillment';
@@ -206,6 +207,11 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
     try
     {
       await downloadFulfillment(fulfillment);
+      // The page around an embedded configurator counts downloads (services/host-events).
+      if (!this.preview)
+      {
+        postToHost({ type: 'download', fulfillment: fulfillment.name, formats: fulfillmentFormats(fulfillment), ...currentConfiguration() });
+      }
       this._done = index;
       if (this._doneTimer !== null) clearTimeout(this._doneTimer);
       this._doneTimer = setTimeout(() => { this._done = null; }, 2500);

@@ -2,7 +2,8 @@ import { LitElement, html, css, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
 
-import { createExecutionFailureResult, runScript, warmupWorker } from '@archiyou/editor/src/services/execution-service';
+import { createExecutionFailureResult, getServerExecutionTarget, runScript, warmupWorker } from '@archiyou/editor/src/services/execution-service';
+import { currentParams, metricValues, postToHost } from '@archiyou/editor/src/services/host-events';
 import { setExecutionResult, setExecuting } from '@archiyou/editor/src/state/workspace';
 import { configuratorUnitSystemPick } from '@archiyou/editor/src/state/workspace';
 import { buildConfiguratorRequest, configuratorValueFor, setConfiguratorValue } from '@archiyou/editor/src/state/configurator';
@@ -11,7 +12,7 @@ import { syncConfiguratorParamsToUrl } from '@archiyou/editor/src/state/configur
 import { refreshPreviewTranslations, clearPreviewTranslations, configuratorLocale } from '@archiyou/editor/src/state/locale';
 import { setChromeLocale } from '@archiyou/editor/src/i18n/locale-config';
 import { sourceLocale } from '@archiyou/editor/src/i18n/locale-codes';
-import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
+import type { RunnerScriptExecutionRequest, RunnerScriptExecutionResult } from '@archiyou/core/src/runner/types';
 import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
 import '../bottom-sheet.js';
@@ -86,6 +87,12 @@ export class PageConfigurator extends SignalWatcher(LitElement)
   private _lastLocale: string | null = null;
   private _unregisterParamStore: (() => void) | null = null;
 
+  // What the visitor changed since the last run, and whether the page around an embedded
+  // configurator was told that the first model is shown (services/host-events).
+  private _changedParams = new Set<string>();
+  private _appliedPreset: string | null = null;
+  private _readyReported = false;
+
   // ── 3. Lifecycle ──
   override connectedCallback()
   {
@@ -104,7 +111,11 @@ export class PageConfigurator extends SignalWatcher(LitElement)
       value: p => configuratorValueFor(p),
       set:   values =>
       {
-        Object.entries(values).forEach(([name, value]) => setConfiguratorValue(name, value));
+        Object.entries(values).forEach(([name, value]) =>
+        {
+          setConfiguratorValue(name, value);
+          this._changedParams.add(name);
+        });
         this._handleParamsChanged();
       },
     });
@@ -159,8 +170,13 @@ export class PageConfigurator extends SignalWatcher(LitElement)
 
   // ── 4. Behaviour & Methods ──
 
-  private _handleParamsChanged()
+  private _handleParamsChanged(e?: Event)
   {
+    // A param control says which param it changed, a preset its name.
+    const detail = (e as CustomEvent<{ name?: string, preset?: string }> | undefined)?.detail;
+    if (detail?.name) this._changedParams.add(detail.name);
+    if (detail?.preset) this._appliedPreset = detail.preset;
+
     // Keep the address bar on the model being shown, so the link a visitor copies is
     // this configuration. Not in the preview: there the address bar is the editor's.
     if (!this.preview) syncConfiguratorParamsToUrl();
@@ -178,22 +194,68 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     if (this._executing) return;
     this._executing = true;
     setExecuting(true);
+    const changes = this._takeChanges();
 
     try
     {
       const result = await runScript(this._buildRequest());
-      if (result) setExecutionResult(result);
+      if (result)
+      {
+        setExecutionResult(result);
+        this._reportToHost(result, changes);
+      }
     }
     catch (err)
     {
       console.error('Configurator: execution failed:', err);
-      setExecutionResult(createExecutionFailureResult(this._buildRequest(), err));
+      const failure = createExecutionFailureResult(this._buildRequest(), err);
+      setExecutionResult(failure);
+      this._reportToHost(failure, changes);
     }
     finally
     {
       this._executing = false;
       setExecuting(false);
     }
+  }
+
+  /** What the visitor changed since the last run, with the values this run is made with. */
+  private _takeChanges(): { changed: string[], preset: string | null, params: Record<string, unknown> }
+  {
+    const changes = { changed: [...this._changedParams], preset: this._appliedPreset, params: currentParams() };
+    this._changedParams.clear();
+    this._appliedPreset = null;
+    return changes;
+  }
+
+  /** Tell the page around an embedded configurator what this run shows: the first model,
+   *  then each change and preset, or that the model could not be made. Not in the editor's
+   *  preview, and a no-op outside a frame (services/host-events). */
+  private _reportToHost(result: RunnerScriptExecutionResult, changes: ReturnType<PageConfigurator['_takeChanges']>)
+  {
+    if (this.preview) return;
+
+    if (result.status !== 'success')
+    {
+      postToHost({ type: 'error', message: result.errors?.[0]?.message || 'The model could not be made.' });
+      return;
+    }
+
+    const configuration = { params: changes.params, metrics: metricValues(result.outputs ?? []) };
+    if (!this._readyReported)
+    {
+      this._readyReported = true;
+      // Since this frame's navigation started: loading the page and the script, (in the
+      // browser) the kernel, and the first run.
+      postToHost({
+        type:      'ready',
+        execution: getServerExecutionTarget() ? 'server' : 'client',
+        loadMs:    Math.round(performance.now()),
+        ...configuration,
+      });
+    }
+    if (changes.preset) postToHost({ type: 'preset', preset: changes.preset, ...configuration });
+    if (changes.changed.length > 0) postToHost({ type: 'change', changed: changes.changed, ...configuration });
   }
 
   private _buildRequest(): RunnerScriptExecutionRequest
