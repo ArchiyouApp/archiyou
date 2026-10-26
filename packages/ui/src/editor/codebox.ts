@@ -348,8 +348,14 @@ export class CodeBox extends SignalWatcher(LitElement)
       const current = this._view.state.doc.toString();
       if (current !== this.code)
       {
+        // Only the part that differs: a tool that adds or renames a line (the Animation tool)
+        // leaves the cursor, the scroll and the undo steps of the rest where they were
+        const max = Math.min(current.length, this.code.length);
+        const from = Array.from({ length: max }, (_, i) => i).find(i => current[i] !== this.code[i]) ?? max;
+        const tail = Array.from({ length: max - from }, (_, i) => i)
+          .find(i => current[current.length - 1 - i] !== this.code[this.code.length - 1 - i]) ?? (max - from);
         this._view.dispatch({
-          changes: { from: 0, to: current.length, insert: this.code },
+          changes: { from, to: current.length - tail, insert: this.code.slice(from, this.code.length - tail) },
           effects: setStatementLines.of(null), // other code: the lines no longer belong to the scene
         });
       }

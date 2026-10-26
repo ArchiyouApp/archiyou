@@ -392,6 +392,8 @@ function _upgradeToFatLine(
     parent.children[parent.children.indexOf(line)] = fat;
     fat.parent = parent;
     line.parent = null;
+    // for what was bound to the old line by its uuid (gltf-animation-pointer.ts)
+    line.userData.replacedBy = fat;
 
     line.geometry.dispose();
     source.dispose();

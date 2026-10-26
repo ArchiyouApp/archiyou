@@ -242,11 +242,18 @@ export const kernel           = signal<ModelMode>('mesh');
  *  script no longer has it. */
 export const activePipeline   = signal<string>('default');
 
+/** Whether the editor bakes the script's animations into the model it shows: on while the
+ *  Animation tool is open. Off, the run bakes none, which is what keeps a run that does not
+ *  animate as fast as before. Session-only, like `activePipeline`. */
+export const bakeAnimations   = signal<boolean>(false);
+
 /** The output path of the GLB the viewer shows for a pipeline. A pipeline's own
- *  annotations go into its GLB: the viewer's annotations from result.state are the model's */
+ *  annotations go into its GLB: the viewer's annotations from result.state are the model's.
+ *  The model's carries the script's animations while the Animation tool is open. */
 export function pipelineModelPath(pipeline: string): string
 {
-  return (pipeline === 'default') ? 'default/model/glb' : `${pipeline}/model/glb?annotations=true`;
+  if (pipeline !== 'default') return `${pipeline}/model/glb?annotations=true`;
+  return bakeAnimations.get() ? 'default/model/glb?animations=declared' : 'default/model/glb';
 }
 
 /** A model output path ('default/model/dxf?annotations=true') for the active pipeline */

@@ -18,6 +18,9 @@ export interface ToolDef
   height: number;
   /** Runner output paths this tool needs; only requested while the tool is active */
   outputs?: string[];
+  /** Loads the tool's module when it is first opened, for a tool kept out of the editor's
+   *  own bundle. Its element upgrades in place once the module has defined it. */
+  load?: () => Promise<unknown>;
 }
 
 @customElement('editor-toolbar')

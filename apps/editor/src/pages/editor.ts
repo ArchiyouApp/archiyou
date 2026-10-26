@@ -39,7 +39,7 @@ import '@archiyou/ui/editor/modules-menu.js';
 import '@archiyou/ui/editor/keys-menu.js';
 import type { ToolDef } from '@archiyou/ui/editor/toolbar.js';
 
-import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystemOverride, docUnitSystemOverride, perStatement, kernel, autoRun, wasActiveScriptRestored, activePipeline, pipelineModelPath, forActivePipeline } from '../state/workspace';
+import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystemOverride, docUnitSystemOverride, perStatement, kernel, autoRun, wasActiveScriptRestored, activePipeline, pipelineModelPath, forActivePipeline, bakeAnimations } from '../state/workspace';
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
 import { registerScheduleExecution, triggerResetCamera } from '../state/viewer';
 import { registerHelpRunner, openHelpDoc, claimOnboarding, setHelpCursor, lookupHelpAtCursor, ONBOARDING_PATH } from '../state/help';
@@ -67,6 +67,9 @@ export class PageEditor extends SignalWatcher(LitElement)
     // Documents of the picked pipeline (see _toolOutputs()): the model's are all of them
     { id: 'docs',    icon: 'file-text',  name: 'Documents', exclusive: false, component: 'editor-document-tool', width: 40, height: 60, outputs: ['default/docs/*/svg', 'default/docs/*/svg-pages'] },
     { id: 'instruct', icon: 'list-ordered', name: 'Instructions', exclusive: false, component: 'editor-instruct-tool', width: 30, height: 50 },
+    // loaded on first open: most scripts are never animated, and the editor bundle does not carry it for them
+    { id: 'animation', icon: 'clapperboard', name: 'Animation', exclusive: false, component: 'editor-animation-tool', width: 30, height: 55,
+      load: () => import('@archiyou/ui/editor/tools/animation-tool.js') },
     { id: 'profiling', icon: 'timer',    name: 'Profiling', exclusive: false, component: 'editor-profiling-tool', width: 30, height: 50 },
     { id: 'versions', icon: 'history',   name: 'Versions',  exclusive: false, component: 'editor-versions-tool', width: 34, height: 60 },
   ];
@@ -82,6 +85,8 @@ export class PageEditor extends SignalWatcher(LitElement)
     this._pendingKernel = kernel.get();
     // And the pipeline picked next to the Run button
     this._pendingPipeline = activePipeline.get();
+    // And whether the Animation tool has the script's animations baked into the model
+    this._pendingAnimations = bakeAnimations.get();
     // Phones: viewer on top, params + code below, rails as bars, tools in a sheet.
     // The same elements in every layout, so the viewer and the editor survive a rotation.
     const compact = compactLayout.get();
@@ -147,6 +152,7 @@ export class PageEditor extends SignalWatcher(LitElement)
               .tools=${tools}
               @tool-close=${this._handleToolClose}
               @version-restore=${this._handleVersionRestore}
+              @script-edit=${this._handleScriptEdit}
             ></editor-tool-panels>`}
         </wa-split-panel>
       </wa-split-panel>
@@ -158,6 +164,7 @@ export class PageEditor extends SignalWatcher(LitElement)
             .tools=${tools}
             @tool-close=${this._handleToolClose}
             @version-restore=${this._handleVersionRestore}
+            @script-edit=${this._handleScriptEdit}
           ></editor-tool-panels>
         </bottom-sheet>` : ''}
       </div>
@@ -320,6 +327,14 @@ export class PageEditor extends SignalWatcher(LitElement)
       this._lastKernel = this._pendingKernel;
     }
 
+    // The Animation tool opened: run to bake the animations (always, like a pipeline pick).
+    // Closed, the next run goes without them; the model on screen can keep them till then.
+    if (this._lastAnimations !== null && this._pendingAnimations && !this._lastAnimations)
+    {
+      void this.execute();
+    }
+    this._lastAnimations = this._pendingAnimations;
+
     // Another pipeline picked: run for its output (always, also without automatic execute)
     if (this._lastPipeline !== null && this._pendingPipeline !== this._lastPipeline)
     {
@@ -333,6 +348,8 @@ export class PageEditor extends SignalWatcher(LitElement)
   }
 
   private _pendingUnitSystem: string | null = null;
+  private _pendingAnimations = false;
+  private _lastAnimations: boolean | null = null;
   private _lastUnitSystem: string | null = null;
   private _pendingKernel: string | null = null;
   private _lastKernel: string | null = null;
@@ -489,6 +506,15 @@ export class PageEditor extends SignalWatcher(LitElement)
   /** The Versions tool restored a version (already saved): run it. */
   private _handleVersionRestore()
   {
+    void this._runNow();
+  }
+
+  /** A tool changed the code (the Animation tool added, renamed or removed an animation): take
+   *  it and run it, also without automatic execute, so the tool sees what it did. */
+  private _handleScriptEdit(e: CustomEvent<{ code: string }>)
+  {
+    if (isReadOnly.get()) return;
+    updateScriptCode(e.detail.code);
     void this._runNow();
   }
 
@@ -678,8 +704,10 @@ export class PageEditor extends SignalWatcher(LitElement)
     // The model always (the thumbnail is of the model), and the output of the picked pipeline
     const pipeline = activePipeline.get();
     const pipelineModel = (pipeline === 'default') ? [] : [pipelineModelPath(pipeline)];
+    // with the script's animations while the Animation tool is open (see pipelineModelPath)
+    const modelPath = pipelineModelPath('default');
     const result = await runScript(
-      this._buildRequest(['default/model/glb', ...pipelineModel, 'default/tables/*/json', ...this._toolOutputs()])
+      this._buildRequest([modelPath, ...pipelineModel, 'default/tables/*/json', ...this._toolOutputs()])
     );
 
     if (result)
@@ -690,7 +718,7 @@ export class PageEditor extends SignalWatcher(LitElement)
       // that are not ours. Visibility comes from the reconciled scenegraph, so the picture
       // shows what the viewer shows — including what was hidden from the scene tree.
       const active = editorScript.get();
-      const glb = getOutput(result, 'default/model/glb');
+      const glb = getOutput(result, modelPath);
       if (result.status !== 'error' && active && glb instanceof ArrayBuffer) scheduleWorkingThumbnail(active, glb, scenegraph.get());
       return result;
     }
@@ -988,7 +1016,10 @@ export class PageEditor extends SignalWatcher(LitElement)
     };
 
     const { path: modelPath, mimeType, emptyMsg, ext } = EXPORT_FORMATS[format];
-    const requestPath = forActivePipeline(modelPath);
+    // the model's GLB with the animations the script declares: none declared, none baked
+    const requestPath = (format === 'glb' && activePipeline.get() === 'default')
+      ? 'default/model/glb?animations=declared'
+      : forActivePipeline(modelPath);
     const pipeline = activePipeline.get();
 
     const result = await runScript(
@@ -1092,6 +1123,7 @@ export class PageEditor extends SignalWatcher(LitElement)
     const tool = this.TOOLS.find(t => t.id === id);
     if (!tool || this._activeTools.some(t => t.id === id)) return;
 
+    void tool.load?.();
     const base = tool.exclusive ? [] : this._activeTools.filter(t => !t.exclusive);
     // Help always stacks on top, so a tutorial stays in view beside the tool it explains
     this._activeTools = [...base, tool].sort((a, b) => Number(b.id === 'help') - Number(a.id === 'help'));

@@ -9,10 +9,14 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { buildScenegraphPath, executionResult, activePipeline, pipelineModelPath, scenegraph, scriptParams, updateParam, selectedPath, setSelectedPath, interactiveShapes, activeParamEntry, setActiveParamEntry, isObjectListParam, paramItemSchema } from '@archiyou/editor/src/state/workspace';
 import { formatDimensionValue } from './gltf-annotations.js';
 import { scheduleExecution, viewerParamStore, resetCameraCounter,
-         instructName, instructStep, setInstructAvailable } from '@archiyou/editor/src/state/viewer';
+         instructName, instructStep, setInstructAvailable, clearInstructStep as clearInstructSignal,
+         animationCommands, setAnimationsBaked, setAnimationStatus,
+         type AnimationCommand, type AnimationLoopMode, type BakedAnimation } from '@archiyou/editor/src/state/viewer';
 import type { ScriptOutputData } from '@archiyou/core/src/execution/types';
 import type { SceneNodeData } from '@archiyou/core/src/modeler/types';
 import { applyEdgeExtensions, applyPointStyles } from './gltf-edge-extensions.js';
+import { animationPointerPlugin, finishPointerTracks, pointerDataOf } from './gltf-animation-pointer.js';
+import { captureFading, updateFading, restoreFading, type FadeSnapshot } from './animation-playback.js';
 import { applyAnnotations } from './gltf-annotations.js';
 import type { HtmlLabelDef } from './gltf-annotations.js';
 import './viewer-labels-overlay.js';
@@ -177,6 +181,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
     this._pendingUnitSystem = (executionResult.get()?.request?.unitSystem as string) ?? null;
     this._pendingInstructName = instructName.get();
     this._pendingInstructStep = instructStep.get();
+    this._pendingAnimationCommands = animationCommands.get();
 
     return html`
       <canvas></canvas>
@@ -296,6 +301,15 @@ export class ModelViewer extends SignalWatcher(LitElement)
     {
       this._lastGlbOutput = this._directGlbOutput;
       this._loadGlbOutput(this._directGlbOutput);
+    }
+
+    /*  Animation playback, the same way: a tool sends commands, this applies each once, in
+        order — after this update, since playing sets what the viewer menu shows. */
+    const fresh = this._pendingAnimationCommands.filter(c => c.seq > this._lastAnimationSeq);
+    if (fresh.length && this._renderer)
+    {
+      this._lastAnimationSeq = fresh[fresh.length - 1].seq;
+      queueMicrotask(() => fresh.forEach(command => this._applyAnimationCommand(command)));
     }
 
     /*  Instruct playback, driven by a tool through the signals rather than by the tool
@@ -453,6 +467,27 @@ export class ModelViewer extends SignalWatcher(LitElement)
   private _clock = new THREE.Clock();
   @state() private _animationClips: THREE.AnimationClip[] = [];
   @state() private _activeAnimationName: string | null = null;
+  /** The animation playing, paused or held: see the ANIMATIONS section. */
+  private _animationAction: THREE.AnimationAction | null = null;
+  private _animationLoop: AnimationLoopMode = 'none';
+  private _animationSpeed = 1;
+  private _animationFollow = false;
+  /** Stop once a reversed play reaches the start: the menu's way back to the model. */
+  private _animationStopAtEnd = false;
+  private _animationFade: FadeSnapshot = new Map();
+  /** extras.animations of the GLB on screen, by name. */
+  private _animationData = new Map<string, any>();
+  private _animationsBaked: BakedAnimation[] = [];
+  private _pendingAnimationCommands: AnimationCommand[] = [];
+  /** The commands sent before this viewer was made are not for it. */
+  private _lastAnimationSeq = (() => { const list = animationCommands.get(); return list[list.length - 1]?.seq ?? 0; })();
+  /** A command for an animation the GLB does not carry yet: the run baking it is under way. */
+  private _animationWaiting: AnimationCommand | null = null;
+  /** What was playing when a re-run replaced the model, to carry on with. */
+  private _animationResume: { name: string; time: number; playing: boolean; loop: AnimationLoopMode; speed: number; follow: boolean } | null = null;
+  private _lastPublishedTime = -1;
+  /** The viewer camera's field of view while it looks through an animation's camera. */
+  private _fovBeforeFollow: number | null = null;
   private _dirty = true;
   private _currentModel?: THREE.Object3D;
   /** The labels being projected each frame: the annotations, or the current step's. */
@@ -689,6 +724,8 @@ export class ModelViewer extends SignalWatcher(LitElement)
     draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
     this._gltfLoader = new GLTFLoader();
     this._gltfLoader.setDRACOLoader(draco);
+    // colour and opacity channels (KHR_animation_pointer); inert for files without them
+    this._gltfLoader.register(animationPointerPlugin);
   }
 
   private _initAR = async () =>
@@ -776,56 +813,33 @@ export class ModelViewer extends SignalWatcher(LitElement)
     }
   }
 
+  /** The viewer menu's switch: a clip plays once and holds; 'Default' plays it back to the
+   *  model and stops there. */
   private _playAnimation(name: string | null)
   {
     if (!this._mixer) return;
 
-    if (name === null)
+    if (name !== null)
     {
-      const activeClip = this._activeAnimationName
-        ? this._animationClips.find(c => c.name === this._activeAnimationName)
-        : undefined;
+      this.playAnimation(name, { loop: 'none' });
+      return;
+    }
 
-      if (!activeClip)
-      {
-        this._activeAnimationName = null;
-        this._dirty = true;
-        return;
-      }
-
-      this._mixer.stopAllAction();
-      this._playClip(activeClip, true);
+    const action = this._animationAction;
+    if (!action)
+    {
       this._activeAnimationName = null;
       this._dirty = true;
       return;
     }
 
-    this._mixer.stopAllAction();
-    const clip = this._animationClips.find(c => c.name === name);
-
-    if (clip)
-    {
-      this._playClip(clip);
-    }
-
-    this._activeAnimationName = name;
-    this._dirty = true;
-  }
-
-  private _playClip(clip: THREE.AnimationClip, reverse = false)
-  {
-    if (!this._mixer) return;
-
-    const action = this._mixer.clipAction(clip);
-    action.reset();
-    action.paused = false;
-    action.enabled = true;
     action.setLoop(THREE.LoopOnce, 1);
     action.clampWhenFinished = true;
-    action.setEffectiveTimeScale(reverse ? -1 : 1);
-    action.setEffectiveWeight(1);
-    action.time = reverse ? clip.duration : 0;
-    action.play();
+    action.paused = false;
+    action.setEffectiveTimeScale(-Math.abs(this._animationSpeed));
+    this._animationStopAtEnd = true;
+    this._activeAnimationName = null;
+    this._dirty = true;
   }
 
   // ── 7. AR mode ──
@@ -1395,6 +1409,277 @@ export class ModelViewer extends SignalWatcher(LitElement)
       this._selectionBox = box;
     }
     this._dirty = true;
+  }
+
+  //// ANIMATIONS ////
+
+  /*  Playback of the animations the GLB carries: poses, visibility, colour, opacity and a
+   *  camera, baked by the animator in core. API only, like the instruct playback below: the
+   *  Animation tool drives it through signals, a configurator could drive it directly.
+   *
+   *  The mixer plays almost everything (gltf-animation-pointer.ts turns colour and opacity into
+   *  tracks it knows); animation-playback.ts does depth for fading parts. Stopping puts every
+   *  part back as the model has it: the mixer restores what it animated.
+   */
+
+  /** The animations the GLB on screen carries. */
+  animations(): BakedAnimation[]
+  {
+    return [...this._animationsBaked];
+  }
+
+  /** Play one from `from` seconds (default the start). False when the GLB does not carry it.
+   *  @param options.loop 'none' (once, then hold), 'loop' or 'pingpong'; default the animation's own */
+  playAnimation(name: string, options?: { loop?: AnimationLoopMode; speed?: number; from?: number; follow?: boolean }): boolean
+  {
+    const clip = this._animationClips.find(c => c.name === name);
+    if (!this._mixer || !clip) return false;
+
+    this._endAnimation();
+    // an instructable being stepped through hides and ghosts parts: not both at once
+    if (this._instructIndex >= 0) { this.clearInstruct(); clearInstructSignal(); }
+
+    this._animationLoop = options?.loop ?? this._animationData.get(name)?.loop ?? 'none';
+    this._animationSpeed = options?.speed ?? 1;
+
+    const action = this._mixer.clipAction(clip);
+    action.reset();
+    this._setActionLoop(action, this._animationLoop);
+    action.setEffectiveTimeScale(this._animationSpeed);
+    action.setEffectiveWeight(1);
+    action.time = Math.min(Math.max(options?.from ?? 0, 0), clip.duration);
+    action.play();
+
+    this._animationAction = action;
+    this._animationFade = captureFading(pointerDataOf(clip)?.fading ?? []);
+    this._activeAnimationName = name;
+    this._mixer.update(0);
+    updateFading(this._animationFade);
+    if (options?.follow !== undefined) this.followAnimationCamera(options.follow);
+    else if (this._animationFollow) this._followAnimationCamera();
+    this._publishAnimation(true);
+    this._dirty = true;
+    return true;
+  }
+
+  pauseAnimation(): void
+  {
+    if (!this._animationAction) return;
+    this._animationAction.paused = true;
+    this._publishAnimation(true);
+  }
+
+  /** Carry on; from the start again when it had played to its end. */
+  resumeAnimation(): void
+  {
+    const action = this._animationAction;
+    if (!action) return;
+    const duration = action.getClip().duration;
+    if (action.loop === THREE.LoopOnce && action.timeScale > 0 && action.time >= duration - 1e-6) action.time = 0;
+    if (action.loop === THREE.LoopOnce && action.timeScale < 0 && action.time <= 1e-6) action.time = duration;
+    action.paused = false;
+    action.enabled = true;
+    this._publishAnimation(true);
+    this._dirty = true;
+  }
+
+  /** Show the animation at `t` seconds, playing or not. */
+  seekAnimation(t: number): void
+  {
+    const action = this._animationAction;
+    if (!action || !this._mixer) return;
+    action.enabled = true;
+    action.time = Math.min(Math.max(t, 0), action.getClip().duration);
+    this._mixer.update(0);
+    updateFading(this._animationFade);
+    if (this._animationFollow) this._followAnimationCamera();
+    this._publishAnimation(true);
+    this._dirty = true;
+  }
+
+  /** Stop, and show the model as it is. */
+  stopAnimation(): void
+  {
+    this._endAnimation();
+    this._activeAnimationName = null;
+    this._publishAnimation(true);
+    this._dirty = true;
+  }
+
+  /** Seconds into the animation being shown, 0 when none is. */
+  animationTime(): number
+  {
+    return this._animationAction?.time ?? 0;
+  }
+
+  /** Look through the animation's own camera while it plays (when it carries one), and hand
+   *  the view back to the orbit controls when it stops. */
+  followAnimationCamera(on: boolean): void
+  {
+    this._animationFollow = on;
+    if (on) { this._followAnimationCamera(); }
+    else { this._releaseAnimationCamera(); }
+    this._publishAnimation(true);
+    this._dirty = true;
+  }
+
+  private _applyAnimationCommand(command: AnimationCommand): void
+  {
+    switch (command.action)
+    {
+      case 'play':
+        if (!command.name) return;
+        if (!this.playAnimation(command.name, { loop: command.loop, speed: command.speed, from: command.t, follow: command.follow }))
+        {
+          // not in the GLB yet: the run baking it is under way, play it when it lands
+          this._animationWaiting = command;
+        }
+        return;
+      case 'pause': this.pauseAnimation(); return;
+      case 'resume': this.resumeAnimation(); return;
+      case 'stop': this._animationWaiting = null; this.stopAnimation(); return;
+      case 'seek': if (command.t !== undefined) this.seekAnimation(command.t); return;
+      case 'options':
+      {
+        const action = this._animationAction;
+        if (command.loop && action) { this._animationLoop = command.loop; this._setActionLoop(action, command.loop); }
+        if (command.speed !== undefined && action)
+        {
+          this._animationSpeed = command.speed;
+          action.setEffectiveTimeScale(Math.sign(action.timeScale || 1) * command.speed);
+        }
+        if (command.follow !== undefined) this.followAnimationCamera(command.follow);
+        this._publishAnimation(true);
+        return;
+      }
+    }
+  }
+
+  private _setActionLoop(action: THREE.AnimationAction, loop: AnimationLoopMode): void
+  {
+    if (loop === 'loop') { action.setLoop(THREE.LoopRepeat, Infinity); action.clampWhenFinished = false; }
+    else if (loop === 'pingpong') { action.setLoop(THREE.LoopPingPong, Infinity); action.clampWhenFinished = false; }
+    else { action.setLoop(THREE.LoopOnce, 1); action.clampWhenFinished = true; }
+  }
+
+  private _onAnimationFinished = (event: { action?: THREE.AnimationAction }) =>
+  {
+    if (event.action !== this._animationAction) return;
+    if (this._animationStopAtEnd) { this.stopAnimation(); return; }
+    this._publishAnimation(true);
+  };
+
+  /** Back to the model as it is: every animated value restored, the view handed back. */
+  private _endAnimation(): void
+  {
+    this._mixer?.stopAllAction();
+    restoreFading(this._animationFade);
+    this._releaseAnimationCamera();
+    this._animationAction = null;
+    this._animationStopAtEnd = false;
+  }
+
+  /** Offer what the new GLB carries, and carry on with what was playing before a re-run. */
+  private _readAnimations(gltf: any, model: THREE.Object3D): void
+  {
+    const extras = gltf?.parser?.json?.extras?.animations;
+    this._animationData = new Map((Array.isArray(extras) ? extras : []).map((d: any) => [d.name, d]));
+
+    this._animationsBaked = this._animationClips.map(clip =>
+    {
+      const data = this._animationData.get(clip.name);
+      return {
+        name: clip.name,
+        ...(data?.title ? { title: data.title } : {}),
+        duration: clip.duration,
+        loop: (data?.loop ?? 'none') as AnimationLoopMode,
+        ...(data?.chapters ? { chapters: data.chapters } : {}),
+        camera: !!model.getObjectByName(`${clip.name}-camera`),
+      };
+    });
+    setAnimationsBaked(this._animationsBaked);
+
+    const waiting = this._animationWaiting;
+    const resume = this._animationResume;
+    this._animationWaiting = null;
+    this._animationResume = null;
+
+    if (waiting?.name && this._animationClips.some(c => c.name === waiting.name))
+    {
+      this.playAnimation(waiting.name, { loop: waiting.loop, speed: waiting.speed, from: waiting.t, follow: waiting.follow });
+    }
+    else if (resume && this._animationClips.some(c => c.name === resume.name))
+    {
+      this.playAnimation(resume.name, { loop: resume.loop, speed: resume.speed, from: resume.time, follow: resume.follow });
+      if (!resume.playing) this.pauseAnimation();
+    }
+    else
+    {
+      if (waiting) this._animationWaiting = waiting; // a later run may still bring it
+      this._publishAnimation(true);
+    }
+  }
+
+  /** The status for the tool, and an `animation-time` event for anyone else. Every frame while
+   *  it plays, but only when the time moved. */
+  private _publishAnimation(force = false): void
+  {
+    const action = this._animationAction;
+    const time = action?.time ?? 0;
+    if (!force && Math.abs(time - this._lastPublishedTime) < 1e-4) return;
+    this._lastPublishedTime = time;
+
+    const status = {
+      name: action ? action.getClip().name : null,
+      playing: !!action && action.enabled && !action.paused,
+      time,
+      duration: action?.getClip().duration ?? 0,
+      loop: this._animationLoop,
+      speed: this._animationSpeed,
+      follow: this._animationFollow,
+    };
+    setAnimationStatus(status);
+    this.dispatchEvent(new CustomEvent('animation-time', { detail: status, bubbles: true, composed: true }));
+  }
+
+  /** The viewer camera where the animation's camera node is, looking where it looks. The
+   *  orbit target is kept ahead of it, so taking the controls back does not jump. */
+  private _followAnimationCamera(): void
+  {
+    const name = this._animationAction?.getClip().name;
+    const node = name ? this._currentModel?.getObjectByName(`${name}-camera`) : undefined;
+    if (!node) return;
+
+    node.updateWorldMatrix(true, false);
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    node.matrixWorld.decompose(position, quaternion, new THREE.Vector3());
+
+    const camera = this._isOrtho ? this._orthoCamera! : this._camera;
+    if (!this._isOrtho && (node as THREE.PerspectiveCamera).isPerspectiveCamera)
+    {
+      this._fovBeforeFollow ??= this._camera.fov;
+      this._camera.fov = (node as THREE.PerspectiveCamera).fov;
+      this._camera.updateProjectionMatrix();
+    }
+
+    const distance = this._controls.target.distanceTo(camera.position) || 1;
+    camera.position.copy(position);
+    camera.quaternion.copy(quaternion);
+    camera.updateMatrixWorld();
+    this._controls.target.copy(position).addScaledVector(new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion), distance);
+    this._controls.enabled = false;
+  }
+
+  private _releaseAnimationCamera(): void
+  {
+    if (this._fovBeforeFollow !== null)
+    {
+      this._camera.fov = this._fovBeforeFollow;
+      this._camera.updateProjectionMatrix();
+      this._fovBeforeFollow = null;
+    }
+    if (this._controls && !this._activeHandle) { this._controls.enabled = true; this._controls.update(); }
   }
 
   //// INSTRUCT ////
@@ -2202,6 +2487,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
       this._animationClips = gltf.animations;
       this._activeAnimationName = null;
       this._mixer = new THREE.AnimationMixer(model);
+      this._mixer.addEventListener('finished', this._onAnimationFinished);
     }
     else
     {
@@ -2214,6 +2500,11 @@ export class ModelViewer extends SignalWatcher(LitElement)
 
     // Style CAD points (size / circle-square shape) from custom GLTF extensions
     applyPointStyles(model);
+
+    // Colour and opacity tracks onto the edge lines and fat lines made just above, then offer
+    // the animations (and carry on with the one that was playing before a re-run)
+    finishPointerTracks(model, this._animationClips);
+    this._readAnimations(gltf, model);
 
     // Render annotations: prefer the live execution result; fall back to GLB
     // extras for standalone .glb loads. Dimensions become 3D arrows + HTML
@@ -2359,6 +2650,13 @@ export class ModelViewer extends SignalWatcher(LitElement)
     this._currentModel = undefined;
     this._updateSpotlightForModel();
     this._updateGroundPlane();
+    // the animation goes with the model; a re-run brings it back where it was (_readAnimations)
+    const action = this._animationAction;
+    this._animationResume = action ? {
+      name: action.getClip().name, time: action.time, playing: !action.paused,
+      loop: this._animationLoop, speed: this._animationSpeed, follow: this._animationFollow,
+    } : null;
+    this._endAnimation();
     this._mixer = undefined;
     this._animationClips = [];
     this._activeAnimationName = null;
@@ -2581,9 +2879,18 @@ export class ModelViewer extends SignalWatcher(LitElement)
 
     if (this._mixer)
     {
-      this._mixer.update(dt);
+      /*  At most a tenth of a second per frame: after the tab was hidden the clock hands over
+          the whole time it was away, and a clip would jump to its end instead of carrying on. */
+      this._mixer.update(Math.min(dt, 0.1));
       this._selectionBox?.update(); // keep the highlight box on the animated node
       this._dirty = true;
+
+      if (this._animationAction)
+      {
+        updateFading(this._animationFade);
+        if (this._animationFollow) this._followAnimationCamera();
+        this._publishAnimation();
+      }
     }
 
     // Camera axis-snap tween
