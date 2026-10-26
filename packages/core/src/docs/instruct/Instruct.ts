@@ -35,7 +35,7 @@ import { Layouter } from '../../modeler/Layouter'
 import { Label, labelShapeFor } from '../../annotator/AnnotatorLabel'
 import { Step } from './Step'
 import {
-    isCameraSide,
+    isCameraSide, SIDE_DIRECTIONS,
     type CameraPositionInput, type CameraProjection, type CameraSide, type CameraSpec,
     type InstructData, type InstructLabelMode, type InstructPartsOptions,
     type PartRef, type PartRefInput, type ResolvedCamera, type ResolvedMove,
@@ -1105,17 +1105,6 @@ export class Instruct
         if (typeof o?.x === 'number') { return [o.x, o.y ?? 0, o.z ?? 0] }
         return null
     }
-}
-
-/** Which way you are looking when you look at a model from a named side. Matches the kernel's
- *  own elevation directions (Mesh._resolveViewDirection). */
-const SIDE_DIRECTIONS: Record<CameraSide, [number, number, number]> = {
-    front:  [0, 1, 0],
-    back:   [0, -1, 0],
-    left:   [1, 0, 0],
-    right:  [-1, 0, 0],
-    top:    [0, 0, -1],
-    bottom: [0, 0, 1],
 }
 
 function normalize(v: Array<number>): [number, number, number]

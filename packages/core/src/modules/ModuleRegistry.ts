@@ -37,7 +37,7 @@ import { unavailableStub, ModuleUnavailableError } from './unavailableStub';
  *  by the Runner, so both cases are reserved. */
 export const RESERVED_SCOPE_NAMES: ReadonlySet<string> = new Set<string>([
     // Archiyou modules
-    'console', 'modeler', 'docs', 'doc', 'calc', 'annotator', 'materials', 'make', 'interactor',
+    'console', 'modeler', 'docs', 'doc', 'calc', 'annotator', 'materials', 'make', 'interactor', 'animator',
     // logging helpers
     'print', 'log',
     // debugging helper

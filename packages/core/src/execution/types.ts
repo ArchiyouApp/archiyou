@@ -58,6 +58,7 @@ export interface ScriptMeta
     metrics: Array<string>, // metric names that are part of the script
     tables: Array<string>, // table names that are part of the script
     docs: Array<string>, // names of docs that are part of the script
+    animations?: Array<string>, // names of the animations the script declared (animator)
     numShapes?: number
     bbox?: Array<number|number|number|number|number|number>, // bbox of scene [minX, minY, minZ, maxX, maxY, maxZ]
 }
@@ -101,7 +102,9 @@ export interface ExecutionRequestOutputFormatGLTFOptions
 {
     // gltf basics
     edges?: boolean // include edge geometry with GLTF extension
-    animations?: boolean // all layout animations: exploded view etc
+    /** Animations to bake in: `?animations=flyin,turntable`, `=declared`, `=*`, or true for the
+     *  exploded and layout views. See ModelerSceneExportGLTFOptions.animations. */
+    animations?: boolean | string | Array<string>
     
     /* archiyou extra data: 
         this can be handly to serve all data within one GLTF file 

@@ -182,6 +182,7 @@ topLevelCompletions.push(
   { label: 'console', type: 'variable', detail: 'Console API' },
   { label: 'docs',    type: 'variable', detail: 'Documents: pages with views, text and images' },
   { label: 'make',    type: 'variable', detail: 'Make: frames, walls, boarding, packing and part lists' },
+  { label: 'animator', type: 'variable', detail: 'Animator: animations of the model, baked into its GLB' },
   { label: '$handle', type: 'function', detail: '(): Handle',
     info: 'Make a handle: a point in the viewer that users drag to change a parameter' },
 );
@@ -459,7 +460,7 @@ const memberMap = new Map<string, Completion[]>();
 
 /** Classes that are not shapes: their members only show where the type is known (a Handle
  *  after `$handle()`, Make after `make.`), and they are not made with `new` */
-const NON_SHAPE_CLASSES = new Set(['Handle', 'Docs', 'Document', 'Make']);
+const NON_SHAPE_CLASSES = new Set(['Handle', 'Docs', 'Document', 'Make', 'Animator', 'Animation']);
 
 for (const cls of shapeClasses)
 {
@@ -572,6 +573,39 @@ export function resolveDocsType(textBefore: string, docText: string): 'Docs' | '
 }
 
 /* ------------------------------------------------------------------ */
+/*  Animator: animator.create('x').duration(2).key(…)                  */
+/* ------------------------------------------------------------------ */
+
+/** Animator methods that give back an Animation, which every Animation verb does too */
+const ANIMATOR_MAKES = new Set(['create', 'preset', 'get']);
+
+/** Variables holding an Animation: `a = animator.create('x')`, `a = animator.preset('flyin')` */
+function buildAnimationScopeMap(docText: string): Set<string>
+{
+  const found = new Set<string>();
+  const re = /\b([A-Za-z_$][\w$]*)\s*=\s*animator\s*\.\s*(create|preset|get)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(docText)) !== null) found.add(m[1]);
+  return found;
+}
+
+/** Which animator class the chain before a `.` holds — 'Animator' for `animator.`, 'Animation'
+ *  down a chain from create()/preset()/get() or on a variable holding one — or null */
+export function resolveAnimatorType(textBefore: string, docText: string): 'Animator' | 'Animation' | null
+{
+  const chain = chainBackwards(textBefore);
+  if (!chain) return null;
+
+  if (chain.root === 'animator')
+  {
+    if (chain.calls.length === 0) return 'Animator';
+    return ANIMATOR_MAKES.has(chain.calls[0]) ? 'Animation' : null;
+  }
+
+  return buildAnimationScopeMap(docText).has(chain.root) ? 'Animation' : null;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Completion source                                                  */
 /* ------------------------------------------------------------------ */
 
@@ -652,6 +686,17 @@ export function archiyouCompletions(
       return {
         from: memberMatch.from + 1,
         options: memberMap.get('Make') ?? [],
+        validFor: /^\w*$/,
+      };
+    }
+
+    // `animator.` → Animator; `animator.create('x').` and an animation's variable → Animation
+    const animatorType = resolveAnimatorType(textBefore, docText);
+    if (animatorType)
+    {
+      return {
+        from: memberMatch.from + 1,
+        options: memberMap.get(animatorType) ?? [],
         validFor: /^\w*$/,
       };
     }

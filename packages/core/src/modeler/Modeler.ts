@@ -84,10 +84,10 @@ import { defaultTextFont, getFont, registerFont, fetchFont } from "./TextFonts";
 import { SceneNodeGraphNode, isPointLike } from "@archiyou/meshup";
 import { Layouter } from "./Layouter";
 import { GLTFBuilder } from "../GLTFBuilder";
+import { Animator, animationNamesFor } from "../animator/Animator";
 import { Make } from './Make';
 import { brepShapeToMeshup, meshupShapeToBrep, isBrepShape, DEFAULT_MESHING_QUALITY } from './brep/toMeshup';
 
-import { GLTF_ANIMATION_DURATION } from '../constants';
 import { systemOfUnit } from '../units/UnitConverter';
 
 // Union classes that combine meshup and brep
@@ -1603,18 +1603,6 @@ export class Modeler
 
     private async _exportGLBWithOptions(options?: ModelerSceneExportGLTFOptions): Promise<Uint8Array>
     {
-        // Settings
-        const ANIMATION_DEFS = [
-            {
-                name: 'exploded',
-                build: (layouter: Layouter) => layouter.exploded(),
-            },
-            {
-                name: 'layout',
-                build: (layouter: Layouter) => layouter.rowOrtho(),
-            },
-        ]
-
         // Remove empty container nodes before export (e.g. pre-allocated Make group slots)
         this.scene().pruneEmptyNodes();
 
@@ -1627,23 +1615,27 @@ export class Modeler
         const glb = await this._exportScene().toGLB();
         const builder = new GLTFBuilder(glb);
 
-        // Animations
-        if (options?.animations)
+        /*  Animations: the ones this output asks for, and only those. Nothing is resolved for
+            an output that asks for none, whatever the script declared — see animator/Animator.ts.
+            A standard animation the script did not declare is made here on the spot; `duration`
+            and `interpolation` time it, which is what they always did for `animations: true`. */
+        const animationNames = animationNamesFor(options?.animations, () => this._modules?.animator?.names() ?? [])
+        if (animationNames.length)
         {
-            const animations = ANIMATION_DEFS.map(({ name, build }) =>
-            {
-                const layouter = build(new Layouter(this.scene()))
-                return {
-                    result: layouter.result(),
-                    options: {
-                        duration: options?.duration ?? GLTF_ANIMATION_DURATION,
-                        interpolation: options?.interpolation,
-                        animationName: name,
-                    },
-                }
-            });
+            // the script's own when it has one; else one made for this export, over this model
+            const animator = this._modules?.animator ?? new Animator({ ...(this._modules ?? {}), modeler: this })
+            const resolved = await animator.resolve(animationNames, {
+                ...(options?.duration !== undefined ? { duration: options.duration } : {}),
+                ...(options?.interpolation ? { interpolation: options.interpolation } : {}),
+            })
 
-            await builder.addAnimations(animations);
+            // a parameter sweep is merged by the host from one run per frame; a run cannot bake it
+            const baked = resolved.filter(a =>
+            {
+                if (a.params) { console.info(`Modeler::toGLB(): "${a.name}" sweeps parameters, so it is made by running the script once per frame (the editor's Animation tool, or archiyou animate), not baked into one run's GLB.`) }
+                return !a.params
+            })
+            if (baked.length) { await builder.addAnimationData(baked) }
         }
 
         /*  An instructable: one continuous assembly animation, a camera per step, and the

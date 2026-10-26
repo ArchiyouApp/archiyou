@@ -124,6 +124,9 @@ export interface AnimationData
     duration: number
     loop: AnimationLoop
     tracks: Array<TrackData>
+    /** Everything the animation shows over its whole length, [minX,minY,minZ,maxX,maxY,maxZ]:
+     *  the model and wherever its parts travel. For framing a view or a recording. */
+    bbox?: [number, number, number, number, number, number]
     camera?: CameraTrackData
     /** From an instructable's steps: where each one sits on the timeline. */
     chapters?: Array<AnimationChapter>
@@ -141,7 +144,8 @@ export interface AnimationInfo
 {
     name: string
     title?: string
-    duration: number
+    /** Seconds, when it is known without resolving: set by the script or by the preset. */
+    duration?: number
     loop: AnimationLoop
     preset?: { kind: PresetKind, options: Record<string, any> }
     /** Set on a parameter sweep: the parameters it changes and how many frames it has. */

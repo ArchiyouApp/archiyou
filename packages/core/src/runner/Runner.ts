@@ -68,6 +68,7 @@ import { contentNeedsOf } from '../modules/sdkTypes';
 
 // Settings
 import { MODELER_METHODS_INTO_GLOBAL, SCRIPT_OUTPUT_GLTF_OPTIONS_DEFAULT, outputsNeedRecipes } from '../constants'; 
+import { Animator } from '../animator/Animator';
 import { ParamManager } from '../execution/ParamManager';
 import type { Make } from '../modeler/Make';
 import type { Handle } from '../interaction/Handle';
@@ -516,6 +517,18 @@ export class Runner
             materials: state._archiyou.materials,
             make: state._archiyou.modeler.make, // Make lives on Modeler, not directly on ArchiyouModules
             interactor: state._archiyou.interactor,
+        });
+
+        /*  The animator is made on first use. A getter rather than a value: the script runs
+            `with (scope)` through the scope Proxy, which reads `state.animator` only when the
+            script names it — so a script that never animates creates nothing and runs nothing
+            for it. Assigning to `animator` in a script just replaces the global, as for any
+            other name. */
+        Object.defineProperty(state, 'animator', {
+            configurable: true,
+            enumerable: false,
+            get: () => (state._archiyou.animator ??= new Animator(state._archiyou)),
+            set: (value) => Object.defineProperty(state, 'animator', { value, writable: true, configurable: true, enumerable: true }),
         });
 
         // Optional, separately-distributed script modules (see src/modules/).
@@ -1505,6 +1518,7 @@ ${contextLines.join('\n')}
         // The unit the script is authored in; its own units() call, run after this, still wins
         if (request.modelUnits) { scope._archiyou.modeler.units(request.modelUnits); }
         scope._archiyou.docs.reset(); // TODO: check after rename doc => docs
+        scope._archiyou.animator = undefined; // made again on first use (see _addModulesToScopeState)
         // Documents can show in another system than the run (set after reset(), which clears it)
         if (request.docUnitSystem) { scope._archiyou.docs._runUnitSystem = request.docUnitSystem; }
         scope._archiyou.calc.reset();
@@ -2425,6 +2439,10 @@ ${contextLines.join('\n')}
             {
                 console.warn(`Runner::_buildArchiyouState(): could not resolve an instructable: ${e}`);
             }
+
+            // declarations only, nothing resolved; and only when the script used the animator
+            const animator = scope._archiyou?.animator;
+            if (animator?.names().length) { state.animations = animator.info() }
         }
 
         return state;
@@ -2502,6 +2520,8 @@ ${contextLines.join('\n')}
         result.meta = {
             units: scope.modeler.units(),
             docs : scope.docs.docs(), // available doc names
+            // read off the module, not the scope: `scope.animator` would make one
+            animations: scope._archiyou?.animator?.names() ?? [], // declared animation names
             pipelines: this.getPipelineNames(scope),  // names of defined pipelines
             tables: scope.calc.getTableNames(), // names of available tables
             metrics : scope.calc.getMetricNames(),

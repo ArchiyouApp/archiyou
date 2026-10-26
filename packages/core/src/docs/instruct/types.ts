@@ -37,6 +37,17 @@ export function isCameraSide(o: any): o is CameraSide
     return ['front', 'back', 'left', 'right', 'top', 'bottom'].includes(o)
 }
 
+/** Which way you are looking when you look at a model from a named side. Matches the kernel's
+ *  own elevation directions (Mesh._resolveViewDirection). */
+export const SIDE_DIRECTIONS: Record<CameraSide, [number, number, number]> = {
+    front:  [0, 1, 0],
+    back:   [0, -1, 0],
+    left:   [1, 0, 0],
+    right:  [-1, 0, 0],
+    top:    [0, 0, -1],
+    bottom: [0, 0, 1],
+}
+
 /** Where the camera is, as a script writes it: a world-space eye position, or a named side. */
 export type CameraPositionInput = CameraSide | Array<number> | any
 

@@ -104,6 +104,33 @@ describe('Layouter', () =>
         expect((await createNodeIO().readBinary(still)).getRoot().listAnimations()).toHaveLength(0)
     })
 
+    test('exploding leaves the scene alone, also for copied shapes in another active layer', () =>
+    {
+        /*  A copy made in a script remembers the scene root, and copy() adds the next copy to
+            the active layer through it. The exploded view works on copies — which used to land
+            in the scene, one per copied shape, for every later export to see. */
+        modeler.reset()
+        const first = modeler.box(10, 10, 10)
+        first.copy().move(30, 0, 0)
+        modeler.layer('boards')
+        modeler.box(5, 5, 5).move(0, 40, 0)
+
+        const count = () => [modeler.scene(), ...modeler.scene().descendants()].filter(n => n.hasShape()).length
+        const before = count()
+        new Layouter(modeler.scene()).exploded()
+        expect(count()).toBe(before)
+    })
+
+    test('a row lays out what it can measure and leaves a point where it is', () =>
+    {
+        modeler.reset()
+        modeler.box(10, 20, 30)
+        modeler.vertex(100, 0, 0)
+
+        const result = new Layouter(modeler.scene()).rowOrtho().result()
+        expect(result.transforms).toHaveLength(1)
+    })
+
     //// PART STACK ////
 
     /** A workbench: 4 legs, 2 rails, a top — three parts in three quantities. */

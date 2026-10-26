@@ -168,15 +168,21 @@ export class Layouter
     {
 
         const spacing = options.spacing ?? 5;
+        const [ox, oy, oz] = options.origin ?? [0, 0, 0];
+
+        /*  Only what has an oriented box can be laid flat: a vertex has none, and asking for it
+            used to throw — out of every layout export of a model with a point in it. The rest
+            stays where it is, as in partStack(). */
+        const measurable = this._shapeNodes().filter(node => typeof (node.shape() as any)?.obbox === 'function');
 
         let lastX = 0;
-        const transforms = this._shapeNodes().map((node, i) =>
+        const transforms = measurable.map((node, i) =>
         {
             const obbox = (node.shape() as Mesh).obbox();
             const quaternion = obbox.toOrthoQuaternion();
             // NOTE: we don't really need to work with shapes here
             const translate = obbox.center().toVector().reverse() // to origin
-                                    .add([lastX + obbox.width()/2, 0, 0]); // then in row            
+                                    .add([ox + lastX + obbox.width()/2, oy, oz]); // then in row
 
             lastX += obbox.width() + spacing; // update lastX for next shape, add spacing
 
@@ -226,6 +232,7 @@ export class Layouter
         const spacing = options.spacing ?? 5;
         const gap = options.gap ?? 0;
         const includeHidden = options.includeHidden === true;
+        const [ox, oy, oz] = options.origin ?? [0, 0, 0];
 
         /*  Detected here unless the caller already knows — an instructable does, and its parts
             are the ones its steps are written in terms of. See Instruct._stepParts(). */
@@ -249,7 +256,7 @@ export class Layouter
                 pieces of a part are the same size to within the rounding that merged them, and
                 stepping by each piece's own thickness would let a stack lean. */
             const { thickness, length } = part.measure;
-            const x = lastX + length / 2;
+            const x = ox + lastX + length / 2;
             lastX += length + spacing;
 
             return part.shapes
@@ -259,12 +266,12 @@ export class Layouter
                     if (!node) { return null }
 
                     const obbox = shape.obbox();
-                    const z = thickness / 2 + i * (thickness + gap);
+                    const z = oz + thickness / 2 + i * (thickness + gap);
 
                     return {
                         sceneNode: node,
                         // to the origin, then to its place in the stack — as rowOrtho does it
-                        translation: obbox.center().toVector().reverse().add([x, 0, z])
+                        translation: obbox.center().toVector().reverse().add([x, oy, z])
                                         .toArray() as [number, number, number],
                         /*  Per piece, not per part: four legs of one part can stand in four
                             different directions in the model, and each needs its own turn to
@@ -449,19 +456,30 @@ export class Layouter
         return { scene: node, map }
     }
 
+    /** A copy that is not in the scene and never will be by itself.
+     *
+     *  Clearing `_node` and `_modeler` is not enough: a shape that was itself made with
+     *  `copy()` carries `_scene`, the scene root, and `copy()` finds the active layer through
+     *  it — so exploding a model with copied parts in it put a copy of each of them into
+     *  whatever layer the script left active, and every later export saw them. The sticky
+     *  `_suppressScene` flag (what `tmp()` sets) is what keeps `copy()` from adding it. */
     private _copyShapeDetached(shape: any): any
     {
         const modeler = shape?._modeler ?? null
         const node = shape?._node ?? null
+        const suppressed = shape?._suppressScene
 
         shape._modeler = null
         shape._node = null
+        shape._suppressScene = true
         const copy = shape.copy()
         shape._modeler = modeler
         shape._node = node
+        shape._suppressScene = suppressed
 
         copy._modeler = modeler
         copy._node = null
+        copy._scene = null
 
         return copy
     }

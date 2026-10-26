@@ -34,6 +34,8 @@
  *   src/docs/Docs.ts                  → Docs members (the `doc` global)
  *   src/docs/Document.ts              → Document members (what doc.create() and the chain return)
  *   src/modeler/Make.ts               → Make members (the `make` global)
+ *   src/animator/Animator.ts          → Animator members (the `animator` global)
+ *   src/animator/Animation.ts         → Animation members (what animator.create() returns)
  *
  * The brep classes (Solid/Edge/Wire/Face) are deliberately NOT emitted: brep mode is not
  * wired after the SmartShape removal — Modeler._brepNotWired() throws for every brep-only
@@ -424,6 +426,20 @@ const makeMethods = extractPublicMethods(
 )
 
 /* ------------------------------------------------------------------ */
+/*  Extract: animator (the `animator` global and the Animation it makes) */
+/* ------------------------------------------------------------------ */
+
+const animatorMethods = extractPublicMethods(
+    getClass('src/animator/Animator.ts', 'Animator'),
+    new Set(['reset', 'resolve', 'info', 'animations']),
+)
+
+const animationMethods = extractPublicMethods(
+    getClass('src/animator/Animation.ts', 'Animation'),
+    new Set(['info']),
+)
+
+/* ------------------------------------------------------------------ */
 /*  Assemble: shapeClasses                                              */
 /* ------------------------------------------------------------------ */
 
@@ -510,6 +526,16 @@ const shapeClasses: ShapeClassInfo[] = [
         label: 'Make',
         detail: 'the make global: frames, walls, boarding, packing and part lists',
         members: makeMethods,
+    },
+    {
+        label: 'Animator',
+        detail: 'the animator global: animations of the model, baked into its GLB',
+        members: animatorMethods,
+    },
+    {
+        label: 'Animation',
+        detail: 'an animation: keys, layouts, visibility, colour, opacity and a camera over time',
+        members: animationMethods,
     },
 ]
 

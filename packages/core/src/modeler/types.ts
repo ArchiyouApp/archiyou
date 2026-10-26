@@ -94,8 +94,13 @@ export interface ModelerTextOptions
  */
 export interface ModelerSceneExportGLTFOptions
 {
-    /** Bake the `exploded` and `layout` layouter animations into the GLB. Default false. */
-    animations?: boolean
+    /** Animations to bake into the GLB. Default false: none.
+     *   - true: the `exploded` and `layout` layouts, timed by `duration` and `interpolation`
+     *   - 'declared': every animation the script declared with the animator
+     *   - '*': those and every standard animation
+     *   - 'flyin,swing' or a list: those, declared or standard
+     *  See animator/Animator.ts animationNamesFor(). */
+    animations?: boolean | string | Array<string>
     /** Animation length in seconds. Default `GLTF_ANIMATION_DURATION`. */
     duration?: number
     /** Easing for the baked animations. Default `'easeInOut'` (GLTFBuilder's fallback). */
@@ -115,6 +120,9 @@ export interface LayoutViewOptions
 {
     /** Lateral spacing between shapes when laid flat. Default 1.5 */
     spacing?: number
+    /** Where the row starts: its first shape's left side is at origin x, the row runs along +X
+     *  at origin y, centred on origin z. Default [0, 0, 0]. */
+    origin?: [number, number, number]
 }
 
 /** Options for {@link Layouter.partStack} — one flat stack per part, side by side. */
@@ -127,6 +135,9 @@ export interface PartStackLayoutOptions
     gap?: number
     /** Stack shapes whose style marks them invisible too. Default false. */
     includeHidden?: boolean
+    /** Where the stacks stand: the first one's left side at origin x, the row running along +X
+     *  at origin y, the stacks standing ON origin z. Default [0, 0, 0]. */
+    origin?: [number, number, number]
     /** The parts to stack, when the caller has already worked them out. Left out, they are
      *  detected from the scene with collectParts().
      *

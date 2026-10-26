@@ -45,6 +45,8 @@ const ENTRY_POINTS = [
     'src/materials/MaterialManager.ts',
     'src/execution/ParamManager.ts',
     'src/interaction/Handle.ts',
+    'src/animator/Animator.ts',
+    'src/animator/Animation.ts',
     '../meshup/src/index.ts',
 ].map(p => join(ROOT, p))
 
@@ -54,6 +56,7 @@ const CLASSES = [
     'Point', 'Vector', 'Vertex', 'Bbox', 'OBbox',
     'Docs', 'Document', 'Calc', 'Make', 'MaterialManager',
     'ParamManager', 'RunnerComponentImporter', 'Handle',
+    'Animator', 'Animation',
 ]
 
 /** Public for the engine's sake, not for scripts */

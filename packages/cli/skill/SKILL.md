@@ -52,6 +52,10 @@ print('seat area', seat.area());               // shows in the run summary
   front: all().elevation('front') } })`. What it returns is its output, one layer per key; a
   document shows it with `docs.create('spec').pipeline('drawings').page('p').view('iso').shapes('iso')`.
   Don't move or hide model shapes inside a pipeline: copy them first.
+- **Animations** never move the model: they say where parts are over time and are baked into the
+  GLB only when an output asks (`default/model/glb?animations=flyin`). A standard one is a line,
+  `animator.preset('flyin')` (also `build`, `exploded`, `turntable`, `assembly`); your own is keys,
+  `a = animator.create('swing').duration(2); a.key(0, door, {}); a.key(2, door, { rotation: [0, 0, 90], pivot: hinge })`.
 - The mesh kernel is the default. A few primitives (spiral, helix, cone, basePlane) need `--kernel brep`.
 - **Axis convention** (the checks assume it): x is width, y is depth with the front at y = 0 and the
   back positive, z is up, the floor is z = 0.

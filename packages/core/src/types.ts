@@ -19,6 +19,8 @@ import type { MaterialManager } from "./materials/MaterialManager";
 import type { ModuleRegistry } from "./modules/ModuleRegistry";
 import type { RecipeApi } from "./modeler/Recipe";
 import type { SceneNodeData } from "./modeler/types";
+import type { Animator } from "./animator/Animator";
+import type { AnimationInfo } from "./animator/types";
 
 
 /** The Archiyou modules used for app and modules to interact */
@@ -32,6 +34,9 @@ export interface ArchiyouModules
     interactor: Interactor,
     runner: Runner,
     materials: MaterialManager
+    /** Made on first use: a script that never names `animator` has none (see Runner
+     *  _addModulesToScopeState and animator/Animator.ts). */
+    animator?: Animator
     /** Optional, separately-distributed script modules (see src/modules/). Lets
      *  one module reach another, and the built-ins reach modules. Undefined in
      *  contexts that build an ArchiyouModules without a Runner. */
@@ -85,5 +90,10 @@ export interface ArchiyouStateData
      *  JSON of a few KB (paths and text, no geometry), and it is the same data
      *  `extras.instruct` carries for a standalone file. */
     instruct?:Array<any> // InstructData[] — typed loosely here, like annotations
+    /** Animations declared this run (via animator), as declarations only: what the Animation
+     *  tool lists before anything is baked. The resolved tracks travel with the GLB, in
+     *  `extras.animations`, when an output asks for them. Absent when the script never used
+     *  the animator. */
+    animations?:Array<AnimationInfo>
 }
 
