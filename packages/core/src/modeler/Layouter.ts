@@ -13,6 +13,7 @@ import type {
     AnyShape,
 } from './types'
 import { collectParts } from './parts'
+import { placementsOf, type LayoutPlacement } from './placements'
 
 import { TOLERANCE } from '@archiyou/meshup'
 
@@ -60,6 +61,14 @@ export class Layouter
     {
         this._result = null
         return this
+    }
+
+    /** The layout as rigid transforms about each part's own centre: where its centre goes and
+     *  how it is turned about it, which a scene graph can apply (a transform here is a recipe
+     *  for the kernel, see modeler/placements.ts). Nothing is copied or moved. */
+    placements(): Array<LayoutPlacement>
+    {
+        return placementsOf(this._requireResult())
     }
     
     //// LAYOUT METHODS ////

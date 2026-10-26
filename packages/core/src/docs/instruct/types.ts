@@ -22,14 +22,9 @@ import type { LayoutAnimationInterpolation } from '../../modeler/types'
 export type PartRefInput = any | string
 
 /** One resolved reference: the part, and which of its instances were meant. */
-export interface PartRef
-{
-    part: Part
-    /** The instances referred to — every one of them unless an 'A#2' picked one out. */
-    shapes: Array<any>
-    /** Their scene paths, index-matched to `shapes`. */
-    paths: Array<string>
-}
+/** The parts a reference resolved to, and which of their instances. Shared with the animator
+ *  (modeler/refs.ts). */
+export type { PartRef } from '../../modeler/refs'
 
 //// CAMERA ////
 

@@ -28,6 +28,8 @@
  */
 
 import { collectParts, nonPartCount, type Part } from '../../modeler/parts'
+import { resolvePartRef, shapesOf, wholePart } from '../../modeler/refs'
+import { placementsOf } from '../../modeler/placements'
 import { projectMeshes } from '../../modeler/SVGExporter'
 import { Layouter } from '../../modeler/Layouter'
 import { Label, labelShapeFor } from '../../annotator/AnnotatorLabel'
@@ -367,62 +369,12 @@ export class Instruct
     resolveRef(ref: PartRefInput): Array<PartRef>
     {
         const parts = this.list()
-
-        if (typeof ref === 'string')
-        {
-            const instance = ref.match(/^(.+)#(\d+)$/)
-            if (instance)
-            {
-                const [, label, indexText] = instance
-                const part = parts.find(p => p.label === label)
-                if (!part) { throw this._unknownRef(ref, parts) }
-
-                const index = parseInt(indexText, 10) - 1     // '#1' is the first
-                if (index < 0 || index >= part.shapes.length)
-                {
-                    throw new Error(`Instruct::shapes(): "${ref}" asks for instance ${index + 1} of `
-                        + `part ${label}, which has ${part.shapes.length}. Instances are numbered from #1.`)
-                }
-                return [{ part, shapes: [part.shapes[index]], paths: [part.paths[index]] }]
-            }
-
-            const byLabel = parts.find(p => p.label === ref)
-            if (byLabel) { return [this._wholePart(byLabel)] }
-
-            const byGroup = parts.filter(p => p.group === ref)
-            if (byGroup.length) { return byGroup.map(p => this._wholePart(p)) }
-
-            throw this._unknownRef(ref, parts)
-        }
-
-        // a Shape or a ShapeCollection: find the parts holding those shapes
-        const shapes = this._shapesOf(ref)
-        const found = new Map<Part, PartRef>()
-
-        shapes.forEach(shape =>
-        {
-            const part = parts.find(p => p.shapes.includes(shape))
-            if (!part) { return }
-
-            const index = part.shapes.indexOf(shape)
-            const existing = found.get(part)
-            if (existing)
-            {
-                existing.shapes.push(shape)
-                existing.paths.push(part.paths[index])
-            }
-            else
-            {
-                found.set(part, { part, shapes: [shape], paths: [part.paths[index]] })
-            }
-        })
-
-        return [...found.values()]
+        return resolvePartRef(ref, parts, r => this._unknownRef(r, parts), 'Instruct::shapes()')
     }
 
     _wholePart(part: Part): PartRef
     {
-        return { part, shapes: [...part.shapes], paths: [...part.paths] }
+        return wholePart(part)
     }
 
     _unknownRef(ref: string, parts: Array<Part>): Error
@@ -438,10 +390,7 @@ export class Instruct
     /** The shapes a Shape / ShapeCollection / array stands for. */
     _shapesOf(o: any): Array<any>
     {
-        if (Array.isArray(o)) { return o.flatMap(item => this._shapesOf(item)) }
-        if (typeof o?.toArray === 'function') { return o.toArray() }
-        if (o) { return [o] }
-        return []
+        return shapesOf(o)
     }
 
     //// CAMERA RESOLUTION ////
@@ -1059,7 +1008,7 @@ export class Instruct
                 return null
             }
 
-            return { laidOut, placements: this._placements(entries, laidOut, transforms) }
+            return { laidOut, placements: this._placements(entries, transforms) }
         }
         catch (e)
         {
@@ -1092,28 +1041,30 @@ export class Instruct
     }
 
     /** The layout as something a scene graph can apply: per part, where its centre goes and
-     *  how it is turned about that centre.
+     *  how it is turned about that centre (modeler/placements.ts).
      *
-     *  Positions are read off the copies rather than off the transforms, because a Layouter
-     *  transform is a recipe for the kernel (`rotateQuaternion` re-centres, then translate) and
-     *  not a rigid transform a viewer could apply. The copies have already been through it.
-     *
-     *  Rotations are matched by SHAPE, not by index. A layout is free to emit its transforms in
+     *  Matched to the entries by SHAPE, not by index. A layout is free to emit its transforms in
      *  its own order — partStack emits them a stack at a time, most-used part first — and
-     *  reading `transforms[i]` would then turn each part by another part's quaternion.
+     *  reading `transforms[i]` would then turn each part by another part's quaternion. The
+     *  Layouter ran on a collection of the step's shapes, so its scene nodes are its own and
+     *  their paths are not the model's: the entry's path is.
      */
-    _placements(entries: Array<StepEntry>, laidOut: Array<any>,
-                transforms: Array<LayoutTransformation>): Array<StepPlacement>
+    _placements(entries: Array<StepEntry>, transforms: Array<LayoutTransformation>): Array<StepPlacement>
     {
-        const rotations = new Map(transforms.map(t =>
-            [(t.sceneNode as any)?.shape?.(), t.rotation]))
+        const byShape = new Map(placementsOf({ name: 'step', translationMode: 'relative', transforms })
+            .map(p => [p.shape, p]))
 
-        return entries.map((entry, i) => ({
-            path: entry.path,
-            position: this._centreOf([laidOut[i]]),
-            rotation: [...(rotations.get(entry.shape) ?? IDENTITY_ROTATION)] as [number, number, number, number],
-            centre: this._centreOf([entry.shape]),
-        }))
+        return entries.map(entry =>
+        {
+            const placement = byShape.get(entry.shape)
+            const centre = this._centreOf([entry.shape])
+            return {
+                path: entry.path,
+                position: placement ? placement.position : centre,
+                rotation: [...(placement?.rotation ?? IDENTITY_ROTATION)] as [number, number, number, number],
+                centre: placement ? placement.centre : centre,
+            }
+        })
     }
 
     /** Combined bounding box of a set of shapes, as a flat six-tuple. */

@@ -14,8 +14,6 @@ import { GLTFBuilder } from './GLTFBuilder'
 import { RunnerOps } from '../../runner/RunnerOps'
 import type { AnyShape } from './types'
 
-type XmlNode = any; // TODO
-
 //// TYPES ////
 
 // avoid TS errors by extending global
@@ -289,59 +287,6 @@ export class Exporter
             throw new Error(`Exporter::_export2DToSVG(): Please supply a ShapeCollection with at least one shape!`);
         }
         return shapes.toSVG(options);
-    }
-
-    /** Combine all SVG's into one with SMIL keyframe animations
-     *  We parse all SVGs and put all their content in seperate groups named "frame{{N}}"
-     *  At the same time apply special SLIM SVG keyframe animation tags 
-     *  so the SVG animation can be viewed inside ordinary browsers
-     */
-    exportToSVGAnimation(svgs:Array<string>):string
-    {
-        const SVG_FPS = 2; // 2 frames per second
-        const SVG_FRAME_DURATION = 1 / SVG_FPS;
-
-        const svgRootNodes = [] as Array<any>;
-        const svgFrameGroups = [] as Array<string>; // <g id="frameN"><set id="anN" />{{ svg paths }}</g>
-        const numFrames = svgs.length;
-
-        return null;
-        // TODO: Implement after change to fast-xml-parser
-        /*
-
-        svgs.forEach( (svg,frameNum) => {
-            const parsedSvg = txml.parse(svg)[0];
-            svgRootNodes.push(parsedSvg); // to find largest bbox later
-            const pathNodes = txml.filter(parsedSvg.children, node => node.tagName === 'path'); // SVG only consists of path elements
-
-            const svgFrameGroup = `
-                        <g id="frame${frameNum}" visibility="hidden">
-                            <set id="an${frameNum*2}" attributeName="visibility" begin="${SVG_FRAME_DURATION*frameNum}; an${frameNum*2+1}.end" to="visible" dur="${SVG_FRAME_DURATION}s" />
-                            <set id="an${frameNum*2+1}" attributeName="visibility" begin="an${frameNum*2}.end" to="hidden" dur="${numFrames*SVG_FRAME_DURATION-SVG_FRAME_DURATION}s" />
-                            ${pathNodes.map(p => this._XmlNodeToString(p)).join('')}
-                        </g>`
-            svgFrameGroups.push(svgFrameGroup);
-        })
-
-        // Get biggest bounding box
-        svgRootNodes.sort( (a,b) => this._getSvgBboxArea(b) - this._getSvgBboxArea(a))
-        const svgAnimated = this._XmlNodeToString(svgRootNodes[0], svgFrameGroups.join('\n')); // Wrap al groupes with largest SVG bbox
-
-        return svgAnimated
-        */
-    }
-
-    /** For some reason TXML does not offer a good node.toString() method */
-    _XmlNodeToString(n:any, wrapped:string=''):string
-    {
-        const attrsStr = Object.keys(n.attributes).map( attr => `${attr}="${n.attributes[attr]}"`).join(' ');
-        return `<${n.tagName} ${attrsStr}>${wrapped}</${n.tagName}>`
-    }
-
-    _getSvgBboxArea(svg:XmlNode):number
-    {
-        const bbox = svg.attributes['viewBox']?.split(' ');
-        return (bbox) ? bbox[2] * bbox[3] : 0;
     }
 
     /** Open browser file window to save svg */

@@ -87,15 +87,21 @@ describe('Layouter', () =>
     {
         buildNestedScene()
 
+        /*  rowOrtho, not exploded: this scene's two boxes do not touch, so exploding it moves
+            nothing — and a clip with no channels is not valid glTF (an animation needs at least
+            one), so none is written for it. That case is the second half of this test. */
         const glb = await modeler.scene().toGLB()
         const animated = await new Layouter(modeler.scene())
-            .exploded()
+            .rowOrtho()
             .saveAsAnimation(glb)
 
         const doc = await createNodeIO().readBinary(animated)
         const animationNames = doc.getRoot().listAnimations().map((animation: any) => animation.getName())
 
-        expect(animationNames).toEqual(['exploded'])
+        expect(animationNames).toEqual(['layout'])
+
+        const still = await new Layouter(modeler.scene()).exploded().saveAsAnimation(glb)
+        expect((await createNodeIO().readBinary(still)).getRoot().listAnimations()).toHaveLength(0)
     })
 
     //// PART STACK ////

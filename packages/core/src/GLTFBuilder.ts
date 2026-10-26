@@ -1,48 +1,75 @@
 /**
  * GLTFBuilder.ts
- *  
+ *
  *  Archiyou leans on GLTF quite a bit: as basic vizualisation format and as advanced usage:
- *  
+ *
  *  - The Archiyou viewer is a GLTF viewer with Archiyou-specific extensions
- *  - These extensions include: line rendering (following the Cesium/Bentley standard), 
+ *  - These extensions include: line rendering (following the Cesium/Bentley standard),
  *        animations, and Archiyou-specific extras (scenegraph, annotations, managed handles)
- *  
- *  Our default geometry kernel Meshup writes GLTF, but the GLTFBuilder extends it. 
- * 
- * 
+ *
+ *  Our default geometry kernel Meshup writes GLTF, but the GLTFBuilder extends it.
+ *
+ *  ## Animations
+ *
+ *  Every animation the builder writes — a layout, an instructable, an animator animation —
+ *  goes through one baker, addAnimationData(), which takes resolved AnimationData
+ *  (animator/types.ts): keyframes per scene path, in seconds. What glTF can say is written as
+ *  channels:
+ *
+ *   - a POSE as translation/rotation/scale channels on the part's container node, sampled as
+ *     one rigid transform about the part's own centre;
+ *   - VISIBILITY as a STEP scale channel on the part's geometry nodes (1 ↔ 1e-4);
+ *   - COLOUR and OPACITY as KHR_animation_pointer channels on the part's materials;
+ *   - a CAMERA as an animated camera node.
+ *
+ *  The AnimationData itself goes into the root extras (`extras.animations`), for the viewer.
  */
 
-// Vector/toRad come from the MESH kernel on purpose. They used to be imported from
-// ./modeler/brep, which pulled the 10MB OpenCascade barrel into every mesh-only run — and
-// worse, brep's Point constructor calls getOc(), so `new Vector(1,0,0)` below threw outright
-// whenever the brep kernel had not been loaded.
-import { Vector } from '@archiyou/meshup'
-import { rad as toRad } from '@archiyou/meshup'
+import { Document, Primitive, type Material, type Node as GltfNode, type Animation } from '@gltf-transform/core'
+import { createNodeIO as createMeshupNodeIO, GLTFJsonDocumentToString } from '@archiyou/meshup'
+
 import type { ArchiyouData } from './modeler/brep/types'
-import { Document, Accessor, Animation, AnimationChannel, AnimationSampler, Scene as GltfScene, Node as GltfNode } from '@gltf-transform/core'
-
-import {
-    createNodeIO,
-} from '@archiyou/meshup'
-
-import { GLTFJsonDocumentToString } from '@archiyou/meshup'
 import type {
-    LayoutAnimationInterpolation,
     LayoutAnimationOptions,
     LayoutTransformationResult,
 } from './modeler/types'
+import type { AnimationData, Easing, Quat, TrackData, Vec3, VisibleKey } from './animator/types'
+
+import { AnimationPointerExtension, BASE_COLOR_FACTOR, KHR_ANIMATION_POINTER, POINTER_TARGET_PATH } from './animator/AnimationPointerExtension'
+import {
+    EASED_KEYFRAME_SAMPLE_COUNT,
+    IDENTITY_QUATERNION,
+    add, bakeKeys, hexToLinear, isIdentityQuat, isSameQuat, isSameVec, lerpVec,
+    lookAtQuaternion, multiplyVec, normalizeQuat, rotatePoint, sampleAt, sampleCount, slerp, subtract,
+} from './animator/sampling'
+import { instructToAnimation } from './animator/instruct'
+import { placementsOf } from './modeler/placements'
 
 export type {
     LayoutAnimationOptions,
 } from './modeler/types'
+
+export { EASED_KEYFRAME_SAMPLE_COUNT, SPRING_KEYFRAME_SAMPLE_COUNT } from './animator/sampling'
 
 type CachedLayoutAnimationDefinition = {
     result: LayoutTransformationResult
     options?: LayoutAnimationOptions
 }
 
-export const EASED_KEYFRAME_SAMPLE_COUNT = 17
-export const SPRING_KEYFRAME_SAMPLE_COUNT = 25
+/** What a hidden part is scaled to. Not zero: a singular matrix makes three.js's normal matrix
+ *  NaN. 1e-4 is invisible and stays invertible. */
+const HIDDEN_SCALE = 1e-4
+
+/** glTF primitive modes that draw faces; the rest (points, lines) are line-work. */
+const TRIANGLE_MODES = new Set([4, 5, 6])
+
+/** meshup's IO, with KHR_animation_pointer registered too: every GLB this builder reads or
+ *  writes may carry colour and opacity channels, and an IO without the extension would drop
+ *  their pointers. */
+export function createNodeIO()
+{
+    return createMeshupNodeIO().registerExtensions([AnimationPointerExtension])
+}
 
 /** Display names for one set of siblings: a name shared by more than one of them gets a
  *  `[i]` suffix, in order.
@@ -67,10 +94,6 @@ function siblingDisplayNames(names: Array<string>): Array<string>
         return n
     })
 }
-
-
-/** Identity rotation, [x, y, z, w]. */
-const IDENTITY_QUATERNION: [number, number, number, number] = [0, 0, 0, 1]
 
 const GLB_MAGIC = 0x46546C67       // 'glTF'
 const GLB_CHUNK_JSON = 0x4E4F534A  // 'JSON'
@@ -104,13 +127,19 @@ function glbWithRootExtras(glb: Uint8Array, extras: Record<string, unknown>): Ui
     return out
 }
 
-/** Where one part is during one step of an instructable, as a node's own transform. */
-interface InstructPose
+/** A part's pose with every field filled: where its centre is, how it is turned and scaled
+ *  about that centre. */
+interface FullPose
 {
-    translation: [number, number, number]
-    rotation: [number, number, number, number]
-    /** Easing to use for the transition INTO this pose. */
-    interpolation: LayoutAnimationInterpolation
+    position: Vec3
+    rotation: Quat
+    scale: Vec3
+}
+
+export interface AddAnimationDataOptions
+{
+    /** Write the AnimationData into `extras.animations` too. Default true. */
+    extras?: boolean
 }
 
 export class GLTFBuilder
@@ -119,12 +148,14 @@ export class GLTFBuilder
     SUBSHAPE_OUTPUT_NAME_SEPERATOR: string = '___';
 
     private doc: Document;
-    private scene: GltfScene;
     private _initialGlb: Uint8Array | null = null;
     private _modified = false;
     private _docLoaded = false;
     /** Root extras from addData() while the source GLB is not read into a Document (see toGLB()) */
     private _pendingExtras: Record<string, unknown> | null = null;
+    /** What has gone into `extras.animations` so far: addData() merges top-level keys only, so
+     *  the list is kept here and written whole. */
+    private _animationsExtras: Array<AnimationData> = [];
 
     constructor(glb?: ArrayBuffer | Uint8Array)
     {
@@ -133,7 +164,7 @@ export class GLTFBuilder
             this._initialGlb = (glb instanceof ArrayBuffer) ? new Uint8Array(glb) : glb;
         }
         this.doc = new Document();
-        this.scene = this.doc.createScene('scene');
+        this.doc.createScene('scene');
     }
 
     /** Return the (possibly modified) GLB. If unmodified and a source GLB was provided, returns it directly. */
@@ -160,66 +191,10 @@ export class GLTFBuilder
         return createNodeIO().readBinary(glb).then(doc => createNodeIO().writeJSON(doc)).then(GLTFJsonDocumentToString);
     }
 
-    //// GLTF KEYFRAME ANIMATIONS ////
-    // TODO: this was old code, needs to be re-implemented and tested
-    
-    /** Build animated GLTF from per-frame GLB buffers */
-    /*
-    async createAnimation(frameGLBs: Array<Uint8Array>)
-    {
-        const GLTF_TRANSFORM_FUNCTIONS_MODULE = '@gltf-transform/functions';
-        let sequence;
-        try
-        {
-            sequence = (await import(GLTF_TRANSFORM_FUNCTIONS_MODULE))?.sequence;
-            if (!sequence) { throw new Error('sequence function not found'); }
-        }
-        catch (error)
-        {
-            console.error(`GLTFBuilder::createAnimation(): Error loading GLTF transform functions: ${error}. Add the @gltf-transform/functions package to your project.`);
-            return;
-        }
-        await this.loadFramesIntoScene(frameGLBs);
-        let sequenceOptions = { fps: 24, pattern: /FrameShapes[0-9]+/, animation: 'ParamAnimation', sort: false };
-        this.doc.transform(sequence(sequenceOptions));
-    }
-    */
-    /** Load a single GLB frame into the scene as a named node */
-    /*
-    async frameGLBToNode(GLBBuffer: Uint8Array, nodeName: string)
-    {
-        const io = createNodeIO();
-        let frameGlbDoc = await io.readBinary(GLBBuffer);
-        let incomingNode = frameGlbDoc.getRoot().listScenes()[0].listChildren()[0];
-        incomingNode.setName(nodeName);
-
-        this.doc = this.doc.merge(frameGlbDoc);
-        let addedScene = this.doc.getRoot().listScenes()[1];
-        let addedNode = addedScene.listChildren()[0];
-
-        let rotationQuaternion = this._quaternionFromAxisAngle(new Vector(1, 0, 0), -90);
-        addedNode.setRotation(rotationQuaternion);
-
-        this.scene.addChild(addedNode);
-        addedScene.dispose();
-    }
-
-    async loadFramesIntoScene(frameGLBs: Array<Uint8Array>)
-    {
-        for (let i = 0; i < frameGLBs.length; i++)
-        {
-            await this.frameGLBToNode(frameGLBs[i], `FrameShapes${i}`);
-        }
-        const buffer = this.doc.getRoot().listBuffers()[0];
-        this.doc.getRoot().listAccessors().forEach((a: any) => a.setBuffer(buffer));
-        this.doc.getRoot().listBuffers().forEach((b: any, index: number) => index > 0 ? b.dispose() : null);
-    }
-    */
-
     //// SPECIAL ARCHIYOU GLTF ADDITIONS ////
 
     /** Lazily read the source GLB into a gltf-transform Document exactly once,
-     *  so addData() and addAnimations() compose instead of clobbering each other. */
+     *  so addData() and the animations compose instead of clobbering each other. */
     private async _ensureDoc(): Promise<Document>
     {
         if (!this._docLoaded)
@@ -255,7 +230,30 @@ export class GLTFBuilder
         return this
     }
 
-    //// ANIMATION VIEWS ////
+    //// ANIMATIONS ////
+
+    /** Bake resolved animations into the GLB: one clip each, and the data in
+     *  `extras.animations`. See the header for what becomes which channel. */
+    async addAnimationData(data: AnimationData | Array<AnimationData>, options: AddAnimationDataOptions = {}): Promise<this>
+    {
+        if (!this._initialGlb) { throw new Error('GLTFBuilder.addAnimationData(): no GLB source provided — pass a GLB to the constructor.') }
+
+        await this._ensureDoc()
+
+        const list = Array.isArray(data) ? data : [data]
+        const baked = list.filter(animation => this._bake(animation))
+
+        if (options.extras !== false && baked.length)
+        {
+            this._animationsExtras = [...this._animationsExtras, ...baked]
+            await this.addData({ animations: this._animationsExtras })
+        }
+
+        this._modified = true
+        return this
+    }
+
+    //// LAYOUT ANIMATIONS ////
 
     async addAnimation(
         result: LayoutTransformationResult,
@@ -266,165 +264,21 @@ export class GLTFBuilder
         return this
     }
 
+    /** A clip per layout: from where the model has every part to where the layout puts it.
+     *
+     *  Layouts go through placementsOf(): a layout turns a part about its own centre (see
+     *  modeler/placements.ts), and the baker writes that about the centre too. */
     async addAnimations(
         definitions: Array<CachedLayoutAnimationDefinition>,
     ): Promise<this>
     {
         if (!this._initialGlb) { throw new Error('GLTFBuilder.addAnimations(): no GLB source provided — pass a GLB to the constructor.') }
 
-        await this._ensureDoc();
+        const animations = definitions.map(({ result, options }) =>
+            layoutToAnimation(result, options ?? {}))
 
-        const root = this.doc.getRoot();
-        const buffer = root.listBuffers()[0] ?? this.doc.createBuffer();
-
-        /*  Targets are resolved by SCENE PATH, not by name.
-            `SceneNode.name` is not unique among siblings — four legs of a table are four nodes
-            all called `leg`, and the glTF node is created with that raw name — so a name-keyed
-            Map kept only the last of them and every one of the four transforms landed on that
-            single node: three legs never moved and one moved four times. Uniqueness lives in
-            `SceneNode.path()` (the `name[i]` sibling-suffix rule), which is also what the
-            viewer keys its object map on. */
-        const nodesByPath = this._nodesByScenePath();
-        const nodesByName = new Map<string, any>(
-            root.listNodes().map((node: any) => [node.getName(), node] as [string, any])
-        );
-
-        definitions.forEach(({ result, options }) =>
-        {
-            const duration = options?.duration ?? 1.0
-            const interpolation = options?.interpolation ?? options?.tween ?? 'easeInOut'
-            const anim = this.doc.createAnimation(options?.animationName ?? result.name)
-            const targeted = new Set<any>()
-
-            result.transforms.forEach(({ sceneNode, translation, rotation, scale }) =>
-            {
-                const node = this._resolveTargetNode(sceneNode, nodesByPath, nodesByName)
-                if (!node) { return }
-
-                /*  Two transforms on one node means the resolution above failed to tell two
-                    scene nodes apart — the exact failure this method used to have silently.
-                    The channels would stack and the result would be wrong in a way that looks
-                    like a layout bug, so say so. */
-                if (targeted.has(node))
-                {
-                    console.warn(`GLTFBuilder::addAnimations(): animation "${anim.getName()}" targets `
-                        + `glTF node "${node.getName()}" more than once — two scene nodes resolved to it. `
-                        + `Their keyframes will stack. This usually means the GLB was not written from `
-                        + `the scene these transforms came from.`)
-                }
-                targeted.add(node)
-
-                if (rotation && !this._isIdentityQuaternion(rotation)) // just raw from layouter
-                {
-                    const gltfRotation = this._worldToGltfQuaternion(rotation)
-                    const rotTimeAcc = this.doc.createAccessor()
-                        .setType('SCALAR').setArray(this._createAnimationTimeSamples(duration, interpolation)).setBuffer(buffer)
-                    const rotAcc = this.doc.createAccessor()
-                        .setType('VEC4')
-                        .setArray(this._createQuaternionAnimationSamples([0, 0, 0, 1], gltfRotation, interpolation))
-                        .setBuffer(buffer)
-                    const rotSampler = this.doc.createAnimationSampler()
-                        .setInput(rotTimeAcc).setOutput(rotAcc).setInterpolation('LINEAR')
-                    const rotChannel = this.doc.createAnimationChannel()
-                        .setSampler(rotSampler).setTargetNode(node).setTargetPath('rotation')
-
-                    anim.addSampler(rotSampler).addChannel(rotChannel)
-                }
-
-                if (translation && !this._isZeroVector(translation)) // just raw from layouter
-                {
-                    const gltfTranslation = this._worldToGltfTranslation(translation)
-                    const translationStart = result.translationMode === 'relative'
-                        ? node.getTranslation() as [number, number, number]
-                        : [0, 0, 0] as [number, number, number]
-                    const translationEnd = result.translationMode === 'relative'
-                        ? this._addPoint(translationStart, gltfTranslation)
-                        : gltfTranslation
-
-                    const transTimeAcc = this.doc.createAccessor()
-                        .setType('SCALAR').setArray(this._createAnimationTimeSamples(duration, interpolation)).setBuffer(buffer)
-                    const transAcc = this.doc.createAccessor()
-                        .setType('VEC3')
-                        .setArray(this._createVector3AnimationSamples(translationStart, translationEnd, interpolation))
-                        .setBuffer(buffer)
-                    const transSampler = this.doc.createAnimationSampler()
-                        .setInput(transTimeAcc).setOutput(transAcc).setInterpolation('LINEAR')
-                    const transChannel = this.doc.createAnimationChannel()
-                        .setSampler(transSampler).setTargetNode(node).setTargetPath('translation')
-
-                    anim.addSampler(transSampler).addChannel(transChannel)
-                }
-
-                if (scale && !this._isIdentityScale(scale)) // just raw from layouter
-                {
-                    const scaleTimeAcc = this.doc.createAccessor()
-                        .setType('SCALAR').setArray(this._createAnimationTimeSamples(duration, interpolation)).setBuffer(buffer)
-                    const scaleAcc = this.doc.createAccessor()
-                        .setType('VEC3')
-                        .setArray(this._createVector3AnimationSamples([1, 1, 1], scale, interpolation))
-                        .setBuffer(buffer)
-                    const scaleSampler = this.doc.createAnimationSampler()
-                        .setInput(scaleTimeAcc).setOutput(scaleAcc).setInterpolation('LINEAR')
-                    const scaleChannel = this.doc.createAnimationChannel()
-                        .setSampler(scaleSampler).setTargetNode(node).setTargetPath('scale')
-
-                    anim.addSampler(scaleSampler).addChannel(scaleChannel)
-                }
-            })
-        })
-        this._modified = true
-        return this;
-    }
-
-    /** Every node of the exported scene tree, keyed by the scene path it came from.
-     *
-     *  The glTF tree mirrors the SceneNode tree one for one: `_sceneNodeToGLTFNode()` makes a
-     *  container node per SceneNode and hangs the node's geometry off it as a child. The two
-     *  kinds are told apart structurally rather than by name — **a geometry node carries a
-     *  mesh and a container never does** — so this needs no agreement about the
-     *  `${name}_shape_0` convention, only about the shape of the tree.
-     *
-     *  Keys match `SceneNode.path()`: the root is always `Scene`, each segment is
-     *  URI-encoded, and duplicate siblings carry a `[i]` suffix.
-     */
-    private _nodesByScenePath(): Map<string, any>
-    {
-        const out = new Map<string, any>()
-        const scene = this.doc.getRoot().listScenes()[0]
-        if (!scene) { return out }
-
-        /*  The scene's own children are the exported roots. There is one in every GLB the
-            Modeler writes (the scene root, named 'root'), and `SceneNode.path()` calls it
-            'Scene' whatever it was named — so map it to that. Anything beyond the first is a
-            GLB assembled some other way and is keyed by its own name instead. */
-        const roots = scene.listChildren().filter((n: any) => !n.getMesh())
-
-        const walk = (node: any, path: string): void =>
-        {
-            out.set(path, node)
-            const children = node.listChildren().filter((c: any) => !c.getMesh())
-            const names = siblingDisplayNames(children.map((c: any) => c.getName()))
-            children.forEach((child: any, i: number) =>
-                walk(child, `${path}/${encodeURIComponent(names[i])}`))
-        }
-
-        roots.forEach((rootNode: any, i: number) =>
-            walk(rootNode, i === 0 ? encodeURIComponent('Scene') : encodeURIComponent(rootNode.getName())))
-
-        return out
-    }
-
-    /** The glTF node a layout transform belongs to.
-     *
-     *  By scene path first (see _nodesByScenePath). The name lookup behind it is the old
-     *  behaviour, kept for a SceneNode that cannot answer `path()` and for a GLB that was not
-     *  written from this scene — it is wrong for duplicate names, which is why the caller
-     *  warns when two transforms land on one node. */
-    private _resolveTargetNode(sceneNode: any, byPath: Map<string, any>, byName: Map<string, any>): any
-    {
-        const path = (typeof sceneNode?.path === 'function') ? sceneNode.path() : undefined
-        if (path && byPath.has(path)) { return byPath.get(path) }
-        return byName.get(sceneNode?.name)
+        // the layout clips are two fixed views of the model, not authored animations: no extras
+        return this.addAnimationData(animations, { extras: false })
     }
 
     //// INSTRUCTABLES ////
@@ -440,13 +294,11 @@ export class GLTFBuilder
      *  artefact in Blender or <model-viewer>. Archiyou's own viewer reads
      *  `extras.instruct.steps[i].tStart` and seeks, so it loses nothing by sharing.
      *
-     *  ## What the animation can and cannot say
+     *  ## What the animation says
      *
-     *  glTF animates translation, rotation, scale and weights — and nothing else. It cannot
-     *  hide a part and it cannot recolour one. So the movie shows every part at all times, and
-     *  a part that arrives in step 5 is PARKED at its approach position until then, which is
-     *  what makes the whole thing read as an assembly rather than as a finished model with one
-     *  twitching component. Hiding and highlighting are the viewer's job, off `extras.instruct`.
+     *  Where every part is over the manual (animator/instruct.ts): parked at its approach until
+     *  its step, laid out where a step lays it out. Hiding and highlighting per step stay the
+     *  viewer's job, off `extras.instruct`.
      */
     async addInstruct(data: any, options?: { cameras?: boolean }): Promise<this>
     {
@@ -457,7 +309,13 @@ export class GLTFBuilder
         const steps = data?.steps ?? []
         if (steps.length)
         {
-            this._addInstructAnimation(data)
+            const nodesByPath = this._nodesByScenePath()
+            const animation = instructToAnimation(data, path =>
+            {
+                const node = nodesByPath.get(path)
+                return node ? this._centreOfNode(node) ?? undefined : undefined
+            })
+            this._bake(animation)
             if (options?.cameras !== false) { this._addInstructCameras(data) }
         }
 
@@ -467,214 +325,412 @@ export class GLTFBuilder
         return this
     }
 
-    /** The one clip. Targets nodes by scene path — see addAnimations() for why a name will
-     *  not do.
-     *
-     *  ## One track per part, not one per event
-     *
-     *  A part can be asked to be in two places over a manual: laid out in a row for the "here
-     *  is what you need" step, and sliding into the assembly for the step that fits it. glTF
-     *  allows exactly ONE channel per node per target path in an animation, so those cannot be
-     *  written as two independent motions — they have to be resolved into a single position
-     *  track over the whole timeline first, which is what _instructTrack() does.
-     */
-    private _addInstructAnimation(data: any): void
+    //// THE BAKER ////
+
+    /** One clip for one animation. False when it came out empty (nothing it names is in the
+     *  file, or nothing moves): glTF requires a clip to have channels, so none is written. */
+    private _bake(data: AnimationData): boolean
     {
-        const steps = data.steps ?? []
-        const nodesByPath = this._nodesByScenePath()
+        const root = this.doc.getRoot()
 
-        /*  Every part any step has an opinion about. A part no step lays out or moves stays
-            where the model has it and needs no channel at all. */
-        const paths = [...new Set<string>(steps.flatMap((step: any) => [
-            ...(step.placements ?? []).map((p: any) => p.path),
-            ...((step.move && step.subject?.length) ? step.subject : []),
-        ]))]
-
-        if (!paths.length) { return }
-
-        const buffer = this.doc.getRoot().listBuffers()[0] ?? this.doc.createBuffer()
-        const anim = this.doc.createAnimation(data.name ?? 'instruct')
-
-        paths.forEach((path: string) =>
+        if (root.listAnimations().some(a => a.getName() === data.name))
         {
-            const node = nodesByPath.get(path)
+            console.warn(`GLTFBuilder: the file already has an animation "${data.name}", so a second one `
+                + `of that name was not written.`)
+            return false
+        }
+
+        /*  Targets are resolved by SCENE PATH, not by name.
+            `SceneNode.name` is not unique among siblings — four legs of a table are four nodes
+            all called `leg`, and the glTF node is created with that raw name — so a name-keyed
+            Map kept only the last of them and every one of the four transforms landed on that
+            single node: three legs never moved and one moved four times. Uniqueness lives in
+            `SceneNode.path()` (the `name[i]` sibling-suffix rule), which is also what the
+            viewer keys its object map on. The name is a fallback for a GLB that was not
+            written from this scene, and wrong for duplicate names, hence the warning below. */
+        const nodesByPath = this._nodesByScenePath()
+        const nodesByName = new Map<string, GltfNode>(
+            root.listNodes().map(node => [node.getName(), node] as [string, GltfNode]))
+
+        const nodeOf = (path: string): GltfNode | undefined =>
+            nodesByPath.get(path) ?? nodesByName.get(decodeURIComponent(path.split('/').pop() ?? path))
+
+        const buffer = root.listBuffers()[0] ?? this.doc.createBuffer()
+        const anim = this.doc.createAnimation(data.name)
+        const duration = data.duration
+        const posed = new Set<GltfNode>()
+        const visibility = new Map<GltfNode, Array<Array<VisibleKey>>>()
+
+        data.tracks.forEach(track =>
+        {
+            const node = nodeOf(track.path)
             if (!node) { return }
 
-            const authored = node.getTranslation() as [number, number, number]
-            const { initial, poses } = this._instructTrack(path, steps, authored)
-
-            this._addInstructTranslation(anim, buffer, node, initial, poses, steps, data.duration, authored)
-            this._addInstructRotation(anim, buffer, node, initial, poses, steps, data.duration)
-        })
-    }
-
-    /** Where one part is during each step: its local translation and rotation, in order.
-     *
-     *  Three things can put it somewhere other than where the model has it:
-     *
-     *   - a `layout()` places it, as a rigid transform about its own centre. The node sits at
-     *     the origin with the geometry hanging off it at the part's centre (meshup writes it
-     *     that way), so `p' = R(p − centre) + position` becomes node rotation `R` and node
-     *     translation `position − R·centre`.
-     *   - it is the subject of a step with a `move()`: it ARRIVES during that step, so it
-     *     starts one `distance` back along the motion.
-     *   - before that step it is parked at that same approach position — which is what makes
-     *     the clip read as an assembly rather than as a finished model with one twitching
-     *     component, since glTF cannot hide anything.
-     */
-    private _instructTrack(path: string, steps: Array<any>, authored: [number, number, number]):
-        { initial: InstructPose, poses: Array<InstructPose> }
-    {
-        const moves = steps.filter((step: any) => step.move && step.subject?.includes(path))
-        const arrival = moves.length ? steps.indexOf(moves[0]) : -1
-
-        /*  One approach per part. A part that is the subject of two moving steps would have to
-            leave and arrive twice, which no manual means — and there is one track per part, so
-            there is nowhere to put a second departure anyway. */
-        if (moves.length > 1)
-        {
-            console.warn(`GLTFBuilder::addInstruct(): "${path}" moves in more than one step. `
-                + `Only the first move is animated; the later ones are step data only.`)
-        }
-
-        const approach = (arrival < 0) ? authored : this._subtract(
-            authored, this._scaleVector(moves[0].move.direction, moves[0].move.distance))
-
-        /** Where the part sits at the END of a step. `-1` asks where it sits before the first
-         *  one — parked at its approach position, or laid out if the first step lays it out. */
-        const poseAfter = (index: number): InstructPose =>
-        {
-            const step = steps[Math.max(index, 0)]
-            const placement = (step?.placements ?? []).find((p: any) => p.path === path)
-            const interpolation = (step?.move?.interpolation ?? 'easeInOut') as LayoutAnimationInterpolation
-
-            if (placement)
+            if (track.pose?.length)
             {
-                const rotation = placement.rotation as [number, number, number, number]
-                return {
-                    translation: this._worldToGltfTranslation(this._subtract(
-                        placement.position, this._rotatePoint(rotation, placement.centre))),
-                    // glTF requires unit quaternions on a rotation channel; a layout hands
-                    // its own back raw
-                    rotation: this._normalizeQuaternion(this._worldToGltfQuaternion(rotation)),
-                    interpolation,
+                /*  Two pose tracks on one node means the resolution above failed to tell two
+                    scene nodes apart. The channels would stack and the result would be wrong in a
+                    way that looks like a layout bug, so say so. */
+                if (posed.has(node))
+                {
+                    console.warn(`GLTFBuilder: animation "${data.name}" targets glTF node "${node.getName()}" `
+                        + `more than once — two scene nodes resolved to it. Their keyframes will stack. `
+                        + `This usually means the GLB was not written from the scene these came from.`)
                 }
+                posed.add(node)
+                this._bakePose(anim, buffer, node, track, duration)
             }
 
-            return {
-                // before its own step, and at the end of every step before it, it is parked
-                translation: (arrival >= 0 && index < arrival) ? approach : authored,
-                rotation: IDENTITY_QUATERNION,
-                interpolation,
+            if (track.visible?.length)
+            {
+                this._meshNodesUnder(node).forEach(mesh =>
+                    visibility.set(mesh, [...(visibility.get(mesh) ?? []), track.visible!]))
             }
+
+            if (track.color?.length || track.opacity?.length)
+            {
+                this._bakeStyle(anim, buffer, node, track, duration)
+            }
+        })
+
+        visibility.forEach((lists, mesh) => this._bakeVisibility(anim, buffer, mesh, lists, duration))
+
+        if (data.camera?.keys?.length) { this._bakeCamera(anim, buffer, data) }
+
+        if (!anim.listChannels().length)
+        {
+            anim.dispose()
+            return false
         }
 
-        return { initial: poseAfter(-1), poses: steps.map((_: any, i: number) => poseAfter(i)) }
+        this._modified = true
+        return true
     }
 
-    /** The position channel for one part: hold, then ease across the step that changes it. */
-    private _addInstructTranslation(anim: any, buffer: any, node: any,
-        initial: InstructPose, poses: Array<InstructPose>, steps: Array<any>, duration: number,
-        authored: [number, number, number]): void
+    /** The node's translation, rotation and scale over time, sampled as one rigid transform.
+     *
+     *  A pose turns and scales the part about its own centre `c` and moves the centre to
+     *  `position`. The part's geometry hangs off its container node (meshup writes it that
+     *  way), so for a container at its authored translation `a` that is node rotation `R`,
+     *  scale `S` and translation
+     *
+     *      position + R·S·(a − c)
+     *
+     *  Sampled TOGETHER rather than channel by channel: interpolating translation and rotation
+     *  apart makes a turning part swing off the path its centre is given. So a segment that
+     *  turns gets eased samples even when it is linear. Rotation is eased like translation. */
+    private _bakePose(anim: Animation, buffer: any, node: GltfNode, track: TrackData, duration: number): void
     {
-        const times: Array<number> = []
-        const values: Array<number> = []
+        const authored = node.getTranslation() as Vec3
+        const centre = track.centre ?? this._centreOfNode(node) ?? authored
 
-        let previous = initial.translation
-        times.push(0)
-        values.push(...previous)
+        const keys = (track.pose ?? []).map(k => ({
+            t: k.t,
+            easing: k.easing,
+            value: {
+                position: k.position ?? centre,
+                rotation: normalizeQuat(k.rotation ?? IDENTITY_QUATERNION),
+                scale: k.scale ?? [1, 1, 1],
+            } as FullPose,
+        }))
 
-        poses.forEach((pose, i) =>
+        const turns = (a: FullPose, b: FullPose) =>
+            !isSameQuat(a.rotation, b.rotation) || !isSameVec(a.scale, b.scale)
+
+        const baked = bakeKeys<FullPose>(keys, {
+            same: (a, b) => isSameVec(a.position, b.position) && !turns(a, b),
+            interpolate: (a, b, e) => ({
+                position: lerpVec(a.position, b.position, e),
+                rotation: slerp(a.rotation, b.rotation, e),
+                scale: lerpVec(a.scale, b.scale, e),
+            }),
+            samples: (a, b) => (b.easing === 'linear' && turns(a.value, b.value))
+                ? EASED_KEYFRAME_SAMPLE_COUNT
+                : sampleCount(b.easing),
+            duration,
+        })
+
+        const offset = subtract(authored, centre)
+        const translations = baked.values.map(p => add(p.position, rotatePoint(p.rotation, multiplyVec(p.scale, offset))))
+        const rotations = baked.values.map(p => p.rotation)
+        const scales = baked.values.map(p => p.scale)
+
+        const writeTranslation = translations.some(t => !isSameVec(t, authored))
+        const writeRotation = rotations.some(r => !isIdentityQuat(r))
+        const writeScale = scales.some(s => !isSameVec(s, [1, 1, 1]))
+        if (!writeTranslation && !writeRotation && !writeScale) { return }
+
+        const input = this._accessor(buffer, 'SCALAR', baked.times)
+
+        if (writeRotation) { this._channel(anim, input, this._accessor(buffer, 'VEC4', rotations.flat()), node, 'rotation') }
+        if (writeTranslation) { this._channel(anim, input, this._accessor(buffer, 'VEC3', translations.flat()), node, 'translation') }
+        if (writeScale) { this._channel(anim, input, this._accessor(buffer, 'VEC3', scales.flat()), node, 'scale') }
+    }
+
+    /** A geometry node shown and hidden: a STEP scale channel, its own scale or HIDDEN_SCALE.
+     *  Several tracks can reach one mesh (a layer hidden while one of its parts is hidden too):
+     *  it is visible while all of them say so. Before a track's first key, its first value
+     *  holds. */
+    private _bakeVisibility(anim: Animation, buffer: any, mesh: GltfNode, lists: Array<Array<VisibleKey>>, duration: number): void
+    {
+        const sorted = lists.map(keys => [...keys].sort((a, b) => a.t - b.t))
+        const valueAt = (keys: Array<VisibleKey>, t: number) =>
+            keys.reduce((value, k) => (k.t <= t) ? k.value : value, keys[0].value)
+        const visibleAt = (t: number) => sorted.every(keys => valueAt(keys, t))
+
+        const times = [...new Set([0, ...sorted.flatMap(keys => keys.map(k => k.t))])]
+            .filter(t => t >= 0 && t <= duration)
+            .sort((a, b) => a - b)
+
+        // STEP: a sample only where the value changes, and one at the end so the clip is long enough
+        const changes = times.reduce((acc, t) =>
         {
-            if (this._isSameVector(pose.translation, previous)) { return }
+            const visible = visibleAt(t)
+            return (acc.length && acc[acc.length - 1].visible === visible) ? acc : [...acc, { t, visible }]
+        }, [] as Array<{ t: number, visible: boolean }>)
 
-            // held where it was until this step starts…
-            this._pushSample(times, values, steps[i].tStart, previous)
+        if (changes.every(c => c.visible)) { return }
 
-            // …then across it, with the easing baked into the samples (see addAnimations)
-            const progress = this._createAnimationProgressSamples(pose.interpolation)
-            const from = previous
-            progress.forEach((p, s) =>
+        const last = changes[changes.length - 1]
+        const samples = (last.t < duration) ? [...changes, { t: duration, visible: last.visible }] : changes
+
+        const own = mesh.getScale() as Vec3
+        const values = samples.flatMap(s => s.visible ? own : own.map(v => v * HIDDEN_SCALE))
+
+        this._channel(anim, this._accessor(buffer, 'SCALAR', samples.map(s => s.t)),
+            this._accessor(buffer, 'VEC3', values), mesh, 'scale', 'STEP')
+    }
+
+    /** Colour and opacity of a part, as KHR_animation_pointer channels on its materials'
+     *  baseColorFactor: RGB from the colour keys, A from the opacity keys times the
+     *  material's own alpha.
+     *
+     *  Colour goes to the faces (or to the line-work of a part that has no faces); opacity to
+     *  everything the part draws, its edges included, so edges fade with their faces. A
+     *  material another part shares is cloned first, so recolouring one part never recolours
+     *  another. */
+    private _bakeStyle(anim: Animation, buffer: any, node: GltfNode, track: TrackData, duration: number): void
+    {
+        const { faces, lines, edges } = this._materialsUnder(node)
+        const colourTargets = new Set(faces.length ? faces : lines)
+
+        const colourKeysOf = (own: Vec3) => (track.color ?? []).map(k => ({
+            t: k.t, easing: k.easing, value: k.value ? hexToLinear(k.value) as Array<number> : own,
+        }))
+        const opacityKeys = (track.opacity ?? []).map(k => ({
+            t: k.t, easing: k.easing, value: [Math.min(1, Math.max(0, k.value))],
+        }))
+
+        const vecOptions = {
+            same: (a: Array<number>, b: Array<number>) => isSameVec(a, b),
+            interpolate: (a: Array<number>, b: Array<number>, e: number) => lerpVec(a, b, e),
+            duration,
+        }
+        const opacity = opacityKeys.length ? bakeKeys<Array<number>>(opacityKeys, vecOptions) : null
+        const clamp = (v: number) => Math.min(1, Math.max(0, v))
+
+        const materials = [...new Set([...faces, ...lines, ...edges])]
+        materials.forEach(material =>
+        {
+            const base = material.getBaseColorFactor() as [number, number, number, number]
+            const own: Vec3 = [base[0], base[1], base[2]]
+            const colour = (track.color?.length && colourTargets.has(material))
+                ? bakeKeys<Array<number>>(colourKeysOf(own), vecOptions)
+                : null
+            if (!colour && !opacity) { return }
+
+            const times = [...new Set([...(colour?.times ?? []), ...(opacity?.times ?? [])])].sort((a, b) => a - b)
+            const rgba = times.map(t =>
             {
-                this._pushSample(times, values,
-                    steps[i].tStart + (steps[i].tEnd - steps[i].tStart) * (s / (progress.length - 1)),
-                    [
-                        this._lerpNumber(from[0], pose.translation[0], p),
-                        this._lerpNumber(from[1], pose.translation[1], p),
-                        this._lerpNumber(from[2], pose.translation[2], p),
-                    ])
+                const rgb = colour ? sampleAt(colour, t).map(clamp) : own
+                const alpha = base[3] * (opacity ? clamp(sampleAt(opacity, t)[0]) : 1)
+                return [rgb[0], rgb[1], rgb[2], alpha]
             })
 
-            previous = pose.translation
+            if (rgba.every(v => isSameVec(v, base, 1e-6))) { return }
+            if (rgba.some(v => v[3] < 1)) { material.setAlphaMode('BLEND') }
+
+            const channel = this._channel(anim, this._accessor(buffer, 'SCALAR', times),
+                this._accessor(buffer, 'VEC4', rgba.flat()), null, POINTER_TARGET_PATH)
+            channel.setExtension(KHR_ANIMATION_POINTER, this._pointerExtension().createPointer(material, BASE_COLOR_FACTOR))
+        })
+    }
+
+    /** An animated camera node, `<animation>-camera`, from the animation's camera keys. */
+    private _bakeCamera(anim: Animation, buffer: any, data: AnimationData): void
+    {
+        const cam = data.camera!
+        const scene = this.doc.getRoot().listScenes()[0]
+        if (!scene) { return }
+
+        const keys = cam.keys.map(k => ({ t: k.t, easing: k.easing as Easing, value: [...k.position, ...k.lookAt] }))
+        const baked = bakeKeys<Array<number>>(keys, {
+            same: (a, b) => isSameVec(a, b),
+            interpolate: (a, b, e) => lerpVec(a, b, e),
+            duration: data.duration,
         })
 
-        /*  A part that never departs from where the model has it needs no channel. One that
-            never MOVES but sits somewhere else the whole time — a single-step manual that only
-            lays its parts out — needs a constant one, because a glTF animation is the only
-            place a file can say a part is anywhere but where its node puts it. */
-        if (times.length < 2 && this._isSameVector(previous, authored)) { return }
+        const eyes = baked.values.map(v => [v[0], v[1], v[2]] as Vec3)
+        const rotations = baked.values.map(v => lookAtQuaternion([v[0], v[1], v[2]], [v[3], v[4], v[5]]))
+        const first = cam.keys[0]
+        const distance = Math.hypot(...subtract(first.lookAt, first.position)) || cam.radius || 1
 
-        this._pushSample(times, values, duration, previous)
+        const camera = this._createCamera(`${data.name}-camera`, cam.projection, cam.radius || 1, distance)
+        const node = this.doc.createNode(`${data.name}-camera`)
+            .setCamera(camera)
+            .setTranslation(eyes[0])
+            .setRotation(rotations[0])
+        scene.addChild(node)
 
-        this._addInstructChannel(anim, buffer, node, 'translation', 'VEC3', times, values)
+        const input = this._accessor(buffer, 'SCALAR', baked.times)
+        this._channel(anim, input, this._accessor(buffer, 'VEC3', eyes.flat()), node, 'translation')
+        this._channel(anim, input, this._accessor(buffer, 'VEC4', rotations.flat()), node, 'rotation')
     }
 
-    /** The rotation channel, when a layout turns the part. Written as two keyframes per
-     *  change and left to the viewer to slerp: glTF requires LINEAR on a rotation channel to
-     *  be spherical, so pre-baked samples would only make a worse arc out of it. */
-    private _addInstructRotation(anim: any, buffer: any, node: any,
-        initial: InstructPose, poses: Array<InstructPose>, steps: Array<any>, duration: number): void
+    private _accessor(buffer: any, type: 'SCALAR' | 'VEC3' | 'VEC4', values: Array<number>)
     {
-        if ([initial, ...poses].every(pose => this._isIdentityQuaternion(pose.rotation))) { return }
-
-        const times: Array<number> = []
-        const values: Array<number> = []
-
-        let previous = initial.rotation
-        times.push(0)
-        values.push(...previous)
-
-        poses.forEach((pose, i) =>
-        {
-            if (this._isSameQuaternion(pose.rotation, previous)) { return }
-
-            this._pushSample(times, values, steps[i].tStart, previous)
-            this._pushSample(times, values, steps[i].tEnd, pose.rotation)
-            previous = pose.rotation
-        })
-
-        // some pose turns it, or the every() above would have returned — so always a channel,
-        // constant when the turn never comes undone
-        this._pushSample(times, values, duration, previous)
-
-        this._addInstructChannel(anim, buffer, node, 'rotation', 'VEC4', times, values)
+        return this.doc.createAccessor().setType(type).setArray(new Float32Array(values) as any).setBuffer(buffer)
     }
 
-    /** Append a keyframe, unless the timeline is already there — glTF sampler inputs have to
-     *  increase strictly, and two steps of zero length between the same two poses would
-     *  otherwise write the same time twice. */
-    private _pushSample(times: Array<number>, values: Array<number>,
-        time: number, value: Array<number>): void
+    private _channel(anim: Animation, input: any, output: any, node: GltfNode | null, path: string,
+        interpolation: 'LINEAR' | 'STEP' = 'LINEAR')
     {
-        if (time <= times[times.length - 1]) { return }
-        times.push(time)
-        values.push(...value)
-    }
-
-    private _addInstructChannel(anim: any, buffer: any, node: any, target: string,
-        type: 'VEC3' | 'VEC4', times: Array<number>, values: Array<number>): void
-    {
-        const input = this.doc.createAccessor()
-            .setType('SCALAR').setArray(new Float32Array(times) as any).setBuffer(buffer)
-        const output = this.doc.createAccessor()
-            .setType(type).setArray(new Float32Array(values) as any).setBuffer(buffer)
         const sampler = this.doc.createAnimationSampler()
-            .setInput(input).setOutput(output).setInterpolation('LINEAR')
+            .setInput(input).setOutput(output).setInterpolation(interpolation)
         const channel = this.doc.createAnimationChannel()
-            .setSampler(sampler).setTargetNode(node).setTargetPath(target as any)
-
+            .setSampler(sampler).setTargetPath(path as any)
+        if (node) { channel.setTargetNode(node) }
         anim.addSampler(sampler).addChannel(channel)
+        return channel
     }
+
+    /** Created on first use only: a file without colour or opacity channels does not list the
+     *  extension. */
+    private _pointerExtension(): AnimationPointerExtension
+    {
+        const existing = this.doc.getRoot().listExtensionsUsed()
+            .find(e => e.extensionName === KHR_ANIMATION_POINTER) as AnimationPointerExtension | undefined
+        return existing ?? this.doc.createExtension(AnimationPointerExtension).setRequired(false)
+    }
+
+    //// THE GLTF TREE ////
+
+    /** Every node of the exported scene tree, keyed by the scene path it came from.
+     *
+     *  The glTF tree mirrors the SceneNode tree one for one: `_sceneNodeToGLTFNode()` makes a
+     *  container node per SceneNode and hangs the node's geometry off it as a child. The two
+     *  kinds are told apart structurally rather than by name — **a geometry node carries a
+     *  mesh and a container never does** — so this needs no agreement about the
+     *  `${name}_shape_0` convention, only about the shape of the tree.
+     *
+     *  Keys match `SceneNode.path()`: the root is always `Scene`, each segment is
+     *  URI-encoded, and duplicate siblings carry a `[i]` suffix.
+     */
+    private _nodesByScenePath(): Map<string, GltfNode>
+    {
+        const out = new Map<string, GltfNode>()
+        const scene = this.doc.getRoot().listScenes()[0]
+        if (!scene) { return out }
+
+        /*  The scene's own children are the exported roots. There is one in every GLB the
+            Modeler writes (the scene root, named 'root'), and `SceneNode.path()` calls it
+            'Scene' whatever it was named — so map it to that. Anything beyond the first is a
+            GLB assembled some other way (or a camera node an animation added) and is keyed by
+            its own name instead. */
+        const roots = scene.listChildren().filter(n => !n.getMesh())
+
+        const walk = (node: GltfNode, path: string): void =>
+        {
+            out.set(path, node)
+            const children = node.listChildren().filter(c => !c.getMesh())
+            const names = siblingDisplayNames(children.map(c => c.getName()))
+            children.forEach((child, i) =>
+                walk(child, `${path}/${encodeURIComponent(names[i])}`))
+        }
+
+        roots.forEach((rootNode, i) =>
+            walk(rootNode, i === 0 ? encodeURIComponent('Scene') : encodeURIComponent(rootNode.getName())))
+
+        return out
+    }
+
+    /** The geometry nodes of a subtree: the node itself when it carries a mesh, and every
+     *  descendant that does. */
+    private _meshNodesUnder(node: GltfNode): Array<GltfNode>
+    {
+        return [
+            ...(node.getMesh() ? [node] : []),
+            ...node.listChildren().flatMap(child => this._meshNodesUnder(child)),
+        ]
+    }
+
+    /** Centre of a subtree's geometry in world coordinates, from the POSITION bounds of its
+     *  meshes. Assumes, as meshup writes them, that the containers carry translations only and
+     *  that every container above this one sits at the origin. Null when there is no geometry
+     *  under it. */
+    private _centreOfNode(node: GltfNode): Vec3 | null
+    {
+        const bounds = (n: GltfNode, offset: Vec3): Array<[Vec3, Vec3]> =>
+        {
+            const here = add(offset, n.getTranslation() as Vec3)
+            const own = (n.getMesh()?.listPrimitives() ?? []).flatMap(prim =>
+            {
+                const position = prim.getAttribute('POSITION')
+                if (!position || !position.getCount()) { return [] }
+                return [[add(here, position.getMin([]) as Vec3), add(here, position.getMax([]) as Vec3)] as [Vec3, Vec3]]
+            })
+            return [...own, ...n.listChildren().flatMap(child => bounds(child, here))]
+        }
+
+        const all = bounds(node, [0, 0, 0])
+        if (!all.length) { return null }
+
+        const axis = (i: number) =>
+            (Math.min(...all.map(b => b[0][i])) + Math.max(...all.map(b => b[1][i]))) / 2
+        return [axis(0), axis(1), axis(2)]
+    }
+
+    /** The materials a subtree draws with: faces, line-work, and the edge materials
+     *  EXT_mesh_primitive_edge_visibility hangs off its faces. Each one exclusive to this
+     *  subtree: a material any primitive outside it also uses is cloned, and the clone put on
+     *  the primitives inside. */
+    private _materialsUnder(node: GltfNode): { faces: Array<Material>, lines: Array<Material>, edges: Array<Material> }
+    {
+        const prims = this._meshNodesUnder(node).flatMap(mesh => mesh.getMesh()!.listPrimitives())
+        const inside = new Set<Primitive>(prims)
+        const clones = new Map<Material, Material>()
+
+        const exclusive = (prim: Primitive): Material | null =>
+        {
+            const material = prim.getMaterial()
+            if (!material) { return null }
+
+            const shared = material.listParents().some(p => p instanceof Primitive && !inside.has(p))
+            if (!shared) { return material }
+
+            const clone = clones.get(material) ?? material.clone()
+            clones.set(material, clone)
+            prim.setMaterial(clone)
+            return clone
+        }
+
+        const faces: Array<Material> = []
+        const lines: Array<Material> = []
+        const edges: Array<Material> = []
+
+        prims.forEach(prim =>
+        {
+            const material = exclusive(prim)
+            if (material) { (TRIANGLE_MODES.has(prim.getMode()) ? faces : lines).push(material) }
+
+            const edgeMaterial = (prim.getExtension('EXT_mesh_primitive_edge_visibility') as any)?.edgeMaterial as Material | undefined
+            if (edgeMaterial) { edges.push(edgeMaterial) }
+        })
+
+        return { faces: [...new Set(faces)], lines: [...new Set(lines)], edges: [...new Set(edges)] }
+    }
+
+    //// INSTRUCT CAMERAS ////
 
     /** A camera node per step, so the file means something in Blender and <model-viewer>.
      *
@@ -701,24 +757,7 @@ export class GLTFBuilder
             const distance = Math.hypot(
                 target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]) || radius
 
-            const camera = this.doc.createCamera(`${data.name}-step-${step.number}`)
-
-            if (cam.projection === 'perspective')
-            {
-                camera.setType('perspective').setYFov(45 * Math.PI / 180)
-                    .setZNear(Math.max(distance - radius * 2, distance / 100))
-                    .setZFar(distance + radius * 4)
-            }
-            else
-            {
-                /*  An orthographic camera has no field of view, so its magnification IS the
-                    framing: half the extent it shows, in world units. Sized off the step's own
-                    bbox with a little air. */
-                camera.setType('orthographic')
-                    .setXMag(radius * 1.2).setYMag(radius * 1.2)
-                    .setZNear(Math.max(distance - radius * 4, 0.01))
-                    .setZFar(distance + radius * 4)
-            }
+            const camera = this._createCamera(`${data.name}-step-${step.number}`, cam.projection, radius, distance)
 
             const node = this.doc.createNode(`${data.name}-step-${step.number}-camera`)
                 .setCamera(camera)
@@ -729,6 +768,30 @@ export class GLTFBuilder
         })
     }
 
+    /** A glTF camera framing a sphere of `radius` from `distance` away. An orthographic camera
+     *  has no field of view, so its magnification IS the framing: half the extent it shows, in
+     *  world units, with a little air. */
+    private _createCamera(name: string, projection: string, radius: number, distance: number)
+    {
+        const camera = this.doc.createCamera(name)
+
+        if (projection === 'perspective')
+        {
+            camera.setType('perspective').setYFov(45 * Math.PI / 180)
+                .setZNear(Math.max(distance - radius * 2, distance / 100))
+                .setZFar(distance + radius * 4)
+        }
+        else
+        {
+            camera.setType('orthographic')
+                .setXMag(radius * 1.2).setYMag(radius * 1.2)
+                .setZNear(Math.max(distance - radius * 4, 0.01))
+                .setZFar(distance + radius * 4)
+        }
+
+        return camera
+    }
+
     /** Half the diagonal of a flat [minX,minY,minZ,maxX,maxY,maxZ]. */
     private _bboxRadius(bbox?: Array<number>): number
     {
@@ -736,66 +799,10 @@ export class GLTFBuilder
         return Math.hypot(bbox[3] - bbox[0], bbox[4] - bbox[1], bbox[5] - bbox[2]) / 2
     }
 
-    /** Orientation of a camera at `eye` looking at `target`.
-     *
-     *  A glTF camera looks down its own **-Z** with +Y up, so the node's rotation is the basis
-     *  that maps those onto the world. World up is +Z — the GLB carries the kernel's native
-     *  Z-up (see _worldToGltfTranslation) — with a fallback for looking straight up or down,
-     *  where "up" and the view direction are parallel and the cross product collapses. */
+    /** Orientation of a camera at `eye` looking at `target`. See sampling.lookAtQuaternion(). */
     _lookAtQuaternion(eye: Array<number>, target: Array<number>): [number, number, number, number]
     {
-        const sub = (a: Array<number>, b: Array<number>) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]]
-        const cross = (a: Array<number>, b: Array<number>) =>
-            [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]
-        const norm = (v: Array<number>) =>
-        {
-            const l = Math.hypot(v[0], v[1], v[2])
-            return (l < 1e-9) ? [0, 0, 1] : [v[0]/l, v[1]/l, v[2]/l]
-        }
-
-        const forward = norm(sub(target, eye))
-        const z = [-forward[0], -forward[1], -forward[2]]        // camera looks down -Z
-
-        let up = [0, 0, 1]
-        if (Math.abs(forward[0]*up[0] + forward[1]*up[1] + forward[2]*up[2]) > 0.999)
-        {
-            up = [0, 1, 0]      // looking straight up or down — pick another reference
-        }
-
-        const x = norm(cross(up, z))
-        const y = cross(z, x)
-
-        // rotation matrix [x y z] as columns → quaternion
-        const [m00, m10, m20] = x
-        const [m01, m11, m21] = y
-        const [m02, m12, m22] = z
-        const trace = m00 + m11 + m22
-
-        if (trace > 0)
-        {
-            const sq = Math.sqrt(trace + 1) * 2
-            return this._normalizeQuaternion([
-                (m21 - m12) / sq, (m02 - m20) / sq, (m10 - m01) / sq, sq / 4,
-            ])
-        }
-        if (m00 > m11 && m00 > m22)
-        {
-            const sq = Math.sqrt(1 + m00 - m11 - m22) * 2
-            return this._normalizeQuaternion([
-                sq / 4, (m01 + m10) / sq, (m02 + m20) / sq, (m21 - m12) / sq,
-            ])
-        }
-        if (m11 > m22)
-        {
-            const sq = Math.sqrt(1 + m11 - m00 - m22) * 2
-            return this._normalizeQuaternion([
-                (m01 + m10) / sq, sq / 4, (m12 + m21) / sq, (m02 - m20) / sq,
-            ])
-        }
-        const sq = Math.sqrt(1 + m22 - m00 - m11) * 2
-        return this._normalizeQuaternion([
-            (m02 + m20) / sq, (m12 + m21) / sq, sq / 4, (m10 - m01) / sq,
-        ])
+        return lookAtQuaternion(eye, target)
     }
 
     //// READ-ONLY FUNCTIONS ////
@@ -803,28 +810,19 @@ export class GLTFBuilder
     /** Get data from GLTF binary */
     async readData(gltf: ArrayBuffer | Uint8Array): Promise<ArchiyouData>
     {
-        const io = createNodeIO();
         const buffer = this._convertArrayBufferToUint8Array(gltf);
-        const doc = await io.readBinary(buffer);
+        const doc = await createNodeIO().readBinary(buffer);
         return (doc.getRoot().getAsset()?.extras as any)?.archiyou as ArchiyouData;
     }
 
     //// UTILS ////
-
-    _quaternionFromAxisAngle(axis: Vector, angleDeg: number): Array<number>
-    {
-        let angleRad = toRad(angleDeg);
-        let c = Math.cos(angleRad / 2);
-        let s = Math.sin(angleRad / 2);
-        return [axis.x * s, axis.y * s, axis.z * s, c]; // [X, Y, Z, W] in GLTF
-    }
 
     _convertArrayBufferToUint8Array(buffer: ArrayBuffer | Uint8Array): Uint8Array
     {
         return (buffer instanceof ArrayBuffer) ? new Uint8Array(buffer) : buffer;
     }
 
-    // The GLB now carries the kernel's native Z-up coordinates unchanged
+    // The GLB carries the kernel's native Z-up coordinates unchanged
     // (meshup GLTFBuilder exports Z-up; the viewer is configured Z-up via
     // VIEWER_MODEL_COORDSYSTEM). Layouter transforms are already in that same
     // Z-up world space, so animation keyframes pass through without conversion.
@@ -837,260 +835,26 @@ export class GLTFBuilder
     {
         return rotation
     }
+}
 
-    _createAnimationTimeSamples(duration: number, interpolation: LayoutAnimationInterpolation): Float32Array<ArrayBuffer>
-    {
-        const sampleCount = this._animationSampleCount(interpolation)
+/** A layout as an animation: from where the model has every part to where the layout puts
+ *  it, over `duration`, eased. */
+export function layoutToAnimation(result: LayoutTransformationResult, options: LayoutAnimationOptions = {}): AnimationData
+{
+    const duration = options.duration ?? 1.0
+    const easing = (options.interpolation ?? options.tween ?? 'easeInOut') as Easing
 
-        if (sampleCount === 2)
-        {
-            return new Float32Array([0, duration])
-        }
-
-        return new Float32Array(
-            Array.from({ length: sampleCount }, (_, index) => (duration * index) / (sampleCount - 1))
-        )
-    }
-
-    _createAnimationProgressSamples(interpolation: LayoutAnimationInterpolation): Array<number>
-    {
-        const sampleCount = this._animationSampleCount(interpolation)
-
-        if (sampleCount === 2)
-        {
-            return [0, 1]
-        }
-
-        return Array.from({ length: sampleCount }, (_, index) =>
-        {
-            if (index === 0) { return 0 }
-            if (index === sampleCount - 1) { return 1 }
-
-            const time = index / (sampleCount - 1)
-            return this._applyAnimationInterpolation(time, interpolation)
-        })
-    }
-
-    _createVector3AnimationSamples(
-        start: [number, number, number],
-        end: [number, number, number],
-        interpolation: LayoutAnimationInterpolation,
-    ): Float32Array<ArrayBuffer>
-    {
-        return new Float32Array(
-            this._createAnimationProgressSamples(interpolation).flatMap(progress => [
-                this._lerpNumber(start[0], end[0], progress),
-                this._lerpNumber(start[1], end[1], progress),
-                this._lerpNumber(start[2], end[2], progress),
-            ])
-        )
-    }
-
-    _createQuaternionAnimationSamples(
-        start: [number, number, number, number],
-        end: [number, number, number, number],
-        interpolation: LayoutAnimationInterpolation,
-    ): Float32Array<ArrayBuffer>
-    {
-        return new Float32Array(
-            this._createAnimationProgressSamples(interpolation).flatMap(progress => this._slerpQuaternion(start, end, progress))
-        )
-    }
-
-    _animationSampleCount(interpolation: LayoutAnimationInterpolation): number
-    {
-        switch (interpolation)
-        {
-            case 'linear':
-                return 2
-            case 'spring':
-                return SPRING_KEYFRAME_SAMPLE_COUNT
-            default:
-                return EASED_KEYFRAME_SAMPLE_COUNT
-        }
-    }
-
-    _applyAnimationInterpolation(progress: number, interpolation: LayoutAnimationInterpolation): number
-    {
-        const t = Math.min(1, Math.max(0, progress))
-
-        switch (interpolation)
-        {
-            case 'easeIn':
-                return t * t * t
-            case 'easeOut':
-                return 1 - Math.pow(1 - t, 3)
-            case 'easeInOut':
-                return t < 0.5
-                    ? 4 * t * t * t
-                    : 1 - Math.pow(-2 * t + 2, 3) / 2
-            case 'spring':
-            {
-                if (t === 0 || t === 1)
-                {
-                    return t
-                }
-
-                const c4 = (2 * Math.PI) / 3
-                return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1
-            }
-            case 'linear':
-            default:
-                return t
-        }
-    }
-
-    _lerpNumber(start: number, end: number, progress: number): number
-    {
-        return start + (end - start) * progress
-    }
-
-    _isZeroVector(value: [number, number, number]): boolean
-    {
-        return value.every(component => Math.abs(component) < 1e-9)
-    }
-
-    _isIdentityScale(value: [number, number, number]): boolean
-    {
-        return value.every(component => Math.abs(component - 1) < 1e-9)
-    }
-
-    _isIdentityQuaternion(value: [number, number, number, number]): boolean
-    {
-        return Math.abs(value[0]) < 1e-9 &&
-            Math.abs(value[1]) < 1e-9 &&
-            Math.abs(value[2]) < 1e-9 &&
-            Math.abs(value[3] - 1) < 1e-9
-    }
-
-    _addPoint(
-        pointA: [number, number, number],
-        pointB: [number, number, number],
-    ): [number, number, number]
-    {
-        return [pointA[0] + pointB[0], pointA[1] + pointB[1], pointA[2] + pointB[2]]
-    }
-
-    _subtract(
-        pointA: [number, number, number],
-        pointB: [number, number, number],
-    ): [number, number, number]
-    {
-        return [pointA[0] - pointB[0], pointA[1] - pointB[1], pointA[2] - pointB[2]]
-    }
-
-    _scaleVector(value: Array<number>, factor: number): [number, number, number]
-    {
-        return [value[0] * factor, value[1] * factor, value[2] * factor]
-    }
-
-    _isSameVector(a: Array<number>, b: Array<number>): boolean
-    {
-        return a.every((component, i) => Math.abs(component - b[i]) < 1e-9)
-    }
-
-    /** Quaternions are double-covered — q and −q are the same rotation — so compare the
-     *  rotation, not the four numbers. */
-    _isSameQuaternion(a: Array<number>, b: Array<number>): boolean
-    {
-        return Math.abs(a.reduce((dot, component, i) => dot + component * b[i], 0)) > 1 - 1e-9
-    }
-
-    /** A point turned by a quaternion: `q * (0,p) * q⁻¹`, written out. */
-    _rotatePoint(
-        quaternion: [number, number, number, number],
-        point: [number, number, number],
-    ): [number, number, number]
-    {
-        const [x, y, z, w] = this._normalizeQuaternion(quaternion)
-        const [px, py, pz] = point
-
-        // t = 2 * (q.xyz × p)
-        const tx = 2 * (y * pz - z * py)
-        const ty = 2 * (z * px - x * pz)
-        const tz = 2 * (x * py - y * px)
-
-        return [
-            px + w * tx + (y * tz - z * ty),
-            py + w * ty + (z * tx - x * tz),
-            pz + w * tz + (x * ty - y * tx),
-        ]
-    }
-
-    _multiplyQuaternion(
-        quaternionA: [number, number, number, number],
-        quaternionB: [number, number, number, number],
-    ): [number, number, number, number]
-    {
-        const [ax, ay, az, aw] = quaternionA
-        const [bx, by, bz, bw] = quaternionB
-
-        return [
-            aw * bx + ax * bw + ay * bz - az * by,
-            aw * by - ax * bz + ay * bw + az * bx,
-            aw * bz + ax * by - ay * bx + az * bw,
-            aw * bw - ax * bx - ay * by - az * bz,
-        ]
-    }
-
-    _slerpQuaternion(
-        start: [number, number, number, number],
-        end: [number, number, number, number],
-        progress: number,
-    ): [number, number, number, number]
-    {
-        let [sx, sy, sz, sw] = start
-        let [ex, ey, ez, ew] = end
-        let dot = sx * ex + sy * ey + sz * ez + sw * ew
-
-        if (dot < 0)
-        {
-            ex = -ex
-            ey = -ey
-            ez = -ez
-            ew = -ew
-            dot = -dot
-        }
-
-        if (dot > 0.9995)
-        {
-            return this._normalizeQuaternion([
-                this._lerpNumber(sx, ex, progress),
-                this._lerpNumber(sy, ey, progress),
-                this._lerpNumber(sz, ez, progress),
-                this._lerpNumber(sw, ew, progress),
-            ])
-        }
-
-        const theta0 = Math.acos(Math.min(1, Math.max(-1, dot)))
-        const sinTheta0 = Math.sin(theta0)
-        const theta = theta0 * progress
-        const sinTheta = Math.sin(theta)
-        const scaleStart = Math.cos(theta) - dot * sinTheta / sinTheta0
-        const scaleEnd = sinTheta / sinTheta0
-
-        return this._normalizeQuaternion([
-            sx * scaleStart + ex * scaleEnd,
-            sy * scaleStart + ey * scaleEnd,
-            sz * scaleStart + ez * scaleEnd,
-            sw * scaleStart + ew * scaleEnd,
-        ])
-    }
-
-    _normalizeQuaternion(value: [number, number, number, number]): [number, number, number, number]
-    {
-        const length = Math.hypot(value[0], value[1], value[2], value[3])
-
-        if (length < 1e-9)
-        {
-            return [0, 0, 0, 1]
-        }
-
-        return [
-            value[0] / length,
-            value[1] / length,
-            value[2] / length,
-            value[3] / length,
-        ]
+    return {
+        name: options.animationName ?? result.name,
+        duration,
+        loop: 'none',
+        tracks: placementsOf(result).map(p => ({
+            path: p.path,
+            centre: p.centre,
+            pose: [
+                { t: 0, easing: 'linear' },
+                { t: duration, position: p.position, rotation: p.rotation, scale: p.scale, easing },
+            ],
+        })),
     }
 }
