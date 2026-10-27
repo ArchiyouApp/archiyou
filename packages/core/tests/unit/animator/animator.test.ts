@@ -155,6 +155,19 @@ describe('baked into the GLB on request', () =>
         expect(extras.animations.map((a: any) => [a.name, a.duration, a.loop])).toEqual([['flyin', 4, 'none'], ['swing', 2, 'pingpong']])
     })
 
+    it('a point of the model is a shape like any other, not a collection of its coordinates', async () =>
+    {
+        // as the workbench has one: a vertex copied into the model, which all() gives along
+        const { result } = await run(MODEL + `
+corner = top.select('V||topleftfront').copy().move(0, 0, 100);
+lift = animator.create('lift').duration(1);
+all().forEach(shape => lift.key(0, shape, {}).key(1, shape, { move: [0, 0, 50] }));
+`, ['default/model/glb?animations=lift'])
+        expect(result.status).toBe('success')
+        expect((result.messages ?? []).map((m: any) => m.message).join('\n')).not.toMatch(/could not make/)
+        expect(clipNames(await glbOf(result))).toEqual(['lift'])
+    })
+
     it('flyin starts every part in stacks in front of the model and ends it where the model has it', async () =>
     {
         const { result } = await run(ANIMATED, ['default/model/glb?animations=flyin'])

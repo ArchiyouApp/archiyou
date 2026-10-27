@@ -934,6 +934,10 @@ export async function animate(args: Args): Promise<number>
     {
         const res = await exec(o.params, `default/model/glb?animations=${encodeURIComponent(animation.name)}`);
         if (failed(res, animation.name)) { return 1; }
+        // the model is made without an animation that cannot be: say why, instead of a GLB without it
+        const notMade = (res.messages ?? []).map((m: any) => String(m.message ?? ''))
+            .find((m: string) => m.startsWith(`Animator: could not make animation "${animation.name}"`));
+        if (notMade) { fail(notMade.replace(/^Animator: /, '')); return 1; }
         const glb = glbOf(res);
         writeFileSync(outFile, glb);
         out(`${animation.name}  ${mb(glb)}  ${round((performance.now() - started) / 1000, 1)}s  → ${outFile}`);

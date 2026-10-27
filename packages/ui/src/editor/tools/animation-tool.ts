@@ -252,6 +252,7 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     const speed = loaded ? status.speed : this._speed;
     const playing = loaded && status.playing;
     const made = this._sweeps.get(row.name);
+    const notMade = carried ? null : this._notMade(row.name);
 
     return html`
         <div class="player">
@@ -293,6 +294,7 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
         </div>
 
         ${made ? html`<p class="hint">${this._madeText(made.report, made.glb.byteLength)}</p>`
+          : notMade ? html`<p class="error">${msg(str`The last run could not make it: ${notMade}`)}</p>`
           : !carried ? html`<p class="hint">${msg('Not in the model yet: the next run makes it.')}</p>` : nothing}
     `;
   }
@@ -580,6 +582,15 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     if (!animationModel.get()) return;
     sendAnimationCommand({ action: 'stop' });
     showAnimationModel(null);
+  }
+
+  /** Why the last run could not make this one, as it said in the console (Animator.resolve);
+   *  null when it said nothing about it. */
+  private _notMade(name: string): string | null
+  {
+    const said = `Animator: could not make animation "${name}": `;
+    const message = (executionResult.get()?.messages ?? []).map(m => m.message ?? '').find(m => m.startsWith(said));
+    return message ? message.slice(said.length) : null;
   }
 
   private _madeText(report: ParamFramesReport, bytes: number): string

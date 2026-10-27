@@ -25,9 +25,19 @@ export interface PartRef
 export function shapesOf(o: any): Array<any>
 {
     if (Array.isArray(o)) { return o.flatMap(item => shapesOf(item)) }
-    if (typeof o?.toArray === 'function') { return o.toArray() }
+    if (isCollection(o)) { return o.toArray() }
     if (o) { return [o] }
     return []
+}
+
+/** A ShapeCollection of either kernel, as modeler/typeguards.ts isKernelShapeCollection() tells
+ *  one. Not any object with a toArray(): a single shape can have one of its own, and a
+ *  vertex's is its coordinates. */
+function isCollection(o: any): boolean
+{
+    if (!o || typeof o !== 'object') { return false }
+    if (typeof o.isShapeCollection === 'function') { return !!o.isShapeCollection() }
+    return o.type === 'ShapeCollection'
 }
 
 /** Resolve a reference against a list of parts.
