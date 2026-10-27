@@ -36,7 +36,7 @@
  * nothing one script was given lingers for another.
  */
 
-import type { RunnerWorker as RunnerWorkerType } from '@archiyou/core';
+import type { RunnerWorker as RunnerWorkerType, ParamFramesData, ParamFramesReport } from '@archiyou/core';
 import type { RunnerScriptExecutionRequest, RunnerScriptExecutionResult } from '@archiyou/core/src/runner/types';
 import type { ConsoleMessage } from '@archiyou/core/src/console/types';
 
@@ -420,6 +420,19 @@ export async function runScript(request: RunnerScriptExecutionRequest, options: 
   {
     if (!options.background) foregroundRuns--;
   }
+}
+
+/**
+ * Merge the GLBs of a parameter sweep's frames into one animated GLB, in the local worker
+ * (core's mergeParamFrameGlbs), so the main thread loads no glTF library for it.
+ */
+export async function mergeParamFrames(
+  frames: Array<ArrayBuffer>,
+  data: ParamFramesData & { values?: Array<Record<string, any>> },
+): Promise<{ glb: ArrayBuffer; report: ParamFramesReport }>
+{
+  const worker = await getWorker();
+  return worker.mergeParamFrames(frames, data);
 }
 
 /**

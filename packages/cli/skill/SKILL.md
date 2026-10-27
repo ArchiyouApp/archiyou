@@ -56,6 +56,8 @@ print('seat area', seat.area());               // shows in the run summary
   GLB only when an output asks (`default/model/glb?animations=flyin`). A standard one is a line,
   `animator.preset('flyin')` (also `build`, `exploded`, `turntable`, `assembly`); your own is keys,
   `a = animator.create('swing').duration(2); a.key(0, door, {}); a.key(2, door, { rotation: [0, 0, 90], pivot: hinge })`.
+  A parameter over time is `animator.create('widths').param('WIDTH', { from: 400, to: 800 })`;
+  `archiyou animate <name>.js --out widths.glb` runs it once per frame and writes the GLB.
 - The mesh kernel is the default. A few primitives (spiral, helix, cone, basePlane) need `--kernel brep`.
 - **Axis convention** (the checks assume it): x is width, y is depth with the front at y = 0 and the
   back positive, z is up, the floor is z = 0.

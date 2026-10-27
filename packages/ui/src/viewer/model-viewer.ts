@@ -10,7 +10,7 @@ import { buildScenegraphPath, executionResult, activePipeline, pipelineModelPath
 import { formatDimensionValue } from './gltf-annotations.js';
 import { scheduleExecution, viewerParamStore, resetCameraCounter,
          instructName, instructStep, setInstructAvailable, clearInstructStep as clearInstructSignal,
-         animationCommands, setAnimationsBaked, setAnimationStatus,
+         animationCommands, animationModel, setAnimationsBaked, setAnimationStatus,
          type AnimationCommand, type AnimationLoopMode, type BakedAnimation } from '@archiyou/editor/src/state/viewer';
 import type { ScriptOutputData } from '@archiyou/core/src/execution/types';
 import type { SceneNodeData } from '@archiyou/core/src/modeler/types';
@@ -182,6 +182,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
     this._pendingInstructName = instructName.get();
     this._pendingInstructStep = instructStep.get();
     this._pendingAnimationCommands = animationCommands.get();
+    this._pendingAnimationModel = animationModel.get();
 
     return html`
       <canvas></canvas>
@@ -288,8 +289,25 @@ export class ModelViewer extends SignalWatcher(LitElement)
       this._dirty = true;
     }
 
+    /*  A model made for an animation (a parameter sweep: its frames are runs of their own,
+        merged into one) shows instead of the run's while it is set; cleared, the run's model
+        comes back. */
+    if (this._pendingAnimationModel !== this._lastAnimationModel && this._renderer)
+    {
+      this._lastAnimationModel = this._pendingAnimationModel;
+      if (this._pendingAnimationModel)
+      {
+        this._lastGlbOutput = { output: this._pendingAnimationModel } as ScriptOutputData;
+        this._loadGlbOutput(this._lastGlbOutput);
+      }
+      else
+      {
+        this._lastGlbOutput = undefined; // loaded again just below
+      }
+    }
+
     const glbOutput = this._pendingGlbOutput;
-    if (glbOutput && glbOutput !== this._lastGlbOutput && this._renderer)
+    if (glbOutput && glbOutput !== this._lastGlbOutput && this._renderer && !this._pendingAnimationModel)
     {
       this._lastGlbOutput = glbOutput;
       this._loadGlbOutput(glbOutput);
@@ -479,6 +497,8 @@ export class ModelViewer extends SignalWatcher(LitElement)
   private _animationData = new Map<string, any>();
   private _animationsBaked: BakedAnimation[] = [];
   private _pendingAnimationCommands: AnimationCommand[] = [];
+  private _pendingAnimationModel: ArrayBuffer | null = null;
+  private _lastAnimationModel: ArrayBuffer | null = null;
   /** The commands sent before this viewer was made are not for it. */
   private _lastAnimationSeq = (() => { const list = animationCommands.get(); return list[list.length - 1]?.seq ?? 0; })();
   /** A command for an animation the GLB does not carry yet: the run baking it is under way. */

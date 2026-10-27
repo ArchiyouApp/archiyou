@@ -148,6 +148,7 @@ export interface AnimationInfo
     duration?: number
     loop: AnimationLoop
     preset?: { kind: PresetKind, options: Record<string, any> }
-    /** Set on a parameter sweep: the parameters it changes and how many frames it has. */
-    params?: { names: Array<string>, frames: number }
+    /** Set on a parameter sweep: the parameters it changes, how many frames it has, and the
+     *  values of each frame, for the host that runs the script once per frame. */
+    params?: { names: Array<string>, frames: number, values: Array<Record<string, any>> }
 }

@@ -38,11 +38,13 @@ import type { AnimationData, Easing, Quat, TrackData, Vec3, VisibleKey } from '.
 import { AnimationPointerExtension, BASE_COLOR_FACTOR, KHR_ANIMATION_POINTER, POINTER_TARGET_PATH } from './animator/AnimationPointerExtension'
 import {
     EASED_KEYFRAME_SAMPLE_COUNT,
+    HIDDEN_SCALE,
     IDENTITY_QUATERNION,
     add, bakeKeys, hexToLinear, isIdentityQuat, isSameQuat, isSameVec, lerpVec,
     lookAtQuaternion, multiplyVec, normalizeQuat, rotatePoint, sampleAt, sampleCount, slerp, subtract,
 } from './animator/sampling'
 import { instructToAnimation } from './animator/instruct'
+import { mergeParamFrames, type ParamFramesData, type ParamFramesReport } from './animator/frames'
 import { placementsOf } from './modeler/placements'
 
 export type {
@@ -56,9 +58,6 @@ type CachedLayoutAnimationDefinition = {
     options?: LayoutAnimationOptions
 }
 
-/** What a hidden part is scaled to. Not zero: a singular matrix makes three.js's normal matrix
- *  NaN. 1e-4 is invisible and stays invertible. */
-const HIDDEN_SCALE = 1e-4
 
 /** glTF primitive modes that draw faces; the rest (points, lines) are line-work. */
 const TRIANGLE_MODES = new Set([4, 5, 6])
@@ -251,6 +250,37 @@ export class GLTFBuilder
 
         this._modified = true
         return this
+    }
+
+    /** A parameter sweep: the GLBs of the other frames, each a run of the script with that
+     *  frame's values, merged into this one (frame 0) as one clip. A part that keeps its mesh
+     *  morphs from frame to frame, one that does not is played as a flipbook
+     *  (animator/frames.ts). Its data goes into `extras.animations`, with the frames' values.
+     *  @returns what the merge did; nothing is written when nothing changes over the frames */
+    async addParamFrames(frames: Array<ArrayBuffer | Uint8Array>, data: ParamFramesData & { values?: Array<Record<string, any>> }): Promise<ParamFramesReport>
+    {
+        if (!this._initialGlb) { throw new Error('GLTFBuilder.addParamFrames(): no GLB source provided — pass the first frame\'s GLB to the constructor.') }
+
+        await this._ensureDoc()
+        const io = createNodeIO()
+        const docs = await Promise.all(frames.map(f => io.readBinary((f instanceof ArrayBuffer) ? new Uint8Array(f) : f)))
+        const report = mergeParamFrames(this.doc, docs, data)
+
+        if (report.animated)
+        {
+            const entry: AnimationData = {
+                name: data.name,
+                ...(data.title ? { title: data.title } : {}),
+                duration: data.duration,
+                loop: data.loop,
+                tracks: [],
+                params: { frames: data.values ?? [] },
+            }
+            this._animationsExtras = [...this._animationsExtras, entry]
+            await this.addData({ animations: this._animationsExtras })
+            this._modified = true
+        }
+        return report
     }
 
     //// LAYOUT ANIMATIONS ////
@@ -839,6 +869,17 @@ export class GLTFBuilder
 
 /** A layout as an animation: from where the model has every part to where the layout puts
  *  it, over `duration`, eased. */
+/** A parameter sweep's frames, each the GLB of a run with that frame's values, as one GLB with
+ *  the sweep as a clip: the first frame with the others merged in (GLTFBuilder.addParamFrames).
+ *  What the editor's worker and `archiyou animate` call. */
+export async function mergeParamFrameGlbs(frames: Array<ArrayBuffer | Uint8Array>, data: ParamFramesData & { values?: Array<Record<string, any>> }): Promise<{ glb: Uint8Array, report: ParamFramesReport }>
+{
+    if (!frames.length) { throw new Error('mergeParamFrameGlbs(): no frames to merge.') }
+    const builder = new GLTFBuilder(frames[0])
+    const report = await builder.addParamFrames(frames.slice(1), data)
+    return { glb: await builder.toGLB(), report }
+}
+
 export function layoutToAnimation(result: LayoutTransformationResult, options: LayoutAnimationOptions = {}): AnimationData
 {
     const duration = options.duration ?? 1.0

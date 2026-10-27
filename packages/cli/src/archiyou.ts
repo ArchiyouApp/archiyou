@@ -41,6 +41,9 @@ const USAGE = `archiyou <command>
   sweep <file.js>           the defaults and every parameter at its extremes, one table;
                             --corners: every combination of the extremes instead;
                             takes -p, --clash, --check, --modules, --json; exit 1 unless clean
+  animate <file.js>         the model as a GLB with one of its animations (--animation name;
+                            default the first parameter sweep), a sweep run once per frame
+                            and merged into one clip; takes -p, --kernel, --modules, --out file.glb
   api <name>                the API reference: a function, Class.member, or a class's members
   docs [topic]              the guide and tutorials, as Markdown
   examples [name]           example scripts
@@ -123,6 +126,7 @@ async function main(argv: Array<string>): Promise<number>
         case 'init': return init(args);
         case 'run': return (await import('./run')).run(args);
         case 'sweep': return (await import('./run')).sweep(args);
+        case 'animate': return (await import('./run')).animate(args);
         case 'eval': return (await import('./run')).evaluate(args);
         case 'mark': return (await import('./run')).markPhoto(args);
         case 'api': return api(args.positional.join(' ') || undefined);

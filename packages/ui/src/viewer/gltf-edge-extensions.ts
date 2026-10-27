@@ -125,6 +125,8 @@ async function _attachEdgeLines(
 
 
     const lineVerts: number[] = [];
+    // the vertex pair of each segment, for a mesh that morphs: its lines morph with it
+    const linePairs: number[] = [];
     const triCount = indices.length / 3;
     let hardSlots = 0, smoothSlots = 0;
 
@@ -145,6 +147,7 @@ async function _attachEdgeLines(
                 posAttr.getX(a), posAttr.getY(a), posAttr.getZ(a),
                 posAttr.getX(b), posAttr.getY(b), posAttr.getZ(b),
             );
+            linePairs.push(a, b);
         }
     }
 
@@ -152,6 +155,7 @@ async function _attachEdgeLines(
     // keep only the first occurrence per unique vertex pair.
     const seen = new Set<string>();
     const dedupedVerts: number[] = [];
+    const dedupedPairs: number[] = [];
     for (let i = 0; i < lineVerts.length; i += 6)
     {
         const ax = lineVerts[i],   ay = lineVerts[i+1], az = lineVerts[i+2];
@@ -162,6 +166,7 @@ async function _attachEdgeLines(
         if (seen.has(key)) continue;
         seen.add(key);
         dedupedVerts.push(ax, ay, az, bx, by, bz);
+        dedupedPairs.push(linePairs[i / 3], linePairs[i / 3 + 1]);
     }
 
     if (!dedupedVerts.length) return;
@@ -170,7 +175,10 @@ async function _attachEdgeLines(
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     mats.forEach((m) => { m.polygonOffset = true; m.polygonOffsetFactor = 1; m.polygonOffsetUnits = 1; });
 
-    const mat = _resolveLineMaterial(ext.material, parser);
+    const morphs = mesh.geometry.morphAttributes?.position;
+    // A mesh that morphs (a parameter sweep) draws its edges as hairlines: fat lines are
+    // instanced segments, which three.js cannot morph
+    const mat = _morphable(_resolveLineMaterial(ext.material, parser), !!morphs?.length);
 
     // Mark the source mesh so the scene explorer skips it (container node is shown instead)
     mesh.userData.isEdgeSurface = true;
@@ -180,6 +188,7 @@ async function _attachEdgeLines(
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.Float32BufferAttribute(dedupedVerts, 3));
         const lines = new THREE.LineSegments(geo, mat);
+        if (morphs?.length) _morphLikeMesh(lines, mesh, dedupedPairs);
         lines.userData.cannotReceiveAO = true;
         lines.userData.isEdgeOverlay = true;
         mesh.add(lines);
@@ -192,6 +201,36 @@ async function _attachEdgeLines(
         lines2.userData.isEdgeOverlay = true;
         mesh.add(lines2);
     }
+}
+
+/** The edges of a mesh with morph targets follow its targets: each segment end takes the
+ *  delta of the mesh vertex it was made from, and the lines share the mesh's weights array,
+ *  which the animation mixer writes in place. */
+function _morphLikeMesh(lines: THREE.LineSegments, mesh: THREE.Mesh, pairs: number[]): void
+{
+    const targets = mesh.geometry.morphAttributes.position;
+    lines.geometry.morphAttributes.position = targets.map(target =>
+    {
+        const values = new Float32Array(pairs.length * 3);
+        pairs.forEach((v, i) =>
+        {
+            values[i * 3] = target.getX(v);
+            values[i * 3 + 1] = target.getY(v);
+            values[i * 3 + 2] = target.getZ(v);
+        });
+        return new THREE.Float32BufferAttribute(values, 3);
+    });
+    lines.geometry.morphTargetsRelative = mesh.geometry.morphTargetsRelative;
+    lines.morphTargetInfluences = mesh.morphTargetInfluences;
+    lines.morphTargetDictionary = mesh.morphTargetDictionary;
+}
+
+/** A material that can morph: a fat line's material as a hairline of its colour. */
+function _morphable(material: THREE.Material, morphs: boolean): THREE.Material
+{
+    if (!morphs || material instanceof THREE.LineBasicMaterial) return material;
+    const fat = material as LineMaterial;
+    return new THREE.LineBasicMaterial({ color: fat.color, transparent: fat.transparent, opacity: fat.opacity });
 }
 
 function _resolveLineMaterial(
@@ -280,7 +319,9 @@ function _applyNativeLineStyles(root: THREE.Object3D): void
         const width   = bentley.width ?? 1;
         const pattern = bentley.pattern ?? 0xFFFF;
 
-        if (width > 1)
+        // a curve that morphs (a parameter sweep) stays a native line: three.js cannot morph a fat one
+        const morphs = !!node.geometry?.morphAttributes?.position?.length;
+        if (width > 1 && !morphs)
         {
             _upgradeToFatLine(node, material, width, pattern);
         }

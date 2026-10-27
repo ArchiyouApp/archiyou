@@ -23,6 +23,10 @@ export type { RunOptions, RunnerWorkerOptions } from './runner/worker/RunnerWork
 export { getOutput, unwrapOutput } from './runner/worker/output';
 export type { OutputData } from './runner/worker/output';
 
+// Parameter sweeps: the GLBs of a run per frame merged into one animated GLB
+export { mergeParamFrameGlbs } from './GLTFBuilder';
+export type { ParamFramesData, ParamFramesReport } from './animator/frames';
+
 // Scripts
 export { Script } from './Script';
 

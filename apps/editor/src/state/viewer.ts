@@ -121,6 +121,29 @@ export function sendAnimationCommand(command: Omit<AnimationCommand, 'seq'>): vo
 export function setAnimationsBaked(list: BakedAnimation[]): void { animationsBaked.set(list); }
 export function setAnimationStatus(status: AnimationStatus): void { animationStatus.set(status); }
 
+/** A GLB the viewer shows instead of the run's while it is set: a parameter sweep, whose
+ *  frames are runs of their own merged into one model. Cleared, the run's model comes back. */
+export const animationModel = signal<ArrayBuffer | null>(null);
+export function showAnimationModel(glb: ArrayBuffer | null): void { animationModel.set(glb); }
+
+/** How the editor runs the script for one frame of a parameter sweep: as its own runs, with
+ *  these parameter values, one after the other with them. The page registers it; a tool calls
+ *  it without knowing how a run is put together. */
+export type ParamFrameRunner = (params: Record<string, any>) => Promise<ArrayBuffer | null>;
+let _paramFrameRunner: ParamFrameRunner | null = null;
+
+export function registerParamFrameRunner(runner: ParamFrameRunner | null): void
+{
+  _paramFrameRunner = runner;
+}
+
+/** The model's GLB with these parameter values, or null when the run fails. */
+export function runParamFrame(params: Record<string, any>): Promise<ArrayBuffer | null>
+{
+  if (!_paramFrameRunner) return Promise.reject(new Error('runParamFrame(): no editor to run the script'));
+  return _paramFrameRunner(params);
+}
+
 /** Callback registered by the editor (or any execution host) so that
  *  viewer-side interactions (e.g. handle drag-end) can trigger a
  *  re-execute without the editor being in the component tree. */

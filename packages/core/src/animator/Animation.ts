@@ -421,7 +421,11 @@ export class Animation
             ...(duration !== undefined ? { duration } : {}),
             loop: s.loop ?? 'none',
             ...(s.preset ? { preset: { kind: s.preset.kind, options: plainOptions(s.preset.options) } } : {}),
-            ...(frames ? { params: { names: s.params.map(p => p.name), frames } } : {}),
+            ...(frames ? { params: {
+                names: s.params.map(p => p.name),
+                frames,
+                values: Array.from({ length: frames }, (_, i) => Object.fromEntries(s.params.map(p => [p.name, p.values[i]]))),
+            } } : {}),
         }
     }
 

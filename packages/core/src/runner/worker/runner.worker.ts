@@ -13,6 +13,8 @@ import * as Comlink from 'comlink';
 
 import { Runner } from '../Runner';
 import { Script } from '../../Script';
+import { mergeParamFrameGlbs } from '../../GLTFBuilder';
+import type { ParamFramesData, ParamFramesReport } from '../../animator/frames';
 import type { RunnerScriptExecutionRequest, RunnerScriptExecutionResult } from '../types';
 
 let runner: Runner | null = null;
@@ -24,6 +26,8 @@ export interface ArchiyouCoreApi
   init(): Promise<void>;
   /** Execute a fully-formed request and return the raw result. */
   execute(request: RunnerScriptExecutionRequest): Promise<RunnerScriptExecutionResult | undefined>;
+  /** Merge the GLBs of a parameter sweep's frames into one clip (GLTFBuilder.addParamFrames). */
+  mergeParamFrames(frames: Array<ArrayBuffer>, data: ParamFramesData & { values?: Array<Record<string, any>> }): Promise<{ glb: ArrayBuffer, report: ParamFramesReport }>;
 }
 
 const api: ArchiyouCoreApi = {
@@ -59,6 +63,14 @@ const api: ArchiyouCoreApi = {
     }
 
     return runner.execute(request); // return the raw result for maximum flexibility
+  },
+
+  async mergeParamFrames(frames: Array<ArrayBuffer>, data): Promise<{ glb: ArrayBuffer, report: ParamFramesReport }>
+  {
+    // gltf-transform only: no kernel, so it needs no init()
+    const { glb: bytes, report } = await mergeParamFrameGlbs(frames, data);
+    const glb = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    return Comlink.transfer({ glb, report }, [glb]);
   },
 };
 

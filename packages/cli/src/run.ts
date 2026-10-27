@@ -883,6 +883,93 @@ function sweepClean(rows: Array<SweepRow>): boolean
     return rows.every(r => r.result.ok && (r.result.clashes ?? []).length === 0 && (r.result.check?.mismatches ?? []).length === 0);
 }
 
+//// ANIMATE ////
+
+/** `animate <file.js>`: the model as a GLB with one of its animations, the first parameter
+ *  sweep unless --animation names one. A sweep is run once per frame with that frame's values
+ *  and the frames merged into one clip (core's mergeParamFrameGlbs); any other animation is
+ *  baked as `default/model/glb?animations=<name>` bakes it */
+export async function animate(args: Args): Promise<number>
+{
+    const file = scriptFile(args, 'archiyou animate <file.js> [--animation name] [--out file.glb] [-p NAME=value]...');
+    if (!file) { return 1; }
+    const o = optionsFrom(args, file, null);
+    const r = await loadRunner(o.verbose, o.modules);
+    const name = basename(file, extname(file));
+    const started = performance.now();
+    const exec = (params: Record<string, any>, path: string): Promise<any> => quiet(o.verbose, () => r.execute({
+        kernel: o.kernel, script: { name, code: o.code }, params, modules: catalog, outputs: [path], messages: ['user', 'warn'],
+    }));
+    const glbOf = (res: any): Uint8Array =>
+    {
+        const output = (res.outputs ?? []).find((x: any) => x.path?.format === 'glb')?.output;
+        if (!output) { throw new Error('the run made no GLB'); }
+        return (output instanceof Uint8Array) ? output : new Uint8Array(output.data ?? output);
+    };
+    const failed = (res: any, what: string): boolean =>
+    {
+        if (res.status === 'success') { return false; }
+        const e = res.errors?.[0] ?? {};
+        fail(`${what} failed${e.lineStart ? ` at line ${e.lineStart}` : ''}: ${errorMessage(e.message)}`);
+        return true;
+    };
+
+    const first = await exec(o.params, 'default/model/glb');
+    if (failed(first, basename(file))) { return 1; }
+    const declared: Array<any> = first.state?.animations ?? [];
+    const wanted = args.values.animation?.[0];
+    const animation = wanted ? declared.find(a => a.name === wanted) : (declared.find(a => a.params) ?? declared[0]);
+    if (!animation)
+    {
+        fail(wanted
+            ? `no animation "${wanted}" in ${basename(file)}; it declares: ${declared.map(a => a.name).join(', ') || '(none)'}`
+            : `${basename(file)} declares no animation: add one with animator.create('name') or animator.preset('flyin')`);
+        return 1;
+    }
+    const outFile = userPath(args.values.out?.[0] ?? join(tmpdir(), 'archiyou', `${name}.${animation.name}.glb`));
+    mkdirSync(dirname(outFile), { recursive: true });
+    const mb = (bytes: Uint8Array) => `${round(bytes.byteLength / 1e6, 2)} MB`;
+
+    if (!animation.params)
+    {
+        const res = await exec(o.params, `default/model/glb?animations=${encodeURIComponent(animation.name)}`);
+        if (failed(res, animation.name)) { return 1; }
+        const glb = glbOf(res);
+        writeFileSync(outFile, glb);
+        out(`${animation.name}  ${mb(glb)}  ${round((performance.now() - started) / 1000, 1)}s  → ${outFile}`);
+        return 0;
+    }
+
+    // a parameter sweep: a run per frame, its parameters set to that frame's values
+    const known = new Set(paramDefs(r.getScope('default')).map(p => p.name));
+    const unknown = animation.params.names.filter((n: string) => !known.has(n));
+    if (unknown.length)
+    {
+        fail(`${animation.name} sweeps ${unknown.join(', ')}, which ${basename(file)} does not define: $PARAMS.define('${unknown[0]}', 'number', { ... })`);
+        return 1;
+    }
+    const values: Array<Record<string, any>> = animation.params.values;
+    const frames = await values.reduce(async (acc, v, i) =>
+    {
+        const done = await acc;
+        const res = await exec({ ...o.params, ...v }, 'default/model/glb');
+        if (res.status !== 'success') { throw new Error(`frame ${i + 1} (${Object.entries(v).map(([k, x]) => `${k}=${fmtValue(x)}`).join(' ')}) failed: ${errorMessage(res.errors?.[0]?.message)}`); }
+        return [...done, glbOf(res)];
+    }, Promise.resolve([] as Array<Uint8Array>));
+
+    const core: any = await import('@archiyou/core');
+    const { glb, report } = await core.mergeParamFrameGlbs(frames, {
+        name: animation.name, title: animation.title, duration: animation.duration ?? 2, loop: animation.loop, values,
+    });
+    writeFileSync(outFile, glb);
+    out(`${animation.name}  ${values.length} frames of ${animation.params.names.join(', ')}  `
+        + `${report.morphed} morphed, ${report.moved} moved, ${report.flipbook} as a flipbook, ${report.unchanged} unchanged  `
+        + `${mb(glb)}  ${round((performance.now() - started) / 1000, 1)}s`);
+    if (!report.animated) { out('nothing changes over the frames: the GLB has no clip'); }
+    out(`→ ${outFile}`);
+    return 0;
+}
+
 /** `sweep <file.js>`: exit 1 unless every run builds without clashes or check mismatches */
 export async function sweep(args: Args): Promise<number>
 {

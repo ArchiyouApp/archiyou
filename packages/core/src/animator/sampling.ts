@@ -18,6 +18,10 @@ export const EASED_KEYFRAME_SAMPLE_COUNT = 17
 export const SPRING_KEYFRAME_SAMPLE_COUNT = 25
 
 export const IDENTITY_QUATERNION: Quat = [0, 0, 0, 1]
+
+/** What a hidden part is scaled to in a visibility channel. Not zero: a singular matrix makes
+ *  three.js's normal matrix NaN. 1e-4 is invisible and stays invertible. */
+export const HIDDEN_SCALE = 1e-4
 const EPSILON = 1e-9
 
 /** One key of a value of any kind. `easing` is how the value travels INTO this key. */

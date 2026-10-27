@@ -41,7 +41,7 @@ import type { ToolDef } from '@archiyou/ui/editor/toolbar.js';
 
 import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystemOverride, docUnitSystemOverride, perStatement, kernel, autoRun, wasActiveScriptRestored, activePipeline, pipelineModelPath, forActivePipeline, bakeAnimations } from '../state/workspace';
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
-import { registerScheduleExecution, triggerResetCamera } from '../state/viewer';
+import { registerScheduleExecution, registerParamFrameRunner, triggerResetCamera } from '../state/viewer';
 import { registerHelpRunner, openHelpDoc, claimOnboarding, setHelpCursor, lookupHelpAtCursor, ONBOARDING_PATH } from '../state/help';
 import { compactLayout } from '../state/editor';
 import type { RunnerScriptExecutionRequest, RunnerScriptExecutionResult } from '@archiyou/core/src/runner/types';
@@ -265,6 +265,8 @@ export class PageEditor extends SignalWatcher(LitElement)
     registerScheduleExecution(() => this._scheduleParamExecute());
     // The help panel's tutorials put code in the editor and run it through here
     registerHelpRunner(code => void this._runHelpCode(code));
+    // The Animation tool runs a parameter sweep's frames through here
+    registerParamFrameRunner(params => this._runParamFrame(params));
     this._consumeNewQueryParam();
     void this._consumeScriptLink();
     // A tutorial link wins over the first-visit tour. Either way the help panel opens.
@@ -682,6 +684,45 @@ export class PageEditor extends SignalWatcher(LitElement)
   }
 
   private _running: Promise<RunnerScriptExecutionResult | undefined> | null = null;
+
+  /** One frame of a parameter sweep (the Animation tool): the model's GLB with these parameter
+   *  values. It takes its turn with the editor's own runs, so the worker runs one script at a
+   *  time; a run asked for meanwhile goes after it. Nothing on screen changes. */
+  private async _runParamFrame(params: Record<string, any>): Promise<ArrayBuffer | null>
+  {
+    await this._afterRunning();
+    const frame = (async () =>
+    {
+      const request = this._buildRequest(['default/model/glb'], ['error']);
+      request.params = { ...(request.params ?? {}), ...params };
+      const result = await runScript(request);
+      const glb = (result && result.status !== 'error') ? getOutput(result, 'default/model/glb') : undefined;
+      return (glb instanceof ArrayBuffer) ? glb : (glb instanceof Uint8Array) ? glb.slice().buffer as ArrayBuffer : null;
+    })();
+    this._running = frame.then(() => undefined);
+    try
+    {
+      return await frame;
+    }
+    finally
+    {
+      this._running = null;
+      if (this._rerun)
+      {
+        this._rerun = false;
+        void this.execute();
+      }
+    }
+  }
+
+  /** Once no run is under way: the one running now, and one that started after it. */
+  private async _afterRunning(): Promise<void>
+  {
+    const running = this._running;
+    if (!running) return;
+    await running.catch(() => undefined);
+    return this._afterRunning();
+  }
   private _rerun = false;
   private _runCount = 0; // lets a tool's own run see that a full run started after it
 

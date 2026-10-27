@@ -150,8 +150,9 @@ Open the **Animation** tool (the clapperboard on the right) to manage the animat
 * Click one to select it. Play, pause and drag the slider to go through it; the icons next to it play it once, over and over, or back and forth, and the gauge sets the speed.
 * An animation with a camera of its own (a `turntable()`, or `camera()` keys) is seen *through its camera*; switch that off to look round yourself.
 * The steps of an instructable show as chapters; click one to go there.
+* A parameter sweep (see below) shows *Make it*: the editor runs the script once per frame, merges the frames into one model and plays it. *Stop* goes back to your model; play again until the script runs again.
 * *Show code* shows the lines of the script that make the selected animation.
-* The download icon at the top saves the model with its animations as a GLB. *Export to… ▸ GLB* in the main menu includes the animations of the script too.
+* The download icon at the top saves the model with its animations as a GLB, or the sweep while one is shown. *Export to… ▸ GLB* in the main menu includes the animations of the script too.
 
 The editor makes the animations only while the tool is open, so with the tool closed it runs your script as fast as without them.
 
@@ -171,7 +172,20 @@ An animation that cannot be made, for example a key after its end or an `assembl
 ## Parameters over time
 
 ```js
-animator.create('widths').param('WIDTH', { from: 400, to: 800, frames: 9 }).duration(3);
+$PARAMS.define('WIDTH', 'number', { default: 600, minimum: 300, maximum: 1200 });
+board = box($WIDTH, 250, 18).moveTo(0, 0, 300).name('board');
+left = box(18, 250, 300).moveTo(-$WIDTH / 2, 0, 150).name('side');
+right = box(18, 250, 300).moveTo($WIDTH / 2, 0, 150).name('side');
+
+animator.create('widths').param('WIDTH', { from: 300, to: 1200, frames: 6 }).duration(3).loop('pingpong');
 ```
 
-An animation can also sweep a parameter. Every frame is a run of the whole script with other values, so it is not made by an ordinary run: a single run only declares it. A sweep has at most 48 frames, 12 when you do not say.
+An animation can also sweep a parameter: the model with each of its values in turn. Every frame is a run of the whole script with that frame's values, so an ordinary run only declares it. Make it in the Animation tool: select it and press *Make it*. Or on the command line: `archiyou animate shelf.js --out shelf.glb`.
+
+The frames are merged into one GLB, part by part:
+
+* a part that keeps its mesh and only changes size (the board) grows smoothly from frame to frame;
+* a part that only moves (the sides) glides from place to place;
+* a part whose mesh changes (a box that becomes a sphere) switches at each frame, like a flipbook.
+
+Give `param()` a list of values, or `{ from, to, frames }`; several `param()` calls change together, frame by frame. A sweep has at most 48 frames, 12 when you do not say: every frame is a run of the whole script.

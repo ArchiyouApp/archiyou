@@ -32,6 +32,7 @@ import type { AyModuleCatalogEntry } from '../../modules/sdkTypes';
 import type { Script } from '../../Script';
 import type { ModelMode, ModelUnits } from '../../modeler/types';
 import type { ConsoleMessageType } from '../../console/types';
+import type { ParamFramesData, ParamFramesReport } from '../../animator/frames';
 import { getOutput, type OutputData } from './output';
 
 /** Default output requested when a caller doesn't specify one. */
@@ -217,6 +218,14 @@ export class RunnerWorker
       moduleApiUrl: opts.moduleApiUrl,
       authToken: opts.authToken,
     };
+  }
+
+  /** Merge the GLBs of a parameter sweep's frames, each a run with that frame's values, into
+   *  one GLB with the sweep as a clip (GLTFBuilder.addParamFrames), in the worker. */
+  async mergeParamFrames(frames: Array<ArrayBuffer>, data: ParamFramesData & { values?: Array<Record<string, any>> }): Promise<{ glb: ArrayBuffer, report: ParamFramesReport }>
+  {
+    await this.init();
+    return this._proxy!.mergeParamFrames(frames, data);
   }
 
   /** Execute and return the full RunnerScriptExecutionResult (errors, metrics, tables, state). */

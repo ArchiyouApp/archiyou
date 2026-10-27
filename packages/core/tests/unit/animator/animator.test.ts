@@ -85,7 +85,8 @@ describe('declaring', () =>
         expect(a.info()).toEqual([
             { name: 'flyin', duration: 3, loop: 'none', preset: { kind: 'flyin', options: {} } },
             { name: 'swing', duration: 2, loop: 'pingpong' },
-            { name: 'widths', loop: 'none', params: { names: ['WIDTH'], frames: 5 } },
+            { name: 'widths', loop: 'none', params: { names: ['WIDTH'], frames: 5,
+                values: [400, 500, 600, 700, 800].map(WIDTH => ({ WIDTH })) } },
         ])
     })
 })
@@ -265,7 +266,8 @@ describe('baked into the GLB on request', () =>
             animator.create('widths').param('WIDTH', { from: 400, to: 800, frames: 3 });
         `, ['default/model/glb?animations=widths'])
         expect(clipNames(await glbOf(result))).toEqual([])
-        expect((result.state as any).animations[0].params).toEqual({ names: ['WIDTH'], frames: 3 })
+        expect((result.state as any).animations[0].params).toEqual({ names: ['WIDTH'], frames: 3,
+            values: [{ WIDTH: 400 }, { WIDTH: 600 }, { WIDTH: 800 }] })
     })
 })
 

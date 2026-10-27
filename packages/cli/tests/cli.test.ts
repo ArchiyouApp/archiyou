@@ -281,6 +281,23 @@ describe.skipIf(!MESHUP_BUILT)('sweep and mark', () =>
         expect(r.stdout.trim().endsWith('sweep NOT clean')).toBe(true);
     });
 
+    it('animate runs a parameter sweep once per frame and writes one animated GLB', () =>
+    {
+        const out = join(tmp, 'widen.glb');
+        const r = cli(['animate', join(FIXTURES, 'widen.js'), '--out', out]);
+        expect(r.status).toBe(0);
+        // the plate grows, the right block moves, the left one stays
+        expect(r.stdout).toMatch(/^widths {2}4 frames of WIDTH {2}1 morphed, 1 moved, 0 as a flipbook, 1 unchanged/);
+        expect(readFileSync(out).subarray(0, 4).toString()).toBe('glTF');
+    });
+
+    it('animate says so when a script declares no animation', () =>
+    {
+        const r = cli(['animate', join(FIXTURES, 'plate.js')]);
+        expect(r.status).toBe(1);
+        expect(r.stderr).toContain("plate.js declares no animation: add one with animator.create('name')");
+    });
+
     it('mark draws numbered markers on a photo', () =>
     {
         const photo = join(tmp, 'mark-photo.png');

@@ -12,6 +12,7 @@ import '@awesome.me/webawesome/dist/components/slider/slider.js';
 import '@awesome.me/webawesome/dist/components/switch/switch.js';
 import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
+import '@awesome.me/webawesome/dist/components/progress-bar/progress-bar.js';
 
 import { EditorView } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
@@ -19,10 +20,12 @@ import { javascript } from '@codemirror/lang-javascript';
 
 import { executionResult, editorScript, isReadOnly, bakeAnimations, pipelineModelPath } from '@archiyou/editor/src/state/workspace';
 import {
-  animationsBaked, animationStatus, sendAnimationCommand,
+  animationsBaked, animationStatus, animationModel, sendAnimationCommand, showAnimationModel, runParamFrame,
   type AnimationLoopMode, type BakedAnimation,
 } from '@archiyou/editor/src/state/viewer';
 import { getOutput } from '@archiyou/core/src/runner/worker/output';
+import { mergeParamFrames } from '@archiyou/editor/src/services/execution-service';
+import type { ParamFramesReport } from '@archiyou/core/src/animator/frames';
 // the table and the code only: no animator, no kernel, on the main thread
 import { PRESETS, PRESET_KINDS } from '@archiyou/core/src/animator/standard';
 import {
@@ -40,8 +43,9 @@ interface AnimationRow
   title?: string;
   duration?: number;
   loop?: AnimationLoopMode;
-  /** A parameter sweep: made from one run per frame, which this tool does not do yet. */
+  /** A parameter sweep: made from a run per frame (Make), not by the run. */
   sweep: boolean;
+  params?: AnimationInfo['params'];
   /** Where it is in the code. Missing when the code does not name it in so many words (a
    *  computed name), or does not parse right now. */
   code?: AnimationCode;
@@ -163,7 +167,8 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
           <button class="name" @click=${() => this._select(row.name)}>
             <span class="title">${row.name}</span>
             <span class="meta">
-              ${[row.title, duration ? `${duration.toFixed(1)} s` : '', row.sweep ? msg('parameter sweep') : ''].filter(Boolean).join(' · ')}
+              ${[row.title, duration ? `${duration.toFixed(1)} s` : '',
+                 row.params ? msg(str`${row.params.frames} frames of ${row.params.names.join(', ')}`) : ''].filter(Boolean).join(' · ')}
             </span>
           </button>`}
         ${editable && !renaming ? html`
@@ -181,8 +186,46 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     `;
   }
 
-  /** The selected animation: the transport of the viewer, then its code. */
+  /** The selected animation: the transport of the viewer (or, for a sweep not made yet, the
+   *  making of it), its chapters, then its code. */
   private _renderSelected(row: AnimationRow, carried: BakedAnimation | undefined)
+  {
+    const status = animationStatus.get();
+    const chapters = carried?.chapters ?? [];
+    const current = (status.name === row.name) ? chapterAt(chapters, status.time) : -1;
+
+    return html`
+      <section class="selected">
+        <h5>${msg('Selected animation')}: <span class="selected-name">${row.name}</span></h5>
+
+        ${(row.sweep && !carried && !this._sweeps.has(row.name)) ? this._renderMake(row) : this._renderPlayer(row, carried)}
+
+        ${chapters.length ? html`
+          <ol class="chapters">
+            ${chapters.map((c, i) => html`
+              <li class=${i === current ? 'current' : ''} @click=${() => this._scrub(row, c.tStart)}>
+                <span class="num">${i + 1}</span><span>${c.title}</span>
+              </li>`)}
+          </ol>` : nothing}
+
+        <div class="code">
+          <button class="code-toggle" @click=${() => { this._showCode = !this._showCode; }}>
+            <wa-icon library="lucide" name=${this._showCode ? 'chevron-down' : 'chevron-right'}></wa-icon>
+            <wa-icon library="lucide" name="code"></wa-icon>
+            ${this._showCode ? msg('Hide code') : msg('Show code')}
+          </button>
+          ${this._showCode
+            ? (row.code
+              ? html`<div class="code-view"></div>`
+              : html`<p class="hint">${msg('Its code does not name it in so many words: look for it in the script.')}</p>`)
+            : nothing}
+        </div>
+      </section>
+    `;
+  }
+
+  /** The transport of the viewer for the selected one. */
+  private _renderPlayer(row: AnimationRow, carried: BakedAnimation | undefined)
   {
     const status = animationStatus.get();
     const loaded = status.name === row.name;
@@ -191,22 +234,18 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     const loop = loaded ? status.loop : (this._loop ?? carried?.loop ?? row.loop ?? 'none');
     const speed = loaded ? status.speed : this._speed;
     const playing = loaded && status.playing;
-    const chapters = carried?.chapters ?? [];
-    const current = loaded ? chapterAt(chapters, time) : -1;
+    const made = this._sweeps.get(row.name);
 
     return html`
-      <section class="selected">
-        <h5>${msg('Selected animation')}: <span class="selected-name">${row.name}</span></h5>
-
         <div class="player">
           <wa-button class="icon" size="small" variant="brand" title=${msg('Stop')} ?disabled=${!loaded} @click=${this._stop}>
             <wa-icon library="lucide" name="square" label=${msg('Stop')}></wa-icon>
           </wa-button>
-          <wa-button class="icon" size="small" variant="brand" ?disabled=${row.sweep || !carried}
+          <wa-button class="icon" size="small" variant="brand" ?disabled=${!carried && !made}
                      title=${playing ? msg('Pause') : msg('Play')} @click=${() => this._togglePlay(row)}>
             <wa-icon library="lucide" name=${playing ? 'pause' : 'play'} label=${playing ? msg('Pause') : msg('Play')}></wa-icon>
           </wa-button>
-          <wa-slider class="scrubber" size="small" min="0" max=${duration || 1} step="0.01" ?disabled=${!carried}
+          <wa-slider class="scrubber" size="small" min="0" max=${duration || 1} step="0.01" ?disabled=${!carried && !made}
                      .value=${time} @input=${(e: Event) => this._scrub(row, Number((e.target as HTMLInputElement).value))}></wa-slider>
           <span class="time">${time.toFixed(1)} / ${duration.toFixed(1)} s</span>
         </div>
@@ -236,31 +275,37 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
             </wa-switch>` : nothing}
         </div>
 
-        ${row.sweep
-          ? html`<p class="hint">${msg('A parameter sweep is made from a run per frame, which the editor does not play yet.')}</p>`
+        ${made ? html`<p class="hint">${this._madeText(made.report, made.glb.byteLength)}</p>`
           : !carried ? html`<p class="hint">${msg('Not in the model yet: the next run makes it.')}</p>` : nothing}
+    `;
+  }
 
-        ${chapters.length ? html`
-          <ol class="chapters">
-            ${chapters.map((c, i) => html`
-              <li class=${i === current ? 'current' : ''} @click=${() => this._scrub(row, c.tStart)}>
-                <span class="num">${i + 1}</span><span>${c.title}</span>
-              </li>`)}
-          </ol>` : nothing}
+  /** A parameter sweep not made yet: what making it takes, and its progress. */
+  private _renderMake(row: AnimationRow)
+  {
+    const params = row.params!;
+    const making = (this._making?.name === row.name) ? this._making : null;
+    const first = params.values[0] ?? {};
+    const last = params.values[params.values.length - 1] ?? {};
+    const range = params.names.map(n => `${n} ${first[n]} → ${last[n]}`).join(', ');
 
-        <div class="code">
-          <button class="code-toggle" @click=${() => { this._showCode = !this._showCode; }}>
-            <wa-icon library="lucide" name=${this._showCode ? 'chevron-down' : 'chevron-right'}></wa-icon>
-            <wa-icon library="lucide" name="code"></wa-icon>
-            ${this._showCode ? msg('Hide code') : msg('Show code')}
-          </button>
-          ${this._showCode
-            ? (row.code
-              ? html`<div class="code-view"></div>`
-              : html`<p class="hint">${msg('Its code does not name it in so many words: look for it in the script.')}</p>`)
-            : nothing}
-        </div>
-      </section>
+    return html`
+      <div class="make">
+        <p class="hint">
+          ${msg(str`A parameter sweep: ${range}. The script runs once per frame, ${params.frames} times, and the frames are merged into one model.`)}
+        </p>
+        ${making ? html`
+          <div class="making">
+            <wa-progress-bar value=${100 * making.done / making.total}></wa-progress-bar>
+            <span class="hint">${msg(str`Frame ${Math.min(making.done + 1, making.total)} of ${making.total}`)}</span>
+            <wa-button size="small" appearance="plain" @click=${() => { making.cancelled = true; this.requestUpdate(); }}>${msg('Cancel')}</wa-button>
+          </div>` : html`
+          <wa-button size="small" variant="brand" ?disabled=${!!this._making} @click=${() => this._makeSweep(row)}>
+            <wa-icon slot="start" library="lucide" name="film"></wa-icon>
+            ${msg('Make it')}
+          </wa-button>`}
+        ${this._sweepError && this._sweepError.name === row.name ? html`<p class="error">${this._sweepError.message}</p>` : nothing}
+      </div>
     `;
   }
 
@@ -288,6 +333,9 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
   @state() private _speed = 1;
   /** An animation with a camera of its own (a turntable) is seen through it, until switched off. */
   @state() private _follow = true;
+  /** The sweep being made: how far it is, and whether Cancel was pressed. */
+  @state() private _making: { name: string, done: number, total: number, cancelled: boolean } | null = null;
+  @state() private _sweepError: { name: string, message: string } | null = null;
 
   // ── 3. Lifecycle ──
   override connectedCallback()
@@ -303,9 +351,23 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     // Closing the tool puts the model back, and the next run bakes no animations
     sendAnimationCommand({ action: 'stop' });
     bakeAnimations.set(false);
+    if (this._making) this._making.cancelled = true;
+    this._leaveSweep();
     this._codeView?.destroy();
     this._codeView = null;
     this._codeKey = '';
+  }
+
+  override willUpdate()
+  {
+    // A new run: the sweeps made from the one before are of another script, or other values
+    const result = executionResult.get();
+    if (result !== this._sweepsOf)
+    {
+      this._sweepsOf = result;
+      this._sweeps.clear();
+      this._leaveSweep();
+    }
   }
 
   override updated()
@@ -320,6 +382,9 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
   private _codeView: EditorView | null = null;
   private _codeKey = '';
   private _parsedFor: string | null = null;
+  /** The sweeps made, by name, for the run they were made from. */
+  private _sweeps = new Map<string, { glb: ArrayBuffer, report: ParamFramesReport }>();
+  private _sweepsOf: unknown = null;
   private _parsed: AnimationCode[] | null = null;
 
   /** The animations of the code in its order, with what the last run made of them; then the
@@ -334,7 +399,7 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     const row = (name: string, code?: AnimationCode): AnimationRow =>
     {
       const a = info.get(name);
-      return { name, title: a?.title, duration: a?.duration, loop: a?.loop, sweep: !!a?.params, code };
+      return { name, title: a?.title, duration: a?.duration, loop: a?.loop, sweep: !!a?.params, params: a?.params, code };
     };
 
     return [
@@ -377,8 +442,77 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     // the player is the selected one's: another one playing goes back to the model
     const loaded = animationStatus.get().name;
     if (loaded && loaded !== name) sendAnimationCommand({ action: 'stop' });
+    if (name !== this._selected) this._leaveSweep();
     this._selected = name;
     this._loop = null;
+  }
+
+  /** Make a parameter sweep: a run of the script per frame, with that frame's values, one after
+   *  the other (the page runs them, runParamFrame), merged into one model in the worker; then
+   *  show it and play. */
+  private async _makeSweep(row: AnimationRow)
+  {
+    const params = row.params;
+    if (!params || this._making) return;
+    const result = executionResult.get();
+    const making = { name: row.name, done: 0, total: params.values.length, cancelled: false };
+    this._making = making;
+    this._sweepError = null;
+    try
+    {
+      const frames = await params.values.reduce<Promise<ArrayBuffer[]>>(async (acc, values, i) =>
+      {
+        const done = await acc;
+        if (making.cancelled) return done;
+        const glb = await runParamFrame(values);
+        if (!glb) throw new Error(msg(str`Frame ${i + 1} (${Object.entries(values).map(([k, v]) => `${k} ${v}`).join(', ')}) did not run. Run the script with those values to see why.`));
+        making.done = i + 1;
+        this.requestUpdate();
+        return [...done, glb];
+      }, Promise.resolve([]));
+      if (making.cancelled || executionResult.get() !== result) return;
+
+      // the length a sweep has when the script gives it none, as resolve.ts has it
+      const { glb, report } = await mergeParamFrames(frames, {
+        name: row.name, title: row.title, duration: row.duration ?? 2, loop: row.loop ?? 'none', values: params.values,
+      });
+      if (executionResult.get() !== result) return;
+      if (!report.animated)
+      {
+        this._sweepError = { name: row.name, message: msg('Nothing changes over the frames: the parameter changes no part.') };
+        return;
+      }
+      this._sweeps.set(row.name, { glb, report });
+      showAnimationModel(glb);
+      this._play(row.name);
+    }
+    catch (e)
+    {
+      this._sweepError = { name: row.name, message: (e as Error)?.message ?? String(e) };
+    }
+    finally
+    {
+      this._making = null;
+    }
+  }
+
+  /** Back to the run's model, from a sweep's. */
+  private _leaveSweep()
+  {
+    if (!animationModel.get()) return;
+    sendAnimationCommand({ action: 'stop' });
+    showAnimationModel(null);
+  }
+
+  private _madeText(report: ParamFramesReport, bytes: number): string
+  {
+    const size = (bytes >= 1e6) ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} kB`;
+    const parts = [
+      report.morphed ? msg(str`${report.morphed} morphing`) : '',
+      report.moved ? msg(str`${report.moved} moving`) : '',
+      report.flipbook ? msg(str`${report.flipbook} as a flipbook`) : '',
+    ].filter(Boolean).join(', ');
+    return msg(str`${report.frames} frames, ${size}: ${parts}.`);
   }
 
   /** The script with this code instead, to the page, which runs it. */
@@ -463,6 +597,9 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
 
   private _play(name: string, from?: number)
   {
+    // a sweep made before plays from its own model: shown first, it plays once it is loaded
+    const made = this._sweeps.get(name);
+    if (made && animationModel.get() !== made.glb) showAnimationModel(made.glb);
     sendAnimationCommand({
       action: 'play', name, speed: this._speed, follow: this._follow,
       ...(this._loop ? { loop: this._loop } : {}),
@@ -470,7 +607,11 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     });
   }
 
-  private _stop = () => sendAnimationCommand({ action: 'stop' });
+  private _stop = () =>
+  {
+    sendAnimationCommand({ action: 'stop' });
+    this._leaveSweep();
+  };
 
   /** Go to `t` and hold there: in the one loaded, or in the selected one, loaded there. */
   private _scrub(row: AnimationRow, t: number)
@@ -533,11 +674,12 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     });
   }
 
-  /** The GLB the viewer shows, animations and all, straight from the last run. */
+  /** The GLB the viewer shows, animations and all: a sweep's while one is shown, else the
+   *  last run's. */
   private _download = () =>
   {
     const result = executionResult.get();
-    const glb = result ? getOutput(result, pipelineModelPath('default')) : undefined;
+    const glb = animationModel.get() ?? (result ? getOutput(result, pipelineModelPath('default')) : undefined);
     if (!(glb instanceof ArrayBuffer) && !(glb instanceof Uint8Array)) return;
 
     const url = URL.createObjectURL(new Blob([glb as BlobPart], { type: 'model/gltf-binary' }));
@@ -719,6 +861,13 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
       font-variant-numeric: tabular-nums;
       color: var(--color-text-muted);
     }
+
+    /* ── Making a sweep ── */
+
+    .make { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-sm); }
+    .making { display: flex; align-items: center; gap: var(--space-sm); align-self: stretch; }
+    .making wa-progress-bar { flex: 1; --track-height: 6px; }
+    .make .error { margin: 0; }
 
     /* ── Its code ── */
 
