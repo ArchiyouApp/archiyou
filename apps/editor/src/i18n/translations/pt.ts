@@ -13,6 +13,8 @@
 'hf4b6cadf590ffe18': html`Cole este HTML na sua página — funciona como um vídeo incorporado do YouTube ou do Vimeo. O quadro ocupa toda a largura disponível; ajuste <code>height</code> como preferir.`,
 's055a7c2d7334ea66': `Este download não tem formatos de saída configurados.`,
 's070a892695a86cbc': str`Aplicar a predefinição “${0}”`,
+'s08dbe3a6d8c3408f': `Mudar para isométrica`,
+'s2da761bf5b889aa8': `Mudar para perspetiva`,
 's11326fd2590f4e5e': `Padrão`,
 's123467b419acbc07': `e-mail`,
 's15165fb86082f593': `Nenhum parâmetro definido`,

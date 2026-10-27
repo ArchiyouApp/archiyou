@@ -13,6 +13,8 @@
 'hf4b6cadf590ffe18': html`Fügen Sie dieses HTML in Ihre Seite ein – es funktioniert wie eine YouTube- oder Vimeo-Einbettung. Der Rahmen füllt die verfügbare Breite; passen Sie <code>height</code> nach Bedarf an.`,
 's055a7c2d7334ea66': `Für diesen Download sind keine Ausgabeformate eingerichtet.`,
 's070a892695a86cbc': str`Voreinstellung „${0}“ anwenden`,
+'s08dbe3a6d8c3408f': `Zur Isometrie wechseln`,
+'s2da761bf5b889aa8': `Zur Perspektive wechseln`,
 's11326fd2590f4e5e': `Standard`,
 's123467b419acbc07': `E-Mail`,
 's15165fb86082f593': `Keine Parameter definiert`,

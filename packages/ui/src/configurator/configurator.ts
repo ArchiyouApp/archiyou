@@ -1,14 +1,16 @@
-import { LitElement, html, css, unsafeCSS } from 'lit';
+import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
+import { localized, msg } from '@lit/localize';
 
 import { createExecutionFailureResult, getServerExecutionTarget, runScript, warmupWorker } from '@archiyou/editor/src/services/execution-service';
-import { currentParams, metricValues, postToHost } from '@archiyou/editor/src/services/host-events';
+import { currentParams, listenToHost, metricValues, postToHost, HOST_COMMANDS, type HostCommand } from '@archiyou/editor/src/services/host-events';
 import { setExecutionResult, setExecuting } from '@archiyou/editor/src/state/workspace';
 import { configuratorUnitSystemPick } from '@archiyou/editor/src/state/workspace';
 import { buildConfiguratorRequest, configuratorValueFor, setConfiguratorValue } from '@archiyou/editor/src/state/configurator';
 import { registerViewerParamStore } from '@archiyou/editor/src/state/viewer';
-import { syncConfiguratorParamsToUrl } from '@archiyou/editor/src/state/configurator-url';
+import { applyConfiguratorQuery, configurationQuery, syncConfiguratorParamsToUrl } from '@archiyou/editor/src/state/configurator-url';
+import { configuratorDisplay } from '@archiyou/editor/src/state/configurator-display';
 import { refreshPreviewTranslations, clearPreviewTranslations, configuratorLocale } from '@archiyou/editor/src/state/locale';
 import { setChromeLocale } from '@archiyou/editor/src/i18n/locale-config';
 import { sourceLocale } from '@archiyou/editor/src/i18n/locale-codes';
@@ -24,6 +26,7 @@ import './configurator-metric-bar.js';
 import './configurator-attribution.js';
 import './configurator-viewer-actions.js';
 
+@localized()
 @customElement('page-configurator')
 export class PageConfigurator extends SignalWatcher(LitElement)
 {
@@ -36,20 +39,32 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     this._pendingUnitSystem = configuratorUnitSystemPick.get() ?? '';
     // The buttons and labels follow the language picker, like the content does.
     this._pendingLocale = configuratorLocale.get();
+    // What the link asked to show (state/configurator-display); the defaults in the preview.
+    const display = configuratorDisplay.get();
     return html`
       <!-- One DOM for both layouts, so the viewer is never re-created: on wide
            screens the sheet is docked as the sidebar, on compact ones it slides
            up over the full-screen viewer. -->
       <div class="stage">
         <bottom-sheet class="sidebar" detents="peek half full" ?docked=${!this._compact}>
-          <configurator-header slot="header"></configurator-header>
+          <!-- Without the title block (ui.header=0) a phone still needs something to grab. -->
+          ${display.header
+            ? html`<configurator-header slot="header"></configurator-header>`
+            : this._compact ? html`<div slot="header" class="sheet-title">${msg('Parameters')}</div>` : nothing}
           <configurator-controls
             @configurator-params-changed=${this._handleParamsChanged}
           ></configurator-controls>
         </bottom-sheet>
 
         <div class="viewer-pane">
-          <model-viewer presentation></model-viewer>
+          <model-viewer
+            presentation
+            .initialStyle=${display.style}
+            .styles=${display.styles}
+            ?initialOrtho=${display.ortho}
+            .initialGrid=${display.grid}
+            menu-placement=${display.menu}
+          ></model-viewer>
           <configurator-viewer-actions
             class="viewer-actions"
             ?preview=${this.preview}
@@ -59,7 +74,7 @@ export class PageConfigurator extends SignalWatcher(LitElement)
         </div>
       </div>
 
-      <configurator-metric-bar ?preview=${this.preview}></configurator-metric-bar>
+      <configurator-metric-bar ?preview=${this.preview} ?without-metrics=${!display.metrics}></configurator-metric-bar>
     `;
   }
 
@@ -79,6 +94,7 @@ export class PageConfigurator extends SignalWatcher(LitElement)
   @state() private _compact = false;
 
   @state() private _executing = false;
+  private _runAgain = false;
   private _resizeObserver: ResizeObserver | null = null;
   private _paramExecTimeout: number | null = null;
   private _pendingUnitSystem: string | null = null;
@@ -92,6 +108,10 @@ export class PageConfigurator extends SignalWatcher(LitElement)
   private _changedParams = new Set<string>();
   private _appliedPreset: string | null = null;
   private _readyReported = false;
+  // Whether those changes came from commands of that page only, not from the visitor.
+  private _changedByHost = false;
+  private _changedByVisitor = false;
+  private _stopListening: (() => void) | null = null;
 
   // ── 3. Lifecycle ──
   override connectedCallback()
@@ -119,6 +139,8 @@ export class PageConfigurator extends SignalWatcher(LitElement)
         this._handleParamsChanged();
       },
     });
+    // Buttons on the page around an embedded configurator change the model (services/host-events).
+    if (!this.preview) this._stopListening = listenToHost(command => this._handleHostCommand(command));
     warmupWorker()
       .then(() => this._execute())
       .catch(err =>
@@ -161,6 +183,8 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     this._resizeObserver?.disconnect();
     this._unregisterParamStore?.();
     this._unregisterParamStore = null;
+    this._stopListening?.();
+    this._stopListening = null;
     if (this._paramExecTimeout !== null) clearTimeout(this._paramExecTimeout);
     if (this.preview) clearPreviewTranslations();
     // The editor around the preview, and any page after this one, is not translated.
@@ -176,7 +200,24 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     const detail = (e as CustomEvent<{ name?: string, preset?: string }> | undefined)?.detail;
     if (detail?.name) this._changedParams.add(detail.name);
     if (detail?.preset) this._appliedPreset = detail.preset;
+    this._changedByVisitor = true;
+    this._scheduleRun();
+  }
 
+  /** The page around the configurator asked for a preset or param values: applied like the
+   *  link it would otherwise have to reload with. */
+  private _handleHostCommand(command: HostCommand)
+  {
+    const { preset, changed } = applyConfiguratorQuery(command.query);
+    if (!preset && changed.length === 0) return;
+    changed.forEach(name => this._changedParams.add(name));
+    if (preset) this._appliedPreset = preset;
+    this._changedByHost = true;
+    this._scheduleRun();
+  }
+
+  private _scheduleRun()
+  {
     // Keep the address bar on the model being shown, so the link a visitor copies is
     // this configuration. Not in the preview: there the address bar is the editor's.
     if (!this.preview) syncConfiguratorParamsToUrl();
@@ -191,7 +232,13 @@ export class PageConfigurator extends SignalWatcher(LitElement)
 
   private async _execute()
   {
-    if (this._executing) return;
+    // A change made while a run is under way gets a run of its own once that one is done.
+    if (this._executing)
+    {
+      this._runAgain = true;
+      return;
+    }
+    this._runAgain = false;
     this._executing = true;
     setExecuting(true);
     const changes = this._takeChanges();
@@ -216,15 +263,24 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     {
       this._executing = false;
       setExecuting(false);
+      if (this._runAgain) this._execute();
     }
   }
 
   /** What the visitor changed since the last run, with the values this run is made with. */
-  private _takeChanges(): { changed: string[], preset: string | null, params: Record<string, unknown> }
+  private _takeChanges(): { changed: string[], preset: string | null, params: Record<string, unknown>, query: string, byHost: boolean }
   {
-    const changes = { changed: [...this._changedParams], preset: this._appliedPreset, params: currentParams() };
+    const changes = {
+      changed: [...this._changedParams],
+      preset:  this._appliedPreset,
+      params:  currentParams(),
+      query:   configurationQuery(),
+      byHost:  this._changedByHost && !this._changedByVisitor,
+    };
     this._changedParams.clear();
     this._appliedPreset = null;
+    this._changedByHost = false;
+    this._changedByVisitor = false;
     return changes;
   }
 
@@ -241,7 +297,8 @@ export class PageConfigurator extends SignalWatcher(LitElement)
       return;
     }
 
-    const configuration = { params: changes.params, metrics: metricValues(result.outputs ?? []) };
+    const configuration = { params: changes.params, metrics: metricValues(result.outputs ?? []), query: changes.query };
+    const via = changes.byHost ? { via: 'host' as const } : {};
     if (!this._readyReported)
     {
       this._readyReported = true;
@@ -251,11 +308,12 @@ export class PageConfigurator extends SignalWatcher(LitElement)
         type:      'ready',
         execution: getServerExecutionTarget() ? 'server' : 'client',
         loadMs:    Math.round(performance.now()),
+        commands:  HOST_COMMANDS,
         ...configuration,
       });
     }
-    if (changes.preset) postToHost({ type: 'preset', preset: changes.preset, ...configuration });
-    if (changes.changed.length > 0) postToHost({ type: 'change', changed: changes.changed, ...configuration });
+    if (changes.preset) postToHost({ type: 'preset', preset: changes.preset, ...via, ...configuration });
+    if (changes.changed.length > 0) postToHost({ type: 'change', changed: changes.changed, ...via, ...configuration });
   }
 
   private _buildRequest(): RunnerScriptExecutionRequest
@@ -292,6 +350,15 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     {
       background: var(--color-bg-elevated);
       border-right: 1px solid var(--color-border);
+    }
+
+    .sheet-title
+    {
+      padding: var(--space-lg) var(--space-lg) var(--space-sm);
+      font-family: var(--font-sans);
+      font-size: var(--text-sm);
+      font-weight: 500;
+      color: var(--color-text);
     }
 
     /* Positioning context for the viewer overlays (attribution + actions). */

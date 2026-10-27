@@ -13,6 +13,8 @@
 'hf4b6cadf590ffe18': html`Pega este HTML en tu página: funciona como un vídeo insertado de YouTube o Vimeo. El marco ocupa todo el ancho disponible; ajusta <code>height</code> a tu gusto.`,
 's055a7c2d7334ea66': `Esta descarga no tiene formatos de salida configurados.`,
 's070a892695a86cbc': str`Aplicar el ajuste predefinido «${0}»`,
+'s08dbe3a6d8c3408f': `Cambiar a isométrica`,
+'s2da761bf5b889aa8': `Cambiar a perspectiva`,
 's11326fd2590f4e5e': `Predeterminado`,
 's123467b419acbc07': `correo`,
 's15165fb86082f593': `No hay parámetros definidos`,

@@ -10,9 +10,14 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 export class ViewerMenu extends LitElement
 {
   @property() activeStyleId = 'realistic';
-  /** Visitor-facing (configurator): only navigation, view style, grid and AR
-   *  when the device supports it. */
+  /** Visitor-facing (configurator): only navigation, view style, projection, grid
+   *  and AR when the device supports it. */
   @property({ type: Boolean, reflect: true }) presentation = false;
+  /** View style ids to offer; null: all. With one or none the style button goes. */
+  @property({ attribute: false }) styles: string[] | null = null;
+  /** The edge of the viewer the menu sits on: flyouts open away from it, and on the
+   *  left or right the menu stands upright. */
+  @property({ reflect: true }) placement: 'bottom' | 'top' | 'left' | 'right' = 'bottom';
   @property({ type: Boolean }) arSupported = false;
   @property({ type: Boolean }) arActive = false;
   @property({ type: Boolean }) isOrtho = false;
@@ -119,6 +124,8 @@ export class ViewerMenu extends LitElement
         ? msg('Enter AR')
         : msg('AR not supported on this device');
 
+    const styles = VIEW_STYLES.filter(s => !this.styles || this.styles.includes(s.id));
+
     return html`
       <aside>
         <!-- nav group -->
@@ -139,7 +146,7 @@ export class ViewerMenu extends LitElement
         <!-- view group -->
         <div class="group">
           <!-- view styles with flyout -->
-          <div class="style-anchor">
+          ${styles.length < 2 ? '' : html`<div class="style-anchor">
             <button
               class="icon-btn ${this._stylesOpen ? 'active' : ''}"
               title=${msg('View style')}
@@ -150,7 +157,7 @@ export class ViewerMenu extends LitElement
 
             ${this._stylesOpen ? html`
               <div class="styles-flyout">
-                ${VIEW_STYLES.map(s => html`
+                ${styles.map(s => html`
                   <button
                     class="style-item ${s.id === this.activeStyleId ? 'active' : ''}"
                     @click=${() => this._selectStyle(s.id)}
@@ -161,7 +168,7 @@ export class ViewerMenu extends LitElement
                 `)}
               </div>
             ` : ''}
-          </div>
+          </div>`}
 
           <!-- animation selector (only shown when animations are available) -->
           ${this.animations.length > 0 ? html`
@@ -198,13 +205,13 @@ export class ViewerMenu extends LitElement
           ` : ''}
 
           <!-- projection toggle -->
-          ${this.presentation ? '' : html`<button
+          <button
             class="icon-btn ${this.isOrtho ? 'active' : ''}"
-            title=${this.isOrtho ? 'Switch to Perspective' : 'Switch to Isometric'}
+            title=${this.isOrtho ? msg('Switch to perspective') : msg('Switch to isometric')}
             @click=${() => this._emit('viewer-toggle-projection')}
           >
             <wa-icon library="lucide" name="box"></wa-icon>
-          </button>`}
+          </button>
 
           <!-- grid toggle -->
           <button
@@ -277,6 +284,22 @@ export class ViewerMenu extends LitElement
       gap: 2px;
     }
 
+    :host([placement="left"]) aside,
+    :host([placement="right"]) aside,
+    :host([placement="left"]) .group,
+    :host([placement="right"]) .group {
+      flex-direction: column;
+    }
+
+    :host([placement="left"]) hr,
+    :host([placement="right"]) hr {
+      width: 22px;
+      height: 0;
+      border-left: none;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      margin: 3px 0;
+    }
+
     hr {
       height: 22px;
       width: 0;
@@ -338,6 +361,22 @@ export class ViewerMenu extends LitElement
       gap: 1px;
       min-width: 148px;
     }
+
+    /* Flyouts open away from the edge the menu sits on. */
+    :host([placement="top"]) .styles-flyout {
+      bottom: auto;
+      top: calc(100% + 10px);
+    }
+
+    :host([placement="left"]) .styles-flyout,
+    :host([placement="right"]) .styles-flyout {
+      bottom: auto;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
+    :host([placement="left"]) .styles-flyout  { left: calc(100% + 10px); }
+    :host([placement="right"]) .styles-flyout { left: auto; right: calc(100% + 10px); }
 
     .style-item {
       display: flex;

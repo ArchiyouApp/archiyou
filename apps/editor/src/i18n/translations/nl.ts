@@ -13,6 +13,8 @@
 'hf4b6cadf590ffe18': html`Plak deze HTML in je pagina — het werkt net als een YouTube- of Vimeo-embed. Het frame vult de beschikbare breedte; pas <code>height</code> naar wens aan.`,
 's055a7c2d7334ea66': `Voor deze download zijn geen uitvoerformaten ingesteld.`,
 's070a892695a86cbc': str`Voorinstelling “${0}” toepassen`,
+'s08dbe3a6d8c3408f': `Naar isometrisch`,
+'s2da761bf5b889aa8': `Naar perspectief`,
 's11326fd2590f4e5e': `Standaard`,
 's123467b419acbc07': `e-mail`,
 's15165fb86082f593': `Geen parameters gedefinieerd`,

@@ -140,3 +140,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-10-24 | [Caddy: published configurators may be framed by other sites](./records/2026-10-24-configurator-embedding.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-10-24 | [Configurator: `?embed=1` leaves out "View source" and "Embed" inside other sites](./records/2026-10-24-configurator-embed-param.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-10-24 | [Configurator: events for the page it is embedded in](./records/2026-10-24-configurator-host-events.md) | Claude Opus 5.5 | develop | 1 |
+| 2026-10-25 | [Configurator: display options in the link, isometric for visitors, commands from the page](./records/2026-10-25-configurator-display-and-page-commands.md) | Claude Opus 5.5 | develop | 1 |

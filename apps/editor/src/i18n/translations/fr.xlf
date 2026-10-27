@@ -1080,6 +1080,14 @@
   <target>Par défaut</target>
   <note from="lit-localize">The model without an animation playing</note>
 </trans-unit>
+<trans-unit id="s2da761bf5b889aa8">
+  <source>Switch to perspective</source>
+  <target>Passer en perspective</target>
+</trans-unit>
+<trans-unit id="s08dbe3a6d8c3408f">
+  <source>Switch to isometric</source>
+  <target>Passer en isométrique</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

@@ -190,8 +190,10 @@ export class ModelViewer extends SignalWatcher(LitElement)
         @handle-drag-move=${this._onHandleDragMove}
         @handle-drag-end=${this._onHandleDragEnd}
       ></viewer-handles-overlay>
-      <viewer-menu
+      ${this.menuPlacement === 'none' ? '' : html`<viewer-menu
         ?presentation=${this.presentation}
+        placement=${this.menuPlacement}
+        .styles=${this.styles}
         .activeStyleId=${this._activeStyleId}
         .arSupported=${this._arSupported}
         .arActive=${this._arActive}
@@ -211,13 +213,14 @@ export class ModelViewer extends SignalWatcher(LitElement)
         @viewer-toggle-projection=${this._toggleProjection}
         @viewer-toggle-grid=${this._toggleGrid}
         @viewer-toggle-gizmo=${this._toggleGizmo}
-      ></viewer-menu>
+      ></viewer-menu>`}
     `;
   }
 
   // ── 3. Lifecycle ──
   override firstUpdated()
   {
+    this._applyInitialView();
     const canvas = this.renderRoot.querySelector('canvas')!;
     this._initRenderer(canvas);
     this._initScene();
@@ -389,12 +392,29 @@ export class ModelViewer extends SignalWatcher(LitElement)
    *  the modelling tools. */
   @property({ type: Boolean }) presentation = false;
 
+  // How the viewer opens, for a configurator whose link asks for it (the editor's
+  // state/configurator-display). Read once, when the viewer is first rendered.
+  /** View style id to open in; null or unknown: the default (realistic). */
+  @property({ attribute: false }) initialStyle: string | null = null;
+  /** Open with the orthographic (isometric) camera instead of the perspective one. */
+  @property({ type: Boolean }) initialOrtho = false;
+  /** Grid shown or hidden from the start, over the view style's default; null: the style's. */
+  @property({ attribute: false }) initialGrid: boolean | null = null;
+
+  /** View style ids the menu offers; null: all of them. */
+  @property({ attribute: false }) styles: string[] | null = null;
+  /** Where the viewer menu sits, or 'none' for no menu. */
+  @property({ attribute: 'menu-placement', reflect: true }) menuPlacement: 'bottom' | 'top' | 'left' | 'right' | 'none' = 'bottom';
+
   // Reactive state that updates viewer-menu props
   @state() private _activeStyleId = 'realistic';
   @state() private _arSupported = false;
   @state() private _arActive = false;
   @state() private _isOrtho = false;
   @state() private _gridVisible = true;
+  /** The style whose grid default _gridVisible was last set from: a re-run re-applies the style,
+   *  and must not undo the visitor's own grid toggle. */
+  private _gridStyleId: string | null = null;
   @state() private _gizmoVisible = true;
 
   // Three.js scene objects
@@ -1586,6 +1606,21 @@ export class ModelViewer extends SignalWatcher(LitElement)
     this._dirty = true;
   }
 
+  /** The view the link asked for (initialStyle, initialOrtho, initialGrid), before anything
+   *  is drawn. A style the menu does not offer is not opened in either. */
+  private _applyInitialView()
+  {
+    const offered = VIEW_STYLES.filter(s => !this.styles || this.styles.includes(s.id));
+    const style = offered.find(s => s.id === this.initialStyle)
+      ?? offered.find(s => s.id === this._activeStyleId)
+      ?? offered[0];
+    if (style) this._activeStyleId = style.id;
+
+    this._gridStyleId = this._activeStyleId;
+    this._gridVisible = this.initialGrid ?? (VIEW_STYLES.find(s => s.id === this._activeStyleId)?.grid?.visible ?? true);
+    this._isOrtho = this.initialOrtho;
+  }
+
   private _applyViewStyle(styleId: string)
   {
     const style = VIEW_STYLES.find(s => s.id === styleId);
@@ -1661,9 +1696,14 @@ export class ModelViewer extends SignalWatcher(LitElement)
     // Grid + Fog (auto-sized to scene bounds)
     this._activeStyleId = styleId;
     // Sync the user toggle to the style's default each time the style changes
-    // so switching to realistic (grid off by default) hides the grid, but the
-    // user can still toggle it on manually afterwards.
-    this._gridVisible = style.grid?.visible ?? true;
+    // so switching to wireframe (grid off by default) hides the grid, but the
+    // user can still toggle it on manually afterwards. Only on a change of style:
+    // every run and theme switch re-applies the same one.
+    if (styleId !== this._gridStyleId)
+    {
+      this._gridStyleId = styleId;
+      this._gridVisible = style.grid?.visible ?? true;
+    }
     this._updateGrid();
 
     // Material overrides — traverse scene only when the style has mesh/line config
@@ -3117,6 +3157,25 @@ export class ModelViewer extends SignalWatcher(LitElement)
       margin-inline: auto;
       z-index: 10;
     }
+
+    :host([menu-placement="top"]) viewer-menu {
+      top: 16px;
+      bottom: auto;
+    }
+
+    /* Upright along a side, centred the same way. */
+    :host([menu-placement="left"]) viewer-menu,
+    :host([menu-placement="right"]) viewer-menu {
+      top: 0;
+      bottom: 0;
+      inset-inline: auto;
+      height: fit-content;
+      max-height: calc(100% - 16px);
+      margin-block: auto;
+    }
+
+    :host([menu-placement="left"]) viewer-menu  { left: 16px; }
+    :host([menu-placement="right"]) viewer-menu { right: 16px; }
   `;
 }
 

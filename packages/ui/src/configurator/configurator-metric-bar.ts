@@ -23,8 +23,10 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
   // ── 1. Render ──
   override render()
   {
-    const metrics = this._collectMetrics();
-    const executing = scriptExecuting.get();
+    const metrics = this.withoutMetrics ? [] : this._collectMetrics();
+    const executing = !this.withoutMetrics && scriptExecuting.get();
+    // Without metrics the bar is only there for the Download button.
+    this.toggleAttribute('hidden', this.withoutMetrics && !this._hasDownloads());
 
     return html`
       <div class="bar">
@@ -86,6 +88,9 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
   /** True inside the editor's Configurator Preview — passed to the download menu,
    *  which then stands in the publish defaults for a not-yet-published script. */
   @property({ type: Boolean, reflect: true }) preview = false;
+
+  /** No metric cards (`ui.metrics=0`, state/configurator-display); the Download button stays. */
+  @property({ type: Boolean, attribute: 'without-metrics' }) withoutMetrics = false;
 
   @state() private _hasOverflow = false;
   private _resizeObserver: ResizeObserver | null = null;
@@ -194,6 +199,11 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
       overflow: hidden;
       border-top: 1px solid var(--color-border);
       background: var(--color-bg-elevated);
+    }
+
+    :host([hidden])
+    {
+      display: none;
     }
 
     .bar

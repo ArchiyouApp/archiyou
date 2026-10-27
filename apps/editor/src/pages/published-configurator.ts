@@ -14,7 +14,8 @@
  * warmupWorker(). `?exec=client` forces the browser kernel for debugging (comparing
  * the two backends is how you check a server result renders identically).
  *
- * `?embed=1` marks a configurator shown inside another site (see isEmbedded()).
+ * `?embed=1` marks a configurator shown inside another site (see isEmbedded()), the `ui.*`
+ * keys set what it shows (state/configurator-display) and `?preset=Large` opens a preset.
  */
 
 import { LitElement, html, css } from 'lit';
@@ -31,6 +32,7 @@ import '@archiyou/ui/configurator/configurator.js';
 
 import { openSharedScript } from '../state/workspace';
 import { applyConfiguratorParamsFromQuery, isEmbedded } from '../state/configurator-url';
+import { applyDisplayFromQuery, resetDisplay } from '../state/configurator-display';
 import { applyLocaleFromQuery, detectPreferredLocale } from '../state/locale';
 import { setChromeLocale } from '../i18n/locale-config';
 import { allLocales } from '../i18n/locale-codes';
@@ -56,6 +58,8 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
     // open in that language for whoever follows it.
     applyLocaleFromQuery(window.location.search);
     this._embedded = isEmbedded(window.location.search);
+    // ?ui.header=0&ui.style=techdraw… — what the site embedding it wants to show.
+    applyDisplayFromQuery(window.location.search);
     // Until the script is here, its languages are unknown: the visitor's own language
     // for the loading and error states. The configurator takes over once it mounts.
     void setChromeLocale(detectPreferredLocale([...allLocales]));
@@ -71,6 +75,8 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
     // order can leave a stale one behind.
     setServerExecutionTarget(null);
     setPublishedScript(null);
+    // Nor its display options: the editor's Configurator Preview shows everything.
+    resetDisplay();
   }
 
   private async _load()
@@ -103,7 +109,7 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
       setServerExecutionTarget(this._serverTarget(user, scriptAndVersion, data));
       // A visitor may be signed out: module bundles come on the author's entitlement.
       setPublishedScript(`${user}/${scriptAndVersion}`);
-      // ?WIDTH=1200&SHELVES=4 — a shared link opens on that exact model. Applied
+      // ?preset=Large&WIDTH=1200 — a shared link opens on that exact model. Applied
       // after the script is loaded (its params are what type the raw strings) and
       // before <page-configurator> mounts, so the first run is already the right one.
       applyConfiguratorParamsFromQuery(window.location.search);

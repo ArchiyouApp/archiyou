@@ -13,6 +13,8 @@
 'hf4b6cadf590ffe18': html`Collez ce HTML dans votre page — il fonctionne comme une intégration YouTube ou Vimeo. Le cadre occupe toute la largeur disponible ; ajustez <code>height</code> à votre convenance.`,
 's055a7c2d7334ea66': `Aucun format de sortie n’est configuré pour ce téléchargement.`,
 's070a892695a86cbc': str`Appliquer le préréglage « ${0} »`,
+'s08dbe3a6d8c3408f': `Passer en isométrique`,
+'s2da761bf5b889aa8': `Passer en perspective`,
 's11326fd2590f4e5e': `Par défaut`,
 's123467b419acbc07': `e-mail`,
 's15165fb86082f593': `Aucun paramètre défini`,
