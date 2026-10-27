@@ -82,17 +82,20 @@ describe('a parameter sweep', () =>
         const [fixed] = nodeNamed('fixed')
         expect(channels.some(c => c.node === fixed)).toBe(false)
 
-        // the knob is a box, then a sphere: two nodes, each shown for its own frames
+        // the knob is a box, then a sphere: two nodes, each shown for its own frames. As the
+        // frame nearest in time, where the plank and the leg are: switched halfway between two
+        // frames (0.5, 1.5, 2.5 s), and the last one held to the end, also in a loop
         const knobs = nodeNamed('knob')
         expect(knobs.length).toBe(2)
         const shown = knobs.map(k =>
         {
             const scale = channels.find(c => c.node === k && c.path === 'scale')!
             expect(scale.sampler.getInterpolation()).toBe('STEP')
+            expect(Array.from(scale.sampler.getInput()!.getArray()!)).toEqual([0, 0.5, 1.5, 2.5, 3])
             const values = Array.from(scale.sampler.getOutput()!.getArray()!)
-            return Array.from({ length: 4 }, (_, i) => values[i * 3] > 0.5)
+            return Array.from({ length: 5 }, (_, i) => values[i * 3] > 0.5)
         })
-        expect(shown).toEqual([[true, true, false, false], [false, false, true, true]])
+        expect(shown).toEqual([[true, true, false, false, false], [false, false, true, true, true]])
         expect(knobs[1].getParentNode()).toBe(knobs[0].getParentNode())
 
         // the data the viewer reads

@@ -16,7 +16,7 @@ import type { ScriptOutputData } from '@archiyou/core/src/execution/types';
 import type { SceneNodeData } from '@archiyou/core/src/modeler/types';
 import { applyEdgeExtensions, applyPointStyles } from './gltf-edge-extensions.js';
 import { animationPointerPlugin, finishPointerTracks, pointerDataOf } from './gltf-animation-pointer.js';
-import { captureFading, updateFading, restoreFading, type FadeSnapshot } from './animation-playback.js';
+import { captureFading, updateFading, restoreFading, setActionLoop, bounceAtEnd, type FadeSnapshot } from './animation-playback.js';
 import { applyAnnotations } from './gltf-annotations.js';
 import type { HtmlLabelDef } from './gltf-annotations.js';
 import './viewer-labels-overlay.js';
@@ -1479,7 +1479,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
 
     const action = this._mixer.clipAction(clip);
     action.reset();
-    this._setActionLoop(action, this._animationLoop);
+    setActionLoop(action, this._animationLoop);
     action.setEffectiveTimeScale(this._animationSpeed);
     action.setEffectiveWeight(1);
     action.time = Math.min(Math.max(options?.from ?? 0, 0), clip.duration);
@@ -1504,14 +1504,16 @@ export class ModelViewer extends SignalWatcher(LitElement)
     this._publishAnimation(true);
   }
 
-  /** Carry on; from the start again when it had played to its end. */
+  /** Carry on; from the start again when it had played to its end (back and forth turns
+   *  round there instead). */
   resumeAnimation(): void
   {
     const action = this._animationAction;
     if (!action) return;
     const duration = action.getClip().duration;
-    if (action.loop === THREE.LoopOnce && action.timeScale > 0 && action.time >= duration - 1e-6) action.time = 0;
-    if (action.loop === THREE.LoopOnce && action.timeScale < 0 && action.time <= 1e-6) action.time = duration;
+    const once = action.loop === THREE.LoopOnce && this._animationLoop !== 'pingpong';
+    if (once && action.timeScale > 0 && action.time >= duration - 1e-6) action.time = 0;
+    if (once && action.timeScale < 0 && action.time <= 1e-6) action.time = duration;
     action.paused = false;
     action.enabled = true;
     this._publishAnimation(true);
@@ -1700,7 +1702,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
       case 'options':
       {
         const action = this._animationAction;
-        if (command.loop && action) { this._animationLoop = command.loop; this._setActionLoop(action, command.loop); }
+        if (command.loop && action) { this._animationLoop = command.loop; setActionLoop(action, command.loop); }
         if (command.speed !== undefined && action)
         {
           this._animationSpeed = command.speed;
@@ -1713,17 +1715,12 @@ export class ModelViewer extends SignalWatcher(LitElement)
     }
   }
 
-  private _setActionLoop(action: THREE.AnimationAction, loop: AnimationLoopMode): void
-  {
-    if (loop === 'loop') { action.setLoop(THREE.LoopRepeat, Infinity); action.clampWhenFinished = false; }
-    else if (loop === 'pingpong') { action.setLoop(THREE.LoopPingPong, Infinity); action.clampWhenFinished = false; }
-    else { action.setLoop(THREE.LoopOnce, 1); action.clampWhenFinished = true; }
-  }
-
   private _onAnimationFinished = (event: { action?: THREE.AnimationAction }) =>
   {
     if (event.action !== this._animationAction) return;
     if (this._animationStopAtEnd) { this.stopAnimation(); return; }
+    // back and forth turns round at each end (setActionLoop)
+    if (this._animationLoop === 'pingpong') { bounceAtEnd(event.action); return; }
     this._publishAnimation(true);
   };
 

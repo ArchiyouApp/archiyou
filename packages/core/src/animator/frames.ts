@@ -13,7 +13,9 @@
  *    that grows also moves: its node gets a LINEAR translation (rotation, scale) channel too;
  *  - **another mesh** (other topology, or a part only some frames have): a flipbook. The
  *    frames' meshes are copied in as siblings of the first, each shown for its own frames only
- *    by a STEP scale channel, the visibility convention of the other clips.
+ *    by a STEP scale channel, the visibility convention of the other clips. A flipbook shows
+ *    the frame nearest in time, where the morphing and moving parts are: it switches halfway
+ *    between two frames, so the last frame shows for the last half frame, also in a loop.
  *
  *  Node names, materials and the Archiyou extras stay those of the first frame. Copied meshes
  *  reuse the first frame's material of the same primitive where it has the same name, so the
@@ -77,12 +79,17 @@ export function mergeParamFrames(base: Document, frames: Array<Document>, data: 
     const anim = base.createAnimation(data.name)
     const input = base.createAccessor().setType('SCALAR').setArray(new Float32Array(times)).setBuffer(buffer)
     const channel = (node: Node, path: 'translation' | 'rotation' | 'scale' | 'weights', type: 'VEC3' | 'VEC4' | 'SCALAR',
-        values: Array<number>, interpolation: 'LINEAR' | 'STEP' = 'LINEAR') =>
+        values: Array<number>, interpolation: 'LINEAR' | 'STEP' = 'LINEAR', at: Accessor = input) =>
     {
         const output = base.createAccessor().setType(type).setArray(new Float32Array(values)).setBuffer(buffer)
-        const sampler = base.createAnimationSampler().setInput(input).setOutput(output).setInterpolation(interpolation)
+        const sampler = base.createAnimationSampler().setInput(at).setOutput(output).setInterpolation(interpolation)
         anim.addSampler(sampler).addChannel(base.createAnimationChannel().setSampler(sampler).setTargetNode(node).setTargetPath(path))
     }
+    // a flipbook's keys: the first frame from the start, each next one from halfway to it, and
+    // a key at the end that holds the last frame and keeps the clip its length
+    let switches: Accessor | null = null
+    const switchTimes = () => switches ??= base.createAccessor().setType('SCALAR').setBuffer(buffer)
+        .setArray(new Float32Array([0, ...times.slice(1).map((t, k) => (times[k] + t) / 2), data.duration]))
 
     const baseNodes = geometryNodes(base)
     const frameNodes = frames.map(geometryNodes)
@@ -127,8 +134,9 @@ export function mergeParamFrames(base: Document, frames: Array<Document>, data: 
             const shown = (r.from === 0) ? first! : copier.node(r.node!, first, parent)
             const own = shown.getScale()
             const hidden = own.map(v => v * HIDDEN_SCALE)
-            // STEP: visible on [t_from, t_to), hidden around it; a sample per frame keeps it simple
-            channel(shown, 'scale', 'VEC3', times.flatMap((_, k) => (k >= r.from && k < r.to) ? own : hidden), 'STEP')
+            // STEP: visible from halfway before its first frame to halfway after its last one
+            const frameKeys = [...times.keys(), count - 1]
+            channel(shown, 'scale', 'VEC3', frameKeys.flatMap(k => (k >= r.from && k < r.to) ? own : hidden), 'STEP', switchTimes())
         })
     })
 
