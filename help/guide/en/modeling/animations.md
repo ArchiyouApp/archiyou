@@ -171,6 +171,22 @@ It records as it plays: once, as a loop that runs on seamlessly, or there and ba
 
 A video is H.264, which phones, social media and video editors take. A GIF takes one palette of at most 256 colours for the whole clip, and gets big quickly: keep it short and small.
 
+## In a configurator
+
+A published configurator offers the animations of its model in the viewer menu. Its link can play one as soon as the model is shown, through its own camera when it has one:
+
+```
+/configurators/you/shelf:1.0?ui.animation=flyin&ui.loop=1
+```
+
+`ui.animation` names one the script declares, or a standard one (`flyin`, `build`, `exploded`, `layout`, `turntable`, `assembly`); `ui.loop` is `1` (over and over), `0` (once) or `pingpong` (back and forth), and without it the animation plays as it says. The page a configurator is embedded in can play one with a command, and stop it with `name: null`:
+
+```js
+frame.contentWindow.postMessage({ source: 'archiyou-host', version: 1, type: 'animate', name: 'turntable', loop: 'loop' }, '*');
+```
+
+A configurator makes only the animations it is asked for. The one its link names is made with the model; one a command asks for later takes a run to make the first time, and plays at once after that.
+
 ## Export an animation
 
 Animations are made only when you ask for them, so a script with animations runs as fast as one without. Ask for them on the model's GLB:

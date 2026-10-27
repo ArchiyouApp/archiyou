@@ -13,6 +13,11 @@
  *   ui.projection=ortho            opens isometric (orthographic) instead of in perspective
  *   ui.grid=0 | ui.grid=1          grid hidden or shown, whatever the style's default
  *   ui.menu=bottom|top|left|right|none   where the viewer menu sits, or no menu
+ *   ui.animation=flyin             plays that animation once the model is shown: one the
+ *                                  script declares, or a standard one (flyin, build,
+ *                                  exploded, layout, turntable, assembly)
+ *   ui.loop=1 | 0 | pingpong       over and over, once, or back and forth; without it the
+ *                                  animation's own
  *
  * The `ui.` prefix keeps these apart from the script's params: a param name is a script
  * identifier and can never contain a dot, so `?GRID=600` stays the GRID param of a script
@@ -26,6 +31,7 @@
 import { signal } from '@lit-labs/signals';
 
 import type { ScriptParam } from '@archiyou/core/src/execution/ScriptParam';
+import type { AnimationLoopMode } from './viewer.js';
 
 export type ViewerMenuPlacement = 'bottom' | 'top' | 'left' | 'right' | 'none';
 
@@ -41,6 +47,10 @@ export interface ConfiguratorDisplay
   /** Grid visibility; null: what the view style says. */
   grid:       boolean | null;
   menu:       ViewerMenuPlacement;
+  /** The animation to play once the model is shown; null: none. */
+  animation:  string | null;
+  /** How it plays; null: as the animation says. */
+  loop:       AnimationLoopMode | null;
 }
 
 export const DEFAULT_DISPLAY: ConfiguratorDisplay = {
@@ -51,9 +61,29 @@ export const DEFAULT_DISPLAY: ConfiguratorDisplay = {
   ortho:   false,
   grid:    null,
   menu:    'bottom',
+  animation: null,
+  loop:      null,
 };
 
 const MENU_PLACEMENTS: ViewerMenuPlacement[] = ['bottom', 'top', 'left', 'right', 'none'];
+
+/** A name an animation can have, as the animator has it (animator/code.ts, isAnimationName). */
+export function isAnimationName(name: string): boolean
+{
+  return /^[\p{L}\p{N}_-]+$/u.test(name);
+}
+
+/** `ui.loop`: 1/loop over and over, 0/once once, pingpong back and forth; anything else is no
+ *  answer. */
+function loopMode(raw: string | null): AnimationLoopMode | null
+{
+  const v = raw?.trim().toLowerCase();
+  if (v === 'pingpong' || v === 'backandforth') return 'pingpong';
+  if (v === 'once' || v === 'none') return 'none';
+  if (v === 'loop' || v === 'repeat') return 'loop';
+  const on = flag(raw ?? null);
+  return (on === null) ? null : (on ? 'loop' : 'none');
+}
 
 /** The configurator as the link that opened it asks for. Always the defaults in the editor's
  *  Configurator Preview, which nothing sets. */
@@ -78,6 +108,8 @@ export function displayFromQuery(search: string): ConfiguratorDisplay
 
   const styles = text('ui.styles')?.split(',').map(s => s.trim()).filter(Boolean) ?? [];
   const menu = text('ui.menu') as ViewerMenuPlacement | null;
+  // as written: an animation's name is the script's, and can have capitals
+  const animation = query.get('ui.animation')?.trim() || null;
 
   return {
     header:  flag(query.get('ui.header')) ?? DEFAULT_DISPLAY.header,
@@ -87,6 +119,8 @@ export function displayFromQuery(search: string): ConfiguratorDisplay
     ortho:   ['ortho', 'orthographic', 'iso', 'isometric'].includes(text('ui.projection') ?? ''),
     grid:    flag(query.get('ui.grid')),
     menu:    (menu && MENU_PLACEMENTS.includes(menu)) ? menu : DEFAULT_DISPLAY.menu,
+    animation: (animation && isAnimationName(animation)) ? animation : null,
+    loop:      loopMode(query.get('ui.loop')),
   };
 }
 

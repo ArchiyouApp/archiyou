@@ -331,7 +331,7 @@ export class PageEditor extends SignalWatcher(LitElement)
 
     // The Animation tool opened: run to bake the animations (always, like a pipeline pick).
     // Closed, the next run goes without them; the model on screen can keep them till then.
-    if (this._lastAnimations !== null && this._pendingAnimations && !this._lastAnimations)
+    if (this._lastAnimations !== undefined && this._pendingAnimations && this._pendingAnimations !== this._lastAnimations)
     {
       void this.execute();
     }
@@ -350,8 +350,8 @@ export class PageEditor extends SignalWatcher(LitElement)
   }
 
   private _pendingUnitSystem: string | null = null;
-  private _pendingAnimations = false;
-  private _lastAnimations: boolean | null = null;
+  private _pendingAnimations: string | null = null;
+  private _lastAnimations: string | null | undefined = undefined;
   private _lastUnitSystem: string | null = null;
   private _pendingKernel: string | null = null;
   private _lastKernel: string | null = null;

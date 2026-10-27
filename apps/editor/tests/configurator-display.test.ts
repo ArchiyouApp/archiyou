@@ -46,7 +46,22 @@ describe('displayFromQuery', () =>
   it('reads every option', () =>
   {
     expect(displayFromQuery('?ui.header=0&ui.metrics=no&ui.style=TechDraw&ui.styles=realistic, techdraw&ui.projection=ortho&ui.grid=1&ui.menu=left'))
-      .toEqual({ header: false, metrics: false, style: 'techdraw', styles: ['realistic', 'techdraw'], ortho: true, grid: true, menu: 'left' });
+      .toEqual({ header: false, metrics: false, style: 'techdraw', styles: ['realistic', 'techdraw'], ortho: true, grid: true, menu: 'left', animation: null, loop: null });
+  });
+
+  it('reads the animation to play, as the script names it, and how it loops', () =>
+  {
+    expect(displayFromQuery('?ui.animation=flyIn&ui.loop=1')).toMatchObject({ animation: 'flyIn', loop: 'loop' });
+    expect(displayFromQuery('?ui.animation=turntable&ui.loop=0').loop).toBe('none');
+    expect(displayFromQuery('?ui.animation=deur-open&ui.loop=pingpong')).toMatchObject({ animation: 'deur-open', loop: 'pingpong' });
+    expect(displayFromQuery('?ui.animation=swing').loop).toBeNull();
+  });
+
+  it('takes no animation whose name an animation cannot have', () =>
+  {
+    expect(displayFromQuery('?ui.animation=a,b').animation).toBeNull();
+    expect(displayFromQuery('?ui.animation=<script>').animation).toBeNull();
+    expect(displayFromQuery('?ui.animation=&ui.loop=sometimes')).toMatchObject({ animation: null, loop: null });
   });
 
   it('takes isometric for orthographic, and hides the menu with none', () =>

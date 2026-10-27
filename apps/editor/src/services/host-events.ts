@@ -12,7 +12,7 @@
  *
  *     { source: 'archiyou-configurator', version: 1, type, script: 'author/name:version', ... }
  *
- *   ready     the first model is shown        { execution: 'server' | 'client', loadMs, commands, params, metrics, query }
+ *   ready     the first model is shown        { execution: 'server' | 'client', loadMs, commands, animations, params, metrics, query }
  *   change    the visitor changed the model,  { changed: [param names], params, metrics, query, via? }
  *             and the new one is shown
  *   preset    the visitor applied a preset,   { preset, params, metrics, query, via? }
@@ -24,7 +24,8 @@
  * lists), `metrics` the metrics of the model on screen ({ name: value }: a number, or the text
  * the script shows, such as '38k'), `query` the configuration as the configurator writes it in
  * a link (every param that differs from what it opens with: 'WIDTH=900&ROOF=flat'), `commands`
- * the commands below that this configurator takes (['apply']), `via: 'host'`
+ * the commands below that this configurator takes (['apply', 'animate']), `animations` the
+ * animations the script declares (the standard ones can be played too), `via: 'host'`
  * marks a change the page itself asked for with a command. A message carries nothing about the
  * visitor, only what they see on screen, so it is posted with targetOrigin '*': the
  * configurator cannot know which site embeds it. A site checks `event.origin` and
@@ -38,6 +39,14 @@
  *             first, then the params. What the query does not mention stays as it is; what it
  *             gets wrong is ignored. Answered with `preset` and/or `change` (via: 'host').
  *
+ *     { source: 'archiyou-host', version: 1, type: 'animate', name: 'flyin', loop: 'loop' }
+ *
+ *   animate   play an animation: one the script declares, or a standard one (flyin, build,
+ *             exploded, layout, turntable, assembly), through its own camera when it has
+ *             one. `loop` is 'none', 'loop' or 'pingpong'; without it, the animation's own.
+ *             `name: null` stops it and shows the model as it is. An animation the model
+ *             does not carry yet takes a run to make first. Unknown names are ignored.
+ *
  * Send commands after `ready`: the configurator listens once its script is loaded, and a
  * command that arrives earlier is lost. A command can do nothing a visitor cannot do with the
  * controls, so it is taken from any origin.
@@ -49,6 +58,8 @@ import type { ScriptOutputData } from '@archiyou/core/src/execution/types';
 import { editorScript, executionResult } from '../state/core.js';
 import { configuratorParams, configuratorValueFor } from '../state/configurator.js';
 import { configurationQuery } from '../state/configurator-url.js';
+import { isAnimationName } from '../state/configurator-display.js';
+import type { AnimationLoopMode } from '../state/viewer.js';
 
 export const HOST_MESSAGE_SOURCE = 'archiyou-configurator';
 export const HOST_MESSAGE_VERSION = 1;
@@ -57,7 +68,7 @@ export const HOST_COMMAND_SOURCE = 'archiyou-host';
 export type Configuration = { params: Record<string, unknown>, metrics: Record<string, number | string>, query: string };
 
 export type HostEvent =
-  | { type: 'ready', execution: 'server' | 'client', loadMs: number, commands: HostCommand['type'][] } & Configuration
+  | { type: 'ready', execution: 'server' | 'client', loadMs: number, commands: HostCommand['type'][], animations: string[] } & Configuration
   | { type: 'change', changed: string[], via?: 'host' } & Configuration
   | { type: 'preset', preset: string, via?: 'host' } & Configuration
   | { type: 'download', fulfillment: string, formats: string[] } & Configuration
@@ -117,11 +128,15 @@ export function postToHost(event: HostEvent): void
 
 //// COMMANDS FROM THE PAGE ////
 
-export type HostCommand = { type: 'apply', query: string };
+export type HostCommand =
+  | { type: 'apply', query: string }
+  | { type: 'animate', name: string | null, loop?: AnimationLoopMode };
+
+const LOOP_MODES: AnimationLoopMode[] = ['none', 'loop', 'pingpong'];
 
 /** The commands this configurator takes, announced in its `ready` message: a page that finds one
  *  missing (an older configurator) reloads the frame with a new URL instead. */
-export const HOST_COMMANDS: HostCommand['type'][] = ['apply'];
+export const HOST_COMMANDS: HostCommand['type'][] = ['apply', 'animate'];
 
 /** A command from the page, or null for anything else a window may post. */
 export function parseHostCommand(data: unknown): HostCommand | null
@@ -129,6 +144,13 @@ export function parseHostCommand(data: unknown): HostCommand | null
   const m = (data && typeof data === 'object') ? data as Record<string, unknown> : null;
   if (m?.source !== HOST_COMMAND_SOURCE || m.version !== HOST_MESSAGE_VERSION) return null;
   if (m.type === 'apply' && typeof m.query === 'string') return { type: 'apply', query: m.query };
+  if (m.type === 'animate' && (m.name === null || typeof m.name === 'string'))
+  {
+    const name = (typeof m.name === 'string') ? (m.name.trim() || null) : null;
+    if (name && !isAnimationName(name)) return null;
+    const loop = LOOP_MODES.find(l => l === m.loop);
+    return { type: 'animate', name, ...(loop ? { loop } : {}) };
+  }
   return null;
 }
 

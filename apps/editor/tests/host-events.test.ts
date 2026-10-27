@@ -91,6 +91,23 @@ describe('parseHostCommand', () =>
       .toEqual({ type: 'apply', query: 'preset=Large&WIDTH=900' });
   });
 
+  it('reads an animate command, and a stop', () =>
+  {
+    expect(parseHostCommand({ source: 'archiyou-host', version: 1, type: 'animate', name: 'flyin', loop: 'pingpong' }))
+      .toEqual({ type: 'animate', name: 'flyin', loop: 'pingpong' });
+    expect(parseHostCommand({ source: 'archiyou-host', version: 1, type: 'animate', name: 'swing', loop: 'sometimes' }))
+      .toEqual({ type: 'animate', name: 'swing' });
+    expect(parseHostCommand({ source: 'archiyou-host', version: 1, type: 'animate', name: null }))
+      .toEqual({ type: 'animate', name: null });
+  });
+
+  it('ignores an animate command without a name an animation can have', () =>
+  {
+    expect(parseHostCommand({ source: 'archiyou-host', version: 1, type: 'animate', name: 'a b' })).toBeNull();
+    expect(parseHostCommand({ source: 'archiyou-host', version: 1, type: 'animate', name: 3 })).toBeNull();
+    expect(parseHostCommand({ source: 'archiyou-host', version: 1, type: 'animate' })).toBeNull();
+  });
+
   it('ignores other sources, versions, types and malformed commands', () =>
   {
     expect(parseHostCommand({ source: 'archiyou-configurator', version: 1, type: 'apply', query: 'WIDTH=900' })).toBeNull();

@@ -419,7 +419,7 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
   {
     super.connectedCallback();
     // the model the editor shows carries the script's animations while this is open
-    bakeAnimations.set(true);
+    bakeAnimations.set('declared');
   }
 
   override disconnectedCallback()
@@ -427,7 +427,7 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     super.disconnectedCallback();
     // Closing the tool puts the model back, and the next run bakes no animations
     sendAnimationCommand({ action: 'stop' });
-    bakeAnimations.set(false);
+    bakeAnimations.set(null);
     if (this._making) this._making.cancelled = true;
     this._recording?.controller.abort();
     this._leaveSweep();

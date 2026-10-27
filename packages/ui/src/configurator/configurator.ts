@@ -5,12 +5,13 @@ import { localized, msg } from '@lit/localize';
 
 import { createExecutionFailureResult, getServerExecutionTarget, runScript, warmupWorker } from '@archiyou/editor/src/services/execution-service';
 import { currentParams, listenToHost, metricValues, postToHost, HOST_COMMANDS, type HostCommand } from '@archiyou/editor/src/services/host-events';
-import { setExecutionResult, setExecuting } from '@archiyou/editor/src/state/workspace';
+import { setExecutionResult, setExecuting, executionResult, bakeAnimations, pipelineModelPath } from '@archiyou/editor/src/state/workspace';
 import { configuratorUnitSystemPick } from '@archiyou/editor/src/state/workspace';
 import { buildConfiguratorRequest, configuratorValueFor, setConfiguratorValue } from '@archiyou/editor/src/state/configurator';
-import { registerViewerParamStore } from '@archiyou/editor/src/state/viewer';
+import { registerViewerParamStore, sendAnimationCommand, type AnimationLoopMode } from '@archiyou/editor/src/state/viewer';
 import { applyConfiguratorQuery, configurationQuery, syncConfiguratorParamsToUrl } from '@archiyou/editor/src/state/configurator-url';
 import { configuratorDisplay } from '@archiyou/editor/src/state/configurator-display';
+import { isPresetKind } from '@archiyou/core/src/animator/standard';
 import { refreshPreviewTranslations, clearPreviewTranslations, configuratorLocale } from '@archiyou/editor/src/state/locale';
 import { setChromeLocale } from '@archiyou/editor/src/i18n/locale-config';
 import { sourceLocale } from '@archiyou/editor/src/i18n/locale-codes';
@@ -141,6 +142,9 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     });
     // Buttons on the page around an embedded configurator change the model (services/host-events).
     if (!this.preview) this._stopListening = listenToHost(command => this._handleHostCommand(command));
+    // ui.animation=flyin: baked into the first model (and played from firstUpdated)
+    const display = configuratorDisplay.get();
+    if (!this.preview && display.animation) this._bake(display.animation);
     warmupWorker()
       .then(() => this._execute())
       .catch(err =>
@@ -155,6 +159,11 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     // In the editor the script is the working copy, which carries no translations: show
     // the published version's, fetched now so the latest set is the one previewed.
     if (this.preview) void refreshPreviewTranslations();
+
+    // ...and played as soon as the model is shown: sent now that the viewer is there, which
+    // takes the commands sent after it was made
+    const display = configuratorDisplay.get();
+    if (!this.preview && display.animation) this._animate(display.animation, display.loop);
   }
 
   override updated()
@@ -185,6 +194,8 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     this._unregisterParamStore = null;
     this._stopListening?.();
     this._stopListening = null;
+    // what it baked was for this configurator; the preview's belongs to the editor
+    if (!this.preview) bakeAnimations.set(null);
     if (this._paramExecTimeout !== null) clearTimeout(this._paramExecTimeout);
     if (this.preview) clearPreviewTranslations();
     // The editor around the preview, and any page after this one, is not translated.
@@ -208,12 +219,44 @@ export class PageConfigurator extends SignalWatcher(LitElement)
    *  link it would otherwise have to reload with. */
   private _handleHostCommand(command: HostCommand)
   {
+    if (command.type === 'animate')
+    {
+      // one the script declares, or a standard one: nothing else can be made
+      const declared = (((executionResult.get()?.state as any)?.animations ?? []) as Array<{ name: string }>).map(a => a.name);
+      if (command.name && !declared.includes(command.name) && !isPresetKind(command.name)) return;
+      this._animate(command.name, command.loop ?? null);
+      return;
+    }
     const { preset, changed } = applyConfiguratorQuery(command.query);
     if (!preset && changed.length === 0) return;
     changed.forEach(name => this._changedParams.add(name));
     if (preset) this._appliedPreset = preset;
     this._changedByHost = true;
     this._scheduleRun();
+  }
+
+  /** Play an animation of the model (through its own camera, when it has one), or with null
+   *  stop it. One the model does not carry yet is baked first, by a run of its own: the
+   *  configurator bakes only what its link or page asks for, so a visitor who never sees an
+   *  animation waits for none. The viewer plays it once the model with it is shown. */
+  private _animate(name: string | null, loop: AnimationLoopMode | null)
+  {
+    if (!name)
+    {
+      sendAnimationCommand({ action: 'stop' });
+      return;
+    }
+    if (this._bake(name)) this._execute();
+    sendAnimationCommand({ action: 'play', name, follow: true, ...(loop ? { loop } : {}) });
+  }
+
+  /** Bake this animation into the model from the next run on. False when it already is. */
+  private _bake(name: string): boolean
+  {
+    const baked = bakeAnimations.get()?.split(',') ?? [];
+    if (baked.includes(name)) return false;
+    bakeAnimations.set([...baked, name].join(','));
+    return true;
   }
 
   private _scheduleRun()
@@ -309,6 +352,7 @@ export class PageConfigurator extends SignalWatcher(LitElement)
         execution: getServerExecutionTarget() ? 'server' : 'client',
         loadMs:    Math.round(performance.now()),
         commands:  HOST_COMMANDS,
+        animations: (((result.state as any)?.animations ?? []) as Array<{ name: string }>).map(a => a.name),
         ...configuration,
       });
     }
@@ -320,7 +364,8 @@ export class PageConfigurator extends SignalWatcher(LitElement)
   {
     // Shared with fulfillment downloads (services/fulfillment.ts) so the files a
     // visitor downloads are always built from the configuration on screen.
-    return buildConfiguratorRequest(['default/model/glb', 'default/metrics/*/json']);
+    // The model with the animations asked for (pipelineModelPath), as the viewer looks for it.
+    return buildConfiguratorRequest([pipelineModelPath('default'), 'default/metrics/*/json']);
   }
 
 
