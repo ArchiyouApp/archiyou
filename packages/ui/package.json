@@ -22,8 +22,10 @@
     "@lit/localize": "^0.12.2",
     "@vaadin/router": "^1.7.5",
     "dompurify": "^3.4.1",
+    "gifenc": "1.0.3",
     "lit": "^3.2.0",
-    "markdown-it": "^14.1.0"
+    "markdown-it": "^14.1.0",
+    "mediabunny": "1.61.6"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.1.2",

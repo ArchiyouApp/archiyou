@@ -140,6 +140,47 @@ them:
 Vendoring these would make the app self-contained and let the CSP tighten to
 `'self'`.
 
+## Encoders in the editor bundle
+
+The Animation tool records an animation as a video or an animated GIF with two npm
+libraries. They are bundled into the editor, each in a chunk of its own that is loaded only
+when someone records (`packages/ui/src/viewer/animation-recorder.ts`), so they are
+redistributed by anything built from this repository:
+
+| Library | Used for | License |
+| --- | --- | --- |
+| [mediabunny](https://github.com/Vanilagy/mediabunny) | the MP4 container around the browser's own H.264 encoder | MPL-2.0 |
+| [gifenc](https://github.com/mattdesl/gifenc) | quantising and writing animated GIFs | MIT |
+
+mediabunny is used unmodified. MPL-2.0 is a file-level copyleft: its source files, as they
+are in the built chunk, are those of the version in `pnpm-lock.yaml`, published on npm and
+in its repository, and the MPL notice at the head of each file stays in the built chunk. A
+change to one of its files would have to be published under MPL-2.0 too; Archiyou's own code
+that calls it is not affected.
+
+gifenc's files carry no notice of their own, so it is here:
+
+> The MIT License (MIT)
+> Copyright (c) 2017 Matt DesLauriers
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all
+> copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+> EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+> MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+> IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+> DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+> OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+> OR OTHER DEALINGS IN THE SOFTWARE.
+
 ## Material carbon data
 
 `packages/core/src/materials/materials.json` includes environmental-impact

@@ -152,9 +152,24 @@ Open the **Animation** tool (the clapperboard on the right) to manage the animat
 * The steps of an instructable show as chapters; click one to go there.
 * A parameter sweep (see below) shows *Make it*: the editor runs the script once per frame, merges the frames into one model and plays it. *Stop* goes back to your model; play again until the script runs again.
 * *Show code* shows the lines of the script that make the selected animation.
-* The download icon at the top saves the model with its animations as a GLB, or the sweep while one is shown. *Export to… ▸ GLB* in the main menu includes the animations of the script too.
+* The icons at the top: the cube saves the model with its animations as a GLB (the sweep while one is shown); the video file and the moving picture record the selected animation as an MP4 video or an animated GIF (see below). *Export to… ▸ GLB* in the main menu includes the animations of the script too.
 
 The editor makes the animations only while the tool is open, so with the tool closed it runs your script as fast as without them.
+
+## Record a video or a GIF
+
+The Animation tool records the selected animation as the viewer shows it: in the view style you picked, with its edges, fades, grid and shadows, and through its own camera when you look through it, or from your view when you don't. Pick the video file icon for an MP4 video, or the moving picture for an animated GIF, and a size:
+
+| Size | MP4 | GIF |
+|---|---|---|
+| Landscape | 1920 × 1080 | 800 × 450 |
+| Square | 1080 × 1080 | 600 × 600 |
+| Story | 1080 × 1920 | 450 × 800 |
+| As the viewer | the shape of the viewer, 1920 on its longest side | 800 on its longest side |
+
+It records as it plays: once, as a loop that runs on seamlessly, or there and back, at the speed you set (at 0.5× the video is twice as long). It does not record in real time but frame by frame, 30 a second for a video and 15 for a GIF, so it comes out the same on a slow computer as on a fast one, usually faster than it plays. The viewer shows the frames as they are made, and *Cancel* stops it. When a picture has another shape than the viewer, it shows at least what the viewer shows; dimension labels and handles are not in it.
+
+A video is H.264, which phones, social media and video editors take. A GIF takes one palette of at most 256 colours for the whole clip, and gets big quickly: keep it short and small.
 
 ## Export an animation
 

@@ -144,6 +144,42 @@ export function runParamFrame(params: Record<string, any>): Promise<ArrayBuffer 
   return _paramFrameRunner(params);
 }
 
+/** What renders an animation frame by frame for a recording: the editor's viewer
+ *  (ModelViewer.renderAnimationFrames), which registers itself while it is on the page. The
+ *  Animation tool records through it (viewer/animation-recorder.ts) without reaching for the
+ *  element across shadow roots. */
+export interface AnimationFrameSource
+{
+  /** Width over height of the view on screen. */
+  aspect(): number;
+  /** Show the animation at each of `times` (seconds) in turn, drawn at `width` × `height` as
+   *  the viewer draws it, and call `frame` with the canvas right after each one. False when
+   *  the model on screen does not carry the animation. */
+  renderAnimationFrames(
+    name: string,
+    options: { width: number; height: number; times: number[]; follow: boolean },
+    frame: (canvas: HTMLCanvasElement, index: number) => Promise<void> | void,
+    signal?: AbortSignal,
+  ): Promise<boolean>;
+}
+
+let _frameSource: AnimationFrameSource | null = null;
+
+/** Returns the function that unregisters it again. */
+export function registerAnimationFrameSource(source: AnimationFrameSource): () => void
+{
+  _frameSource = source;
+  return () =>
+  {
+    if (_frameSource === source) _frameSource = null;
+  };
+}
+
+export function animationFrameSource(): AnimationFrameSource | null
+{
+  return _frameSource;
+}
+
 /** Callback registered by the editor (or any execution host) so that
  *  viewer-side interactions (e.g. handle drag-end) can trigger a
  *  re-execute without the editor being in the component tree. */

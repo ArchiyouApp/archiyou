@@ -22,6 +22,7 @@ import { executionResult, editorScript, isReadOnly, bakeAnimations, pipelineMode
 import {
   animationsBaked, animationStatus, animationModel, sendAnimationCommand, showAnimationModel, runParamFrame,
   type AnimationLoopMode, type BakedAnimation,
+  animationFrameSource,
 } from '@archiyou/editor/src/state/viewer';
 import { getOutput } from '@archiyou/core/src/runner/worker/output';
 import { mergeParamFrames } from '@archiyou/editor/src/services/execution-service';
@@ -34,6 +35,7 @@ import {
 } from '@archiyou/core/src/animator/code';
 import type { AnimationInfo, PresetKind } from '@archiyou/core/src/animator/types';
 import { chapterAt } from '../../viewer/animation-playback.js';
+import { recordAnimation, recordSize, type RecordFormat, type RecordSizeId } from '../../viewer/animation-recorder.js';
 import { codeTheme } from '../codebox.js';
 
 /** One animation of the script: what the code says, and what the last run made of it. */
@@ -54,6 +56,18 @@ interface AnimationRow
 type AddKind = PresetKind | 'new';
 
 const SPEEDS = [0.25, 0.5, 1, 2];
+
+const RECORD_FORMATS: Array<{ format: RecordFormat, icon: string, label: () => string }> = [
+  { format: 'mp4', icon: 'file-video-camera', label: () => msg('Record as an MP4 video') },
+  { format: 'gif', icon: 'image-play', label: () => msg('Record as an animated GIF') },
+];
+
+const RECORD_SIZE_LABELS: Array<{ size: RecordSizeId, label: () => string }> = [
+  { size: 'landscape', label: () => msg('Landscape') },
+  { size: 'square', label: () => msg('Square') },
+  { size: 'story', label: () => msg('Story') },
+  { size: 'viewer', label: () => msg('As the viewer') },
+];
 
 const LOOP_MODES: Array<{ mode: AnimationLoopMode, icon: string, label: () => string }> = [
   { mode: 'none', icon: 'arrow-right-to-line', label: () => msg('Play once') },
@@ -95,13 +109,16 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     return html`
       <div class="toolbar">
         <span class="spacer"></span>
-        <wa-button appearance="plain" ?disabled=${!baked.size}
-                   title=${msg('Download the GLB with its animations')} @click=${this._download}>
-          <wa-icon library="lucide" name="download" label=${msg('Download the GLB with its animations')}></wa-icon>
+        <wa-button appearance="plain" ?disabled=${!baked.size || !!this._recording}
+                   title=${msg('Download the model as a GLB, with its animations')} @click=${this._download}>
+          <wa-icon library="lucide" name="box" label=${msg('Download the model as a GLB, with its animations')}></wa-icon>
         </wa-button>
+        ${RECORD_FORMATS.map(f => this._renderRecord(f, selected, baked))}
       </div>
 
-      <div class="animation">
+      ${this._renderRecording()}
+
+      <div class="animation" ?inert=${!!this._recording}>
         <section class="intro">
           <p class="lead">${msg('Manage the animations of this model.')}</p>
           ${editable ? this._renderAdd(rows) : nothing}
@@ -309,6 +326,62 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     `;
   }
 
+  /** An icon of the subheader: record the selected one in a size picked from its menu. */
+  private _renderRecord(f: typeof RECORD_FORMATS[number], selected: AnimationRow | undefined, baked: Map<string, BakedAnimation>)
+  {
+    const recordable = !!selected && (baked.has(selected.name) || this._sweeps.has(selected.name));
+    const title = !selected ? msg('Select an animation to record it')
+      : !recordable ? msg('Not in the model yet: run the script, or make the sweep')
+      : f.label();
+    const aspect = animationFrameSource()?.aspect() ?? 16 / 9;
+
+    return html`
+      <wa-dropdown class="record" placement="bottom-end" hoist
+                   @wa-select=${(e: CustomEvent) => this._record(f.format, (e.detail.item as { value: string }).value as RecordSizeId)}>
+        <wa-button slot="trigger" appearance="plain" ?disabled=${!recordable || !!this._recording} title=${title}>
+          <wa-icon library="lucide" name=${f.icon} label=${f.label()}></wa-icon>
+        </wa-button>
+        <h3>${f.label()}</h3>
+        ${RECORD_SIZE_LABELS.map(({ size, label }) =>
+        {
+          const { width, height } = recordSize(f.format, size, aspect);
+          return html`<wa-dropdown-item value=${size}>${label()}<span slot="details">${width} × ${height}</span></wa-dropdown-item>`;
+        })}
+      </wa-dropdown>
+    `;
+  }
+
+  /** A recording under way, or how the last one went. */
+  private _renderRecording()
+  {
+    const recording = this._recording;
+    if (recording)
+    {
+      const format = recording.format.toUpperCase();
+      return html`
+        <div class="recording">
+          <wa-progress-bar value=${recording.total ? 100 * recording.done / recording.total : 0}></wa-progress-bar>
+          <span class="hint">
+            ${recording.total
+              ? msg(str`Recording ${recording.name} as ${format}: frame ${recording.done} of ${recording.total}`)
+              : msg(str`Recording ${recording.name} as ${format}`)}
+          </span>
+          <wa-button size="small" appearance="plain" @click=${() => recording.controller.abort()}>${msg('Cancel')}</wa-button>
+        </div>
+      `;
+    }
+    const recorded = this._recorded;
+    if (!recorded) return nothing;
+    return html`
+      <div class="recording">
+        <span class="done ${recorded.error ? 'error' : 'hint'}">${recorded.text}</span>
+        <wa-button class="icon" size="small" appearance="plain" title=${msg('Close')} @click=${() => { this._recorded = null; }}>
+          <wa-icon library="lucide" name="x" label=${msg('Close')}></wa-icon>
+        </wa-button>
+      </div>
+    `;
+  }
+
   private _renderEmpty(icon: string, text: string)
   {
     return html`
@@ -336,6 +409,10 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
   /** The sweep being made: how far it is, and whether Cancel was pressed. */
   @state() private _making: { name: string, done: number, total: number, cancelled: boolean } | null = null;
   @state() private _sweepError: { name: string, message: string } | null = null;
+  /** The recording being made: how far it is, and how to cancel it. */
+  @state() private _recording: { name: string, format: RecordFormat, done: number, total: number, controller: AbortController } | null = null;
+  /** What the last recording made, or why it did not. */
+  @state() private _recorded: { text: string, error: boolean } | null = null;
 
   // ── 3. Lifecycle ──
   override connectedCallback()
@@ -352,6 +429,7 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     sendAnimationCommand({ action: 'stop' });
     bakeAnimations.set(false);
     if (this._making) this._making.cancelled = true;
+    this._recording?.controller.abort();
     this._leaveSweep();
     this._codeView?.destroy();
     this._codeView = null;
@@ -681,14 +759,82 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     const result = executionResult.get();
     const glb = animationModel.get() ?? (result ? getOutput(result, pipelineModelPath('default')) : undefined);
     if (!(glb instanceof ArrayBuffer) && !(glb instanceof Uint8Array)) return;
+    this._save(new Blob([glb as BlobPart], { type: 'model/gltf-binary' }), `${editorScript.get()?.name || 'model'}.glb`);
+  };
 
-    const url = URL.createObjectURL(new Blob([glb as BlobPart], { type: 'model/gltf-binary' }));
+  /** Record the selected one as the viewer shows it, as it plays (its loop, speed and camera),
+   *  and save the file. A sweep made before is shown again first. */
+  private async _record(format: RecordFormat, size: RecordSizeId)
+  {
+    const rows = this._rows();
+    const row = rows.find(r => r.name === this._selectedName(rows));
+    const viewer = animationFrameSource();
+    if (!row || !viewer || this._recording) return;
+
+    const controller = new AbortController();
+    const recording = { name: row.name, format, done: 0, total: 0, controller };
+    this._recording = recording;
+    this._recorded = null;
+    try
+    {
+      const made = this._sweeps.get(row.name);
+      if (made && animationModel.get() !== made.glb) showAnimationModel(made.glb);
+      const carried = await this._carried(row.name);
+      if (!carried) throw new Error(msg('It is not in the model on screen: run the script, or make the sweep.'));
+      controller.signal.throwIfAborted();
+
+      const status = animationStatus.get();
+      const loaded = status.name === row.name;
+      const { width, height } = recordSize(format, size, viewer.aspect());
+      const result = await recordAnimation(viewer, row.name, {
+        format, width, height,
+        duration: carried.duration,
+        loop: loaded ? status.loop : (this._loop ?? carried.loop),
+        speed: loaded ? status.speed : this._speed,
+        follow: carried.camera && (loaded ? status.follow : this._follow),
+      }, (done, total) =>
+      {
+        recording.done = done;
+        recording.total = total;
+        this.requestUpdate();
+      }, controller.signal);
+
+      const file = `${editorScript.get()?.name || 'model'}-${row.name}.${format}`;
+      this._save(result.blob, file);
+      const bytes = result.blob.size;
+      const megabytes = (bytes >= 1e6) ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} kB`;
+      const codec = (result.codec && result.codec !== 'avc') ? ` ${msg(str`(${result.codec.toUpperCase()}: this browser has no H.264 encoder)`)}` : '';
+      this._recorded = { text: msg(str`Saved ${file}: ${width} × ${height}, ${result.frames} frames, ${megabytes}.`) + codec, error: false };
+    }
+    catch (e)
+    {
+      if (!controller.signal.aborted) this._recorded = { text: (e as Error)?.message ?? String(e), error: true };
+    }
+    finally
+    {
+      this._recording = null;
+    }
+  }
+
+  /** The animation as the model on screen carries it, once it does: a sweep shown again takes
+   *  a moment to load. Undefined when it does not come. */
+  private async _carried(name: string, tries = 100): Promise<BakedAnimation | undefined>
+  {
+    const carried = animationsBaked.get().find(a => a.name === name);
+    if (carried || tries <= 0) return carried;
+    await new Promise(resolve => setTimeout(resolve, 50));
+    return this._carried(name, tries - 1);
+  }
+
+  private _save(blob: Blob, file: string)
+  {
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${editorScript.get()?.name || 'model'}.glb`;
+    a.download = file;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
+  }
 
   // ── 5. Styles ──
   static override styles = css`
@@ -721,6 +867,27 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
       flex-shrink: 0;
     }
     .spacer { flex: 1; }
+
+    .record h3 {
+      margin: 0;
+      padding: var(--space-xs) var(--space-md);
+      font-size: var(--text-xs);
+      font-weight: 600;
+      color: var(--color-text-muted);
+    }
+
+    /* a recording under way, under the subheader */
+    .recording {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      padding: var(--space-sm) var(--space-lg);
+      border-bottom: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
+    .recording wa-progress-bar { flex: 1; --track-height: 6px; }
+    .recording .done { flex: 1; }
+    .animation[inert] { opacity: .6; }
 
     .animation {
       flex: 1;

@@ -10,7 +10,7 @@ import { buildScenegraphPath, executionResult, activePipeline, pipelineModelPath
 import { formatDimensionValue } from './gltf-annotations.js';
 import { scheduleExecution, viewerParamStore, resetCameraCounter,
          instructName, instructStep, setInstructAvailable, clearInstructStep as clearInstructSignal,
-         animationCommands, animationModel, setAnimationsBaked, setAnimationStatus,
+         animationCommands, animationModel, setAnimationsBaked, setAnimationStatus, registerAnimationFrameSource,
          type AnimationCommand, type AnimationLoopMode, type BakedAnimation } from '@archiyou/editor/src/state/viewer';
 import type { ScriptOutputData } from '@archiyou/core/src/execution/types';
 import type { SceneNodeData } from '@archiyou/core/src/modeler/types';
@@ -246,6 +246,15 @@ export class ModelViewer extends SignalWatcher(LitElement)
     this._resizeObserver.observe(this);
 
     window.addEventListener(THEME_CHANGE_EVENT, this._onThemeChange);
+
+    // the editor records animations through this viewer (animation-recorder.ts)
+    if (!this.presentation)
+    {
+      this._unregisterFrameSource = registerAnimationFrameSource({
+        aspect: () => (this.clientWidth && this.clientHeight) ? this.clientWidth / this.clientHeight : 16 / 9,
+        renderAnimationFrames: (name, options, frame, signal) => this.renderAnimationFrames(name, options, frame, signal),
+      });
+    }
   }
 
   /** Re-apply the current view style so the neutral background swaps light/dark. */
@@ -324,7 +333,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
     /*  Animation playback, the same way: a tool sends commands, this applies each once, in
         order — after this update, since playing sets what the viewer menu shows. */
     const fresh = this._pendingAnimationCommands.filter(c => c.seq > this._lastAnimationSeq);
-    if (fresh.length && this._renderer)
+    if (fresh.length && this._renderer && !this._recordingFrames)
     {
       this._lastAnimationSeq = fresh[fresh.length - 1].seq;
       queueMicrotask(() => fresh.forEach(command => this._applyAnimationCommand(command)));
@@ -411,6 +420,8 @@ export class ModelViewer extends SignalWatcher(LitElement)
   {
     super.disconnectedCallback();
     window.removeEventListener(THEME_CHANGE_EVENT, this._onThemeChange);
+    this._unregisterFrameSource?.();
+    this._unregisterFrameSource = null;
     cancelAnimationFrame(this._frameId);
     this._resizeObserver?.disconnect();
     this._controls?.dispose();
@@ -508,6 +519,10 @@ export class ModelViewer extends SignalWatcher(LitElement)
   private _lastPublishedTime = -1;
   /** The viewer camera's field of view while it looks through an animation's camera. */
   private _fovBeforeFollow: number | null = null;
+  /** Drawing an animation frame by frame for a recording: the live loop, resizing and the
+   *  tool's commands wait until it is done (renderAnimationFrames). */
+  private _recordingFrames = false;
+  private _unregisterFrameSource: (() => void) | null = null;
   private _dirty = true;
   private _currentModel?: THREE.Object3D;
   /** The labels being projected each frame: the annotations, or the current step's. */
@@ -1541,6 +1556,129 @@ export class ModelViewer extends SignalWatcher(LitElement)
     else { this._releaseAnimationCamera(); }
     this._publishAnimation(true);
     this._dirty = true;
+  }
+
+  /** Draw an animation frame by frame, as this viewer shows it: its view style, grid, edges,
+   *  fades and camera. For a recording (animation-recorder.ts), so it does not run in real
+   *  time: each frame is the clip at one of `times` (seconds), drawn at `width` × `height`
+   *  into this viewer's own canvas, and `frame(canvas, i)` is called right after. Read the
+   *  canvas there before awaiting anything: the next paint clears it.
+   *
+   *  The camera is the view on screen, or with `follow` the animation's own camera when it
+   *  has one, widened where the frame is another shape than the view so that it shows at
+   *  least what the view shows. Lines keep their width relative to the picture. The gizmo,
+   *  the selection box, labels and handles are left out; the live loop, resizing and the
+   *  tool's commands wait. Afterwards the viewer is as it was, the animation playing or held
+   *  where it was. False when the model on screen does not carry the animation. */
+  async renderAnimationFrames(
+    name: string,
+    options: { width: number; height: number; times: number[]; follow: boolean },
+    frame: (canvas: HTMLCanvasElement, index: number) => Promise<void> | void,
+    signal?: AbortSignal,
+  ): Promise<boolean>
+  {
+    const clip = this._animationClips.find(c => c.name === name);
+    if (!clip || !this._mixer || !this._renderer || this._recordingFrames || this._renderer.xr.isPresenting) return false;
+
+    const { width, height } = options;
+    const viewW = this.clientWidth || width;
+    const viewH = this.clientHeight || height;
+    // how much bigger the picture is than the view it shows at least
+    const scale = Math.min(width / viewW, height / viewH);
+    const widen = (height / scale) / viewH;
+
+    const model = this._currentModel;
+    const status = this._animationAction ? {
+      name: this._animationAction.getClip().name, time: this._animationAction.time,
+      playing: this._animationAction.enabled && !this._animationAction.paused,
+      loop: this._animationLoop, speed: this._animationSpeed, follow: this._animationFollow,
+    } : null;
+    const camera = {
+      position: this._camera.position.clone(), quaternion: this._camera.quaternion.clone(),
+      up: this._camera.up.clone(), target: this._controls.target.clone(),
+      // the view's own, also while it looks through an animation's camera
+      fov: this._fovBeforeFollow ?? this._camera.fov,
+    };
+    const follow = this._animationFollow;
+    const controls = this._controls.enabled;
+    const pixelRatio = this._renderer.getPixelRatio();
+    const helpers = ([this._gizmoGroup, this._selectionBox] as Array<THREE.Object3D | undefined>)
+      .filter((o): o is THREE.Object3D => !!o?.visible);
+
+    this._recordingFrames = true;
+    this.toggleAttribute('recording', true);
+    this._controls.enabled = false;
+    helpers.forEach(o => { o.visible = false; });
+    try
+    {
+      this.playAnimation(name, { loop: 'none', speed: 1, follow: options.follow });
+      this.pauseAnimation();
+      const action = this._animationAction!;
+      this._controls.enabled = false; // playing hands them back when it does not follow
+
+      this._renderer.setPixelRatio(1);
+      this._renderer.setSize(width, height, false);
+      this._currentModel?.traverse(n =>
+      {
+        const material = (n as any).material; // eslint-disable-line @typescript-eslint/no-explicit-any
+        if (material?.isLineMaterial) material.resolution.set(width / scale, height / scale);
+      });
+
+      await options.times.reduce<Promise<void>>(async (previous, t, i) =>
+      {
+        await previous;
+        signal?.throwIfAborted();
+        if (this._currentModel !== model) throw new Error('The model changed while it was being recorded');
+
+        action.time = Math.min(Math.max(t, 0), clip.duration);
+        this._mixer!.update(0);
+        updateFading(this._animationFade);
+
+        // the view's field of view, or the animation camera's, widened to the picture
+        this._camera.fov = camera.fov;
+        this._fovBeforeFollow = null;
+        if (options.follow) this._followAnimationCamera();
+        this._camera.fov = 2 * THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(this._camera.fov) / 2) * widen));
+        this._camera.aspect = width / height;
+        this._camera.updateProjectionMatrix();
+        if (this._isOrtho) this._buildOrthoFromPersp();
+
+        this._renderer.render(this._scene, this._isOrtho ? this._orthoCamera! : this._camera);
+        await frame(this._renderer.domElement, i);
+      }, Promise.resolve());
+      return true;
+    }
+    finally
+    {
+      helpers.forEach(o => { o.visible = true; });
+      this._renderer.setPixelRatio(pixelRatio);
+      this._recordingFrames = false;
+      this.toggleAttribute('recording', false);
+
+      // playing again puts the field of view back, and looks through the camera if it did
+      this._camera.fov = camera.fov;
+      this._animationFollow = follow;
+      if (status && this._currentModel === model)
+      {
+        this.playAnimation(status.name, { loop: status.loop, speed: status.speed, from: status.time, follow: status.follow });
+        if (!status.playing) this.pauseAnimation();
+      }
+      else
+      {
+        this.stopAnimation();
+      }
+      this._camera.position.copy(camera.position);
+      this._camera.quaternion.copy(camera.quaternion);
+      this._camera.up.copy(camera.up);
+      this._controls.target.copy(camera.target);
+      this._controls.enabled = controls;
+      this._resize();
+      this._controls.update();
+      if (this._isOrtho) this._buildOrthoFromPersp();
+      this._clock.getDelta(); // the time spent recording is not time played
+      this._dirty = true;
+      this.requestUpdate(); // the commands that waited
+    }
   }
 
   private _applyAnimationCommand(command: AnimationCommand): void
@@ -2867,7 +3005,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
   {
     const w = this.clientWidth;
     const h = this.clientHeight;
-    if (!w || !h) return;
+    if (!w || !h || this._recordingFrames) return;
     this._camera.aspect = w / h;
     this._camera.updateProjectionMatrix();
     if (this._orthoCamera)
@@ -2895,6 +3033,7 @@ export class ModelViewer extends SignalWatcher(LitElement)
   private _loop = () =>
   {
     this._frameId = requestAnimationFrame(this._loop);
+    if (this._recordingFrames) return; // renderAnimationFrames() draws meanwhile
     const dt = this._clock.getDelta();
 
     if (this._mixer)
@@ -3471,6 +3610,21 @@ export class ModelViewer extends SignalWatcher(LitElement)
       width: 100%;
       height: 100%;
       touch-action: none; /* prevent browser from capturing scroll/gesture events away from OrbitControls */
+    }
+
+    /* Recording (renderAnimationFrames): the canvas holds the picture being recorded, in its
+       own shape, and what is not in it stays out of the way */
+    :host([recording]) canvas {
+      object-fit: contain;
+    }
+
+    :host([recording]) viewer-labels-overlay,
+    :host([recording]) viewer-handles-overlay {
+      visibility: hidden;
+    }
+
+    :host([recording]) viewer-menu {
+      pointer-events: none;
     }
 
     /* Centred with auto margins rather than left:50% + translate, so the menu
