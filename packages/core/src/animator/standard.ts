@@ -19,6 +19,11 @@ import type { PresetKind } from './types'
 
 export const PRESET_KINDS: Array<PresetKind> = ['flyin', 'exploded', 'layout', 'turntable', 'build', 'assembly']
 
+/** Frames of a parameter sweep when the script does not say, and the most it may ask for: each
+ *  frame is a run of the whole script. */
+export const PARAM_FRAMES_DEFAULT = 12
+export const PARAM_FRAMES_MAX = 48
+
 /** A call on an Animation: the verb and its arguments. */
 export type PresetCall = [verb: string, ...args: Array<any>]
 

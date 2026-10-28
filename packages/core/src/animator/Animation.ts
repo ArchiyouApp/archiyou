@@ -35,6 +35,7 @@
 import { Color } from '@archiyou/meshup'
 
 import type { AnimationInfo, AnimationLoop, Easing, PresetKind } from './types'
+import { PARAM_FRAMES_DEFAULT, PARAM_FRAMES_MAX } from './standard'
 
 export const EASINGS: Array<Easing> = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'spring']
 export const LOOPS: Array<AnimationLoop> = ['none', 'loop', 'pingpong']
@@ -107,10 +108,6 @@ export interface AnimationSpec
     params: Array<{ name: string, values: Array<any> }>
 }
 
-/** Frames of a parameter sweep when the script does not say, and the most it may ask for: each
- *  frame is a run of the whole script. */
-export const PARAM_FRAMES_DEFAULT = 12
-export const PARAM_FRAMES_MAX = 48
 
 export class Animation
 {

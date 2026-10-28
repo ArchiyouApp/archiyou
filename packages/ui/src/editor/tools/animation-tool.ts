@@ -18,7 +18,7 @@ import { EditorView } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { javascript } from '@codemirror/lang-javascript';
 
-import { executionResult, editorScript, isReadOnly, bakeAnimations, pipelineModelPath } from '@archiyou/editor/src/state/workspace';
+import { executionResult, editorScript, isReadOnly, bakeAnimations, pipelineModelPath, scriptParams } from '@archiyou/editor/src/state/workspace';
 import {
   animationsBaked, animationStatus, animationModel, sendAnimationCommand, showAnimationModel, runParamFrame,
   type AnimationLoopMode, type BakedAnimation,
@@ -30,10 +30,11 @@ import type { ParamFramesReport } from '@archiyou/core/src/animator/frames';
 // the table and the code only: no animator, no kernel, on the main thread
 import { PRESETS, PRESET_KINDS } from '@archiyou/core/src/animator/standard';
 import {
-  animationsInCode, appendAnimation, exampleCode, isAnimationName, newAnimationCode, removeAnimation,
-  renameAnimation, uniqueName, variableFor, type AnimationCode,
+  animationsInCode, appendAnimation, exampleCode, isAnimationName, newAnimationCode, paramsAnimationCode, removeAnimation,
+  renameAnimation, uniqueName, variableFor, PARAMS_ANIMATED_MAX, type AnimationCode, type ParamRange,
 } from '@archiyou/core/src/animator/code';
 import type { AnimationInfo, PresetKind } from '@archiyou/core/src/animator/types';
+import type { ScriptParam } from '@archiyou/core/src/execution/ScriptParam';
 import { chapterAt } from '../../viewer/animation-playback.js';
 import { recordAnimation, recordSize, type RecordFormat, type RecordSizeId } from '../../viewer/animation-recorder.js';
 import { codeTheme } from '../codebox.js';
@@ -53,7 +54,7 @@ interface AnimationRow
   code?: AnimationCode;
 }
 
-type AddKind = PresetKind | 'new';
+type AddKind = PresetKind | 'new' | 'params';
 
 const SPEEDS = [0.25, 0.5, 1, 2];
 
@@ -141,9 +142,10 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
   {
     const hasInstruct = this._hasInstruct();
     const kind = this._kindToAdd();
-    const about = (kind === 'new')
-      ? msg('Keys of your own: poses of parts at the times you choose.')
+    const about = (kind === 'new') ? msg('Keys of your own: poses of parts at the times you choose.')
+      : (kind === 'params') ? msg('The model as its parameters go from a start to an end value, all together. Each frame is a run of the script: select it and press Make it.')
       : PRESETS[kind].description;
+    const addable = (kind !== 'params') || this._rangesValid();
 
     return html`
       <p class="hint">
@@ -155,13 +157,57 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
           ${PRESET_KINDS.map(k => html`
             <wa-option value=${k} ?disabled=${k === 'assembly' && !hasInstruct}>${PRESETS[k].title}</wa-option>`)}
           <wa-option value="new">${msg('New animation')}</wa-option>
+          <wa-option value="params">${msg('Animate params')}</wa-option>
         </wa-select>
-        <wa-button size="small" variant="brand" @click=${() => this._add(kind, rows)}>
+        <wa-button size="small" variant="brand" ?disabled=${!addable} @click=${() => this._add(kind, rows)}>
           <wa-icon slot="start" library="lucide" name="plus"></wa-icon>
           ${msg('Add')}
         </wa-button>
       </div>
+      ${kind === 'params' ? this._renderRanges() : nothing}
       <p class="hint">${about}</p>
+    `;
+  }
+
+  /** Animate params: up to PARAMS_ANIMATED_MAX number params, each from a start to an end value. */
+  private _renderRanges()
+  {
+    const numbers = this._numberParams();
+    if (!numbers.length)
+    {
+      return html`<p class="hint">${msg('The script has no number parameters to animate: add one in the Parameters panel, or with $PARAMS.define().')}</p>`;
+    }
+    const ranges = this._ranges();
+    const used = new Set(ranges.map(r => r.name));
+
+    return html`
+      <div class="ranges">
+        <div class="range labels">
+          <span>${msg('Parameter')}</span><span>${msg('Start')}</span><span>${msg('End')}</span>
+        </div>
+        ${ranges.map((range, i) => html`
+          <div class="range">
+            <wa-select class="range-param" size="small" .value=${range.name}
+                       @change=${(e: Event) => this._pickRangeParam(i, (e.target as HTMLSelectElement).value)}>
+              ${numbers.map(p => html`
+                <wa-option value=${p.name} ?disabled=${p.name !== range.name && used.has(p.name)}>${p.label || p.name}</wa-option>`)}
+            </wa-select>
+            <wa-input size="small" type="number" .value=${String(range.from)}
+                      @input=${(e: Event) => this._setRange(i, { from: Number((e.target as HTMLInputElement).value) })}></wa-input>
+            <wa-input size="small" type="number" .value=${String(range.to)}
+                      @input=${(e: Event) => this._setRange(i, { to: Number((e.target as HTMLInputElement).value) })}></wa-input>
+            <wa-button class="icon" size="small" appearance="plain" ?disabled=${ranges.length < 2}
+                       title=${msg('Leave it out')} @click=${() => this._removeRange(i)}>
+              <wa-icon library="lucide" name="x" label=${msg('Leave it out')}></wa-icon>
+            </wa-button>
+          </div>`)}
+        <wa-button class="add-range" size="small" appearance="plain"
+                   ?disabled=${ranges.length >= Math.min(PARAMS_ANIMATED_MAX, numbers.length)} @click=${this._addRange}>
+          <wa-icon slot="start" library="lucide" name="plus"></wa-icon>
+          ${msg(str`Parameter (up to ${PARAMS_ANIMATED_MAX})`)}
+        </wa-button>
+        ${ranges.some(r => r.from === r.to) ? html`<p class="hint">${msg('A parameter whose start and end are the same does not move.')}</p>` : nothing}
+      </div>
     `;
   }
 
@@ -398,6 +444,8 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
   /** The animation in the player: the one picked, else the one playing, else the first. */
   @state() private _selected: string | null = null;
   @state() private _addKind: AddKind = 'flyin';
+  /** What Animate params animates, as picked so far; empty until a param is picked or changed. */
+  @state() private _paramRanges: ParamRange[] = [];
   /** The row whose name is being edited, and what it says so far. */
   @state() private _renaming: string | null = null;
   @state() private _renameValue = '';
@@ -455,6 +503,11 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     // wa-select can miss a value set before its options are there (first paint)
     const select = this.shadowRoot?.querySelector<HTMLElement & { value: string }>('.kind');
     if (select && select.value !== this._kindToAdd()) select.value = this._kindToAdd();
+    const ranges = this._ranges();
+    this.shadowRoot?.querySelectorAll<HTMLElement & { value: string }>('.range-param').forEach((s, i) =>
+    {
+      if (ranges[i] && s.value !== ranges[i].name) s.value = ranges[i].name;
+    });
     this._updateCodeView();
   }
 
@@ -613,17 +666,77 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     }));
   }
 
-  /** Add it at the end of the script, select it, and play it as soon as the run brings it. */
+  /** Add it at the end of the script, select it, and play it as soon as the run brings it. An
+   *  animation of params is not played: it is made first, a run per frame (Make it). */
   private _add(kind: AddKind, rows: AnimationRow[])
   {
     const code = editorScript.get()?.code ?? '';
     const name = uniqueName(kind === 'new' ? 'animation' : kind, rows.map(r => r.name));
     const variable = variableFor(name, code);
-    const snippet = (kind === 'new') ? newAnimationCode(name, variable) : exampleCode(kind, name, variable);
+    const snippet = (kind === 'new') ? newAnimationCode(name, variable)
+      : (kind === 'params') ? paramsAnimationCode(name, variable, this._ranges())
+      : exampleCode(kind, name, variable);
 
     this._select(name);
     this._editScript(appendAnimation(code, snippet));
-    this._play(name);
+    if (kind !== 'params') this._play(name);
+  }
+
+  /** The script's number params: the ones a sweep can take from one value to another. */
+  private _numberParams(): ScriptParam[]
+  {
+    return scriptParams.get().filter(p => p.type === 'number');
+  }
+
+  /** A param from its minimum to its maximum, or from its value to twice that. */
+  private _rangeFor(param: ScriptParam): ParamRange
+  {
+    const schema = (param.schema ?? {}) as { minimum?: number, maximum?: number };
+    const min = Number(schema.minimum);
+    const max = Number(schema.maximum);
+    const value = Number(param._value ?? param.default ?? 0) || 0;
+    const from = Number.isFinite(min) ? min : value;
+    const to = Number.isFinite(max) ? max : (value ? value * 2 : 100);
+    return { name: param.name, from, to };
+  }
+
+  /** What Animate params animates: the picks of params the script still has, else its first. */
+  private _ranges(): ParamRange[]
+  {
+    const numbers = this._numberParams();
+    const names = new Set(numbers.map(p => p.name));
+    const kept = this._paramRanges.filter(r => names.has(r.name));
+    return kept.length ? kept : numbers.slice(0, 1).map(p => this._rangeFor(p));
+  }
+
+  private _rangesValid(): boolean
+  {
+    const ranges = this._ranges();
+    return ranges.length > 0 && ranges.every(r => Number.isFinite(r.from) && Number.isFinite(r.to));
+  }
+
+  private _setRange(i: number, change: Partial<ParamRange>)
+  {
+    this._paramRanges = this._ranges().map((r, k) => (k === i) ? { ...r, ...change } : r);
+  }
+
+  /** Another param in a row: from its own minimum to its maximum. */
+  private _pickRangeParam(i: number, name: string)
+  {
+    const param = this._numberParams().find(p => p.name === name);
+    if (param && this._ranges()[i]?.name !== name) this._setRange(i, this._rangeFor(param));
+  }
+
+  private _addRange = () =>
+  {
+    const ranges = this._ranges();
+    const next = this._numberParams().find(p => !ranges.some(r => r.name === p.name));
+    if (next && ranges.length < PARAMS_ANIMATED_MAX) this._paramRanges = [...ranges, this._rangeFor(next)];
+  };
+
+  private _removeRange(i: number)
+  {
+    this._paramRanges = this._ranges().filter((_, k) => k !== i);
   }
 
   private _remove(row: AnimationRow)
@@ -945,6 +1058,17 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
     .intro { display: flex; flex-direction: column; gap: var(--space-sm); }
     .add { display: flex; align-items: center; gap: var(--space-sm); }
     .add .kind { flex: 1; min-width: 0; }
+
+    /* Animate params: a row per param, its start and its end */
+    .ranges { display: flex; flex-direction: column; gap: var(--space-xs); }
+    .range {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 5.5rem 5.5rem 1.75rem;
+      gap: var(--space-xs);
+      align-items: center;
+    }
+    .range.labels { font-size: var(--text-xs); color: var(--color-text-muted); }
+    .add-range { align-self: flex-start; }
 
     /* ── The list ── */
 

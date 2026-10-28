@@ -23,7 +23,7 @@
 
 import { Parser } from 'acorn'
 
-import { PRESETS } from './standard'
+import { PARAM_FRAMES_DEFAULT, PRESETS } from './standard'
 import type { PresetKind } from './types'
 
 export interface CodeRange
@@ -302,6 +302,33 @@ export function newAnimationCode(name: string, variable: string): string
         `${INDENT}.loop('pingpong');`,
         `${variable}.key(0, 'A', {});`,
         `${variable}.key(2, 'A', { move: [0, 0, 100] });`,
+    ].join('\n')
+}
+
+/** A parameter, and the values it goes from and to in an animation of the parameters. */
+export interface ParamRange
+{
+    name: string
+    from: number
+    to: number
+}
+
+/** The most parameters the Animation tool animates at once: each frame is a run of the script
+ *  with all of them set, so more only makes the frames harder to read. */
+export const PARAMS_ANIMATED_MAX = 5
+
+/** An animation of the script's parameters: all of them from their start to their end value
+ *  together, over the same frames, a run of the script per frame (a parameter sweep). */
+export function paramsAnimationCode(name: string, variable: string, params: Array<ParamRange>): string
+{
+    const number = (v: number) => String(Math.round(v * 1e6) / 1e6)
+    return [
+        `// ${name}: the model as its parameters go from one value to another, together. Each`,
+        `// frame is a run of the script; make it in the Animation tool, or with archiyou animate.`,
+        `${variable} = animator.create(${quoted(name)})`,
+        ...params.map(p => `${INDENT}.param(${quoted(p.name)}, { from: ${number(p.from)}, to: ${number(p.to)}, frames: ${PARAM_FRAMES_DEFAULT} })`),
+        `${INDENT}.duration(3)`,
+        `${INDENT}.loop('pingpong');`,
     ].join('\n')
 }
 

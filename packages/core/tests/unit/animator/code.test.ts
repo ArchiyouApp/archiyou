@@ -10,8 +10,8 @@ import type { RunnerScriptExecutionRequest } from '../../../src/runner/types'
 import { Animator, PRESET_KINDS } from '../../../src/animator/Animator'
 import { createNodeIO } from '../../../src/GLTFBuilder'
 import {
-    animationsInCode, appendAnimation, exampleCode, isAnimationName, newAnimationCode, removeAnimation,
-    renameAnimation, uniqueName, variableFor,
+    animationsInCode, appendAnimation, exampleCode, isAnimationName, newAnimationCode, paramsAnimationCode,
+    removeAnimation, renameAnimation, uniqueName, variableFor,
 } from '../../../src/animator/code'
 
 const MODEL = `legs = group('legs',
@@ -212,6 +212,31 @@ if (true) { animator.create('inner') }
 
 describe('adding animations', () =>
 {
+    it('an animation of parameters: all of them from start to end together, a sweep the run declares', async () =>
+    {
+        const code = `$PARAMS.define('WIDTH', 'number', { default: 600, minimum: 300, maximum: 1200 });
+$PARAMS.define('DEPTH', 'number', { default: 250, minimum: 200, maximum: 400 });
+board = box($WIDTH, $DEPTH, 18).name('board');
+`
+        const snippet = paramsAnimationCode('params', 'params', [{ name: 'WIDTH', from: 300, to: 1200 }, { name: 'DEPTH', from: 400, to: 200.5 }])
+        expect(snippet).toContain(`.param('WIDTH', { from: 300, to: 1200, frames: 12 })`)
+        const script = appendAnimation(code, snippet)
+
+        const { result, warnings } = await run(script, ['default/model/glb'])
+        expect(warnings).toBe('')
+        const [info] = (result.state as any).animations
+        expect(info.name).toBe('params')
+        expect(info.params.names).toEqual(['WIDTH', 'DEPTH'])
+        expect(info.params.frames).toBe(12)
+        expect(info.params.values[0]).toEqual({ WIDTH: 300, DEPTH: 400 })
+        expect(info.params.values[11]).toEqual({ WIDTH: 1200, DEPTH: 200.5 })
+
+        // the tool finds it again, whole, to rename or delete
+        const [found] = animationsInCode(script)!
+        expect(found).toMatchObject({ name: 'params', variable: 'params', removable: true })
+        expect(removeAnimation(script, found).trim()).toBe(code.trim())
+    })
+
     it('appends after a blank line', () =>
     {
         expect(appendAnimation('box(10);\n\n\n', exampleCode('turntable', 'turntable', 'turntable'))).toMatch(/^box\(10\);\n\n\/\/ Turntable: .*\n$/s)

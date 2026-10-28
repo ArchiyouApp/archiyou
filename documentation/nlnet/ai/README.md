@@ -142,3 +142,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-10-24 | [Configurator: events for the page it is embedded in](./records/2026-10-24-configurator-host-events.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-10-25 | [Configurator: display options in the link, isometric for visitors, commands from the page](./records/2026-10-25-configurator-display-and-page-commands.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-10-26 | [Animator: scripted and standard animations, baked into the GLB](./records/2026-10-26-animator.md) | Claude Opus 5.5, plan with Claude Fable 5.1 | animator → develop | 9 |
+| 2026-10-27 | [Animator: animate params from the Add menu](./records/2026-10-27-animate-params.md) | Claude Opus 5.5 | animator → develop | 1 |

@@ -146,6 +146,7 @@ Its steps become chapters, and parts stay hidden until the step that brings them
 Open the **Animation** tool (the clapperboard on the right) to manage the animations of your model.
 
 * **Add** one: pick a standard animation, or *New animation* for keys of your own, and press *Add*. Its code goes at the end of your script, written out in full, and it plays as soon as the script has run. Change the code, and the animation follows.
+* *Animate params* animates the script's number parameters: pick up to five, each with the value it starts at and the one it ends at (the parameter's minimum and maximum to begin with), and press *Add*. They change together, a run of the script per frame (see *Parameters over time*): select it and press *Make it*.
 * The list holds every animation of the script, the ones you added and the ones you wrote. **Rename** one with the pencil, **delete** one and its code with the bin. Both change your script; *Ctrl+Z* in the code editor takes it back.
 * Click one to select it. Play, pause and drag the slider to go through it; the icons next to it play it once, over and over, or back and forth, and the gauge sets the speed.
 * An animation with a camera of its own (a `turntable()`, or `camera()` keys) is seen *through its camera*; switch that off to look round yourself.
