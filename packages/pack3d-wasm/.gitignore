@@ -1,0 +1,10 @@
+# Cargo build artifacts
+target/
+
+# wasm-pack drops a `.gitignore` containing `*` into its --out-dir, which would hide the very glue we
+# need to commit. Ignore that file itself so a rebuild does not produce a spurious diff.
+pkg/.gitignore
+
+# The wasm binary in pkg/ is redundant: ts/Packer3D.ts loads the module from the committed base64 in
+# ts/pack3d-wasm-binary.ts, and only imports the JS glue from pkg/.
+pkg/*.wasm

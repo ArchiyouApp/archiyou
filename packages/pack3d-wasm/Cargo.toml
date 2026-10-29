@@ -1,0 +1,21 @@
+[package]
+name = "pack3d-wasm"
+version = "0.1.0"
+edition = "2024"
+description = "Stable 3D load planning (boxes into pallets, crates and trailers) for WebAssembly: deterministic, integer arithmetic, with support, weight, stacking, unloading-order and balance rules"
+license = "Apache-2.0"
+
+# Standalone crate: do not get absorbed into a parent cargo workspace.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
