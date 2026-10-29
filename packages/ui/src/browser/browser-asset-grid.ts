@@ -5,6 +5,9 @@
  * of asset cards. Presentational: the page decides which assets are shown, in which
  * order, and what the tabs and sort do (it keeps both in the URL / state).
  *
+ * Slot `filters`: a row under the tab bar for the section's own filters (the projects'
+ * status chips).
+ *
  * Emits:
  *   section-select  detail = section id    a tab was chosen
  *   sort-change     detail = BrowserSort   a sort was chosen
@@ -29,7 +32,7 @@ import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import './browser-asset-card.js';
 import './browser-asset-new.js';
 
-export type BrowserAssetKind = 'script' | 'shared' | 'configurator';
+export type BrowserAssetKind = 'script' | 'shared' | 'configurator' | 'project';
 
 /** One thing in the browser, whatever it is. `id` is unique per kind. */
 export interface BrowserAsset
@@ -46,6 +49,14 @@ export interface BrowserAsset
   updated?: number;
   /** Absolute thumbnail URL. */
   thumbnail?: string;
+  /** Next to the kind, e.g. a project's number "P-012". */
+  label?: string;
+  /** A second line under the name, e.g. a project's client. */
+  subtitle?: string;
+  /** A status shown as a badge, e.g. a project's "Request". */
+  badge?: { text: string; variant: 'brand' | 'success' | 'warning' | 'danger' | 'neutral' };
+  /** Something new happened that the user has not looked at. */
+  unread?: boolean;
 }
 
 export interface BrowserSection
@@ -81,6 +92,7 @@ export class BrowserAssetGrid extends LitElement
             <wa-dropdown-item type="checkbox" value=${value} ?checked=${this.sort === value}>${label}</wa-dropdown-item>`)}
         </wa-dropdown>
       </div>
+      <slot name="filters"></slot>
 
       ${this._renderBody()}
     `;
@@ -229,6 +241,7 @@ export class BrowserAssetGrid extends LitElement
     .empty {
       grid-column: 1 / -1;
       width: 100%;
+      box-sizing: border-box;
       font-size: var(--text-sm);
       color: var(--color-text-muted);
     }

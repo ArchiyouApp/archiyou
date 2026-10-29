@@ -328,8 +328,8 @@ export class PageConfigurator extends SignalWatcher(LitElement)
   }
 
   /** Tell the page around an embedded configurator what this run shows: the first model,
-   *  then each change and preset, or that the model could not be made. Not in the editor's
-   *  preview, and a no-op outside a frame (services/host-events). */
+   *  then each change and preset, and the metrics of every run; or that the model could not
+   *  be made. Not in the editor's preview, and a no-op outside a frame (services/host-events). */
   private _reportToHost(result: RunnerScriptExecutionResult, changes: ReturnType<PageConfigurator['_takeChanges']>)
   {
     if (this.preview) return;
@@ -358,6 +358,7 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     }
     if (changes.preset) postToHost({ type: 'preset', preset: changes.preset, ...via, ...configuration });
     if (changes.changed.length > 0) postToHost({ type: 'change', changed: changes.changed, ...via, ...configuration });
+    postToHost({ type: 'metrics', ...configuration });
   }
 
   private _buildRequest(): RunnerScriptExecutionRequest

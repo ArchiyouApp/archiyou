@@ -31,12 +31,13 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@archiyou/ui/configurator/configurator.js';
 
 import { openSharedScript } from '../state/workspace';
-import { applyConfiguratorParamsFromQuery, isEmbedded } from '../state/configurator-url';
+import { applyConfiguratorParamsFromQuery, deliveryTokenFromUrl, isEmbedded } from '../state/configurator-url';
 import { applyDisplayFromQuery, resetDisplay } from '../state/configurator-display';
 import { applyLocaleFromQuery, detectPreferredLocale } from '../state/locale';
 import { setChromeLocale } from '../i18n/locale-config';
 import { allLocales } from '../i18n/locale-codes';
 import { fetchPublishedScriptVersion } from '../services/publishing.js';
+import { reportAdjustOpened } from '../services/projects.js';
 import { setServerExecutionTarget, setPublishedScript, type ServerExecutionTarget } from '../services/execution-service.js';
 
 @localized()
@@ -113,6 +114,9 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
       // after the script is loaded (its params are what type the raw strings) and
       // before <page-configurator> mounts, so the first run is already the right one.
       applyConfiguratorParamsFromQuery(window.location.search);
+      // Opened from a delivery's "Adjust this design": the professional sees that it was
+      const delivery = deliveryTokenFromUrl();
+      if (delivery) reportAdjustOpened(delivery);
       this._status = 'ready';
     }
     catch (err)

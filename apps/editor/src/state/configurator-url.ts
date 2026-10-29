@@ -33,6 +33,13 @@ import { presetFromQuery } from './configurator-display';
 // for a configurator's social card, and must read them exactly as this page does.
 export { decodeParamValues, encodeParamValues };
 
+/** `?delivery=<token>`: the configurator was opened from a delivery's "Adjust this design"
+ *  (plans/PROJECTS.md). The client's changes then go back to that delivery's project. */
+export function deliveryTokenFromUrl(search: string = window.location.search): string | null
+{
+  return new URLSearchParams(search).get('delivery') || null;
+}
+
 /**
  * `?embed=1` (or a bare `?embed`): the configurator is shown inside another site's page,
  * which offers its own links. The configurator then leaves out the buttons that send the

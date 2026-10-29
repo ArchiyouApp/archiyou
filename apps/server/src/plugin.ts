@@ -7,6 +7,8 @@
  *   - /scripts/{user}/*                the user's own scripts, authed (routes/scripts.ts)
  *   - /scripts/{published,shared}/*    public libraries (routes/library.ts)
  *   - /scripts/published/execute/*     server-side execution (routes/execute.ts)
+ *   - /projects/*, /clients/*          a professional's projects (routes/projects.ts)
+ *   - /orders, /d/*                    what their clients reach without an account (routes/client.ts)
  *
  * One JWT/CORS, one namespace — no `/api` split and no duplicate library auth.
  * Execution init connects to Redis; it is best-effort with a timeout so the
@@ -30,11 +32,14 @@ import { registerModuleRoutes } from './routes/modules';
 import { registerAdminRoutes } from './routes/admin';
 import { registerFeedbackRoutes } from './routes/feedback';
 import { registerLinkRoutes } from './routes/links';
+import { registerProjectRoutes } from './routes/projects';
+import { registerClientRoutes } from './routes/client';
 import { moduleHost } from './modules/ModuleHost';
 import { ValidationError } from './validate';
 import { UserError, userService } from './services/UserService';
 import { ScriptStoreError } from './services/ScriptStore';
 import { FeedbackStoreError } from './services/FeedbackStore';
+import { ProjectStoreError, projectStore } from './services/ProjectStore';
 import { translationQueue } from './translation/TranslationQueue';
 
 const EXECUTION_INIT_TIMEOUT_MS = 5000;
@@ -86,6 +91,10 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   // oversized picture is refused by the check (and logged) rather than by a bare 413.
   fastify.addContentTypeParser('image/png', { parseAs: 'buffer', bodyLimit: config.thumbnails.maxBytes + 1024 },
     (_request, body, done) => done(null, body));
+  // …and the files of a delivery (routes/projects.ts), made in the professional's browser:
+  // a model, a PDF or a spreadsheet, each up to the delivery file cap.
+  fastify.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: config.deliveries.maxFileBytes },
+    (_request, body, done) => done(null, body));
 
   // Script thumbnails as static files (services/ThumbnailStore.ts writes them). Filenames
   // are content-addressed, which is what makes `immutable` safe: a regenerated thumbnail
@@ -131,6 +140,8 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
       reply.code(401).send({ success: false, error: 'Unauthorized' });
     }
   });
+
+  fastify.decorate('requireVerified', requireVerified);
 
   // preHandler for routes/admin.ts. Two distinct answers on purpose: 401 means "log
   // in", 403 means "logged in, still not allowed" — collapsing them would send the
@@ -189,6 +200,19 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
     fastify.addHook('onClose', async () => { moduleHost.close(); });
   }
 
+  // Project activity (opens, downloads, responses) is kept config.events.retentionDays and
+  // then forgotten: purged now and once a day. Never in the way of booting.
+  const purgeEvents = () =>
+  {
+    projectStore.purgeEvents()
+      .then((n) => { if (n) console.log(`🧹 Forgot ${n} project event(s) older than ${config.events.retentionDays} days.`); })
+      .catch((err) => console.warn('⚠️  Purging old project activity failed:', (err as Error).message));
+  };
+  purgeEvents();
+  const purgeTimer = setInterval(purgeEvents, 24 * 60 * 60 * 1000);
+  purgeTimer.unref();
+  fastify.addHook('onClose', async () => { clearInterval(purgeTimer); });
+
   fastify.get('/health', async () => ({ status: 'healthy', timestamp: new Date().toISOString() }));
 
   // Must be set BEFORE registering route sub-plugins: encapsulated child contexts
@@ -204,7 +228,29 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   await fastify.register(registerModuleRoutes);   // /modules/* (gated script modules; inert when none is installed)
   await fastify.register(registerFeedbackRoutes); // POST /feedback (public, rate limited)
   await fastify.register(registerLinkRoutes);     // /links (authed), /go/:key (public redirect)
+  await fastify.register(registerProjectRoutes);  // /projects/*, /clients/* (verified)
+  await fastify.register(registerClientRoutes);   // POST /orders, /d/:token (public, rate limited)
   await fastify.register(registerAdminRoutes);    // /admin/* (operator only — users.is_admin)
+}
+
+/**
+ * preHandler (as `fastify.requireVerified`, after `authenticate`): the caller's email
+ * address has been confirmed. Exported so route tests decorate their app with the real one.
+ *
+ * The bar for anything other people get to see: publishing, sharing, and projects (which
+ * email clients). Saving and loading your own scripts stays open, so a new account is
+ * usable the moment it is created; verification is what makes registration spam worth the
+ * effort. Accounts that predate verification were grandfathered.
+ */
+export async function requireVerified(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const user = await userService.findByUsername(request.user.sub);
+  if (!user || user.emailVerifiedAt === null) {
+    reply.code(403).send({
+      success: false,
+      error: 'Please confirm your email address first.',
+      code: 'email_not_verified',
+    });
+  }
 }
 
 /** Exported so route tests can build an app that maps errors the way production
@@ -224,6 +270,14 @@ export function setupErrorHandling(fastify: FastifyInstance): void {
     }
     if (error instanceof FeedbackStoreError) {
       return reply.code(404).send({ success: false, error: error.message });
+    }
+    if (error instanceof ProjectStoreError) {
+      const code =
+        error.code === 'not_found' ? 404 :
+        error.code === 'conflict' ? 409 :
+        error.code === 'limit' ? 429 :
+        422;
+      return reply.code(code).send({ success: false, error: error.message, code: error.code });
     }
     if (error instanceof ScriptStoreError) {
       const code = error.code === 'not_found' ? 404 : error.code === 'conflict' ? 409 : 422;
@@ -249,6 +303,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     requireAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    requireVerified: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     executionManager?: ExecutionManager;
   }
 }

@@ -261,6 +261,51 @@ export const config = {
     timeWindow: process.env.SERVER_FEEDBACK_RATE_WINDOW ?? '10 minutes',
   },
 
+  /** Per-IP rate limit on POST /orders: product orders from a configurator, which
+   *  anonymous visitors send (plans/PROJECTS.md). */
+  orderRateLimit: {
+    max: Number(process.env.SERVER_ORDER_RATE_LIMIT ?? 10),
+    timeWindow: process.env.SERVER_ORDER_RATE_WINDOW ?? '10 minutes',
+  },
+  /** Orders one configurator takes in 24 hours; beyond it the form says to try tomorrow.
+   *  The form is public, so this caps what can land in one author's inbox. */
+  ordersPerConfiguratorPerDay: Number(process.env.SERVER_ORDERS_PER_CONFIGURATOR_PER_DAY ?? 200),
+
+  /**
+   * Deliveries (plans/PROJECTS.md): what a professional sends a client — the frozen files
+   * of one configuration behind a link. The files are made in the professional's browser
+   * and stored here; they are only ever served through the delivery's link, so revoking it
+   * takes them offline too. Every verified user can send deliveries, so mail to strangers
+   * is capped per sender, and the disk per sender.
+   */
+  deliveries: {
+    path: process.env.SERVER_DELIVERY_PATH ?? './data/deliveries',
+    maxFileBytes: Number(process.env.SERVER_DELIVERY_MAX_FILE_BYTES ?? 25 * 1024 * 1024),
+    maxDeliveryBytes: Number(process.env.SERVER_DELIVERY_MAX_BYTES ?? 60 * 1024 * 1024),
+    /** All of one professional's delivery files together. */
+    quotaBytes: Number(process.env.SERVER_DELIVERY_QUOTA_BYTES ?? 2 * 1024 * 1024 * 1024),
+    sendPerHour: Number(process.env.SERVER_DELIVERY_SEND_PER_HOUR ?? 10),
+    sendPerDay: Number(process.env.SERVER_DELIVERY_SEND_PER_DAY ?? 50),
+    /** Accounts younger than a day: registering to send spam should not pay. */
+    newAccountSendPerDay: Number(process.env.SERVER_DELIVERY_NEW_ACCOUNT_SEND_PER_DAY ?? 5),
+  },
+  /** Per-IP rate limit on the client's side of a delivery (the page and its files). */
+  deliveryRateLimit: {
+    max: Number(process.env.SERVER_DELIVERY_RATE_LIMIT ?? 120),
+    timeWindow: process.env.SERVER_DELIVERY_RATE_WINDOW ?? '1 minute',
+  },
+  /** Per-IP rate limit on a client's response (accept, decline, request changes). */
+  respondRateLimit: {
+    max: Number(process.env.SERVER_RESPOND_RATE_LIMIT ?? 20),
+    timeWindow: process.env.SERVER_RESPOND_RATE_WINDOW ?? '10 minutes',
+  },
+
+  /** Project activity (plans/PROJECTS.md): opens, downloads and responses of clients and
+   *  the professional's own actions. Kept this long, then purged (ProjectStore.purgeEvents). */
+  events: {
+    retentionDays: Number(process.env.SERVER_EVENTS_RETENTION_DAYS ?? 365),
+  },
+
   /**
    * Links (`/go/<key>`, routes/links.ts). `baseUrl` is what a link starts with; unset, it is
    * the origin the editor reached the API on (behind Caddy the app's own domain, which routes

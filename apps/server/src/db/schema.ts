@@ -26,9 +26,10 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { pgTable, text, boolean, timestamp, json, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, boolean, integer, timestamp, json, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core';
 
 import type { ScriptData, ScriptShared } from '@archiyou/core/src/execution/types';
+import type { DeliveryFile, DeliveryOffer } from '@archiyou/types';
 
 /**
  * Accounts. Kept minimal — the script model stays in the single script_versions
@@ -173,3 +174,140 @@ export const links = pgTable('links', {
 ]);
 
 export type LinkRow = typeof links.$inferSelect;
+
+// ── Projects (plans/PROJECTS.md) ─────────────────────────────────────────────────────────
+//
+// A professional's projects: clients, projects, immutable configuration snapshots, the
+// deliveries sent to clients, and the activity on them. Every row carries `professional`
+// (the username handle of whoever runs the project — not necessarily the author of the
+// scripts in it) and every query filters on it. No foreign keys, like the tables above:
+// the store keeps the references consistent.
+
+const at = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
+
+/** A professional's clients, deduped on email (NULL emails are all distinct). */
+export const clients = pgTable('clients', {
+  id: text('id').primaryKey(),
+  professional: text('professional').notNull(),
+  email: text('email'),                         // lowercased
+  name: text('name'),
+  company: text('company'),
+  phone: text('phone'),
+  address: text('address'),
+  note: text('note'),
+  created: at('created').notNull().defaultNow(),
+  updated: at('updated').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('clients_by_email').on(t.professional, t.email),
+  index('clients_by_updated').on(t.professional, t.updated),
+]);
+
+export type ClientRow = typeof clients.$inferSelect;
+
+/** `status`: request → active | lost, active → won | lost, won | lost → active. */
+export const projects = pgTable('projects', {
+  id: text('id').primaryKey(),
+  professional: text('professional').notNull(),
+  number: integer('number').notNull(),          // per professional, shown as P-001
+  title: text('title').notNull(),
+  clientId: text('client_id'),
+  status: text('status').notNull(),
+  note: text('note'),
+  archivedAt: at('archived_at'),
+  /** The client's latest action (an order, an open, a response): with `seen_at` the
+   *  "unread" dot on the project. */
+  clientActivityAt: at('client_activity_at'),
+  seenAt: at('seen_at'),
+  created: at('created').notNull().defaultNow(),
+  updated: at('updated').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('projects_by_number').on(t.professional, t.number),
+  index('projects_by_status').on(t.professional, t.status, t.updated),
+]);
+
+export type ProjectRow = typeof projects.$inferSelect;
+
+/**
+ * Immutable snapshots of a script and its parameter values (rev 1..n per project). A
+ * snapshot rather than a reference: working-copy rows of script_versions are rewritten by
+ * autosave, and files can be deleted. `script` is `json`, not `jsonb`, for the reason in
+ * the file header — it carries `params`, whose key order is the parameter order.
+ */
+export const configurations = pgTable('configurations', {
+  id: text('id').primaryKey(),
+  professional: text('professional').notNull(),
+  projectId: text('project_id').notNull(),
+  rev: integer('rev').notNull(),
+  label: text('label'),
+  script: json('script').$type<ScriptData>().notNull(),
+  values: jsonb('values').$type<Record<string, unknown>>().notNull(),
+  unitSystem: text('unit_system'),
+  lang: text('lang'),
+  thumbnail: text('thumbnail'),
+  origin: text('origin').notNull(),             // order | added | adjust
+  fulfillment: text('fulfillment'),             // the ordered product fulfillment
+  sourceVersionId: text('source_version_id'),
+  sourceDeliveryId: text('source_delivery_id'),
+  message: text('message'),
+  created: at('created').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('configurations_by_rev').on(t.projectId, t.rev),
+]);
+
+export type ConfigurationRow = typeof configurations.$inferSelect;
+
+/** What a professional sent a client: one configuration's frozen files, a message, an
+ *  optional offer and a link (`token`). Immutable once sent, apart from revoking it, the
+ *  counters and the client's one response. Links do not expire. */
+export const deliveries = pgTable('deliveries', {
+  id: text('id').primaryKey(),
+  professional: text('professional').notNull(),
+  projectId: text('project_id').notNull(),
+  configurationId: text('configuration_id').notNull(),
+  number: integer('number').notNull(),          // per project
+  title: text('title').notNull(),
+  message: text('message'),
+  offer: jsonb('offer').$type<DeliveryOffer>(),
+  recipientEmail: text('recipient_email'),
+  recipientName: text('recipient_name'),
+  files: jsonb('files').$type<DeliveryFile[]>().notNull().default(sql`'[]'::jsonb`),
+  bytes: integer('bytes').notNull().default(0),
+  token: text('token'),                         // set on send
+  status: text('status').notNull(),             // draft | sent | revoked
+  allowAdjust: boolean('allow_adjust').notNull().default(false),
+  sentAt: at('sent_at'),
+  firstOpenedAt: at('first_opened_at'),
+  openCount: integer('open_count').notNull().default(0),
+  downloadCount: integer('download_count').notNull().default(0),
+  response: text('response'),                   // accepted | declined | changes
+  responseNote: text('response_note'),
+  responseAt: at('response_at'),
+  created: at('created').notNull().defaultNow(),
+  updated: at('updated').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('deliveries_by_token').on(t.token),
+  uniqueIndex('deliveries_by_number').on(t.projectId, t.number),
+  index('deliveries_by_sent').on(t.professional, t.sentAt),
+]);
+
+export type DeliveryRow = typeof deliveries.$inferSelect;
+
+/** A project's activity. Client events carry `visitor`, a daily-salted hash for counting
+ *  unique opens — never an IP. Purged after config.events.retentionDays. */
+export const events = pgTable('events', {
+  id: text('id').primaryKey(),
+  professional: text('professional').notNull(),
+  projectId: text('project_id').notNull(),
+  deliveryId: text('delivery_id'),
+  configurationId: text('configuration_id'),
+  type: text('type').notNull(),
+  actor: text('actor').notNull(),               // professional | client
+  meta: jsonb('meta').$type<Record<string, unknown>>(),
+  visitor: text('visitor'),
+  created: at('created').notNull().defaultNow(),
+}, (t) => [
+  index('events_by_project').on(t.projectId, t.created),
+  index('events_by_created').on(t.created),
+]);
+
+export type EventRow = typeof events.$inferSelect;

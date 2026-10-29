@@ -581,8 +581,9 @@ export class ScriptParam
  */
 
 /** Query keys the configurator itself owns; never treated as a param. Params are matched
- *  by name anyway, but a script is free to call a param LANG. */
-const RESERVED_QUERY_KEYS = ['lang']
+ *  by name anyway, but a script is free to call a param LANG. `delivery` is the token of
+ *  the delivery a client adjusts the design from (projects). */
+const RESERVED_QUERY_KEYS = ['lang', 'delivery']
 
 /**
  * Param values from a query string, coerced by each param's declared type and checked

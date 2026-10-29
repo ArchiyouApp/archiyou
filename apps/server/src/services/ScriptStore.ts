@@ -58,7 +58,7 @@ export interface VersionMeta {
  * (fileId, version) — the ordinary "you already published 1.2.0" — stops being a 400
  * and becomes a 500.
  */
-function uniqueViolation(e: unknown): string | null {
+export function uniqueViolation(e: unknown): string | null {
   const hit = [e, (e as { cause?: unknown } | null)?.cause]
     .find((err) => (err as { code?: unknown } | null)?.code === '23505') as { constraint?: string } | undefined;
   return hit ? hit.constraint ?? '' : null;

@@ -10,9 +10,14 @@ import '@awesome.me/webawesome/dist/components/popover/popover.js';
 
 import './configurator-metric-card.js';
 import './configurator-download-menu.js';
+import './configurator-order-form.js';
+import '../projects/add-to-project-menu.js';
 
-import { editorScript, executing as scriptExecuting, executionResult } from '@archiyou/editor/src/state/workspace';
-import { translate } from '@archiyou/editor/src/state/locale';
+import { editorScript, executing as scriptExecuting, executionResult, userState, buildConfiguratorRequest, deliveryTokenFromUrl } from '@archiyou/editor/src/state/workspace';
+import { configuratorLocale, translate } from '@archiyou/editor/src/state/locale';
+import type { ConfigurationInput } from '@archiyou/editor/src/services/projects';
+import { isDownload, isProduct } from '@archiyou/editor/src/services/fulfillment';
+import type { ScriptData } from '@archiyou/core/src/execution/types';
 import type { Metric } from '@archiyou/core/src/calc/types';
 import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
@@ -53,6 +58,25 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
           </button>
         ` : ''}
 
+        ${this._canAddToProject() ? html`
+          <div class="download-wrap">
+            <button class="project-btn" title="Add this design to one of your projects"
+              @click=${() => { this._showAddToProject = true; }}>
+              <wa-icon library="lucide" name="folder-plus"></wa-icon>
+              <span>Add to project</span>
+            </button>
+          </div>
+        ` : nothing}
+
+        ${this._canOrder() ? html`
+          <div class="download-wrap">
+            <button id="order-btn" class="download-btn" title=${this._delivery ? 'Send your changes back' : 'Order this design'}>
+              <wa-icon library="lucide" name=${this._delivery ? 'send' : 'shopping-cart'}></wa-icon>
+              <span>${this._delivery ? 'Send changes' : this._orderLabel()}</span>
+            </button>
+          </div>
+        ` : nothing}
+
         ${this._hasDownloads() ? html`
           <div class="download-wrap">
             <button id="download-btn" class="download-btn" title=${msg('Download')}>
@@ -80,6 +104,28 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
           <configurator-download-menu ?preview=${this.preview}></configurator-download-menu>
         </wa-popover>
       ` : nothing}
+
+      ${this._canOrder() ? html`
+        <wa-popover
+          class="download-popover"
+          for="order-btn"
+          placement="top-end"
+          distance="10"
+          without-arrow
+          @wa-after-hide=${this._resetOrderForm}
+        >
+          <configurator-order-form ?preview=${this.preview} deliveryToken=${this._delivery ?? ''}></configurator-order-form>
+        </wa-popover>
+      ` : nothing}
+
+      ${this._canAddToProject() ? html`
+        <add-to-project-menu
+          ?open=${this._showAddToProject}
+          .build=${this._buildConfiguration}
+          suggestedTitle=${editorScript.get()?.published?.title ?? editorScript.get()?.name ?? ''}
+          @add-to-project-close=${() => { this._showAddToProject = false; }}
+        ></add-to-project-menu>
+      ` : nothing}
     `;
   }
 
@@ -93,6 +139,7 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
   @property({ type: Boolean, attribute: 'without-metrics' }) withoutMetrics = false;
 
   @state() private _hasOverflow = false;
+  @state() private _showAddToProject = false;
   private _resizeObserver: ResizeObserver | null = null;
 
   // ── 3. Lifecycle ──
@@ -176,13 +223,66 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
     this.renderRoot.querySelector('configurator-download-menu')?.reset();
   }
 
+  /** A signed-in visitor can keep this design in a project of theirs — the author's own
+   *  configurator or anyone else's. Not in the editor's preview: the editor menu has it. */
+  private _canAddToProject(): boolean
+  {
+    return !this.preview && !userState.get().anonymous;
+  }
+
+  /** The design on screen: the configurator's script with the values set in it now. */
+  private _buildConfiguration = (): ConfigurationInput | null =>
+  {
+    const request = buildConfiguratorRequest([]);
+    // buildConfiguratorRequest puts the script's toData() here
+    const script = request.script as ScriptData | undefined;
+    if (!script) return null;
+    return {
+      script,
+      values: request.params ?? {},
+      unitSystem: request.unitSystem ?? null,
+      lang: configuratorLocale.get(),
+      sourceVersionId: script.id ?? null,
+    };
+  };
+
   /** Is there anything to download? A published configurator that offers no
    *  fulfillments gets no Download button at all rather than one that opens an empty
    *  list; in the preview the button always stands, since that is where an author
-   *  goes to see what they are about to offer. */
+   *  goes to see what they are about to offer. Products have their own button. */
   private _hasDownloads(): boolean
   {
-    return this.preview || (editorScript.get()?.published?.fulfillments?.length ?? 0) > 0;
+    return this.preview || (editorScript.get()?.published?.fulfillments ?? []).some(isDownload);
+  }
+
+  /** Opened from a delivery's "Adjust this design": the order button sends the changes
+   *  back to that delivery's professional instead. */
+  private readonly _delivery = deliveryTokenFromUrl();
+
+  /** An order button: for a product, or for changes to a delivered design. */
+  private _canOrder(): boolean
+  {
+    return (!this.preview && !!this._delivery) || this._products().length > 0;
+  }
+
+  /** The products this configurator can be ordered as ("Order product"). */
+  private _products()
+  {
+    return (editorScript.get()?.published?.fulfillments ?? []).filter(isProduct);
+  }
+
+  /** One product: its own name ("Order this table"); several: the choice is in the form. */
+  private _orderLabel(): string
+  {
+    const products = this._products();
+    return products.length === 1 ? products[0].name : 'Order product';
+  }
+
+  /** A sent order leaves a fresh form behind once the popover closes. */
+  private _resetOrderForm(e: Event)
+  {
+    if (e.target !== e.currentTarget) return;
+    this.renderRoot.querySelector('configurator-order-form')?.reset();
   }
 
   // ── 5. Styles ──
@@ -291,6 +391,28 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
       white-space: nowrap;
     }
 
+    .project-btn
+    {
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+      padding: var(--space-sm) var(--space-md);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md, 8px);
+      background: var(--color-bg);
+      color: var(--color-text);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      font-size: var(--text-sm);
+      white-space: nowrap;
+    }
+
+    .project-btn:hover
+    {
+      border-color: var(--color-primary);
+      color: var(--color-primary);
+    }
+
     .download-btn:hover
     {
       background: color-mix(in srgb, var(--color-black, #000) 12%, var(--color-primary));
@@ -341,6 +463,11 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
       .download-wrap { padding: 0 var(--space-sm); }
 
       .download-btn { min-height: var(--hit-min); }
+
+      .project-btn { min-height: var(--hit-min); }
+
+      /* Room for the metrics: the icon says it */
+      .project-btn span { display: none; }
     }
   `;
 }

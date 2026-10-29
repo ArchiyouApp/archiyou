@@ -33,6 +33,7 @@ import '@archiyou/ui/editor/file-info.js';
 import '@archiyou/ui/editor/script-manager.js';
 import '@archiyou/ui/editor/script-importer.js';
 import '@archiyou/ui/editor/share-script-menu.js';
+import '@archiyou/ui/projects/add-to-project-menu.js';
 import '@archiyou/ui/editor/publish-script-menu.js';
 import '@archiyou/ui/editor/manage-configurators-menu.js';
 import '@archiyou/ui/editor/modules-menu.js';
@@ -40,6 +41,7 @@ import '@archiyou/ui/editor/keys-menu.js';
 import type { ToolDef } from '@archiyou/ui/editor/toolbar.js';
 
 import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystemOverride, docUnitSystemOverride, perStatement, kernel, autoRun, wasActiveScriptRestored, activePipeline, pipelineModelPath, forActivePipeline, bakeAnimations } from '../state/workspace';
+import { currentValues, type ConfigurationInput } from '../services/projects';
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
 import { registerScheduleExecution, registerParamFrameRunner, triggerResetCamera } from '../state/viewer';
 import { registerHelpRunner, openHelpDoc, claimOnboarding, setHelpCursor, lookupHelpAtCursor, ONBOARDING_PATH } from '../state/help';
@@ -187,6 +189,12 @@ export class PageEditor extends SignalWatcher(LitElement)
         @share-script-done=${this._handleShareDone}
         @share-script-cancel=${this._handleShareCancel}
       ></share-script-menu>
+      <add-to-project-menu
+        ?open=${this._showAddToProject}
+        .build=${this._buildConfiguration}
+        suggestedTitle=${editorScript.get()?.name ?? ''}
+        @add-to-project-close=${() => { this._showAddToProject = false; }}
+      ></add-to-project-menu>
       <publish-script-menu
         ?open=${this._showPublishMenu}
         .editData=${this._editConfigurator}
@@ -244,6 +252,7 @@ export class PageEditor extends SignalWatcher(LitElement)
   @state() private _showManageConfigurators = false;
   @state() private _showModules = false;
   @state() private _showKeys = false;
+  @state() private _showAddToProject = false;
   @state() private _showDeleteConfirm = false;
   // Non-null → the publish menu opens in edit mode for this published version.
   @state() private _editConfigurator: ScriptData | null = null;
@@ -902,6 +911,12 @@ export class PageEditor extends SignalWatcher(LitElement)
       return;
     }
 
+    if (value === 'add-to-project')
+    {
+      this._showAddToProject = true;
+      return;
+    }
+
     if (value === 'help')
     {
       this._openTool('help');
@@ -1107,6 +1122,19 @@ export class PageEditor extends SignalWatcher(LitElement)
     if (!script || isReadOnly.get()) return;
     deleteScriptById(script.fileId);
   }
+
+  /** What "Add to project" adds: the script as it is now, with the values set in the
+   *  parameter menu and the units it is looked at in. */
+  private _buildConfiguration = (): ConfigurationInput | null =>
+  {
+    const script = editorScript.get()?.toData();
+    if (!script) return null;
+    return {
+      script,
+      values: currentValues(script),
+      unitSystem: scriptUnitSystemOverride.get() ?? script.units ?? null,
+    };
+  };
 
   private _handleDeleteCancel()
   {

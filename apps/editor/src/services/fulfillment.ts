@@ -204,7 +204,21 @@ export function fulfillmentCategories(fulfillment: ScriptPublishedFulfillmentDat
  *  address collection) that does not exist yet — the menu marks those instead. */
 export function isFreeDownload(fulfillment: ScriptPublishedFulfillmentData): boolean
 {
-  return fulfillment?.delivery === 'anonymous download' && (fulfillment?.price ?? 0) <= 0;
+  return isDownload(fulfillment)
+    && (fulfillment?.delivery ?? 'anonymous download') === 'anonymous download'
+    && (fulfillment?.price ?? 0) <= 0;
+}
+
+/** A product to order ("Order product"), rather than files to download. */
+export function isProduct(fulfillment: ScriptPublishedFulfillmentData | null | undefined): boolean
+{
+  return fulfillment?.category === 'product';
+}
+
+/** Files from the Download menu: every fulfillment that is no product (absent = download). */
+export function isDownload(fulfillment: ScriptPublishedFulfillmentData | null | undefined): boolean
+{
+  return !!fulfillment && !isProduct(fulfillment);
 }
 
 //// DOWNLOADING ////

@@ -17,6 +17,9 @@
  *             and the new one is shown
  *   preset    the visitor applied a preset,   { preset, params, metrics, query, via? }
  *             and the new model is shown
+ *   metrics   every run that made a model:    { params, metrics, query }
+ *             the first one, each change and
+ *             preset, and runs without changes
  *   download  a download finished             { fulfillment, formats, params, metrics, query }
  *   error     the model could not be made     { message }
  *
@@ -26,7 +29,9 @@
  * a link (every param that differs from what it opens with: 'WIDTH=900&ROOF=flat'), `commands`
  * the commands below that this configurator takes (['apply', 'animate']), `animations` the
  * animations the script declares (the standard ones can be played too), `via: 'host'`
- * marks a change the page itself asked for with a command. A message carries nothing about the
+ * marks a change the page itself asked for with a command. `metrics` follows the other
+ * messages of a run, so a page that only shows the model's figures (a price, an area) listens to
+ * that one alone; analytics count `ready`, `change` and `preset`. A message carries nothing about the
  * visitor, only what they see on screen, so it is posted with targetOrigin '*': the
  * configurator cannot know which site embeds it. A site checks `event.origin` and
  * `event.source` (its own frame) before it trusts one.
@@ -71,6 +76,7 @@ export type HostEvent =
   | { type: 'ready', execution: 'server' | 'client', loadMs: number, commands: HostCommand['type'][], animations: string[] } & Configuration
   | { type: 'change', changed: string[], via?: 'host' } & Configuration
   | { type: 'preset', preset: string, via?: 'host' } & Configuration
+  | { type: 'metrics' } & Configuration
   | { type: 'download', fulfillment: string, formats: string[] } & Configuration
   | { type: 'error', message: string };
 

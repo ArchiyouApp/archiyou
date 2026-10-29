@@ -13,7 +13,6 @@ import type { ScriptData, ScriptShared } from '@archiyou/core/src/execution/type
 import { scriptStore } from '../services/ScriptStore';
 import { thumbnailStore } from '../services/ThumbnailStore';
 import { translationQueue } from '../translation/TranslationQueue';
-import { userService } from '../services/UserService';
 import { configuratorUrl } from './scriptUrl';
 
 /** A thumbnail upload: the PNG itself as the request body (`Content-Type: image/png`, parsed
@@ -38,29 +37,10 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
   }
   const auth = { preHandler: [fastify.authenticate, assertSelf] };
 
-  /**
-   * Reject unless the caller's email address has been confirmed.
-   *
-   * Applied only to the routes that make content visible to other people —
-   * publish, share, and setting share metadata. Saving and loading your own
-   * scripts stays open so a new account is usable the moment it is created;
-   * verification is the bar for putting something in front of others, which is
-   * what makes registration spam worth the effort.
-   *
-   * Accounts created before verification existed are grandfathered by migration
-   * 0002, so this cannot lock out existing users.
-   */
-  async function requireVerified(request: FastifyRequest, reply: FastifyReply) {
-    const user = await userService.findByUsername(request.user.sub);
-    if (!user || user.emailVerifiedAt === null) {
-      reply.code(403).send({
-        success: false,
-        error: 'Please confirm your email address before publishing or sharing.',
-        code: 'email_not_verified',
-      });
-    }
-  }
-  const authVerified = { preHandler: [fastify.authenticate, assertSelf, requireVerified] };
+  // Publish, share and share metadata put content in front of other people, so they need
+  // a confirmed email address (fastify.requireVerified, plugin.ts). Saving and loading your
+  // own scripts does not.
+  const authVerified = { preHandler: [fastify.authenticate, assertSelf, fastify.requireVerified] };
 
   // The user's scripts (latest version each).
   fastify.get<{ Params: { user: string } }>('/scripts/:user', auth, async (request) => {

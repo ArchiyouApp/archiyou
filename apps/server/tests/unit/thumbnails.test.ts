@@ -295,6 +295,8 @@ describe('upload → serve (HTTP)', () => {
       try { await request.jwtVerify(); }
       catch { reply.code(401).send({ success: false, error: 'Unauthorized' }); }
     });
+    const { requireVerified } = await import('../../src/plugin');
+    app.decorate('requireVerified', requireVerified);
     // Mirror plugin.ts: the PNG body parser and the static mount with its per-type headers.
     app.addContentTypeParser('image/png', { parseAs: 'buffer', bodyLimit: config.thumbnails.maxBytes + 1024 },
       (_request, body, done) => done(null, body));
