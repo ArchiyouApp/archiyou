@@ -1,0 +1,72 @@
+{
+  "config": {},
+  "instance": {
+    "bins": [
+      {
+        "dims": [
+          1200,
+          800,
+          1800
+        ]
+      }
+    ],
+    "items": [
+      {
+        "count": 11,
+        "dims": [
+          284,
+          392,
+          252
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 16,
+        "dims": [
+          380,
+          268,
+          324
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 31,
+        "dims": [
+          324,
+          202,
+          141
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 30,
+        "dims": [
+          327,
+          389,
+          265
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 10,
+        "dims": [
+          390,
+          382,
+          179
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 26,
+        "dims": [
+          269,
+          302,
+          205
+        ],
+        "orientations": 3
+      }
+    ],
+    "name": "pallet-same"
+  },
+  "name": "pallet-same"
+}

@@ -181,7 +181,7 @@ impl Default for Config
 }
 
 /// One item in its place: `item` is the index of the item type, `copy` which of its `count`.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Placement
 {
@@ -194,7 +194,7 @@ pub struct Placement
     pub z: u32,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemRef
 {
@@ -202,7 +202,7 @@ pub struct ItemRef
     pub copy: u32,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct BinLoad
 {
@@ -222,7 +222,7 @@ pub struct BinLoad
     pub balance_ok: bool,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Stats
 {
@@ -234,7 +234,7 @@ pub struct Stats
     pub cost: f64,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Solution
 {

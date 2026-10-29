@@ -1,0 +1,51 @@
+{
+  "config": {},
+  "instance": {
+    "bins": [
+      {
+        "dims": [
+          3600,
+          1200,
+          1000
+        ],
+        "door": "-x",
+        "maxWeight": 400000
+      }
+    ],
+    "items": [
+      {
+        "count": 3,
+        "dims": [
+          600,
+          400,
+          400
+        ],
+        "orientations": 3,
+        "stop": 1,
+        "weight": 20000
+      },
+      {
+        "count": 4,
+        "dims": [
+          400,
+          400,
+          400
+        ],
+        "maxLoad": 40000,
+        "stop": 2,
+        "weight": 15000
+      },
+      {
+        "count": 2,
+        "dims": [
+          800,
+          300,
+          300
+        ],
+        "stop": 3,
+        "weight": 25000
+      }
+    ]
+  },
+  "name": "doors-x"
+}

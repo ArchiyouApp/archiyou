@@ -1,0 +1,189 @@
+{
+  "config": {},
+  "instance": {
+    "bins": [
+      {
+        "balance": null,
+        "dims": [
+          13600,
+          2450,
+          2700
+        ],
+        "door": "+x",
+        "maxWeight": 24000000
+      }
+    ],
+    "items": [
+      {
+        "count": 1,
+        "dims": [
+          2909,
+          279,
+          2696
+        ],
+        "maxLoad": null,
+        "orientations": 63,
+        "stop": 2,
+        "weight": 1094051
+      },
+      {
+        "count": 4,
+        "dims": [
+          2445,
+          224,
+          2472
+        ],
+        "maxLoad": null,
+        "orientations": 63,
+        "stop": 2,
+        "weight": 676932
+      },
+      {
+        "count": 4,
+        "dims": [
+          2710,
+          202,
+          2532
+        ],
+        "maxLoad": null,
+        "orientations": 63,
+        "stop": 2,
+        "weight": 693033
+      },
+      {
+        "count": 3,
+        "dims": [
+          2415,
+          234,
+          2696
+        ],
+        "maxLoad": null,
+        "orientations": 63,
+        "stop": 2,
+        "weight": 761768
+      },
+      {
+        "count": 3,
+        "dims": [
+          2750,
+          251,
+          2421
+        ],
+        "maxLoad": null,
+        "orientations": 63,
+        "stop": 2,
+        "weight": 835547
+      },
+      {
+        "count": 3,
+        "dims": [
+          2782,
+          262,
+          2587
+        ],
+        "maxLoad": null,
+        "orientations": 63,
+        "stop": 2,
+        "weight": 942811
+      },
+      {
+        "count": 3,
+        "dims": [
+          5353,
+          2274,
+          201
+        ],
+        "maxLoad": 3000000,
+        "orientations": 63,
+        "stop": 1,
+        "weight": 1223358
+      },
+      {
+        "count": 1,
+        "dims": [
+          5654,
+          1385,
+          287
+        ],
+        "maxLoad": 3000000,
+        "orientations": 63,
+        "stop": 1,
+        "weight": 1123718
+      },
+      {
+        "count": 2,
+        "dims": [
+          5720,
+          1802,
+          299
+        ],
+        "maxLoad": 3000000,
+        "orientations": 63,
+        "stop": 1,
+        "weight": 1540962
+      },
+      {
+        "count": 1,
+        "dims": [
+          3652,
+          2353,
+          203
+        ],
+        "maxLoad": 3000000,
+        "orientations": 63,
+        "stop": 1,
+        "weight": 872205
+      },
+      {
+        "count": 1,
+        "dims": [
+          3024,
+          1432,
+          326
+        ],
+        "maxLoad": 3000000,
+        "orientations": 63,
+        "stop": 1,
+        "weight": 705849
+      },
+      {
+        "count": 2,
+        "dims": [
+          3786,
+          2181,
+          350
+        ],
+        "maxLoad": 3000000,
+        "orientations": 63,
+        "stop": 1,
+        "weight": 1445021
+      },
+      {
+        "count": 1,
+        "dims": [
+          4355,
+          1807,
+          304
+        ],
+        "maxLoad": 3000000,
+        "orientations": 63,
+        "stop": 1,
+        "weight": 1196161
+      },
+      {
+        "count": 2,
+        "dims": [
+          3996,
+          1399,
+          319
+        ],
+        "maxLoad": 3000000,
+        "orientations": 63,
+        "stop": 1,
+        "weight": 891669
+      }
+    ],
+    "name": "trailer-stops"
+  },
+  "name": "trailer-stops"
+}

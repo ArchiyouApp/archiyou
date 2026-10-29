@@ -20,6 +20,7 @@ import { roundTo } from '../utils';
 import { BinPacker, DEFAULT_ITERATIONS } from '@archiyou/gdrr2bp-wasm';
 import { collectParts } from './parts';
 import type { CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm';
+import type { Packer3D } from '@archiyou/pack3d-wasm';
 
 import { Static } from 'typebox';
 import { PackOptionsSchema } from './schemas';
@@ -42,6 +43,37 @@ function loadSharedBinPacker(): Promise<BinPacker>
         });
     }
     return _sharedBinPackerReady;
+}
+
+/** The 3D load planner (pack3d), loaded on demand like the IFC classifier: most runs never plan a load, and the
+ *  module is a few hundred KB. make.pack3d() is synchronous for scripts, so the Runner loads it before a run whose
+ *  script, or any of its components, calls pack3d() (Runner._loadPack3dWhenUsed). One WebAssembly instance for
+ *  every Make instance in the process. */
+let _pack3d: Packer3D | null = null;
+let _pack3dReady: Promise<Packer3D> | null = null;
+
+/** Load the 3D load planner once; later calls resolve immediately. A failed load is not remembered. */
+export function loadPack3dModule(): Promise<Packer3D>
+{
+    _pack3dReady ??= import('@archiyou/pack3d-wasm')
+        .then(({ Packer3D }) => new Packer3D().init())
+        .then(packer =>
+        {
+            _pack3d = packer;
+            return packer;
+        })
+        .catch(error =>
+        {
+            _pack3dReady = null;
+            throw error;
+        });
+    return _pack3dReady;
+}
+
+/** Whether the 3D load planner has been loaded. */
+export function isPack3dLoaded(): boolean
+{
+    return _pack3d !== null;
 }
 
 /** Iterations of the nesting that only feeds the stats of make.boarding(): an estimate, so it keeps
@@ -1541,6 +1573,7 @@ export class Make
      *
      * @example
      * // Panels named 'door…' have grain along x and must not be turned; the rest may
+     * panels = collection(box(700, 400, 18).name('door1'), box(700, 400, 18).name('door2'), box(560, 600, 18).name('side'))
      * sheets = make.pack(panels, { width: 2440, height: 1220, kerf: 4, rotation: (panel) => !panel.name().startsWith('door') })
      */
     public pack(shapes: ShapeCollection, options: PackOptions): ShapeCollection

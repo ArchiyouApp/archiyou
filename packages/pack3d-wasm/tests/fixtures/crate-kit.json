@@ -1,0 +1,153 @@
+{
+  "config": {},
+  "instance": {
+    "bins": [
+      {
+        "dims": [
+          2400,
+          800,
+          600
+        ]
+      }
+    ],
+    "items": [
+      {
+        "count": 1,
+        "dims": [
+          1042,
+          372,
+          30
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 3,
+        "dims": [
+          954,
+          253,
+          33
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 4,
+        "dims": [
+          628,
+          422,
+          34
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 4,
+        "dims": [
+          900,
+          327,
+          31
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 2,
+        "dims": [
+          995,
+          461,
+          23
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 3,
+        "dims": [
+          684,
+          587,
+          22
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 4,
+        "dims": [
+          915,
+          409,
+          24
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 2,
+        "dims": [
+          606,
+          583,
+          34
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 6,
+        "dims": [
+          690,
+          69,
+          65
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 5,
+        "dims": [
+          2138,
+          79,
+          74
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 2,
+        "dims": [
+          1798,
+          52,
+          77
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 2,
+        "dims": [
+          813,
+          54,
+          70
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 2,
+        "dims": [
+          283,
+          275,
+          143
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 1,
+        "dims": [
+          400,
+          254,
+          104
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 2,
+        "dims": [
+          373,
+          248,
+          135
+        ],
+        "orientations": 63
+      }
+    ],
+    "name": "crate-kit"
+  },
+  "name": "crate-kit"
+}

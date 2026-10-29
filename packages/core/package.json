@@ -79,6 +79,7 @@
     "@archiyou/collada-wasm": "workspace:^",
     "@archiyou/gdrr2bp-wasm": "workspace:^",
     "@archiyou/meshup": "workspace:^",
+    "@archiyou/pack3d-wasm": "workspace:^",
     "@gltf-transform/core": "^4.3.0",
     "@noble/hashes": "^2.0.1",
     "acorn": "^8.16.0",

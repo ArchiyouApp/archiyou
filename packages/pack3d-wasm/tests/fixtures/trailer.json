@@ -1,0 +1,144 @@
+{
+  "config": {},
+  "instance": {
+    "bins": [
+      {
+        "dims": [
+          13600,
+          2450,
+          2700
+        ]
+      }
+    ],
+    "items": [
+      {
+        "count": 1,
+        "dims": [
+          2909,
+          279,
+          2696
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 4,
+        "dims": [
+          2445,
+          224,
+          2472
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 4,
+        "dims": [
+          2710,
+          202,
+          2532
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 3,
+        "dims": [
+          2415,
+          234,
+          2696
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 3,
+        "dims": [
+          2750,
+          251,
+          2421
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 3,
+        "dims": [
+          2782,
+          262,
+          2587
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 3,
+        "dims": [
+          5353,
+          2274,
+          201
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 1,
+        "dims": [
+          5654,
+          1385,
+          287
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 2,
+        "dims": [
+          5720,
+          1802,
+          299
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 1,
+        "dims": [
+          3652,
+          2353,
+          203
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 1,
+        "dims": [
+          3024,
+          1432,
+          326
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 2,
+        "dims": [
+          3786,
+          2181,
+          350
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 1,
+        "dims": [
+          4355,
+          1807,
+          304
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 2,
+        "dims": [
+          3996,
+          1399,
+          319
+        ],
+        "orientations": 63
+      }
+    ],
+    "name": "trailer"
+  },
+  "name": "trailer"
+}

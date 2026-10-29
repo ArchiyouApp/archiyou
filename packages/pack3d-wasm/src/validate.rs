@@ -207,8 +207,14 @@ pub fn validate(instance: &Instance, config: &Config, solution: &Solution) -> Ve
         {
             problems.push(format!("bin {b}: reports that its balance is {}met, it is {}", if load.balance_ok { "" } else { "not " }, if met { "met" } else { "not met" }));
         }
+        // compared with a tolerance of a millionth of a millimetre: a plan may have been through another JSON implementation
         let cog = (weight > 0).then(|| [mx as f64 / (2.0 * weight as f64), my as f64 / (2.0 * weight as f64)]);
-        if load.cog != cog
+        let same_cog = match (load.cog, cog)
+        {
+            (Some(reported), Some(real)) => reported.iter().zip(real).all(|(a, b)| (a - b).abs() <= 1e-6 * b.abs().max(1.0)),
+            (reported, real) => reported == real,
+        };
+        if !same_cog
         {
             problems.push(format!("bin {b}: reports the centre of gravity {:?}, it is {cog:?}", load.cog));
         }

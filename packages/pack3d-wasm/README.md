@@ -1,13 +1,58 @@
 # pack3d-wasm
 
 Stable 3D load planning: boxes into pallets, crates and trailers. Rust, built for WebAssembly, with
-a typed TypeScript wrapper (added in a later step of the work, see
-`documentation/nlnet/ai/records/2026-10-29-pack3d.md`).
+a typed TypeScript wrapper. The work and its measurements are recorded in
+`documentation/nlnet/ai/records/2026-10-29-pack3d.md`.
 
 What sets it apart from a plain bin packer: every item in a plan **stands**. At least a given share
 of its base rests on the floor or on the tops of other items, and its centre lies over that contact.
 The plan is the same, byte for byte, for the same input on every machine, and an independent
 validator re-checks every plan before it is returned.
+
+## Layout
+
+```
+src/              the solver (lib.rs is the entry: `solve_json`, and the wasm exports `solve` and `validate`)
+ts/Packer3D.ts    the typed wrapper: Packer3D, the types, orientationMask, input checks
+ts/index.ts       barrel
+pkg/              generated wasm-bindgen glue (committed); pkg/pack3d_wasm_bg.d.ts is hand-written
+ts/pack3d-wasm-binary.ts   the wasm as base64 (generated, committed: CI has no Rust)
+tests/            behaviour, fuzz and fixture tests; tests/fixtures holds the instances shared with core's tests
+examples/         bench (the benchmark families) and fixtures (writes tests/fixtures)
+build.sh          wasm-pack build + the base64 payload
+```
+
+## Usage (TypeScript)
+
+```ts
+import { Packer3D } from '@archiyou/pack3d-wasm';
+
+const packer = await new Packer3D().init();            // the module loads once per process
+const plan = packer.solve({
+  items: [{ dims: [400, 300, 250], count: 12, weight: 8000, maxLoad: 40000 }],
+  bins: [{ dims: [1200, 800, 1800], maxWeight: 600_000, cost: 25 }],
+}, { support: 1, iterations: 100 });
+// plan.bins[0].placements: { item, copy, orientation, x, y, z }, plan.unplaced, plan.stats
+```
+
+Lengths are whole millimetres, weights whole grams. `solve` throws for input that makes no sense, and
+never returns a plan that breaks a hard rule. The module is loaded from an inlined base64 string, so it
+works in every bundler; `ts/Packer3D.ts` reaches it and the glue through dynamic imports, which is what
+lets `@archiyou/core` load it only for scripts that plan a load.
+
+## Building
+
+```bash
+rustup target add wasm32-unknown-unknown   # once
+cargo install wasm-pack                     # once
+./build.sh                                  # writes pkg/ and ts/pack3d-wasm-binary.ts
+cargo run --release --example fixtures      # only when the solver's behaviour changed on purpose
+```
+
+The WebAssembly build gives the same bytes as the native one: `tests/fixtures` holds the instances and the
+hash of the native solution of each, `cargo test` checks the native build against them, and the tests of
+`@archiyou/core` check this build against them. 270 KB of WebAssembly (`opt-level` 3: 2 gives the same
+speed at 265 KB, `s` is twice as slow at 249 KB).
 
 ## What is enforced
 
