@@ -52,7 +52,15 @@ fn random_case(seed: u64) -> (Instance, Config)
             let stock = if limited { json!(r.range(1, 3)) } else { json!(null) };
             let max_weight = r.pick(&[json!(null), json!(null), json!(80000), json!(300000)]);
             let door = r.pick(&[json!(null), json!("+x"), json!("-x"), json!("+y"), json!("-y")]);
-            json!({ "dims": [r.range(300, 1200), r.range(300, 1200), r.range(300, 1200)], "cost": r.range(1, 5), "stock": stock, "maxWeight": max_weight, "door": door })
+            let balance = r.pick(&[
+                json!(null),
+                json!(null),
+                json!({ "cog": { "x": 0.1, "y": 0.1 } }),
+                json!({ "cog": { "x": 0.25 } }),
+                json!({ "axles": [{ "at": 100, "maxLoad": 100000 }, { "at": 900, "maxLoad": 100000 }] }),
+                json!({ "cog": { "y": 0.05 }, "axles": [{ "at": 900, "maxLoad": 60000 }, { "at": 100, "maxLoad": 60000 }] }),
+            ]);
+            json!({ "dims": [r.range(300, 1200), r.range(300, 1200), r.range(300, 1200)], "cost": r.range(1, 5), "stock": stock, "maxWeight": max_weight, "door": door, "balance": balance })
         })
         .collect();
     let config = json!({ "support": r.pick(&[0.0, 0.5, 0.8, 1.0]), "gap": r.pick(&[0u64, 0, 5, 10]) });

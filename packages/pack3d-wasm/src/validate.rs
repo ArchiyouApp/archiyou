@@ -9,7 +9,7 @@
 //! their own tests in `geom.rs`, one of them against a brute-force implementation.
 
 use crate::geom::{Cuboid, PERMS, V3, stands};
-use crate::model::{Config, Door, Instance, Solution};
+use crate::model::{Balance, Config, Door, Instance, Solution};
 
 /// A placement as the validator reads it.
 struct Boxed
@@ -57,6 +57,37 @@ fn blocks(door: Option<Door>, late: &Cuboid, early: &Cuboid) -> bool
         None => false,
     };
     above || in_front
+}
+
+/// Whether a load of `weight` grams with doubled moments `mx` and `my` about the front and side wall
+/// has the balance asked for. Written out directly as the centre-of-gravity bands and the lever rule
+/// on the two supports, not as the intervals that the solver moves the load by.
+fn balance_met(balance: &Balance, dims: [u32; 3], weight: i128, mx: i128, my: i128) -> bool
+{
+    if weight == 0
+    {
+        return true;
+    }
+    let within = |moment: i128, length: u32, fraction: Option<f64>| {
+        fraction.is_none_or(|f| {
+            let ppm = (f * 1_000_000.0).round() as i128;
+            (moment - weight * length as i128).abs() * 1_000_000 <= 2 * ppm * length as i128 * weight
+        })
+    };
+    let cog = balance.cog.as_ref();
+    let supports = match balance.axles.as_deref()
+    {
+        Some([a, b]) =>
+        {
+            let (front, rear) = if a.at < b.at { (a, b) } else { (b, a) };
+            let span2 = 2 * (rear.at - front.at) as i128;
+            let on_rear = mx - 2 * weight * front.at as i128;
+            let on_front = 2 * weight * rear.at as i128 - mx;
+            on_rear >= 0 && on_front >= 0 && on_rear <= span2 * rear.max_load as i128 && on_front <= span2 * front.max_load as i128
+        }
+        _ => true,
+    };
+    supports && within(mx, dims[0], cog.and_then(|c| c.x)) && within(my, dims[1], cog.and_then(|c| c.y))
 }
 
 /// Every rule that the solution breaks, in words. Empty when the solution is valid.
@@ -164,6 +195,38 @@ pub fn validate(instance: &Instance, config: &Config, solution: &Solution) -> Ve
             problems.push(format!("bin {b}: carries {weight} g, the most is {max} g"));
         }
 
+        // the balance the plan reports for the bin is the balance it has
+        let moment = |axis: usize| boxes.iter().map(|boxed| instance.items[boxed.item].weight as i128 * (boxed.real.min[axis] + boxed.real.max[axis]) as i128).sum::<i128>();
+        let (mx, my) = (moment(0), moment(1));
+        if load.weight != weight
+        {
+            problems.push(format!("bin {b}: reports a weight of {} g, the items add up to {weight} g", load.weight));
+        }
+        let met = bin.balance.as_ref().is_none_or(|balance| balance_met(balance, bin.dims, weight as i128, mx, my));
+        if load.balance_ok != met
+        {
+            problems.push(format!("bin {b}: reports that its balance is {}met, it is {}", if load.balance_ok { "" } else { "not " }, if met { "met" } else { "not met" }));
+        }
+        let cog = (weight > 0).then(|| [mx as f64 / (2.0 * weight as f64), my as f64 / (2.0 * weight as f64)]);
+        if load.cog != cog
+        {
+            problems.push(format!("bin {b}: reports the centre of gravity {:?}, it is {cog:?}", load.cog));
+        }
+        let axles = bin.balance.as_ref().and_then(|balance| balance.axles.as_deref()).filter(|axles| axles.len() == 2);
+        let axle_loads: Vec<u64> = axles
+            .map(|axles| {
+                let (front, rear) = if axles[0].at < axles[1].at { (&axles[0], &axles[1]) } else { (&axles[1], &axles[0]) };
+                let span2 = 2 * (rear.at - front.at) as u128;
+                let on_front = (2 * weight as i128 * rear.at as i128 - mx).max(0) as u128;
+                let on_rear = (mx - 2 * weight as i128 * front.at as i128).max(0) as u128;
+                vec![on_front.div_ceil(span2) as u64, on_rear.div_ceil(span2) as u64]
+            })
+            .unwrap_or_default();
+        if load.axle_loads != axle_loads
+        {
+            problems.push(format!("bin {b}: reports the support loads {:?} g, they are {axle_loads:?} g", load.axle_loads));
+        }
+
         // what rests on what
         if instance.items.iter().any(|item| item.max_load.is_some())
         {
@@ -227,7 +290,7 @@ mod tests
                 (0..3).map(|k| items[p.item].dims[perm[k]] as u64).product::<u64>()
             })
             .sum();
-        Solution { bins: vec![BinLoad { bin: 0, placements, volume }], unplaced, stats: Stats { evaluations: 0, bins: 1, cost: 1.0 } }
+        Solution { bins: vec![BinLoad { bin: 0, placements, volume, weight: 0, cog: None, axle_loads: vec![], balance_ok: true }], unplaced, stats: Stats { evaluations: 0, bins: 1, cost: 1.0 } }
     }
 
     /// Two cubes side by side on the floor and the long board across them.
@@ -302,7 +365,7 @@ mod tests
     fn using_more_bins_than_the_stock_is_found()
     {
         let mut s = valid();
-        s.bins.push(BinLoad { bin: 0, placements: vec![], volume: 0 });
+        s.bins.push(BinLoad { bin: 0, placements: vec![], volume: 0, weight: 0, cog: None, axle_loads: vec![], balance_ok: true });
         s.stats.bins = 2;
         assert!(problems(&s, &Config::default()).iter().any(|p| p.contains("stock is 1")));
     }
@@ -334,7 +397,32 @@ mod tests
                 (0..3).map(|k| instance.items[p.item].dims[perm[k]] as u64).product::<u64>()
             })
             .sum();
-        Solution { bins: vec![BinLoad { bin: 0, placements, volume }], unplaced: vec![], stats: Stats { evaluations: 0, bins: 1, cost: 1.0 } }
+        // the report is filled in as the solver would: weight, centre of gravity, supports, and the verdict on the balance
+        let weight: u64 = placements.iter().map(|p| instance.items[p.item].weight).sum();
+        let moment = |axis: usize| -> i128 {
+            placements
+                .iter()
+                .map(|p| {
+                    let perm = PERMS[p.orientation as usize];
+                    let at = [p.x, p.y, p.z][axis] as i128;
+                    instance.items[p.item].weight as i128 * (2 * at + instance.items[p.item].dims[perm[axis]] as i128)
+                })
+                .sum()
+        };
+        let cog = (weight > 0).then(|| [moment(0) as f64 / (2.0 * weight as f64), moment(1) as f64 / (2.0 * weight as f64)]);
+        let bin = &instance.bins[0];
+        let balance_ok = bin.balance.as_ref().is_none_or(|balance| balance_met(balance, bin.dims, weight as i128, moment(0), moment(1)));
+        let axle_loads = bin
+            .balance
+            .as_ref()
+            .and_then(|balance| balance.axles.as_deref())
+            .map(|axles| {
+                let (front, rear) = if axles[0].at < axles[1].at { (&axles[0], &axles[1]) } else { (&axles[1], &axles[0]) };
+                let span2 = 2 * (rear.at - front.at) as u128;
+                vec![((2 * weight as i128 * rear.at as i128 - moment(0)).max(0) as u128).div_ceil(span2) as u64, ((moment(0) - 2 * weight as i128 * front.at as i128).max(0) as u128).div_ceil(span2) as u64]
+            })
+            .unwrap_or_default();
+        Solution { bins: vec![BinLoad { bin: 0, placements, volume, weight, cog, axle_loads, balance_ok }], unplaced: vec![], stats: Stats { evaluations: 0, bins: 1, cost: 1.0 } }
     }
 
     fn from_json(json: &str) -> Instance
@@ -433,5 +521,40 @@ mod tests
             assert!(found(&instance, &Config::default(), &plan(&instance, &early_below), "is unloaded before"), "{door}");
             assert!(!found(&instance, &Config::default(), &plan(&instance, &late_below), "is unloaded before"), "the control, {door}");
         }
+    }
+
+    /// A 1000 mm bin with supports at 100 and 900 (800 g each at most) and a 10 % tolerance, and a 1 kg cube of 400.
+    fn balanced_bin() -> Instance
+    {
+        from_json(r#"{ "items": [{ "dims": [400, 400, 400], "weight": 1000 }], "bins": [{ "dims": [1000, 400, 400], "balance": { "cog": { "x": 0.1 }, "axles": [{ "at": 100, "maxLoad": 800 }, { "at": 900, "maxLoad": 800 }] } }] }"#)
+    }
+
+    #[test]
+    fn a_balance_that_is_not_met_is_reported_and_is_not_a_violation()
+    {
+        let instance = balanced_bin();
+        let off = plan(&instance, &[(0, 0, 0, 0, 0, 0)]); // the centre of gravity at 200: far from the middle, and the front support carries 875 g
+        assert!(!off.bins[0].balance_ok);
+        assert_eq!(off.bins[0].axle_loads, [875, 125]);
+        assert_eq!(validate(&instance, &Config::default(), &off), Vec::<String>::new(), "best effort: a plan that says so is valid");
+        let middle = plan(&instance, &[(0, 0, 0, 300, 0, 0)]);
+        assert!(middle.bins[0].balance_ok, "the control: the same cube in the middle");
+        assert_eq!((middle.bins[0].axle_loads.clone(), middle.bins[0].cog), (vec![500, 500], Some([500.0, 200.0])));
+        assert_eq!(validate(&instance, &Config::default(), &middle), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_report_that_says_otherwise_is_found()
+    {
+        let instance = balanced_bin();
+        let lie = |change: &dyn Fn(&mut BinLoad), word: &str| {
+            let mut plan = plan(&instance, &[(0, 0, 0, 0, 0, 0)]);
+            change(&mut plan.bins[0]);
+            assert!(found(&instance, &Config::default(), &plan, word), "{word}");
+        };
+        lie(&|bin| bin.balance_ok = true, "reports that its balance is met");
+        lie(&|bin| bin.weight += 1, "reports a weight");
+        lie(&|bin| bin.cog = Some([500.0, 200.0]), "reports the centre of gravity");
+        lie(&|bin| bin.axle_loads = vec![500, 500], "reports the support loads");
     }
 }

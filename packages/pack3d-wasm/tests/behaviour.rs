@@ -229,3 +229,87 @@ fn items_for_the_earlier_stop_never_sit_under_the_later_ones()
     let height = |item: usize, copy: u32| position_of(&solution, item, copy)[2];
     assert!(height(1, 0) < height(0, 0) && height(1, 1) < height(0, 0), "both stop 2 boxes are under both stop 1 boxes");
 }
+
+#[test]
+fn the_load_is_moved_along_the_bin_to_meet_the_balance()
+{
+    // three 1 t boxes along a 10 m trailer, the centre of gravity within 10 % of the middle
+    let value = |balance: serde_json::Value| {
+        json!({
+            "items": [{ "dims": [1000, 1000, 1000], "weight": 1000000, "count": 3, "orientations": 1 }],
+            "bins": [{ "dims": [10000, 2000, 2500], "door": "+x", "balance": balance }]
+        })
+    };
+    let balanced = solved(value(json!({ "cog": { "x": 0.1 } })), Config::default());
+    let bin = &balanced.bins[0];
+    assert!(bin.balance_ok);
+    let cog = bin.cog.expect("a load with weight has a centre of gravity");
+    assert!((4000.0..=6000.0).contains(&cog[0]), "the centre of gravity is {} mm from the front", cog[0]);
+    // the control: asking for nothing leaves the load where it was built, against the far wall
+    let plain = solved(value(json!(null)), Config::default());
+    assert_eq!(plain.bins[0].placements.iter().map(|p| p.x).min(), Some(0));
+    assert!(balanced.bins[0].placements.iter().map(|p| p.x).min() > Some(0));
+}
+
+#[test]
+fn what_the_supports_carry_is_kept_within_their_limits_by_moving_the_load()
+{
+    // 3 t on a trailer with supports at 1 m and 9 m that carry 2.5 t each: the centre of gravity has to be within 2.5 .. 7.5 m
+    let value = json!({
+        "items": [{ "dims": [1000, 1000, 1000], "weight": 1000000, "count": 3, "orientations": 1 }],
+        "bins": [{ "dims": [10000, 2000, 2500], "balance": { "axles": [{ "at": 1000, "maxLoad": 2500000 }, { "at": 9000, "maxLoad": 2500000 }] } }]
+    });
+    let solution = solved(value, Config::default());
+    let bin = &solution.bins[0];
+    assert!(bin.balance_ok);
+    assert!(bin.axle_loads.iter().all(|&load| load <= 2_500_000), "{:?}", bin.axle_loads);
+    assert_eq!(bin.axle_loads.iter().sum::<u64>(), 3_000_000, "the supports carry the whole load");
+}
+
+#[test]
+fn a_balance_that_one_bin_cannot_meet_is_met_by_using_two()
+{
+    // 8 t and 1 t boxes of 800 mm in a 2 m bin with a centre of gravity within 5 % of the middle: together they fill 1.6 m of the
+    // length and cannot be moved enough, one at a time they can
+    let value = |balance: serde_json::Value| {
+        json!({
+            "items": [{ "dims": [800, 1000, 1000], "weight": 8000000, "orientations": 1 }, { "dims": [800, 1000, 1000], "weight": 1000000, "orientations": 1 }],
+            "bins": [{ "dims": [2000, 1000, 1000], "balance": balance }]
+        })
+    };
+    let strict = solved(value(json!({ "cog": { "x": 0.05 } })), Config::default());
+    assert_eq!(strict.bins.len(), 2, "one bin each");
+    assert!(strict.bins.iter().all(|bin| bin.balance_ok));
+    // the control: without the balance they share a bin
+    assert_eq!(solved(value(json!(null)), Config::default()).bins.len(), 1);
+}
+
+#[test]
+fn a_balance_that_cannot_be_met_at_all_is_reported_and_the_plan_is_still_returned()
+{
+    // a single 9 t box that is as long as the bin cannot be moved; the supports cannot take it
+    let value = json!({
+        "items": [{ "dims": [2000, 1000, 1000], "weight": 9000000, "orientations": 1 }],
+        "bins": [{ "dims": [2000, 1000, 1000], "balance": { "axles": [{ "at": 0, "maxLoad": 1000000 }, { "at": 2000, "maxLoad": 1000000 }] } }]
+    });
+    let solution = solved(value, Config::default());
+    assert_eq!((solution.bins.len(), solution.unplaced.len()), (1, 0), "the box is loaded");
+    assert!(!solution.bins[0].balance_ok, "and the plan says that the supports are overloaded: {:?}", solution.bins[0].axle_loads);
+    assert_eq!(solution.bins[0].axle_loads, [4_500_000, 4_500_000]);
+}
+
+#[test]
+fn bins_are_opened_by_cost_per_volume_and_the_last_one_is_made_cheaper()
+{
+    // ten 400 cubes; the big bin (six at a time, 8) is cheaper per cube than the small one (one at a time, 3)
+    let value = json!({
+        "items": [{ "dims": [400, 400, 400], "count": 10, "orientations": 1 }],
+        "bins": [{ "dims": [400, 400, 400], "cost": 3 }, { "dims": [1200, 800, 400], "cost": 8 }]
+    });
+    let solution = solved(value, Config::default());
+    assert_eq!(solution.bins.iter().map(|b| (b.bin, b.placements.len())).collect::<Vec<_>>(), [(1, 6), (1, 4)], "six and four in the big bin");
+    assert_eq!(solution.stats.cost, 16.0, "2 x 8, against 30 for ten small bins");
+    // and four cubes alone are cheaper in four small bins than in a big one only if 4 x 3 < 8: not here, so the last bin stays big
+    let few = solved(json!({ "items": [{ "dims": [400, 400, 400], "count": 2, "orientations": 1 }], "bins": [{ "dims": [400, 400, 400], "cost": 3 }, { "dims": [1200, 800, 400], "cost": 8 }] }), Config::default());
+    assert_eq!(few.stats.cost, 6.0, "two cubes: two small bins (6) rather than one big (8)");
+}

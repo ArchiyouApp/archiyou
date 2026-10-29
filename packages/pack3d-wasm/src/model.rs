@@ -49,6 +49,43 @@ pub enum Door
     NegY,
 }
 
+/// How far the centre of gravity of the load may be from the centre of the floor, as a fraction of
+/// the length (x) and of the width (y) of the bin. Left out, an axis is free.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CogTolerance
+{
+    #[serde(default)]
+    pub x: Option<f64>,
+    #[serde(default)]
+    pub y: Option<f64>,
+}
+
+/// A support the load rests on along the length of a bin (the kingpin or an axle group of a trailer).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Axle
+{
+    /// Where it is, in millimetres from the front wall of the bin (x = 0). It may be outside the bin.
+    pub at: i64,
+    /// The most it may carry, in grams.
+    pub max_load: u64,
+}
+
+/// The balance a load has to have. Unlike the other rules it is best effort: the solver moves the
+/// load to meet it and prefers plans that do, but a plan that cannot is returned and says so.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Balance
+{
+    #[serde(default)]
+    pub cog: Option<CogTolerance>,
+    /// Exactly two supports: the load is shared between them by the lever rule, and neither may be
+    /// lifted (carry less than nothing) or overloaded.
+    #[serde(default)]
+    pub axles: Option<Vec<Axle>>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Instance
@@ -101,6 +138,8 @@ pub struct BinType
     /// The side the load leaves by; absent means from the top only.
     #[serde(default)]
     pub door: Option<Door>,
+    #[serde(default)]
+    pub balance: Option<Balance>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -160,6 +199,14 @@ pub struct BinLoad
     pub placements: Vec<Placement>,
     /// Volume of the items in cubic millimetres.
     pub volume: u64,
+    /// Weight of the items in grams.
+    pub weight: u64,
+    /// The centre of gravity in millimetres (x, y), when the load has weight.
+    pub cog: Option<[f64; 2]>,
+    /// What the supports carry, in grams, when the bin has them.
+    pub axle_loads: Vec<u64>,
+    /// Whether the balance the bin asks for is met (true when it asks for none).
+    pub balance_ok: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -227,6 +274,18 @@ pub struct Kind
     pub door: Option<Door>,
     /// Whether the decoded layout has to be mirrored along x and along y to get the real one.
     pub flip: [bool; 2],
+    pub balance: Option<BalanceSpec>,
+    /// Volume of the bin in cubic millimetres.
+    pub volume: u128,
+}
+
+/// The balance of a kind as integers: the tolerance of the centre of gravity in millionths of the
+/// length and of the width, and the supports sorted by position.
+#[derive(Debug, Clone)]
+pub struct BalanceSpec
+{
+    pub cog_ppm: [Option<u64>; 2],
+    pub axles: Option<[(i64, u64); 2]>,
 }
 
 /// The input after the checks: what the decoder and the validator's callers work with.
@@ -240,6 +299,37 @@ pub struct Problem
     pub permille: i64,
     /// Whether any item has a limit on the load it carries: only then is the load tracked.
     pub stacking: bool,
+}
+
+/// What is wrong with a balance, in words, if anything.
+fn balance_problem(balance: &Balance) -> Option<String>
+{
+    let fractions = balance.cog.iter().flat_map(|cog| [cog.x, cog.y]).flatten();
+    if let Some(bad) = fractions.into_iter().find(|f| !(0.0..=0.5).contains(f))
+    {
+        return Some(format!("a centre of gravity tolerance is a fraction between 0 and 0.5, got {bad}"));
+    }
+    match balance.axles.as_deref()
+    {
+        None => None,
+        Some([a, b]) if a.at != b.at => None,
+        Some([_, _]) => Some("the two supports have to be at different places".to_string()),
+        Some(other) => Some(format!("exactly two supports are needed, got {}", other.len())),
+    }
+}
+
+fn balance_spec(balance: &Balance) -> BalanceSpec
+{
+    let ppm = |fraction: Option<f64>| fraction.map(|f| (f * 1_000_000.0).round() as u64);
+    let cog = balance.cog.as_ref();
+    BalanceSpec {
+        cog_ppm: [ppm(cog.and_then(|c| c.x)), ppm(cog.and_then(|c| c.y))],
+        axles: balance.axles.as_deref().and_then(|axles| match axles
+        {
+            [a, b] => Some(if a.at < b.at { [(a.at, a.max_load), (b.at, b.max_load)] } else { [(b.at, b.max_load), (a.at, a.max_load)] }),
+            _ => None,
+        }),
+    }
 }
 
 impl Problem
@@ -272,6 +362,11 @@ impl Problem
         {
             return error(format!("bin {i}: cost must be a number of at least 0, got {}", instance.bins[i].cost));
         }
+        if let Some(i) = instance.bins.iter().position(|bin| bin.balance.as_ref().is_some_and(|balance| balance_problem(balance).is_some()))
+        {
+            let problem = instance.bins[i].balance.as_ref().and_then(balance_problem).unwrap_or_default();
+            return error(format!("bin {i}: balance: {problem}"));
+        }
         let total: u64 = instance.items.iter().map(|item| item.count as u64).sum();
         if total > MAX_PIECES
         {
@@ -298,7 +393,17 @@ impl Problem
                     Some(Door::NegY) => (Some(Door::PosY), [false, true]),
                     other => (other, [false, false]),
                 };
-                Kind { dims: bin.dims.map(|d| d as i64), cost: (bin.cost * 1000.0).round() as u64, stock: bin.stock, max_weight: bin.max_weight, door, flip }
+                let dims = bin.dims.map(|d| d as i64);
+                Kind {
+                    dims,
+                    cost: (bin.cost * 1000.0).round() as u64,
+                    stock: bin.stock,
+                    max_weight: bin.max_weight,
+                    door,
+                    flip,
+                    balance: bin.balance.as_ref().map(balance_spec),
+                    volume: dims.iter().map(|&d| d as u128).product(),
+                }
             })
             .collect();
         let stacking = instance.items.iter().any(|item| item.max_load.is_some());

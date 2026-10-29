@@ -50,6 +50,9 @@ struct Rules
     /// The stop of the items of a class.
     stop: fn(usize) -> u32,
     door: Option<&'static str>,
+    /// Whether the bin asks for a balance: the centre of gravity within 15 % of the middle along the length and
+    /// 5 % across, and two supports at 1.8 m and 11.6 m that carry 9 t and 20 t.
+    balance: bool,
 }
 
 struct Family
@@ -106,6 +109,7 @@ fn families() -> Vec<Family>
                 },
                 stop: |_| 0,
                 door: None,
+                balance: false,
             }),
         },
         // the trailer with weights (500 kg per m3), a 24 t limit, a door at the rear, the walls for stop 2 and the floors and roofs for stop 1
@@ -121,6 +125,23 @@ fn families() -> Vec<Family>
                 max_load: |_, class| if class == 0 { None } else { Some(3_000_000) },
                 stop: |class| if class == 0 { 2 } else { 1 },
                 door: Some("+x"),
+                balance: false,
+            }),
+        },
+        // the same trailer asked to be balanced
+        Family {
+            name: "trailer-balance",
+            seed: 9,
+            classes: vec![class(6, (1, 4), (2400, 3000), (200, 300), (2400, 2700)), class(4, (1, 3), (3000, 6000), (1200, 2400), (200, 300)), class(4, (1, 3), (3000, 5000), (1200, 2400), (250, 350))],
+            bin: [13600, 2450, 2700],
+            orientations: 63,
+            rules: Some(Rules {
+                divisor: 2000,
+                max_weight: 24_000_000,
+                max_load: |_, class| if class == 0 { None } else { Some(3_000_000) },
+                stop: |class| if class == 0 { 2 } else { 1 },
+                door: Some("+x"),
+                balance: true,
             }),
         },
     ]
@@ -212,7 +233,11 @@ fn main()
         let bin = match &family.rules
         {
             None => json!({ "dims": family.bin }),
-            Some(rules) => json!({ "dims": family.bin, "maxWeight": rules.max_weight, "door": rules.door }),
+            Some(rules) =>
+            {
+                let balance = rules.balance.then(|| json!({ "cog": { "x": 0.15, "y": 0.05 }, "axles": [{ "at": 1800, "maxLoad": 9_000_000 }, { "at": 11600, "maxLoad": 20_000_000 }] }));
+                json!({ "dims": family.bin, "maxWeight": rules.max_weight, "door": rules.door, "balance": balance })
+            }
         };
         let instance: Instance = serde_json::from_value(json!({ "name": family.name, "items": items, "bins": [bin] })).unwrap();
 
@@ -223,6 +248,8 @@ fn main()
             let ms = started.elapsed().as_secs_f64() * 1000.0;
             let fill = 100.0 * volume as f64 / (solution.bins.len().max(1) as f64 * bin_volume as f64);
             let unplaced = if solution.unplaced.is_empty() { String::new() } else { format!("  ({} unplaced)", solution.unplaced.len()) };
+            let unbalanced = solution.bins.iter().filter(|bin| !bin.balance_ok).count();
+            let note = format!("{}{}", unplaced, if unbalanced > 0 { format!("  ({unbalanced} bins unbalanced)") } else { String::new() });
             let heaviest = solution.bins.iter().map(|bin| bin.placements.iter().map(|p| instance.items[p.item].weight).sum::<u64>()).max().unwrap_or(0);
             println!(
                 "{:<13} {:>5} {:>17x} {:>8} {:>5} {:>7.1} {:>9.1} {:>9.1} {:>9} {:>12}{}",
@@ -236,7 +263,7 @@ fn main()
                 weakest_support(&instance, &solution),
                 if heaviest == 0 { "-".to_string() } else { format!("{} kg", heaviest / 1000) },
                 solution.stats.evaluations,
-                unplaced
+                note
             );
         });
     });

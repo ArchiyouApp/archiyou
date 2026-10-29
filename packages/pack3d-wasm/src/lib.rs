@@ -4,6 +4,7 @@
 //! on every machine), uses integer arithmetic for every rule, and has been re-checked by an
 //! independent validator before it leaves `solve`. See the README for the rules.
 
+pub mod balance;
 pub mod geom;
 pub mod layout;
 pub mod model;

@@ -1,7 +1,8 @@
 //! The solver: a portfolio of constructive runs, the best one by the objective, checked by the
 //! validator before it is returned.
 
-use crate::layout::{Fill, Layout, Pick, Strategy, decode, objective};
+use crate::balance::report;
+use crate::layout::{Fill, Layout, Open, Pick, Strategy, decode, objective};
 use crate::model::{BinLoad, Config, Door, Error, Instance, ItemRef, Piece, Placement, Problem, Solution, Stats};
 use crate::validate::validate;
 
@@ -63,10 +64,13 @@ fn sequence(problem: &Problem, key: Key) -> Vec<usize>
 fn strategies(problem: &Problem) -> Vec<Strategy>
 {
     let rows = problem.kinds.iter().any(|kind| kind.door == Some(Door::PosY));
+    // choosing the kind of bin to open only matters when there is a choice
+    let opens: &[Open] = if problem.kinds.len() > 1 { &[Open::PerVolume, Open::Cheapest] } else { &[Open::PerVolume] };
     [(Fill::Layers, true), (Fill::Walls, true), (Fill::Rows, rows)]
         .into_iter()
         .filter(|&(_, wanted)| wanted)
-        .flat_map(|(fill, _)| [Pick::Lowest, Pick::Contact].map(|pick| Strategy { fill, pick }))
+        .flat_map(|(fill, _)| [Pick::Lowest, Pick::Contact].map(|pick| (fill, pick)))
+        .flat_map(|(fill, pick)| opens.iter().map(move |&open| Strategy { fill, pick, open }))
         .collect()
 }
 
@@ -112,6 +116,7 @@ fn assemble(problem: &Problem, layout: &Layout, evaluations: u64) -> Solution
         .map(|bin| {
             // a bin whose door is at the low end was decoded mirrored: put it back the way round it really is
             let kind = &problem.kinds[bin.kind];
+            let balance = report(kind, bin.weight(), bin.real_moment(kind));
             let corner = |placed: &crate::layout::Placed, axis: usize| if kind.flip.get(axis).copied().unwrap_or(false) { kind.dims[axis] - placed.real.max[axis] } else { placed.real.min[axis] };
             BinLoad {
                 bin: bin.kind,
@@ -124,6 +129,10 @@ fn assemble(problem: &Problem, layout: &Layout, evaluations: u64) -> Solution
                     })
                     .collect(),
                 volume: bin.volume() as u64,
+                weight: balance.weight,
+                cog: balance.cog,
+                axle_loads: balance.axle_loads,
+                balance_ok: balance.ok,
             }
         })
         .collect();
