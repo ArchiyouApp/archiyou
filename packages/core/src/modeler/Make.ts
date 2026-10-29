@@ -17,34 +17,48 @@ import type * as brepTypes from './brep/index';
 import { Table } from '../calc/Table';
 import { roundTo } from '../utils';
 
-import { BinPacker, DEFAULT_ITERATIONS } from '@archiyou/gdrr2bp-wasm';
 import { collectParts } from './parts';
-import type { CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm';
+import type { BinPacker, CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm';
 import type { Packer3D } from '@archiyou/pack3d-wasm';
 
 import { Static } from 'typebox';
 import { PackOptionsSchema, Pack3DOptionsSchema } from './schemas';
 import { MM_PER_UNIT } from '../units/UnitConverter';
+import { isClosedSolid, vote } from './packChoice';
 import { measure, group as groupShapes, toInstance, toOptions, put, fromGrams } from './pack3d';
 
-/** Shared BinPacker WASM instance across all Make instances.
- *  The WASM module is loaded only once for the whole process: every run creates a
- *  fresh Make, so without this cache each run would re-instantiate the WASM and race
- *  the (synchronous) pack() call against an unresolved init(). */
+/** The 2D sheet packer (gdrr2bp), loaded on demand like the 3D load planner and the IFC classifier: most runs never
+ *  nest parts, and the module is a few hundred KB. pack2d() and boarding() are synchronous for scripts, so the Runner
+ *  loads it before a run whose script, or any of its components, calls pack(), pack2d() or boarding()
+ *  (Runner._loadBinPackerWhenUsed). One WebAssembly instance for every Make instance in the process. */
 let _sharedBinPacker: BinPacker | null = null;
 let _sharedBinPackerReady: Promise<BinPacker> | null = null;
+/** The solver's default number of iterations, known once the module is loaded. */
+let _binPackerIterations = 2000;
 
-function loadSharedBinPacker(): Promise<BinPacker>
+/** Load the 2D sheet packer once; later calls resolve immediately. A failed load is not remembered. */
+export function loadBinPackerModule(): Promise<BinPacker>
 {
-    if (!_sharedBinPackerReady)
-    {
-        _sharedBinPackerReady = new BinPacker().init().then(bp =>
+    _sharedBinPackerReady ??= import('@archiyou/gdrr2bp-wasm')
+        .then(async ({ BinPacker, DEFAULT_ITERATIONS }) =>
         {
-            _sharedBinPacker = bp;
-            return bp;
+            const packer = await new BinPacker().init();
+            _binPackerIterations = DEFAULT_ITERATIONS;
+            _sharedBinPacker = packer;
+            return packer;
+        })
+        .catch(error =>
+        {
+            _sharedBinPackerReady = null;
+            throw error;
         });
-    }
     return _sharedBinPackerReady;
+}
+
+/** Whether the 2D sheet packer has been loaded. */
+export function isBinPackerLoaded(): boolean
+{
+    return _sharedBinPacker !== null;
 }
 
 /** The 3D load planner (pack3d), loaded on demand like the IFC classifier: most runs never plan a load, and the
@@ -237,8 +251,6 @@ export class Make
     setArchiyou(modules: ArchiyouModules)
     {
         this._modules = modules;
-        // Kick off the shared BinPacker WASM load (cached across all Make instances)
-        loadSharedBinPacker();
     }
 
     /** Shared BinPacker WASM instance, or null until loaded. */
@@ -290,12 +302,6 @@ export class Make
                 'Make: Modeler module not set. Use constructor(modeler) or setArchiyou() to set it.'
             );
         return m;
-    }
-
-    /** Resolves once the BinPacker WASM module is loaded and `pack()` can be called. */
-    packReady(): Promise<void>
-    {
-        return loadSharedBinPacker().then(() => undefined);
     }
 
     //// MAIN METHODS ////
@@ -1428,7 +1434,7 @@ export class Make
 
         if (!this._binPacker)
         {
-            // pack() is synchronous but its WASM is not: skip the nesting rather than throw,
+            // pack2d() is synchronous but its WASM is not (scripts get it loaded by the Runner): skip the nesting rather than throw,
             // the layout itself is already complete.
             console.warn(`Make::boarding(): the bin packer is not loaded yet, so cut elements were not nested — stats.efficiency and stats.wastedArea are left unset.`);
             this.stats.efficiency = null;
@@ -1436,7 +1442,7 @@ export class Make
         }
 
         // Only for the stats: show the nesting with make.stats.fitted.addToScene()
-        this.stats.fitted = this.pack(this.stats.cut, {
+        this.stats.fitted = this.pack2d(this.stats.cut, {
             width: o.stockWidth,
             height: o.stockHeight,
             kerf: o.cutMargin,
@@ -1542,7 +1548,77 @@ export class Make
     }
 
     /**
-     * Pack a collection of shapes onto rectangular sheets using guillotine bin-packing.
+     * Pack shapes, in 2D onto sheets or in 3D into bins, whichever the shapes need.
+     *
+     * Every shape votes on what it is. A curve, a polygon, an open surface or a plate (a solid at most a tenth as thick
+     * as it is wide, like a board) is flat and votes 2D; any other closed solid votes 3D. The majority decides, and a tie
+     * goes to 2D. When the shapes are mixed it says so in a warning, with the counts, and what becomes of the minority:
+     * solids packed in 2D are laid flat and packed by their footprint, curves and polygons packed in 3D cannot be loaded and
+     * are left out (plates are loaded as boxes).
+     *
+     * The options are those of the packer chosen: `make.pack2d()` (sheets: width, height, kerf, ...; the default sheet is
+     * 2440 x 1220) or `make.pack3d()` (bins, weights, stops, ...; bins are needed). To choose yourself, call one of them.
+     *
+     * @param shapes  The shapes to pack.
+     * @param options The options of `pack2d()` or of `pack3d()`, see there.
+     * @returns The packed copies in groups per sheet or per bin, as `pack2d()` and `pack3d()` return them. The statistics
+     *   are at `modeler.stats`.
+     *
+     * @example
+     * // Boards are plates: they are nested onto sheets
+     * boards = collection(box(800, 400, 18), box(800, 400, 18), box(600, 400, 18), box(564, 600, 18))
+     * sheets = make.pack(boards, { width: 2440, height: 1220, kerf: 4 })
+     *
+     * @example
+     * // Cartons are solids: they are loaded into bins
+     * cartons = collection(box(400, 300, 250), box(400, 300, 250), box(600, 400, 300), box(600, 400, 300))
+     * loaded = make.pack(cartons, { bins: [{ name: 'pallet', length: 1200, width: 800, height: 1800 }] })
+     */
+    public pack(shapes: ShapeCollection, options: Partial<PackOptions> | Pack3DOptions = {}): ShapeCollection
+    {
+        const all = shapes.toArray() as any[];
+        const { flat, solid, dimension } = vote(all);
+
+        if (flat.length > 0 && solid.length > 0)
+        {
+            const aside = dimension === '3d'
+                ? `the ${flat.filter(i => !isClosedSolid(all[i])).length} curve(s) and polygon(s) cannot be loaded and are left out, plates are loaded as boxes`
+                : `the ${solid.length} solid(s) are laid flat and packed by their footprint`;
+            console.warn(
+                `Make::pack(): the shapes are mixed: ${flat.length} flat (curves, polygons, plates) and ${solid.length} solid. ` +
+                `Packing in ${dimension === '3d' ? '3D, into bins' : '2D, onto sheets'}, the choice of the majority; ${aside}. ` +
+                `Call make.pack2d() or make.pack3d() to choose yourself.`
+            );
+        }
+
+        if (dimension === '2d')
+        {
+            if ('bins' in options)
+            {
+                console.warn(`Make::pack(): the shapes are flat (${flat.length} curves, polygons or plates), so they are packed onto sheets and the bins are ignored. Call make.pack3d() to load plates into bins.`);
+            }
+            return this.pack2d(shapes, options as Partial<PackOptions>);
+        }
+
+        if (!Array.isArray((options as Pack3DOptions).bins))
+        {
+            throw new Error(
+                `Make::pack(): ${solid.length} of the ${all.length} shapes are solids, which are loaded into bins in 3D, and no bins were given. ` +
+                `Give them, like make.pack(shapes, { bins: [{ length: 1200, width: 800, height: 1800 }] }), or call make.pack2d() to nest them onto sheets as flat footprints.`
+            );
+        }
+        // curves and polygons have no volume to load: they stay out, and the indices of the report are those of the shapes given
+        const kept = all.map((_, i) => i).filter(i => isClosedSolid(all[i]));
+        const result = this.pack3d(kept.length === all.length ? shapes : this.modeler.collection(...kept.map(i => all[i])), options as Pack3DOptions);
+        if (kept.length !== all.length)
+        {
+            this.modeler.stats.unplaced = [...this.modeler.stats.unplaced.map((i: number) => kept[i]), ...all.map((_, i) => i).filter(i => !kept.includes(i))];
+        }
+        return result;
+    }
+
+    /**
+     * Pack a collection of shapes onto rectangular sheets using guillotine bin-packing (what `make.pack()` does for flat shapes).
      *
      * Each shape is copied, laid flat on the XY plane via its OBBox principal-axis
      * alignment, and measured. The solver then assigns every copy to a sheet position
@@ -1572,14 +1648,14 @@ export class Make
      * @example
      * // Nest the panels of a cabinet onto sheets, with a 4 mm saw kerf
      * panels = collection(box(800, 400, 18), box(800, 400, 18), box(600, 400, 18), box(564, 600, 18))
-     * sheets = make.pack(panels, { width: 2440, height: 1220, kerf: 4 })
+     * sheets = make.pack2d(panels, { width: 2440, height: 1220, kerf: 4 })
      *
      * @example
      * // Panels named 'door…' have grain along x and must not be turned; the rest may
      * panels = collection(box(700, 400, 18).name('door1'), box(700, 400, 18).name('door2'), box(560, 600, 18).name('side'))
-     * sheets = make.pack(panels, { width: 2440, height: 1220, kerf: 4, rotation: (panel) => !panel.name().startsWith('door') })
+     * sheets = make.pack2d(panels, { width: 2440, height: 1220, kerf: 4, rotation: (panel) => !panel.name().startsWith('door') })
      */
-    public pack(shapes: ShapeCollection, options: PackOptions): ShapeCollection
+    public pack2d(shapes: ShapeCollection, options: Partial<PackOptions> = {}): ShapeCollection
     {
         const DEFAULT_PACK_OPTIONS: Required<PackOptions> = {
             width: 2440,
@@ -1591,7 +1667,7 @@ export class Make
             // parts, and on the cabinet jobs measured it is enough for the sheet count not to
             // depend on the seed; 200 was not.
             maxTime: null,
-            maxIterations: DEFAULT_ITERATIONS,
+            maxIterations: _binPackerIterations,
             rotation: true,
             seed: 0,
             maxStages: null,
@@ -1636,7 +1712,8 @@ export class Make
 
         if (!this._binPacker)
             throw new Error(
-                'Make.pack(): BinPacker WASM not ready yet — call setArchiyou() and wait for the module to initialise before using pack().'
+                'Make::pack2d(): the 2D sheet packer is not loaded. Scripts get it automatically when they call pack(), pack2d() or boarding(); ' +
+                'when calling the Modeler directly, await loadBinPackerModule() from the Make module first.'
             );
         const bp = this._binPacker;
         const kerf = opts.kerf;

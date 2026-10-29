@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
 import { Modeler } from '../../../src/modeler/Modeler'
+import { loadBinPackerModule } from '../../../src/modeler/Make'
 import { ShapeCollection as SmartShapeCollection } from '@archiyou/meshup'
 import { save } from '@archiyou/meshup/src/utils'
 
@@ -127,7 +128,7 @@ describe('Make', async () =>
     {
         const localModeler = new Modeler()
         await localModeler.load()
-        await localModeler.make.packReady()
+        await loadBinPackerModule()
 
         // 2440x1220 sheets over a 5000x2000 area, laid horizontally
         const boards = localModeler.make.boarding({
@@ -311,7 +312,7 @@ describe('Make', async () =>
 
     it('should pack three boxes onto a sheet', async () =>
     {
-        await modeler.make.packReady()
+        await loadBinPackerModule()
 
         const b1 = modeler.box(500, 1000, 10)
         const b2 = modeler.box(400, 200, 10).move(600)

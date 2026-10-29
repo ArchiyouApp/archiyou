@@ -70,7 +70,7 @@ import { contentNeedsOf } from '../modules/sdkTypes';
 import { MODELER_METHODS_INTO_GLOBAL, SCRIPT_OUTPUT_GLTF_OPTIONS_DEFAULT, outputsNeedRecipes } from '../constants'; 
 import { Animator } from '../animator/Animator';
 import { ParamManager } from '../execution/ParamManager';
-import { loadPack3dModule, type Make } from '../modeler/Make';
+import { loadBinPackerModule, loadPack3dModule, type Make } from '../modeler/Make';
 import type { Handle } from '../interaction/Handle';
 import type { ShapeCollection } from '@archiyou/meshup';
 
@@ -880,7 +880,8 @@ export class Runner
         // The IFC classifier loads on demand; explainIFC() is synchronous, so load it up front when used
         await this._loadIFCWhenUsed(request);
 
-        // The 3D load planner loads on demand too: make.pack3d() is synchronous for scripts
+        // The packers load on demand too: make.pack() is synchronous for scripts
+        await this._loadBinPackerWhenUsed(request);
         await this._loadPack3dWhenUsed(request);
 
         // Per-statement mode: split the script and execute statement-by-statement so a
@@ -930,14 +931,23 @@ export class Runner
         if (codes.some(code => typeof code === 'string' && /\bexplainIFC\s*\(/.test(code))) await loadIFCModule();
     }
 
-    /** Load the 3D load planner (pack3d) before a run whose script, or any of its components, calls pack3d():
-     *  make.pack3d() is synchronous for scripts and cannot wait for a dynamic import. A call that the scan
-     *  cannot see (a computed name) gets a clear error from make.pack3d() instead. A script that never
-     *  mentions pack3d() does not load the module at all. */
+    /** Load the 2D sheet packer before a run whose script, or any of its components, calls pack(), pack2d() or boarding():
+     *  those calls are synchronous for scripts and cannot wait for a dynamic import. A call that the scan cannot see (a
+     *  computed name) gets a clear error from make.pack2d() instead. A script that never mentions them loads nothing. */
+    private async _loadBinPackerWhenUsed(request: RunnerScriptExecutionRequest): Promise<void>
+    {
+        const codes = [request.script?.code, ...Object.values(this._componentScripts).map(s => (s as any)?.code)]
+        if (codes.some(code => typeof code === 'string' && /\b(pack|pack2d|boarding)\s*\(/.test(code))) await loadBinPackerModule()
+    }
+
+    /** Load the 3D load planner (pack3d) before a run whose script, or any of its components, calls pack3d() or pack():
+     *  make.pack3d() is synchronous for scripts and cannot wait for a dynamic import. make.pack() decides between 2D and 3D
+     *  by the shapes it gets, which the scan cannot know, so it loads both packers. A call that the scan cannot see (a
+     *  computed name) gets a clear error from make.pack3d() instead. A script that never mentions them loads nothing. */
     private async _loadPack3dWhenUsed(request: RunnerScriptExecutionRequest): Promise<void>
     {
         const codes = [request.script?.code, ...Object.values(this._componentScripts).map(s => (s as any)?.code)]
-        if (codes.some(code => typeof code === 'string' && /\bpack3d\s*\(/.test(code))) await loadPack3dModule()
+        if (codes.some(code => typeof code === 'string' && /\b(pack|pack3d)\s*\(/.test(code))) await loadPack3dModule()
     }
 
     private _finalizeExecutionDuration(result: RunnerScriptExecutionResult | null | undefined, executeStartTime: number): void
@@ -1102,12 +1112,6 @@ export class Runner
         {
             this.createScope('default'); // resets all scope variables
         }
-
-        // Ensure the BinPacker WASM is ready so synchronous make.pack() calls in user
-        // scripts don't race the async WASM load. packReady() resolves a module-level
-        // shared promise, so any Make instance works and this only blocks once (cached).
-        try { await this._modeler?.make?.packReady?.(); }
-        catch(e){ console.warn(`Runner::_executeLocal(): BinPacker WASM failed to load: ${e}`); }
 
         this._activeExecRequest = request;
         const executeStartTime = performance.now()
@@ -1338,14 +1342,11 @@ ${description === '***** CODE ****\nUnexpected end of input' ? code : ''}
             });
         }
 
-        // Ensure BinPacker WASM is ready so synchronous make.pack() calls don't race (see _executeLocal).
-        try { await this._modeler?.make?.packReady?.(); }
-        catch(e){ console.warn(`Runner::_executeLocalInScriptStatements(): BinPacker WASM failed to load: ${e}`); }
-
         await this._prefetchComponentScripts(request); // idempotent; needed when called via executeUrl()
         await this._prefetchImportAssets(request);      // idempotent; $import() assets for the direct path
         await this._prepareModules(request);            // idempotent; script modules for the direct path
-        await this._loadPack3dWhenUsed(request);        // idempotent; the 3D load planner for the direct path
+        await this._loadBinPackerWhenUsed(request);     // idempotent; the packers for the direct path
+        await this._loadPack3dWhenUsed(request);
 
         const executeStartTime = performance.now();
 

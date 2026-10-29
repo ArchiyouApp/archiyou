@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { BinPacker, DEFAULT_ITERATIONS } from '@archiyou/gdrr2bp-wasm'
 import type { CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm'
 import { Modeler } from '../../../src/modeler/Modeler'
+import { loadBinPackerModule } from '../../../src/modeler/Make'
 
 /** The layout as one line, `sheet:x,y,LxH#part` for every placed part in the order of the solution.
  *  packages/gdrr2bp-wasm/tests/smoke.rs asserts the same text natively (GOLDEN_LAYOUT), which is
@@ -149,7 +150,7 @@ describe('make.pack', () =>
     {
         modeler = new Modeler()
         await modeler.load()
-        await modeler.make.packReady()
+        await loadBinPackerModule()
     })
 
     const panels = (sizes: [number, number][], name = 'panel') =>
