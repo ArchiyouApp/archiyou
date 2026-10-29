@@ -17,32 +17,48 @@ import type * as brepTypes from './brep/index';
 import { Table } from '../calc/Table';
 import { roundTo } from '../utils';
 
-import { BinPacker, DEFAULT_ITERATIONS } from '@archiyou/gdrr2bp-wasm';
 import { collectParts } from './parts';
-import type { CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm';
+import type { BinPacker, CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm';
 import type { Packer3D } from '@archiyou/pack3d-wasm';
 
 import { Static } from 'typebox';
-import { PackOptionsSchema } from './schemas';
+import { PackOptionsSchema, Pack3DOptionsSchema } from './schemas';
+import { MM_PER_UNIT } from '../units/UnitConverter';
+import { isClosedSolid, vote } from './packChoice';
+import { measure, group as groupShapes, toInstance, toOptions, put, fromGrams } from './pack3d';
 
-/** Shared BinPacker WASM instance across all Make instances.
- *  The WASM module is loaded only once for the whole process: every run creates a
- *  fresh Make, so without this cache each run would re-instantiate the WASM and race
- *  the (synchronous) pack() call against an unresolved init(). */
+/** The 2D sheet packer (gdrr2bp), loaded on demand like the 3D load planner and the IFC classifier: most runs never
+ *  nest parts, and the module is a few hundred KB. pack2d() and boarding() are synchronous for scripts, so the Runner
+ *  loads it before a run whose script, or any of its components, calls pack(), pack2d() or boarding()
+ *  (Runner._loadBinPackerWhenUsed). One WebAssembly instance for every Make instance in the process. */
 let _sharedBinPacker: BinPacker | null = null;
 let _sharedBinPackerReady: Promise<BinPacker> | null = null;
+/** The solver's default number of iterations, known once the module is loaded. */
+let _binPackerIterations = 2000;
 
-function loadSharedBinPacker(): Promise<BinPacker>
+/** Load the 2D sheet packer once; later calls resolve immediately. A failed load is not remembered. */
+export function loadBinPackerModule(): Promise<BinPacker>
 {
-    if (!_sharedBinPackerReady)
-    {
-        _sharedBinPackerReady = new BinPacker().init().then(bp =>
+    _sharedBinPackerReady ??= import('@archiyou/gdrr2bp-wasm')
+        .then(async ({ BinPacker, DEFAULT_ITERATIONS }) =>
         {
-            _sharedBinPacker = bp;
-            return bp;
+            const packer = await new BinPacker().init();
+            _binPackerIterations = DEFAULT_ITERATIONS;
+            _sharedBinPacker = packer;
+            return packer;
+        })
+        .catch(error =>
+        {
+            _sharedBinPackerReady = null;
+            throw error;
         });
-    }
     return _sharedBinPackerReady;
+}
+
+/** Whether the 2D sheet packer has been loaded. */
+export function isBinPackerLoaded(): boolean
+{
+    return _sharedBinPacker !== null;
 }
 
 /** The 3D load planner (pack3d), loaded on demand like the IFC classifier: most runs never plan a load, and the
@@ -91,6 +107,7 @@ const unitsDown = (value: number): number => Math.floor(value + 1e-6);
 const FIRST_CUT_DIRECTION = { horizontal: 'H', vertical: 'V' } as const;
 
 export type PackOptions = Static<typeof PackOptionsSchema>;
+export type Pack3DOptions = Static<typeof Pack3DOptionsSchema>;
 
 /** An opening (window/door) in a wall built by wall() */
 export interface WallOpening
@@ -234,8 +251,6 @@ export class Make
     setArchiyou(modules: ArchiyouModules)
     {
         this._modules = modules;
-        // Kick off the shared BinPacker WASM load (cached across all Make instances)
-        loadSharedBinPacker();
     }
 
     /** Shared BinPacker WASM instance, or null until loaded. */
@@ -287,12 +302,6 @@ export class Make
                 'Make: Modeler module not set. Use constructor(modeler) or setArchiyou() to set it.'
             );
         return m;
-    }
-
-    /** Resolves once the BinPacker WASM module is loaded and `pack()` can be called. */
-    packReady(): Promise<void>
-    {
-        return loadSharedBinPacker().then(() => undefined);
     }
 
     //// MAIN METHODS ////
@@ -1425,7 +1434,7 @@ export class Make
 
         if (!this._binPacker)
         {
-            // pack() is synchronous but its WASM is not: skip the nesting rather than throw,
+            // pack2d() is synchronous but its WASM is not (scripts get it loaded by the Runner): skip the nesting rather than throw,
             // the layout itself is already complete.
             console.warn(`Make::boarding(): the bin packer is not loaded yet, so cut elements were not nested — stats.efficiency and stats.wastedArea are left unset.`);
             this.stats.efficiency = null;
@@ -1433,7 +1442,7 @@ export class Make
         }
 
         // Only for the stats: show the nesting with make.stats.fitted.addToScene()
-        this.stats.fitted = this.pack(this.stats.cut, {
+        this.stats.fitted = this.pack2d(this.stats.cut, {
             width: o.stockWidth,
             height: o.stockHeight,
             kerf: o.cutMargin,
@@ -1539,7 +1548,77 @@ export class Make
     }
 
     /**
-     * Pack a collection of shapes onto rectangular sheets using guillotine bin-packing.
+     * Pack shapes, in 2D onto sheets or in 3D into bins, whichever the shapes need.
+     *
+     * Every shape votes on what it is. A curve, a polygon, an open surface or a plate (a solid at most a tenth as thick
+     * as it is wide, like a board) is flat and votes 2D; any other closed solid votes 3D. The majority decides, and a tie
+     * goes to 2D. When the shapes are mixed it says so in a warning, with the counts, and what becomes of the minority:
+     * solids packed in 2D are laid flat and packed by their footprint, curves and polygons packed in 3D cannot be loaded and
+     * are left out (plates are loaded as boxes).
+     *
+     * The options are those of the packer chosen: `make.pack2d()` (sheets: width, height, kerf, ...; the default sheet is
+     * 2440 x 1220) or `make.pack3d()` (bins, weights, stops, ...; bins are needed). To choose yourself, call one of them.
+     *
+     * @param shapes  The shapes to pack.
+     * @param options The options of `pack2d()` or of `pack3d()`, see there.
+     * @returns The packed copies in groups per sheet or per bin, as `pack2d()` and `pack3d()` return them. The statistics
+     *   are at `modeler.stats`.
+     *
+     * @example
+     * // Boards are plates: they are nested onto sheets
+     * boards = collection(box(800, 400, 18), box(800, 400, 18), box(600, 400, 18), box(564, 600, 18))
+     * sheets = make.pack(boards, { width: 2440, height: 1220, kerf: 4 })
+     *
+     * @example
+     * // Cartons are solids: they are loaded into bins
+     * cartons = collection(box(400, 300, 250), box(400, 300, 250), box(600, 400, 300), box(600, 400, 300))
+     * loaded = make.pack(cartons, { bins: [{ name: 'pallet', length: 1200, width: 800, height: 1800 }] })
+     */
+    public pack(shapes: ShapeCollection, options: Partial<PackOptions> | Pack3DOptions = {}): ShapeCollection
+    {
+        const all = shapes.toArray() as any[];
+        const { flat, solid, dimension } = vote(all);
+
+        if (flat.length > 0 && solid.length > 0)
+        {
+            const aside = dimension === '3d'
+                ? `the ${flat.filter(i => !isClosedSolid(all[i])).length} curve(s) and polygon(s) cannot be loaded and are left out, plates are loaded as boxes`
+                : `the ${solid.length} solid(s) are laid flat and packed by their footprint`;
+            console.warn(
+                `Make::pack(): the shapes are mixed: ${flat.length} flat (curves, polygons, plates) and ${solid.length} solid. ` +
+                `Packing in ${dimension === '3d' ? '3D, into bins' : '2D, onto sheets'}, the choice of the majority; ${aside}. ` +
+                `Call make.pack2d() or make.pack3d() to choose yourself.`
+            );
+        }
+
+        if (dimension === '2d')
+        {
+            if ('bins' in options)
+            {
+                console.warn(`Make::pack(): the shapes are flat (${flat.length} curves, polygons or plates), so they are packed onto sheets and the bins are ignored. Call make.pack3d() to load plates into bins.`);
+            }
+            return this.pack2d(shapes, options as Partial<PackOptions>);
+        }
+
+        if (!Array.isArray((options as Pack3DOptions).bins))
+        {
+            throw new Error(
+                `Make::pack(): ${solid.length} of the ${all.length} shapes are solids, which are loaded into bins in 3D, and no bins were given. ` +
+                `Give them, like make.pack(shapes, { bins: [{ length: 1200, width: 800, height: 1800 }] }), or call make.pack2d() to nest them onto sheets as flat footprints.`
+            );
+        }
+        // curves and polygons have no volume to load: they stay out, and the indices of the report are those of the shapes given
+        const kept = all.map((_, i) => i).filter(i => isClosedSolid(all[i]));
+        const result = this.pack3d(kept.length === all.length ? shapes : this.modeler.collection(...kept.map(i => all[i])), options as Pack3DOptions);
+        if (kept.length !== all.length)
+        {
+            this.modeler.stats.unplaced = [...this.modeler.stats.unplaced.map((i: number) => kept[i]), ...all.map((_, i) => i).filter(i => !kept.includes(i))];
+        }
+        return result;
+    }
+
+    /**
+     * Pack a collection of shapes onto rectangular sheets using guillotine bin-packing (what `make.pack()` does for flat shapes).
      *
      * Each shape is copied, laid flat on the XY plane via its OBBox principal-axis
      * alignment, and measured. The solver then assigns every copy to a sheet position
@@ -1569,14 +1648,14 @@ export class Make
      * @example
      * // Nest the panels of a cabinet onto sheets, with a 4 mm saw kerf
      * panels = collection(box(800, 400, 18), box(800, 400, 18), box(600, 400, 18), box(564, 600, 18))
-     * sheets = make.pack(panels, { width: 2440, height: 1220, kerf: 4 })
+     * sheets = make.pack2d(panels, { width: 2440, height: 1220, kerf: 4 })
      *
      * @example
      * // Panels named 'door…' have grain along x and must not be turned; the rest may
      * panels = collection(box(700, 400, 18).name('door1'), box(700, 400, 18).name('door2'), box(560, 600, 18).name('side'))
-     * sheets = make.pack(panels, { width: 2440, height: 1220, kerf: 4, rotation: (panel) => !panel.name().startsWith('door') })
+     * sheets = make.pack2d(panels, { width: 2440, height: 1220, kerf: 4, rotation: (panel) => !panel.name().startsWith('door') })
      */
-    public pack(shapes: ShapeCollection, options: PackOptions): ShapeCollection
+    public pack2d(shapes: ShapeCollection, options: Partial<PackOptions> = {}): ShapeCollection
     {
         const DEFAULT_PACK_OPTIONS: Required<PackOptions> = {
             width: 2440,
@@ -1588,7 +1667,7 @@ export class Make
             // parts, and on the cabinet jobs measured it is enough for the sheet count not to
             // depend on the seed; 200 was not.
             maxTime: null,
-            maxIterations: DEFAULT_ITERATIONS,
+            maxIterations: _binPackerIterations,
             rotation: true,
             seed: 0,
             maxStages: null,
@@ -1633,7 +1712,8 @@ export class Make
 
         if (!this._binPacker)
             throw new Error(
-                'Make.pack(): BinPacker WASM not ready yet — call setArchiyou() and wait for the module to initialise before using pack().'
+                'Make::pack2d(): the 2D sheet packer is not loaded. Scripts get it automatically when they call pack(), pack2d() or boarding(); ' +
+                'when calling the Modeler directly, await loadBinPackerModule() from the Make module first.'
             );
         const bp = this._binPacker;
         const kerf = opts.kerf;
@@ -1775,6 +1855,150 @@ export class Make
         });
 
         this.modeler.stats = { ...solution.stats };
+
+        return result;
+    }
+
+    /**
+     * Load shapes into bins (pallets, crates, trailers) so that every shape stands, and the weight limits, the weight
+     * that may rest on a shape, the unloading order and the balance of the load are met.
+     *
+     * Each shape counts as its bounding box as modelled, z up. The plan puts a copy of it in its place, turned if it may be,
+     * and returns the copies with the outline of every bin; the shapes themselves stay where they are. The same shapes,
+     * options and seed always give the same plan, on every machine. Lengths are in model units, weights in kg (lb with
+     * imperial units).
+     *
+     * A shape stands when `support` of its base rests on the floor or on other shapes and its centre is over that
+     * contact. A shape may carry what `maxLoad` says, shared over the shapes under it by the area of contact. What is
+     * unloaded at an earlier `stop` is never under, nor between the `door` and, what is unloaded at a later one. The
+     * balance of a bin (a band for the centre of gravity, two supports with load limits) is met by moving the load
+     * along the bin; what cannot be met is reported, not refused.
+     *
+     * @param shapes  The shapes to load: meshes, solids or anything with a bounding box.
+     * @param options The bins and the rules:
+     *   - bins: the kinds of bin, each `{ length, width, height, maxWeight, cost, stock, door, balance }` (only the
+     *     size is needed). The plan with the lowest total cost is looked for; `stock` limits how many of a kind there are
+     *   - rotation: how shapes may be turned: 'upright' (default: as modelled, also turned about the vertical), 'fixed',
+     *     'free', `{ up: 'x', yaw: false }` for the axes that may point up, or a function `(shape, index) =>` any of these
+     *   - weight: kg of a shape: a number for all or a function `(shape, index) => number`. Default `shape.weight()`, from
+     *     its material, else 0
+     *   - maxLoad: kg that may rest on a shape: a number for all or a function; 0 for fragile, null (default) for no limit
+     *   - stop: at which stop a shape is unloaded, a number or a function (default 0: no order). Lower stops are unloaded
+     *     first, so they end up nearer the door and on top
+     *   - support: share of the base that has to rest on something, 0 to 1 (default 0.8; 1 for full support)
+     *   - gap: clearance between shapes along x and y (default 0)
+     *   - seed: the search's random choices (default 0); another seed tries another plan
+     *   - maxIterations: steps of the search that improves the plan (default 100; 0 for the first plan found)
+     *   - maxEvaluations: a limit on the work in placements tried, not on the time (default 40 million)
+     * @returns A group 'loaded' with a sub-group per bin (bin1, bin2, …): the outline of the bin and the placed copies,
+     *   side by side along x. The report is at `modeler.stats`: `bins` (name, items, fill, weight, centre of gravity,
+     *   support loads and `balanceOk` of each), `unplaced` (the indices of the shapes that fitted no bin, were too heavy
+     *   or ran out of stock), `cost`.
+     *
+     * @example
+     * // Parts in a shipping crate of 1200 x 800 x 600: they may lie flat or stand on an edge
+     * parts = collection(box(1000, 300, 18), box(1000, 300, 18), box(800, 500, 18), box(600, 120, 40), box(600, 120, 40))
+     * loaded = make.pack3d(parts, { bins: [{ name: 'crate', length: 1200, width: 800, height: 600 }], rotation: 'free' })
+     *
+     * @example
+     * // Cartons on a pallet of 1200 x 800 x 1800 that may carry 600 kg, every carton fully supported. The glass carries
+     * // nothing on top of it, the other cartons 150 kg
+     * cartons = collection(box(400, 300, 250).name('glass1'), box(400, 300, 250).name('glass2'), box(400, 300, 250).name('carton3'),
+     *                      box(400, 300, 250).name('carton4'), box(600, 400, 300).name('carton5'), box(600, 400, 300).name('carton6'))
+     * loaded = make.pack3d(cartons, {
+     *     bins: [{ name: 'pallet', length: 1200, width: 800, height: 1800, maxWeight: 600, cost: 25 }],
+     *     support: 1,
+     *     weight: 15,
+     *     maxLoad: (carton) => carton.name().startsWith('glass') ? 0 : 150,
+     * })
+     *
+     * @example
+     * // Wall elements in a trailer that opens at the rear, in two stops (the last one is loaded first and ends up deepest),
+     * // the load balanced between the kingpin and the rear axles
+     * walls = collection(box(2800, 250, 2600), box(2800, 250, 2600), box(2800, 250, 2600), box(3000, 250, 2500), box(3000, 250, 2500), box(3000, 250, 2500))
+     * loaded = make.pack3d(walls, {
+     *     bins: [{ name: 'trailer', length: 13600, width: 2450, height: 2700, maxWeight: 24000, door: '+x',
+     *              balance: { cog: { x: 0.15, y: 0.05 }, axles: [{ at: 1800, maxLoad: 9000 }, { at: 11600, maxLoad: 20000 }] } }],
+     *     rotation: 'free',
+     *     weight: 900,
+     *     stop: (wall, i) => i < 3 ? 2 : 1,
+     * })
+     */
+    public pack3d(shapes: ShapeCollection, options: Pack3DOptions): ShapeCollection
+    {
+        const planner = _pack3d;
+        if (!planner)
+        {
+            throw new Error(
+                'Make::pack3d(): the 3D load planner is not loaded. Scripts get it automatically when they call pack3d() by name; ' +
+                'when calling the Modeler directly, await loadPack3dModule() from the Make module first.'
+            );
+        }
+        const modeler = this.modeler;
+        const context = { mmPerUnit: MM_PER_UNIT[modeler.units()], imperial: modeler.unitSystem() === 'imperial' };
+        const originals = shapes.toArray() as any[];
+        if (originals.length === 0) return modeler.collection();
+
+        const groups = groupShapes(measure(originals, options, context));
+        const instance = toInstance(groups, options, context);
+        const plan = planner.solve(instance, toOptions(options, context));
+
+        // a bin that limits the weight or asks for balance has nothing to work with if no shape has a weight
+        const asksForWeight = options.bins.some(bin => bin.maxWeight != null || bin.balance?.cog || bin.balance?.axles);
+        if (asksForWeight && groups.every(({ item }) => !item.weight))
+        {
+            console.warn('Make::pack3d(): no shape has a weight, so the weight limits and the balance have nothing to work with. Give weight: kg, or a material.');
+        }
+
+        // the bins side by side along x, with a tenth of their length between them
+        const lengths = plan.bins.map(load => instance.bins[load.bin].dims[0] / context.mmPerUnit);
+        const offsets = lengths.map((_, b) => lengths.slice(0, b).reduce((sum, length) => sum + length * 1.1, 0));
+
+        const result = modeler.group().name('loaded');
+        plan.bins.forEach((load, b) =>
+        {
+            const [length, width, height] = instance.bins[load.bin].dims.map(side => side / context.mmPerUnit);
+            const outline = modeler.boxBetween([offsets[b], 0, 0], [offsets[b] + length, width, height]).wireframe();
+            const placed = load.placements.map(p =>
+            {
+                const copy = groups[p.item].members[p.copy].shape.copy();
+                put(copy, p.orientation, [p.x, p.y, p.z], offsets[b], context);
+                return copy;
+            });
+            result.addGroup(`bin${b + 1}`, [...outline.toArray(), ...placed] as any);
+        });
+
+        const unplaced = plan.unplaced.map(({ item, copy }) => groups[item].members[copy].index);
+        if (unplaced.length > 0)
+        {
+            const names = unplaced.map(i => originals[i].name?.() || `shape ${i + 1}`);
+            console.warn(`Make::pack3d(): ${unplaced.length} shape(s) could not be loaded (too big or too heavy for every bin, or the stock ran out): ${names.join(', ')}`);
+        }
+        const unbalanced = plan.bins.filter(load => !load.balanceOk);
+        if (unbalanced.length > 0)
+        {
+            console.warn(`Make::pack3d(): the balance asked for is not met in ${unbalanced.length} bin(s); see modeler.stats.bins`);
+        }
+
+        modeler.stats = {
+            bins: plan.bins.map(load =>
+            {
+                const bin = instance.bins[load.bin];
+                return {
+                    name: options.bins[load.bin].name ?? `bin ${load.bin + 1}`,
+                    items: load.placements.length,
+                    fill: load.volume / (bin.dims[0] * bin.dims[1] * bin.dims[2]),
+                    weight: fromGrams(load.weight, context),
+                    cog: load.cog ? load.cog.map(mm => mm / context.mmPerUnit) : null,
+                    axleLoads: load.axleLoads.map(grams => fromGrams(grams, context)),
+                    balanceOk: load.balanceOk,
+                };
+            }),
+            unplaced,
+            cost: plan.stats.cost,
+            iterations: plan.stats.iterations,
+            evaluations: plan.stats.evaluations,
+        };
 
         return result;
     }

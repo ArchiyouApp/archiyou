@@ -91,6 +91,7 @@ const LAZY_ONLY = [
  *  there is no code of theirs in dist to find: the check is that dist reaches them through `await import()`
  *  and never through a static import in what the entries load up front. */
 const DYNAMIC_ONLY = [
+    { what: 'the 2D sheet packer (gdrr2bp-wasm, with its WebAssembly)', pkg: '@archiyou/gdrr2bp-wasm' },
     { what: 'the 3D load planner (pack3d-wasm, with its WebAssembly)', pkg: '@archiyou/pack3d-wasm' },
 ];
 
