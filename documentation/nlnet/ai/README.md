@@ -143,3 +143,5 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-10-25 | [Configurator: display options in the link, isometric for visitors, commands from the page](./records/2026-10-25-configurator-display-and-page-commands.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-10-26 | [Animator: scripted and standard animations, baked into the GLB](./records/2026-10-26-animator.md) | Claude Opus 5.5, plan with Claude Fable 5.1 | animator → develop | 9 |
 | 2026-10-27 | [Animator: animate params from the Add menu](./records/2026-10-27-animate-params.md) | Claude Opus 5.5 | animator → develop | 1 |
+| 2026-10-28 | [GDRR: reproducible layouts, per-part rotation, stages and first cut](./records/2026-10-28-gdrr-reproducible.md) | Claude Sonnet 5.5 | develop | 2 |
+| 2026-10-29 | [Mesh.area() and the centre of a flat mesh in Rust](./records/2026-10-29-mesh-area-buffer.md) | Claude Opus 5.5 | develop | 2 |
