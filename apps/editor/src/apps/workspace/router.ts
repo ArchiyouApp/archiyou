@@ -42,6 +42,15 @@ export const routes: Route[] = [
     action: async () => { await import('../../pages/verify-email.js'); },
   },
 
+  // --- "Save as project" from a configurator: keeps the design through sign-in, sign-up
+  //     and email confirmation, then opens the new project (pages/project-new.ts). Before
+  //     the layout's projects/:id, which would take "new" for an id ---
+  {
+    path: '/projects/new',
+    component: 'page-project-new',
+    action: async () => { await import('../../pages/project-new.js'); },
+  },
+
   // --- Published configurator (standalone, no nav-bar — embeddable) ---
   {
     path: '/configurators/:user/:scriptAndVersion',

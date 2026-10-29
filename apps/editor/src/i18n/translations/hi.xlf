@@ -479,6 +479,14 @@
   <source>Embed this configurator on your site</source>
   <target>इस कॉन्फ़िगरेटर को अपनी साइट पर एम्बेड करें</target>
 </trans-unit>
+<trans-unit id="s61f027a5a93b361d">
+  <source>Save as project</source>
+  <target>प्रोजेक्ट के रूप में सहेजें</target>
+</trans-unit>
+<trans-unit id="sbd6cdd800a950a92">
+  <source>Keep this design in a new project of yours</source>
+  <target>इस डिज़ाइन को एक नए प्रोजेक्ट में रखें</target>
+</trans-unit>
 <trans-unit id="scace301a88231cce">
   <source>Embed</source>
   <target>एम्बेड</target>

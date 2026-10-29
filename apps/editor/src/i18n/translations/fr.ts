@@ -75,6 +75,8 @@
 'sa176f119f892652a': `Ajouter une valeur…`,
 'sa50a6326530d8a0d': `Afficher moins`,
 'saded4620ff0874ba': `Intégrer ce configurateur à votre site`,
+'s61f027a5a93b361d': `Enregistrer comme projet`,
+'sbd6cdd800a950a92': `Conserver ce design dans un nouveau projet`,
 'sb132f083572a6cd2': `Rayons X`,
 'sb2c57b2d347203dd': `Afficher plus`,
 'sb74b4fba5c062156': `Aucune propriété définie`,

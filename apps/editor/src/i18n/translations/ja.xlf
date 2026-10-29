@@ -479,6 +479,14 @@
   <source>Embed this configurator on your site</source>
   <target>このコンフィギュレーターをサイトに埋め込む</target>
 </trans-unit>
+<trans-unit id="s61f027a5a93b361d">
+  <source>Save as project</source>
+  <target>プロジェクトとして保存</target>
+</trans-unit>
+<trans-unit id="sbd6cdd800a950a92">
+  <source>Keep this design in a new project of yours</source>
+  <target>このデザインを新しいプロジェクトに保存</target>
+</trans-unit>
 <trans-unit id="scace301a88231cce">
   <source>Embed</source>
   <target>埋め込み</target>

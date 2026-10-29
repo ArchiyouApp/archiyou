@@ -75,6 +75,8 @@
 'sa176f119f892652a': `Waarde toevoegen…`,
 'sa50a6326530d8a0d': `Minder tonen`,
 'saded4620ff0874ba': `Deze configurator op je eigen site insluiten`,
+'s61f027a5a93b361d': `Opslaan als project`,
+'sbd6cdd800a950a92': `Bewaar dit ontwerp in een nieuw project`,
 'sb132f083572a6cd2': `Röntgen`,
 'sb2c57b2d347203dd': `Meer tonen`,
 'sb74b4fba5c062156': `Geen eigenschappen gedefinieerd`,

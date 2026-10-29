@@ -479,6 +479,14 @@
   <source>Embed this configurator on your site</source>
   <target>将此配置器嵌入您的网站</target>
 </trans-unit>
+<trans-unit id="s61f027a5a93b361d">
+  <source>Save as project</source>
+  <target>另存为项目</target>
+</trans-unit>
+<trans-unit id="sbd6cdd800a950a92">
+  <source>Keep this design in a new project of yours</source>
+  <target>将此设计保存到新项目中</target>
+</trans-unit>
 <trans-unit id="scace301a88231cce">
   <source>Embed</source>
   <target>嵌入</target>

@@ -45,8 +45,8 @@ describe('displayFromQuery', () =>
 
   it('reads every option', () =>
   {
-    expect(displayFromQuery('?ui.header=0&ui.metrics=no&ui.style=TechDraw&ui.styles=realistic, techdraw&ui.projection=ortho&ui.grid=1&ui.menu=left'))
-      .toEqual({ header: false, metrics: false, style: 'techdraw', styles: ['realistic', 'techdraw'], ortho: true, grid: true, menu: 'left', animation: null, loop: null });
+    expect(displayFromQuery('?ui.header=0&ui.metrics=no&ui.project=0&ui.style=TechDraw&ui.styles=realistic, techdraw&ui.projection=ortho&ui.grid=1&ui.menu=left'))
+      .toEqual({ header: false, metrics: false, project: false, style: 'techdraw', styles: ['realistic', 'techdraw'], ortho: true, grid: true, menu: 'left', animation: null, loop: null });
   });
 
   it('reads the animation to play, as the script names it, and how it loops', () =>

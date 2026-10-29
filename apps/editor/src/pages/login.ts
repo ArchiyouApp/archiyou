@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { Router } from '@vaadin/router';
+import { Router, type RouterLocation } from '@vaadin/router';
 import { msg } from '@lit/localize';
 // The WebAwesome autoloader only discovers tags in the light DOM, so components
 // used inside this element's shadow root must be registered explicitly (same
@@ -8,7 +8,7 @@ import { msg } from '@lit/localize';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
-import { authService } from '../services/auth-service.js';
+import { authService, nextPath } from '../services/auth-service.js';
 import { pullUserScripts } from '../services/scripts-sync.js';
 
 type Mode = 'login' | 'register';
@@ -27,7 +27,9 @@ export class PageLogin extends LitElement
         </div>
 
         <h1>${isRegister ? msg('Create your account') : msg('Welcome back')}</h1>
-        <p>${isRegister ? msg('Sign up to get started') : msg('Sign in to continue')}</p>
+        <p>${this._forProject
+          ? msg('Sign in or create an account to save your design as a project.')
+          : isRegister ? msg('Sign up to get started') : msg('Sign in to continue')}</p>
 
         <form @submit=${this._handleSubmit}>
           ${isRegister
@@ -81,6 +83,18 @@ export class PageLogin extends LitElement
   @state() private _name = '';
   @state() private _error: string | null = null;
 
+  /** Came from "Save as project" in a configurator (`?for=project`), which waits at `next`. */
+  @state() private _forProject = false;
+  private _next = '/';
+
+  // ── 3. Lifecycle ──
+  /** Vaadin Router hands over the location before the address bar shows it. */
+  onBeforeEnter(location: RouterLocation)
+  {
+    this._forProject = new URLSearchParams(location.search).get('for') === 'project';
+    this._next = nextPath(location.search);
+  }
+
   // ── 4. Behaviour & Methods ──
   private _toggleMode()
   {
@@ -105,7 +119,7 @@ export class PageLogin extends LitElement
         await authService.login(this._email, this._password);
 
       await pullUserScripts();
-      Router.go('/');
+      Router.go(this._next);
     }
     catch (err)
     {

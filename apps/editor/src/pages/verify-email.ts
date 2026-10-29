@@ -17,6 +17,7 @@ import { msg } from '@lit/localize';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import { authService } from '../services/auth-service.js';
+import { SAVE_PROJECT_PATH, hasUnsavedProject } from '../services/save-project.js';
 
 type Status = 'checking' | 'ok' | 'failed' | 'no-token';
 
@@ -111,6 +112,12 @@ export class PageVerifyEmail extends LitElement
     try
     {
       await authService.verifyEmail(token);
+      // Signed up from "Save as project": the design waits for its project
+      if (authService.isAuthenticated() && hasUnsavedProject())
+      {
+        Router.go(SAVE_PROJECT_PATH);
+        return;
+      }
       this._status = 'ok';
     }
     catch (err)

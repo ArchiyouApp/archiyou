@@ -168,3 +168,11 @@ export const authService = {
 // Exposed as a promise so callers that need the handle (e.g. resolving a script
 // deep link on a cold load) can await the restore instead of racing it.
 export const authReady: Promise<PublicUser | null> = authService.refresh();
+
+/** Where the login page goes once signed in: `?next=` when it is a path on this origin (never
+ *  `//host` or a full URL: the login page must not send anyone elsewhere), else home. */
+export function nextPath(search: string): string
+{
+  const next = new URLSearchParams(search).get('next');
+  return next && /^\/(?![/\\])/.test(next) ? next : '/';
+}

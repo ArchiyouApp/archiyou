@@ -75,6 +75,8 @@
 'sa176f119f892652a': `Adicionar valor…`,
 'sa50a6326530d8a0d': `Mostrar menos`,
 'saded4620ff0874ba': `Incorporar este configurador no seu site`,
+'s61f027a5a93b361d': `Guardar como projeto`,
+'sbd6cdd800a950a92': `Guardar este design num novo projeto`,
 'sb132f083572a6cd2': `Raio X`,
 'sb2c57b2d347203dd': `Mostrar mais`,
 'sb74b4fba5c062156': `Nenhuma propriedade definida`,

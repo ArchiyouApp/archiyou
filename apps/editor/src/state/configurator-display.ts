@@ -8,6 +8,7 @@
  *
  *   ui.header=0                    no title and description above the parameters
  *   ui.metrics=0                   no metric cards (the Download button stays)
+ *   ui.project=0                   no "Save as project" button
  *   ui.style=xray                  the view style it opens in
  *   ui.styles=realistic,techdraw   the view styles the viewer menu offers
  *   ui.projection=ortho            opens isometric (orthographic) instead of in perspective
@@ -39,6 +40,8 @@ export interface ConfiguratorDisplay
 {
   header:     boolean;
   metrics:    boolean;
+  /** The "Save as project" button over the viewer. */
+  project:    boolean;
   /** View style id to open in; null: the viewer's default. Unknown ids are ignored by the viewer. */
   style:      string | null;
   /** View style ids the menu offers; null: all of them. */
@@ -56,6 +59,7 @@ export interface ConfiguratorDisplay
 export const DEFAULT_DISPLAY: ConfiguratorDisplay = {
   header:  true,
   metrics: true,
+  project: true,
   style:   null,
   styles:  null,
   ortho:   false,
@@ -114,6 +118,7 @@ export function displayFromQuery(search: string): ConfiguratorDisplay
   return {
     header:  flag(query.get('ui.header')) ?? DEFAULT_DISPLAY.header,
     metrics: flag(query.get('ui.metrics')) ?? DEFAULT_DISPLAY.metrics,
+    project: flag(query.get('ui.project')) ?? DEFAULT_DISPLAY.project,
     style:   text('ui.style'),
     styles:  styles.length > 0 ? styles : null,
     ortho:   ['ortho', 'orthographic', 'iso', 'isometric'].includes(text('ui.projection') ?? ''),

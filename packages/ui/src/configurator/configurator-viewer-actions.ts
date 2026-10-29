@@ -10,6 +10,11 @@
  *     "Embed", which opens a ready-to-paste <iframe> snippet. Neither when the
  *     page is embedded in another site (`embedded`, from `?embed=1`): that site
  *     offers its own links.
+ *     And "Save as project" (unless the link says `ui.project=0`), also inside
+ *     another site: a link to the editor's /projects/new with the design on
+ *     screen, which signs the visitor in or up if needed and opens the new
+ *     project (services/save-project.ts). From another site's page it opens in a
+ *     new tab, where the visitor's Archiyou session lives.
  */
 
 import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
@@ -18,8 +23,13 @@ import { SignalWatcher } from '@lit-labs/signals';
 import { localized, msg } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import './configurator-action-button.js';
 
 import { editorScript } from '@archiyou/editor/src/state/workspace';
+import { configurationQuery } from '@archiyou/editor/src/state/configurator-url';
+import { configuratorDisplay } from '@archiyou/editor/src/state/configurator-display';
+import { configuratorLocale } from '@archiyou/editor/src/state/locale';
+import { saveProjectUrl } from '@archiyou/editor/src/services/save-project';
 import { publicConfiguratorUrl } from '../editor/publish-constants.js';
 import { BREAKPOINT_COMPACT } from '@archiyou/editor/src/styles/design-tokens';
 
@@ -43,40 +53,38 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
 
     return html`
       <div class="actions">
-        <button class="action-btn primary" title=${msg('Publish this script as a configurator')}
-            @click=${this._publish}>
-          <wa-icon library="lucide" name="rocket"></wa-icon>
-          <span>${msg('Publish as configurator')}</span>
-        </button>
+        <configurator-action-button primary expanded icon="rocket" label=${msg('Publish as configurator')}
+            hint=${msg('Publish this script as a configurator')} @click=${this._publish}></configurator-action-button>
       </div>
     `;
   }
 
   private _renderPublished()
   {
-    const sourceUrl = this.embedded ? null : this._sourceUrl();
-    const embedUrl  = this.embedded ? null : this._embedUrl();
+    const sourceUrl  = this.embedded ? null : this._sourceUrl();
+    const embedUrl   = this.embedded ? null : this._embedUrl();
+    const projectUrl = this._projectUrl();
 
     // Nothing to offer → stay out of the way entirely rather than show dead buttons.
-    this.toggleAttribute('hidden', !sourceUrl && !embedUrl);
-    if (!sourceUrl && !embedUrl) return nothing;
+    this.toggleAttribute('hidden', !sourceUrl && !embedUrl && !projectUrl);
+    if (!sourceUrl && !embedUrl && !projectUrl) return nothing;
 
     return html`
       <div class="actions">
+        ${projectUrl ? html`
+          <configurator-action-button icon="folder-plus" label=${msg('Save as project')}
+              hint=${msg('Keep this design in a new project of yours')}
+              href=${projectUrl} target=${this.embedded ? '_blank' : '_self'}></configurator-action-button>` : nothing}
+
         ${sourceUrl ? html`
-          <a class="action-btn" href=${sourceUrl} target="_blank" rel="noopener"
-              title=${msg("Open this script's source in the editor")} aria-label=${msg('View source')}>
-            <wa-icon library="lucide" name="code"></wa-icon>
-            <span>${msg('View source')}</span>
-          </a>` : nothing}
+          <configurator-action-button icon="code" label=${msg('View source')}
+              hint=${msg("Open this script's source in the editor")}
+              href=${sourceUrl} target="_blank"></configurator-action-button>` : nothing}
 
         ${embedUrl ? html`
-          <button class="action-btn ${this._embedOpen ? 'active' : ''}"
-              title=${msg('Embed this configurator on your site')} aria-label=${msg('Embed')}
-              @click=${() => { this._embedOpen = !this._embedOpen; }}>
-            <wa-icon library="lucide" name="code-xml"></wa-icon>
-            <span>${msg('Embed')}</span>
-          </button>` : nothing}
+          <configurator-action-button icon="code-xml" label=${msg('Embed')}
+              hint=${msg('Embed this configurator on your site')} toggle ?active=${this._embedOpen}
+              @click=${() => { this._embedOpen = !this._embedOpen; }}></configurator-action-button>` : nothing}
       </div>
 
       ${this._embedOpen && embedUrl ? this._renderEmbedPanel(embedUrl) : nothing}
@@ -167,6 +175,18 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
     return publicConfiguratorUrl(script.published.url, script.author, script.name, script.version);
   }
 
+  /** "Save as project": the editor's /projects/new with the published configurator and the
+   *  configuration on screen (read here, so the link follows every change). */
+  private _projectUrl(): string | null
+  {
+    const script = editorScript.get();
+    if (!configuratorDisplay.get().project || !script?.published || !script.author || !script.name || !script.version) return null;
+    const base = (typeof window !== 'undefined' && window.location?.origin) || '';
+    const query = new URLSearchParams(configurationQuery());
+    query.set('lang', configuratorLocale.get());
+    return saveProjectUrl(base, script.author, script.name, script.version, query.toString());
+  }
+
   private _snippet(embedUrl: string): string
   {
     return `<iframe\n`
@@ -212,47 +232,6 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
       gap: var(--space-xs);
     }
 
-    .action-btn
-    {
-      display: inline-flex;
-      align-items: center;
-      gap: var(--space-xs);
-      padding: 5px 10px;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-full, 9999px);
-      background: color-mix(in srgb, var(--color-bg-elevated) 88%, transparent);
-      backdrop-filter: blur(4px);
-      color: var(--color-text);
-      font-family: var(--font-sans);
-      font-size: var(--text-xs);
-      font-weight: 500;
-      text-decoration: none;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-
-    .action-btn:hover,
-    .action-btn.active
-    {
-      border-color: var(--color-primary);
-      color: var(--color-primary);
-    }
-
-    .action-btn.primary
-    {
-      padding: 6px 14px;
-      border-color: var(--color-primary);
-      background: var(--color-primary);
-      color: var(--color-white, #fff);
-      font-size: var(--text-sm);
-      font-weight: 600;
-    }
-
-    .action-btn.primary:hover
-    {
-      background: color-mix(in srgb, var(--color-black, #000) 12%, var(--color-primary));
-      color: var(--color-white, #fff);
-    }
 
     /* ── Embed panel ── */
 
@@ -370,17 +349,6 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
     /* Compact configurator: round icon buttons (labels stay as aria-label). */
     @container configurator (width < ${unsafeCSS(BREAKPOINT_COMPACT)})
     {
-      .action-btn:not(.primary)
-      {
-        justify-content: center;
-        min-width: var(--hit-min);
-        min-height: var(--hit-min);
-        padding: 0;
-        font-size: var(--text-sm);
-      }
-
-      .action-btn:not(.primary) span { display: none; }
-
       .close-btn
       {
         width: var(--hit-min);

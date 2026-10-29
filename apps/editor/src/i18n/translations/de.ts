@@ -75,6 +75,8 @@
 'sa176f119f892652a': `Wert hinzufügen…`,
 'sa50a6326530d8a0d': `Weniger anzeigen`,
 'saded4620ff0874ba': `Diesen Konfigurator in Ihre Website einbetten`,
+'s61f027a5a93b361d': `Als Projekt speichern`,
+'sbd6cdd800a950a92': `Diesen Entwurf in einem neuen Projekt speichern`,
 'sb132f083572a6cd2': `Röntgen`,
 'sb2c57b2d347203dd': `Mehr anzeigen`,
 'sb74b4fba5c062156': `Keine Eigenschaften definiert`,
