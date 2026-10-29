@@ -63,7 +63,7 @@ fn random_case(seed: u64) -> (Instance, Config)
             json!({ "dims": [r.range(300, 1200), r.range(300, 1200), r.range(300, 1200)], "cost": r.range(1, 5), "stock": stock, "maxWeight": max_weight, "door": door, "balance": balance })
         })
         .collect();
-    let config = json!({ "support": r.pick(&[0.0, 0.5, 0.8, 1.0]), "gap": r.pick(&[0u64, 0, 5, 10]) });
+    let config = json!({ "support": r.pick(&[0.0, 0.5, 0.8, 1.0]), "gap": r.pick(&[0u64, 0, 5, 10]), "iterations": r.pick(&[0u64, 0, 0, 12]), "seed": r.range(0, 9) });
     (serde_json::from_value(json!({ "items": items, "bins": bins })).unwrap(), serde_json::from_value(config).unwrap())
 }
 

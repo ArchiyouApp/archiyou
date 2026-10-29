@@ -290,7 +290,7 @@ mod tests
                 (0..3).map(|k| items[p.item].dims[perm[k]] as u64).product::<u64>()
             })
             .sum();
-        Solution { bins: vec![BinLoad { bin: 0, placements, volume, weight: 0, cog: None, axle_loads: vec![], balance_ok: true }], unplaced, stats: Stats { evaluations: 0, bins: 1, cost: 1.0 } }
+        Solution { bins: vec![BinLoad { bin: 0, placements, volume, weight: 0, cog: None, axle_loads: vec![], balance_ok: true }], unplaced, stats: Stats { evaluations: 0, iterations: 0, bins: 1, cost: 1.0 } }
     }
 
     /// Two cubes side by side on the floor and the long board across them.
@@ -422,7 +422,7 @@ mod tests
                 vec![((2 * weight as i128 * rear.at as i128 - moment(0)).max(0) as u128).div_ceil(span2) as u64, ((moment(0) - 2 * weight as i128 * front.at as i128).max(0) as u128).div_ceil(span2) as u64]
             })
             .unwrap_or_default();
-        Solution { bins: vec![BinLoad { bin: 0, placements, volume, weight, cog, axle_loads, balance_ok }], unplaced: vec![], stats: Stats { evaluations: 0, bins: 1, cost: 1.0 } }
+        Solution { bins: vec![BinLoad { bin: 0, placements, volume, weight, cog, axle_loads, balance_ok }], unplaced: vec![], stats: Stats { evaluations: 0, iterations: 0, bins: 1, cost: 1.0 } }
     }
 
     fn from_json(json: &str) -> Instance

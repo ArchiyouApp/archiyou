@@ -210,7 +210,7 @@ fn weakest_support(instance: &Instance, solution: &Solution) -> f64
 fn main()
 {
     let only = std::env::args().nth(1);
-    println!("{:<13} {:>5} {:>17} {:>8} {:>5} {:>7} {:>9} {:>9} {:>9} {:>12}", "family", "boxes", "hash", "support", "bins", "fill %", "ms", "weakest %", "heaviest", "evaluations");
+    println!("{:<13} {:>5} {:>17} {:>8} {:>5} {:>5} {:>7} {:>9} {:>9} {:>9} {:>12}", "family", "boxes", "hash", "support", "steps", "bins", "fill %", "ms", "weakest %", "heaviest", "evaluations");
     families().iter().filter(|f| only.as_ref().is_none_or(|name| name == f.name)).for_each(|family| {
         let types = draw(family);
         let total: u32 = types.iter().map(|(_, t)| t[3]).sum();
@@ -241,8 +241,8 @@ fn main()
         };
         let instance: Instance = serde_json::from_value(json!({ "name": family.name, "items": items, "bins": [bin] })).unwrap();
 
-        [0.8, 1.0].iter().for_each(|&support| {
-            let config = Config { support, ..Config::default() };
+        [(0.8, 0), (1.0, 0), (0.8, 100), (0.8, 300), (1.0, 300)].iter().for_each(|&(support, iterations)| {
+            let config = Config { support, iterations, ..Config::default() };
             let started = Instant::now();
             let solution = solve(&instance, &config).expect("a solution");
             let ms = started.elapsed().as_secs_f64() * 1000.0;
@@ -252,11 +252,12 @@ fn main()
             let note = format!("{}{}", unplaced, if unbalanced > 0 { format!("  ({unbalanced} bins unbalanced)") } else { String::new() });
             let heaviest = solution.bins.iter().map(|bin| bin.placements.iter().map(|p| instance.items[p.item].weight).sum::<u64>()).max().unwrap_or(0);
             println!(
-                "{:<13} {:>5} {:>17x} {:>8} {:>5} {:>7.1} {:>9.1} {:>9.1} {:>9} {:>12}{}",
+                "{:<13} {:>5} {:>17x} {:>8} {:>5} {:>5} {:>7.1} {:>9.1} {:>9.1} {:>9} {:>12}{}",
                 family.name,
                 total,
                 hash(&types),
                 support,
+                iterations,
                 solution.bins.len(),
                 fill,
                 ms,

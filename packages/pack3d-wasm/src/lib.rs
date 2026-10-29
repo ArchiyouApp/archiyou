@@ -9,6 +9,7 @@ pub mod geom;
 pub mod layout;
 pub mod model;
 pub mod rng;
+pub mod search;
 pub mod solve;
 pub mod validate;
 

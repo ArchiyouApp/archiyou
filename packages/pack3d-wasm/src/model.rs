@@ -35,6 +35,11 @@ fn default_support() -> f64
     0.8
 }
 
+fn default_max_evaluations() -> u64
+{
+    40_000_000
+}
+
 /// The side of a bin that the load leaves by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub enum Door
@@ -157,13 +162,21 @@ pub struct Config
     /// Clearance kept between items along x and y, in millimetres.
     #[serde(default)]
     pub gap: u32,
+    /// Steps of the search that tries to improve the plan of the constructive runs; 0 returns that plan.
+    #[serde(default)]
+    pub iterations: u32,
+    /// A limit on the work, counted in placements tried: no new constructive run or search step is
+    /// started once it is reached, so a big instance ends with a valid plan that is less tight rather
+    /// than late. It is a count and not a time, so the plan does not depend on the machine.
+    #[serde(default = "default_max_evaluations")]
+    pub max_evaluations: u64,
 }
 
 impl Default for Config
 {
     fn default() -> Self
     {
-        Config { seed: 0, support: default_support(), gap: 0 }
+        Config { seed: 0, support: default_support(), gap: 0, iterations: 0, max_evaluations: default_max_evaluations() }
     }
 }
 
@@ -215,6 +228,8 @@ pub struct Stats
 {
     /// Placements the solver tried.
     pub evaluations: u64,
+    /// Steps of the search that were taken.
+    pub iterations: u32,
     pub bins: usize,
     pub cost: f64,
 }
@@ -430,7 +445,7 @@ mod tests
         assert_eq!(i.bins[0].cost, 1.0);
         assert_eq!(i.bins[0].stock, None);
         let c: Config = serde_json::from_str("{}").unwrap();
-        assert_eq!((c.seed, c.support, c.gap), (0, 0.8, 0));
+        assert_eq!((c.seed, c.support, c.gap, c.iterations, c.max_evaluations), (0, 0.8, 0, 0, 40_000_000));
     }
 
     #[test]

@@ -313,3 +313,41 @@ fn bins_are_opened_by_cost_per_volume_and_the_last_one_is_made_cheaper()
     let few = solved(json!({ "items": [{ "dims": [400, 400, 400], "count": 2, "orientations": 1 }], "bins": [{ "dims": [400, 400, 400], "cost": 3 }, { "dims": [1200, 800, 400], "cost": 8 }] }), Config::default());
     assert_eq!(few.stats.cost, 6.0, "two cubes: two small bins (6) rather than one big (8)");
 }
+
+/// A small job found by looking for one that the search improves: 9 boxes, two bins without it.
+const SEARCH_JOB: &str = r#"{"bins":[{"dims":[1000,800,900]}],"items":[{"count":2,"dims":[482,165,323],"orientations":3},{"count":4,"dims":[267,201,257],"orientations":3},{"count":3,"dims":[585,468,308],"orientations":3}]}"#;
+
+#[test]
+fn the_search_saves_a_bin_that_the_constructive_runs_do_not()
+{
+    let job = || serde_json::from_str::<serde_json::Value>(SEARCH_JOB).unwrap();
+    let plain = solved(job(), Config::default());
+    assert_eq!((plain.bins.len(), plain.stats.iterations), (2, 0));
+    let searched = solved(job(), Config { iterations: 200, ..Config::default() });
+    assert_eq!(searched.bins.len(), 1);
+    assert!(searched.stats.iterations > 0 && searched.stats.iterations <= 200);
+}
+
+#[test]
+fn the_search_is_never_worse_than_the_constructive_plan_and_the_same_for_a_seed()
+{
+    let job = || serde_json::from_str::<serde_json::Value>(SEARCH_JOB).unwrap();
+    let plans: Vec<Solution> = (0..6).map(|seed| solved(job(), Config { iterations: 60, seed, ..Config::default() })).collect();
+    assert!(plans.iter().all(|plan| plan.bins.len() <= 2));
+    (0..6).for_each(|seed| assert_eq!(solved(job(), Config { iterations: 60, seed, ..Config::default() }), plans[seed as usize], "seed {seed}"));
+    // another seed explores another path: the plans are not all the same
+    let layouts: std::collections::BTreeSet<String> = plans.iter().map(|plan| format!("{:?}", all_placements(plan))).collect();
+    assert!(layouts.len() > 1, "six seeds, one layout");
+}
+
+#[test]
+fn a_work_limit_ends_the_search_and_the_plan_is_still_valid()
+{
+    let job = serde_json::from_str::<serde_json::Value>(SEARCH_JOB).unwrap();
+    let limited = solved(job.clone(), Config { iterations: 1_000_000, max_evaluations: 1, ..Config::default() });
+    assert_eq!(limited.stats.iterations, 0, "the first constructive run is always made, nothing after the limit");
+    assert!(limited.unplaced.is_empty());
+    let more = solved(job, Config { iterations: 1_000_000, max_evaluations: 200_000, ..Config::default() });
+    assert!(more.stats.iterations > 0 && more.stats.iterations < 1_000_000);
+    assert!(more.stats.evaluations >= 200_000, "stopped by the limit, not by running out of steps");
+}
