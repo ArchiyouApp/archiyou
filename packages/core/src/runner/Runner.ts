@@ -70,7 +70,7 @@ import { contentNeedsOf } from '../modules/sdkTypes';
 import { MODELER_METHODS_INTO_GLOBAL, SCRIPT_OUTPUT_GLTF_OPTIONS_DEFAULT, outputsNeedRecipes } from '../constants'; 
 import { Animator } from '../animator/Animator';
 import { ParamManager } from '../execution/ParamManager';
-import type { Make } from '../modeler/Make';
+import { loadPack3dModule, type Make } from '../modeler/Make';
 import type { Handle } from '../interaction/Handle';
 import type { ShapeCollection } from '@archiyou/meshup';
 
@@ -880,6 +880,9 @@ export class Runner
         // The IFC classifier loads on demand; explainIFC() is synchronous, so load it up front when used
         await this._loadIFCWhenUsed(request);
 
+        // The 3D load planner loads on demand too: make.pack3d() is synchronous for scripts
+        await this._loadPack3dWhenUsed(request);
+
         // Per-statement mode: split the script and execute statement-by-statement so a
         // single failure halts with a partial model instead of losing the whole run, and
         // each statement is timed. Opt-in via request.perStatement (editor on, server off).
@@ -925,6 +928,16 @@ export class Runner
     {
         const codes = [request.script?.code, ...Object.values(this._componentScripts).map(s => (s as any)?.code)];
         if (codes.some(code => typeof code === 'string' && /\bexplainIFC\s*\(/.test(code))) await loadIFCModule();
+    }
+
+    /** Load the 3D load planner (pack3d) before a run whose script, or any of its components, calls pack3d():
+     *  make.pack3d() is synchronous for scripts and cannot wait for a dynamic import. A call that the scan
+     *  cannot see (a computed name) gets a clear error from make.pack3d() instead. A script that never
+     *  mentions pack3d() does not load the module at all. */
+    private async _loadPack3dWhenUsed(request: RunnerScriptExecutionRequest): Promise<void>
+    {
+        const codes = [request.script?.code, ...Object.values(this._componentScripts).map(s => (s as any)?.code)]
+        if (codes.some(code => typeof code === 'string' && /\bpack3d\s*\(/.test(code))) await loadPack3dModule()
     }
 
     private _finalizeExecutionDuration(result: RunnerScriptExecutionResult | null | undefined, executeStartTime: number): void
@@ -1332,6 +1345,7 @@ ${description === '***** CODE ****\nUnexpected end of input' ? code : ''}
         await this._prefetchComponentScripts(request); // idempotent; needed when called via executeUrl()
         await this._prefetchImportAssets(request);      // idempotent; $import() assets for the direct path
         await this._prepareModules(request);            // idempotent; script modules for the direct path
+        await this._loadPack3dWhenUsed(request);        // idempotent; the 3D load planner for the direct path
 
         const executeStartTime = performance.now();
 

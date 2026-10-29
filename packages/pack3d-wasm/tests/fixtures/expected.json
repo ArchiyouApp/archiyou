@@ -1,0 +1,67 @@
+{
+  "crate-kit": {
+    "bins": 1,
+    "hash": "d236d45bdf4cd2ca",
+    "unplaced": 0
+  },
+  "doors-x": {
+    "bins": 1,
+    "hash": "6a6fc0845e124889",
+    "unplaced": 0
+  },
+  "doors-y-balance": {
+    "bins": 1,
+    "hash": "a8de84ea1f9ee02c",
+    "unplaced": 0
+  },
+  "orientations-gap": {
+    "bins": 1,
+    "hash": "ecb2420cfc6aaa78",
+    "unplaced": 0
+  },
+  "pallet-mix": {
+    "bins": 4,
+    "hash": "20d7292e8e91c62f",
+    "unplaced": 0
+  },
+  "pallet-mix-search": {
+    "bins": 4,
+    "hash": "bfccad55d7982108",
+    "unplaced": 0
+  },
+  "pallet-rules": {
+    "bins": 7,
+    "hash": "eb4161c19b13f1d9",
+    "unplaced": 0
+  },
+  "pallet-same": {
+    "bins": 3,
+    "hash": "2e64cf217aa8adde",
+    "unplaced": 0
+  },
+  "search-job": {
+    "bins": 1,
+    "hash": "014b42eb9005c3e6",
+    "unplaced": 0
+  },
+  "three-kinds": {
+    "bins": 1,
+    "hash": "fbee45d6076eba26",
+    "unplaced": 0
+  },
+  "trailer": {
+    "bins": 2,
+    "hash": "fae8f62eee482a3d",
+    "unplaced": 0
+  },
+  "trailer-balance": {
+    "bins": 2,
+    "hash": "98078ca5ad27e14c",
+    "unplaced": 0
+  },
+  "trailer-stops": {
+    "bins": 2,
+    "hash": "b82ab07ae26d3a59",
+    "unplaced": 0
+  }
+}

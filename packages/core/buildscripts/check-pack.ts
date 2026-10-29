@@ -87,11 +87,18 @@ const LAZY_ONLY = [
     { what: 'the shared faceted-geometry helpers (exportGeometry.ts)', marker: 'function splitTJunctions(' },
 ];
 
+/** Dependencies that load on demand. They are external to the build (the consumer's bundler splits them), so
+ *  there is no code of theirs in dist to find: the check is that dist reaches them through `await import()`
+ *  and never through a static import in what the entries load up front. */
+const DYNAMIC_ONLY = [
+    { what: 'the 3D load planner (pack3d-wasm, with its WebAssembly)', pkg: '@archiyou/pack3d-wasm' },
+];
+
 const ENTRIES = ['index.js', 'runner.worker.js'];
 
 /** Published workspace packages core depends on. A `workspace:` protocol left in the packed
  *  manifest means pnpm did not rewrite it to a real version, and the tarball is uninstallable. */
-const MUST_BE_REAL_DEPS = ['@archiyou/meshup', '@archiyou/collada-wasm', '@archiyou/gdrr2bp-wasm'];
+const MUST_BE_REAL_DEPS = ['@archiyou/meshup', '@archiyou/collada-wasm', '@archiyou/gdrr2bp-wasm', '@archiyou/pack3d-wasm'];
 
 /** @archiyou/module-sdk is internal to the monorepo and never published, so nothing in the
  *  tarball may name it: an import of it resolves to nothing for a consumer, and every module
@@ -188,6 +195,15 @@ try
         if (!holders.length) fail.push(`${what} is not in dist at all (marker "${marker}"): the check would pass without looking`);
         const loadedUpFront = holders.filter(name => eager.has(name));
         if (loadedUpFront.length) fail.push(`${what} is loaded up front: ${loadedUpFront.join(', ')} is statically imported from ${ENTRIES.join(' or ')}; reach it through await import() only`);
+    }
+    for (const { what, pkg } of DYNAMIC_ONLY)
+    {
+        const quoted = pkg.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+        const dynamic = new RegExp(`import\\(\\s*["']${quoted}["']\\s*\\)`);
+        const fixed = new RegExp(`(?:^|[;\\n])\\s*(?:import|export)\\s*(?:[^'"();]*?\\sfrom\\s*)?["']${quoted}["']`);
+        if (![...code.values()].some(text => dynamic.test(text))) fail.push(`${what} is not imported with await import() anywhere in dist (${pkg}): the check would pass without looking`);
+        const upFront = [...eager].filter(name => fixed.test(code.get(name)!));
+        if (upFront.length) fail.push(`${what} is loaded up front: ${upFront.join(', ')} imports ${pkg} statically; reach it through await import() only`);
     }
     for (const pkg of MUST_NOT_BE_BUNDLED)
     {

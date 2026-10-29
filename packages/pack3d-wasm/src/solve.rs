@@ -2,7 +2,8 @@
 //! validator before it is returned.
 
 use crate::balance::report;
-use crate::layout::{Fill, Layout, Open, Pick, Strategy, decode, objective};
+use crate::layout::{Fill, Layout, Objective, Open, Pick, Strategy, decode, objective};
+use crate::search::{Start, improve};
 use crate::model::{BinLoad, Config, Door, Error, Instance, ItemRef, Piece, Placement, Problem, Solution, Stats};
 use crate::validate::validate;
 
@@ -83,16 +84,37 @@ pub fn solve(instance: &Instance, config: &Config) -> Result<Solution, Error>
     let problem = Problem::new(instance, config)?;
     let mut evaluations = 0u64;
     let strategies = strategies(&problem);
+    let sequences: Vec<Vec<usize>> = keys(&problem).into_iter().map(|key| sequence(&problem, key)).collect();
 
-    let best = keys(&problem)
-        .into_iter()
-        .map(|key| sequence(&problem, key))
-        .flat_map(|order| strategies.iter().map(move |&strategy| (order.clone(), strategy)).collect::<Vec<_>>())
-        .map(|(order, strategy)| decode(&problem, &order, strategy, &mut evaluations))
-        .min_by_key(|layout| objective(&problem, layout))
-        .expect("the portfolio has at least one run");
+    // the constructive runs, every sequence in every strategy; the first run is always made, the others only while there is work left
+    let runs = sequences.iter().enumerate().flat_map(|(s, _)| (0..strategies.len()).map(move |t| (s, t)));
+    let best = runs.fold(None, |best: Option<(Objective, Layout, usize, usize)>, (s, t)| {
+        if best.is_some() && evaluations >= config.max_evaluations
+        {
+            return best;
+        }
+        let layout = decode(&problem, &sequences[s], strategies[t], &mut evaluations);
+        let objective = objective(&problem, &layout);
+        match best
+        {
+            Some(ref kept) if kept.0 <= objective => best,
+            _ => Some((objective, layout, s, t)),
+        }
+    });
+    let (objective, layout, s, t) = best.expect("the portfolio has at least one run");
 
-    let solution = assemble(&problem, &best, evaluations);
+    let (layout, steps) = if config.iterations > 0
+    {
+        let start = Start { order: sequences[s].clone(), strategy: t, layout, objective };
+        let found = improve(&problem, &strategies, start, config.iterations, config.max_evaluations, config.seed, &mut evaluations);
+        (found.layout, found.steps)
+    }
+    else
+    {
+        (layout, 0)
+    };
+
+    let solution = assemble(&problem, &layout, evaluations, steps);
     let broken = validate(instance, config, &solution);
     if broken.is_empty()
     {
@@ -104,7 +126,7 @@ pub fn solve(instance: &Instance, config: &Config) -> Result<Solution, Error>
     }
 }
 
-fn assemble(problem: &Problem, layout: &Layout, evaluations: u64) -> Solution
+fn assemble(problem: &Problem, layout: &Layout, evaluations: u64, iterations: u32) -> Solution
 {
     let reference = |index: usize| {
         let piece = &problem.pieces[index];
@@ -138,7 +160,7 @@ fn assemble(problem: &Problem, layout: &Layout, evaluations: u64) -> Solution
         .collect();
     let cost: u64 = layout.bins.iter().map(|bin| problem.kinds[bin.kind].cost).sum();
     Solution {
-        stats: Stats { evaluations, bins: bins.len(), cost: cost as f64 / 1000.0 },
+        stats: Stats { evaluations, iterations, bins: bins.len(), cost: cost as f64 / 1000.0 },
         unplaced: layout.unplaced.iter().map(|&index| reference(index)).map(|(item, copy)| ItemRef { item, copy }).collect(),
         bins,
     }

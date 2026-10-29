@@ -1,0 +1,57 @@
+{
+  "config": {
+    "support": 0.9
+  },
+  "instance": {
+    "bins": [
+      {
+        "balance": {
+          "axles": [
+            {
+              "at": 300,
+              "maxLoad": 150000
+            },
+            {
+              "at": 2500,
+              "maxLoad": 150000
+            }
+          ],
+          "cog": {
+            "x": 0.1,
+            "y": 0.1
+          }
+        },
+        "dims": [
+          2800,
+          2000,
+          1400
+        ],
+        "door": "+y"
+      }
+    ],
+    "items": [
+      {
+        "count": 6,
+        "dims": [
+          500,
+          500,
+          500
+        ],
+        "stop": 1,
+        "weight": 30000
+      },
+      {
+        "count": 5,
+        "dims": [
+          700,
+          400,
+          300
+        ],
+        "orientations": 3,
+        "stop": 2,
+        "weight": 12000
+      }
+    ]
+  },
+  "name": "doors-y-balance"
+}

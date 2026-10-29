@@ -1,0 +1,501 @@
+{
+  "config": {},
+  "instance": {
+    "bins": [
+      {
+        "balance": null,
+        "dims": [
+          1200,
+          800,
+          1800
+        ],
+        "door": null,
+        "maxWeight": 600000
+      }
+    ],
+    "items": [
+      {
+        "count": 7,
+        "dims": [
+          310,
+          413,
+          231
+        ],
+        "maxLoad": 0,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 7393
+      },
+      {
+        "count": 2,
+        "dims": [
+          164,
+          230,
+          300
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 2829
+      },
+      {
+        "count": 2,
+        "dims": [
+          307,
+          440,
+          307
+        ],
+        "maxLoad": 30000,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 10367
+      },
+      {
+        "count": 2,
+        "dims": [
+          134,
+          232,
+          293
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 2277
+      },
+      {
+        "count": 2,
+        "dims": [
+          333,
+          213,
+          407
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 7217
+      },
+      {
+        "count": 6,
+        "dims": [
+          155,
+          172,
+          202
+        ],
+        "maxLoad": 0,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 1346
+      },
+      {
+        "count": 4,
+        "dims": [
+          156,
+          327,
+          147
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 1874
+      },
+      {
+        "count": 7,
+        "dims": [
+          173,
+          270,
+          326
+        ],
+        "maxLoad": 30000,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 3806
+      },
+      {
+        "count": 7,
+        "dims": [
+          163,
+          244,
+          387
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 3847
+      },
+      {
+        "count": 4,
+        "dims": [
+          206,
+          412,
+          420
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 8911
+      },
+      {
+        "count": 5,
+        "dims": [
+          265,
+          455,
+          136
+        ],
+        "maxLoad": 0,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 4099
+      },
+      {
+        "count": 7,
+        "dims": [
+          335,
+          324,
+          272
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 7380
+      },
+      {
+        "count": 1,
+        "dims": [
+          346,
+          420,
+          375
+        ],
+        "maxLoad": 30000,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 13623
+      },
+      {
+        "count": 4,
+        "dims": [
+          193,
+          492,
+          193
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 4581
+      },
+      {
+        "count": 7,
+        "dims": [
+          499,
+          420,
+          276
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 14461
+      },
+      {
+        "count": 1,
+        "dims": [
+          254,
+          275,
+          354
+        ],
+        "maxLoad": 0,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 6181
+      },
+      {
+        "count": 7,
+        "dims": [
+          485,
+          418,
+          360
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 18245
+      },
+      {
+        "count": 2,
+        "dims": [
+          485,
+          137,
+          102
+        ],
+        "maxLoad": 30000,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 1694
+      },
+      {
+        "count": 5,
+        "dims": [
+          389,
+          204,
+          217
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 4305
+      },
+      {
+        "count": 7,
+        "dims": [
+          211,
+          203,
+          126
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 1349
+      },
+      {
+        "count": 6,
+        "dims": [
+          333,
+          507,
+          158
+        ],
+        "maxLoad": 0,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 6668
+      },
+      {
+        "count": 7,
+        "dims": [
+          452,
+          438,
+          327
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 16184
+      },
+      {
+        "count": 4,
+        "dims": [
+          355,
+          450,
+          197
+        ],
+        "maxLoad": 30000,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 7867
+      },
+      {
+        "count": 7,
+        "dims": [
+          362,
+          245,
+          214
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 4744
+      },
+      {
+        "count": 5,
+        "dims": [
+          419,
+          499,
+          246
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 12858
+      },
+      {
+        "count": 5,
+        "dims": [
+          311,
+          247,
+          211
+        ],
+        "maxLoad": 0,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 4052
+      },
+      {
+        "count": 4,
+        "dims": [
+          405,
+          318,
+          330
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 10625
+      },
+      {
+        "count": 2,
+        "dims": [
+          161,
+          443,
+          292
+        ],
+        "maxLoad": 30000,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 5206
+      },
+      {
+        "count": 7,
+        "dims": [
+          293,
+          363,
+          317
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 8428
+      },
+      {
+        "count": 5,
+        "dims": [
+          421,
+          263,
+          147
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 4069
+      },
+      {
+        "count": 4,
+        "dims": [
+          157,
+          401,
+          153
+        ],
+        "maxLoad": 0,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 2408
+      },
+      {
+        "count": 7,
+        "dims": [
+          407,
+          121,
+          165
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 2031
+      },
+      {
+        "count": 6,
+        "dims": [
+          461,
+          495,
+          252
+        ],
+        "maxLoad": 30000,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 14376
+      },
+      {
+        "count": 6,
+        "dims": [
+          180,
+          264,
+          326
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 3872
+      },
+      {
+        "count": 8,
+        "dims": [
+          214,
+          485,
+          98
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 2542
+      },
+      {
+        "count": 2,
+        "dims": [
+          138,
+          165,
+          354
+        ],
+        "maxLoad": 0,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 2015
+      },
+      {
+        "count": 2,
+        "dims": [
+          229,
+          428,
+          109
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 2670
+      },
+      {
+        "count": 8,
+        "dims": [
+          121,
+          345,
+          190
+        ],
+        "maxLoad": 30000,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 1982
+      },
+      {
+        "count": 6,
+        "dims": [
+          165,
+          327,
+          379
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 5112
+      },
+      {
+        "count": 6,
+        "dims": [
+          485,
+          451,
+          194
+        ],
+        "maxLoad": null,
+        "orientations": 3,
+        "stop": 0,
+        "weight": 10608
+      }
+    ],
+    "name": "pallet-rules"
+  },
+  "name": "pallet-rules"
+}

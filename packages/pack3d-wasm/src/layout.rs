@@ -446,7 +446,7 @@ impl Bin
         // the three corners next to the new box, each moved back along the two axes that are not its own
         let (lo, hi) = (placed.min, placed.max);
         let corners = [([hi[0], lo[1], lo[2]], [1, 2]), ([lo[0], hi[1], lo[2]], [0, 2]), ([lo[0], lo[1], hi[2]], [0, 1])];
-        let fresh: Vec<V3> = corners.iter().flat_map(|&(corner, axes)| axes.map(|axis| self.project(corner, axis))).collect();
+        let fresh: Vec<V3> = corners.iter().flat_map(|&(corner, axes)| std::iter::once(corner).chain(axes.map(|axis| self.project(corner, axis)))).collect();
         let free: Vec<V3> = fresh.into_iter().filter(|&p| self.is_free(p)).collect();
         free.into_iter().for_each(|p| {
             if !self.points.contains(&p)

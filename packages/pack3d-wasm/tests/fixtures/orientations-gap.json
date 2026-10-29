@@ -1,0 +1,47 @@
+{
+  "config": {
+    "gap": 5,
+    "support": 1
+  },
+  "instance": {
+    "bins": [
+      {
+        "dims": [
+          1200,
+          800,
+          1000
+        ]
+      }
+    ],
+    "items": [
+      {
+        "count": 6,
+        "dims": [
+          300,
+          200,
+          700
+        ],
+        "orientations": 63
+      },
+      {
+        "count": 4,
+        "dims": [
+          500,
+          500,
+          100
+        ],
+        "orientations": 1
+      },
+      {
+        "count": 10,
+        "dims": [
+          250,
+          250,
+          250
+        ],
+        "orientations": 3
+      }
+    ]
+  },
+  "name": "orientations-gap"
+}

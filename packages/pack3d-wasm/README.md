@@ -1,13 +1,58 @@
 # pack3d-wasm
 
 Stable 3D load planning: boxes into pallets, crates and trailers. Rust, built for WebAssembly, with
-a typed TypeScript wrapper (added in a later step of the work, see
-`documentation/nlnet/ai/records/2026-10-29-pack3d.md`).
+a typed TypeScript wrapper. The work and its measurements are recorded in
+`documentation/nlnet/ai/records/2026-10-29-pack3d.md`.
 
 What sets it apart from a plain bin packer: every item in a plan **stands**. At least a given share
 of its base rests on the floor or on the tops of other items, and its centre lies over that contact.
 The plan is the same, byte for byte, for the same input on every machine, and an independent
 validator re-checks every plan before it is returned.
+
+## Layout
+
+```
+src/              the solver (lib.rs is the entry: `solve_json`, and the wasm exports `solve` and `validate`)
+ts/Packer3D.ts    the typed wrapper: Packer3D, the types, orientationMask, input checks
+ts/index.ts       barrel
+pkg/              generated wasm-bindgen glue (committed); pkg/pack3d_wasm_bg.d.ts is hand-written
+ts/pack3d-wasm-binary.ts   the wasm as base64 (generated, committed: CI has no Rust)
+tests/            behaviour, fuzz and fixture tests; tests/fixtures holds the instances shared with core's tests
+examples/         bench (the benchmark families) and fixtures (writes tests/fixtures)
+build.sh          wasm-pack build + the base64 payload
+```
+
+## Usage (TypeScript)
+
+```ts
+import { Packer3D } from '@archiyou/pack3d-wasm';
+
+const packer = await new Packer3D().init();            // the module loads once per process
+const plan = packer.solve({
+  items: [{ dims: [400, 300, 250], count: 12, weight: 8000, maxLoad: 40000 }],
+  bins: [{ dims: [1200, 800, 1800], maxWeight: 600_000, cost: 25 }],
+}, { support: 1, iterations: 100 });
+// plan.bins[0].placements: { item, copy, orientation, x, y, z }, plan.unplaced, plan.stats
+```
+
+Lengths are whole millimetres, weights whole grams. `solve` throws for input that makes no sense, and
+never returns a plan that breaks a hard rule. The module is loaded from an inlined base64 string, so it
+works in every bundler; `ts/Packer3D.ts` reaches it and the glue through dynamic imports, which is what
+lets `@archiyou/core` load it only for scripts that plan a load.
+
+## Building
+
+```bash
+rustup target add wasm32-unknown-unknown   # once
+cargo install wasm-pack                     # once
+./build.sh                                  # writes pkg/ and ts/pack3d-wasm-binary.ts
+cargo run --release --example fixtures      # only when the solver's behaviour changed on purpose
+```
+
+The WebAssembly build gives the same bytes as the native one: `tests/fixtures` holds the instances and the
+hash of the native solution of each, `cargo test` checks the native build against them, and the tests of
+`@archiyou/core` check this build against them. 270 KB of WebAssembly (`opt-level` 3: 2 gives the same
+speed at 265 KB, `s` is twice as slow at 249 KB).
 
 ## What is enforced
 
@@ -32,8 +77,10 @@ Items are put in one at a time, from a sequence, into the first open bin that ta
 bin: of the kind that costs least per volume, or in a second run of the portfolio the one that costs
 least, whichever gives the cheaper plan; afterwards every bin tries to move its content into a
 cheaper kind). The positions tried in a bin are the extreme points of the boxes already
-in it (Crainic, Perboli & Tadei 2008): the corners of each box, moved along the other axes until
-they touch a box or a wall. A position is taken when the item fits there and stands. A portfolio of
+in it (Crainic, Perboli & Tadei 2008): the corners of each box, both as they are and moved along the
+other axes until they touch a box or a wall. (The corner itself matters: the moved copy of the corner
+on top of a box slides off it, and the supported place on that box is then never offered. Keeping both
+took the 196-box pallet job from 5 pallets to 4.) A position is taken when the item fits there and stands. A portfolio of
 runs (four sequences by volume, base, longest side and height, each in two fill orders, layers and
 walls, with two ways to pick among the free positions) is tried and the best plan by the objective
 wins: fewest unplaced items, then lowest cost, then fewest bins, then the fullest bins.
@@ -56,12 +103,29 @@ of gravity and the support loads, and plans with fewer such bins win over cheape
 While some item has a load limit, loads are tracked as boxes are placed, and a box is never slipped
 in under one that is already there (its weight would then have been shared out without it).
 
+## Search
+
+With `iterations` above 0, the best constructive plan is improved by late acceptance hill climbing
+(Burke & Bykov 2008) over the sequence in which the items are put in: two items swapped, one moved, or
+a piece of the emptiest bin moved forward so that it may fit into a bin before that. Items only move
+within the run of items with the same stop. A step is a full decode, a candidate is kept when it is no
+worse than the current plan or than the plan 40 steps ago, and the plan is judged by the same
+objective as the constructive runs. The generator is seeded by `seed`.
+
+It helps on some jobs and not on others. On 40 random jobs of about 60 boxes, 300 steps took the bins
+from 112 to 106 (6 jobs better) at 86 ms a job; the gain flattens out (24 jobs: 71 bins, 66 at 300
+steps, 63 at 3 000 steps for 1.2 s a job). On the 196-box pallet jobs it found nothing in 1 000
+steps; on the trailer it saved a whole trailer at 300 steps (support 0.8).
+
+`maxEvaluations` (default 40 million placements tried) is a limit on the work, not on the time: no
+constructive run after the first and no search step is started past it, so a big instance ends with a
+valid plan that is less tight, and the same plan on every machine.
+
 ## Reproducible
 
 No clock, no operating-system randomness, no floating-point arithmetic in any rule, no hash-map
-iteration. The same instance and config give the same bytes. `src/rng.rs` holds the generator for
-the search that comes later (xoshiro256++ seeded through splitmix64, known-answer tests from a
-separate Python port).
+iteration. The same instance and config give the same bytes. `src/rng.rs` holds the generator of the
+search (xoshiro256++ seeded through splitmix64, known-answer tests from a separate Python port).
 
 ## Limits
 
@@ -76,7 +140,7 @@ separate Python port).
 ## Testing
 
 ```bash
-cargo test                                   # unit, behaviour and 200 random instances
+cargo test                                   # unit, behaviour and 200 random instances (some with search steps)
 cargo test --release -- --ignored            # 5 000 random instances against the validator
 cargo run --release --example bench          # the benchmark families
 ```

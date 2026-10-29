@@ -207,8 +207,14 @@ pub fn validate(instance: &Instance, config: &Config, solution: &Solution) -> Ve
         {
             problems.push(format!("bin {b}: reports that its balance is {}met, it is {}", if load.balance_ok { "" } else { "not " }, if met { "met" } else { "not met" }));
         }
+        // compared with a tolerance of a millionth of a millimetre: a plan may have been through another JSON implementation
         let cog = (weight > 0).then(|| [mx as f64 / (2.0 * weight as f64), my as f64 / (2.0 * weight as f64)]);
-        if load.cog != cog
+        let same_cog = match (load.cog, cog)
+        {
+            (Some(reported), Some(real)) => reported.iter().zip(real).all(|(a, b)| (a - b).abs() <= 1e-6 * b.abs().max(1.0)),
+            (reported, real) => reported == real,
+        };
+        if !same_cog
         {
             problems.push(format!("bin {b}: reports the centre of gravity {:?}, it is {cog:?}", load.cog));
         }
@@ -290,7 +296,7 @@ mod tests
                 (0..3).map(|k| items[p.item].dims[perm[k]] as u64).product::<u64>()
             })
             .sum();
-        Solution { bins: vec![BinLoad { bin: 0, placements, volume, weight: 0, cog: None, axle_loads: vec![], balance_ok: true }], unplaced, stats: Stats { evaluations: 0, bins: 1, cost: 1.0 } }
+        Solution { bins: vec![BinLoad { bin: 0, placements, volume, weight: 0, cog: None, axle_loads: vec![], balance_ok: true }], unplaced, stats: Stats { evaluations: 0, iterations: 0, bins: 1, cost: 1.0 } }
     }
 
     /// Two cubes side by side on the floor and the long board across them.
@@ -422,7 +428,7 @@ mod tests
                 vec![((2 * weight as i128 * rear.at as i128 - moment(0)).max(0) as u128).div_ceil(span2) as u64, ((moment(0) - 2 * weight as i128 * front.at as i128).max(0) as u128).div_ceil(span2) as u64]
             })
             .unwrap_or_default();
-        Solution { bins: vec![BinLoad { bin: 0, placements, volume, weight, cog, axle_loads, balance_ok }], unplaced: vec![], stats: Stats { evaluations: 0, bins: 1, cost: 1.0 } }
+        Solution { bins: vec![BinLoad { bin: 0, placements, volume, weight, cog, axle_loads, balance_ok }], unplaced: vec![], stats: Stats { evaluations: 0, iterations: 0, bins: 1, cost: 1.0 } }
     }
 
     fn from_json(json: &str) -> Instance

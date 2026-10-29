@@ -1,0 +1,378 @@
+{
+  "config": {},
+  "instance": {
+    "bins": [
+      {
+        "dims": [
+          1200,
+          800,
+          1800
+        ]
+      }
+    ],
+    "items": [
+      {
+        "count": 7,
+        "dims": [
+          310,
+          413,
+          231
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 2,
+        "dims": [
+          164,
+          230,
+          300
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 2,
+        "dims": [
+          307,
+          440,
+          307
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 2,
+        "dims": [
+          134,
+          232,
+          293
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 2,
+        "dims": [
+          333,
+          213,
+          407
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 6,
+        "dims": [
+          155,
+          172,
+          202
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 4,
+        "dims": [
+          156,
+          327,
+          147
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 7,
+        "dims": [
+          173,
+          270,
+          326
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 7,
+        "dims": [
+          163,
+          244,
+          387
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 4,
+        "dims": [
+          206,
+          412,
+          420
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 5,
+        "dims": [
+          265,
+          455,
+          136
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 7,
+        "dims": [
+          335,
+          324,
+          272
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 1,
+        "dims": [
+          346,
+          420,
+          375
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 4,
+        "dims": [
+          193,
+          492,
+          193
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 7,
+        "dims": [
+          499,
+          420,
+          276
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 1,
+        "dims": [
+          254,
+          275,
+          354
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 7,
+        "dims": [
+          485,
+          418,
+          360
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 2,
+        "dims": [
+          485,
+          137,
+          102
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 5,
+        "dims": [
+          389,
+          204,
+          217
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 7,
+        "dims": [
+          211,
+          203,
+          126
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 6,
+        "dims": [
+          333,
+          507,
+          158
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 7,
+        "dims": [
+          452,
+          438,
+          327
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 4,
+        "dims": [
+          355,
+          450,
+          197
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 7,
+        "dims": [
+          362,
+          245,
+          214
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 5,
+        "dims": [
+          419,
+          499,
+          246
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 5,
+        "dims": [
+          311,
+          247,
+          211
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 4,
+        "dims": [
+          405,
+          318,
+          330
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 2,
+        "dims": [
+          161,
+          443,
+          292
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 7,
+        "dims": [
+          293,
+          363,
+          317
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 5,
+        "dims": [
+          421,
+          263,
+          147
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 4,
+        "dims": [
+          157,
+          401,
+          153
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 7,
+        "dims": [
+          407,
+          121,
+          165
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 6,
+        "dims": [
+          461,
+          495,
+          252
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 6,
+        "dims": [
+          180,
+          264,
+          326
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 8,
+        "dims": [
+          214,
+          485,
+          98
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 2,
+        "dims": [
+          138,
+          165,
+          354
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 2,
+        "dims": [
+          229,
+          428,
+          109
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 8,
+        "dims": [
+          121,
+          345,
+          190
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 6,
+        "dims": [
+          165,
+          327,
+          379
+        ],
+        "orientations": 3
+      },
+      {
+        "count": 6,
+        "dims": [
+          485,
+          451,
+          194
+        ],
+        "orientations": 3
+      }
+    ],
+    "name": "pallet-mix"
+  },
+  "name": "pallet-mix"
+}
