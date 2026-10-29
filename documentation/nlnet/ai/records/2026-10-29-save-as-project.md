@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-10-29 → 2026-10-29 |
+| Dates | 2026-10-27 → 2026-10-29 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code as agent |
 | Human | Mark van der Net: wrote the prompts, chose to merge Projects into develop in a worktree, reviewed the flow and the buttons, chose the commit split and how develop is updated |
@@ -12,9 +12,11 @@
 ## Prompts (verbatim, local time)
 
 ```
+2026-10-27 20:40 +0100  The wizard flow should be a bit better. When you click on a house type and scroll down it should stop at the step 2. Also give the configurator less height, it also could have more width on large screens. Then another thing: I want the configurator to broadcast metrics on execute. This way the wizard can pick up the full price and use it as start price ("Full Service"). Also area square meters. The different scenarios "doe het zelf volledig", "bouwpakket" and "afwerking" are seperate factors over that price. Local ecopower is a seperate factor. Make that 5% of full service price.
 2026-10-29 14:28 +0100  I want to add some things to the configurator: "Save as project" button (next to "View source" and "Embed" - it should go to archiyou login page (if not already logged in) (save script values in background, also for registration) - when user is logged in it should navigate to new project with the configurator and param values tied to the project. Then have users follow the existing logic (client info etc). In the configurator showing a "save as project" should be an option (default: on).
 2026-10-29 15:08 +0100  It becomes a bit crowded with these button on the top right. Can you make the button behave like this: just circles with the icons in it, when you mouse over the button width animates and the text is shown. Do that for all these buttons. If not already make these button consistent by making it one component
 2026-10-29 17:58 +0100  Can you merge the projects worktree into develop
+2026-10-29 19:45 +0100  go ahead
 ```
 
 ## Plan (agent output, reviewed by the human before implementation)
@@ -45,6 +47,11 @@ No plan mode; the agent asked and the human decided:
    panel shows) and `expanded` (Publish as configurator) keep it open; the label stays the accessible
    name; reduced motion respected; 44 px targets on touch.
 
+5. **Metrics broadcast (carried along).** On 2026-10-27 the configurator was made to post a `metrics`
+   message after every run (the archiyou-sites wizard takes its full-service price and area from it,
+   `configurator.ts` and `host-events.ts`). That edit was uncommitted in the develop checkout and went
+   into the worktree with the merge, so it is part of c260f6a.
+
 ## Review and decisions by the human
 
 - Chose merging Projects into develop, then a worktree when the develop checkout turned out to be in use.
@@ -57,7 +64,8 @@ No plan mode; the agent asked and the human decided:
 
 | Commit | Subject | Prompt it answers |
 |---|---|---|
-| c260f6a | Merge projects into develop | the first prompt, with the human's choice "Merge in a worktree" |
+| c260f6a | Merge projects into develop (also carries the metrics broadcast) | the first prompt, with the human's choice "Merge in a worktree"; the 2026-10-27 20:40 prompt |
 | 8933354 | Configurator: Save as project, round viewer buttons | the first and second prompt |
 | d5a0596 | Merge branch 'develop' into projects-merge (no generated code) | "Can you merge the projects worktree into develop" |
-| (this commit) | Close the disclosure record for Save as project | the unit's end |
+| d6e14de | Close the disclosure record for Save as project | the unit's end |
+| (this commit) | Note the metrics broadcast in the Save as project record | "go ahead" |
