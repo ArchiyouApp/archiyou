@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-10-28 → (open) |
+| Dates | 2026-10-28 → 2026-10-29 |
 | Model | Claude Sonnet 5.5 (claude-sonnet-5-5), Claude Code agent |
 | Tool | Claude Code as agent (the plan was worked out in conversation, no separate plan mode) |
 | Human | Mark van der Net: asked for deterministic 2D and 3D box fitting in Rust compiled to WASM, approved the plan, reviews the code |
@@ -10,7 +10,11 @@
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+```
+2026-10-28 21:07 +0100  im looking for good 2D and 3D box fitting. 2D mostly related to cutting rectangular parts out of boards. Im looking for deterministic algoritms prefereable. I want rust to compile to WASM
+2026-10-28 21:47 +0100  so GDRR has guillotene oto?
+2026-10-28 21:50 +0100  yes, start with the GDRR changes. Then give me an advice: shall I add bin-packing for 1D and 3D? (of course lazyly loaded)
+```
 
 ## Plan (agent output, reviewed by the human before implementation)
 
@@ -70,7 +74,12 @@ miss `number_ranges_demo`; both were red before this work.
 ## Review and decisions by the human
 - Required determinism ("deterministic algorithms preferable") and Rust compiled to WASM.
 - Asked whether GDRR is guillotine-only too (yes), then approved the GDRR changes.
+- Asked for advice on adding the `bin-packing` crate for 1D and 3D, lazily loaded. The advice was given in the
+  conversation (no code); the 3D follow-up became its own unit (record 2026-10-29-pack3d).
+- Chose the commit subject and the description from the proposals.
 
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| eb19def | make.pack: reproducible layouts, seed, rotation lock, stages, first cut | 2026-10-28 21:50 |
+| (this commit) | see the commit | 2026-10-28 21:50 |
