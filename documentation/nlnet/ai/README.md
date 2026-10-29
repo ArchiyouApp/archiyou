@@ -145,4 +145,5 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-10-27 | [Animator: animate params from the Add menu](./records/2026-10-27-animate-params.md) | Claude Opus 5.5 | animator → develop | 1 |
 | 2026-10-28 | [GDRR: reproducible layouts, per-part rotation, stages and first cut](./records/2026-10-28-gdrr-reproducible.md) | Claude Sonnet 5.5 | develop | 2 |
 | 2026-10-29 | [Mesh.area() and the centre of a flat mesh in Rust](./records/2026-10-29-mesh-area-buffer.md) | Claude Opus 5.5 | develop | 2 |
-| 2026-10-05 | [Projects: requests, configurations, deliveries and client activity](./records/2026-10-05-projects.md) | Claude Opus 5.5 (research and design subagents on Claude Fable 5.1) | projects (WIP, not merged) | 6 |
+| 2026-10-05 | [Projects: requests, configurations, deliveries and client activity](./records/2026-10-05-projects.md) | Claude Opus 5.5 (research and design subagents on Claude Fable 5.1) | projects (WIP) → develop | 6 |
+| 2026-10-29 | [Save as project from a configurator, and Projects merged into develop](./records/2026-10-29-save-as-project.md) | Claude Opus 5.5 | projects-merge → develop | 4 |

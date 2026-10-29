@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-10-29 → (open) |
+| Dates | 2026-10-29 → 2026-10-29 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code as agent |
 | Human | Mark van der Net: wrote the prompts, chose to merge Projects into develop in a worktree, reviewed the flow and the buttons, chose the commit split and how develop is updated |
@@ -54,4 +54,10 @@ No plan mode; the agent asked and the human decided:
 - Chose the commit split, and that develop is fast-forwarded only once the other session's checkout is clean.
 
 ## Commits
-(filled when the unit closes)
+
+| Commit | Subject | Prompt it answers |
+|---|---|---|
+| c260f6a | Merge projects into develop | the first prompt, with the human's choice "Merge in a worktree" |
+| 8933354 | Configurator: Save as project, round viewer buttons | the first and second prompt |
+| d5a0596 | Merge branch 'develop' into projects-merge (no generated code) | "Can you merge the projects worktree into develop" |
+| (this commit) | Close the disclosure record for Save as project | the unit's end |
