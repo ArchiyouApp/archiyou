@@ -35,10 +35,20 @@ const plan = packer.solve({
 // plan.bins[0].placements: { item, copy, orientation, x, y, z }, plan.unplaced, plan.stats
 ```
 
-Lengths are whole millimetres, weights whole grams. `solve` throws for input that makes no sense, and
-never returns a plan that breaks a hard rule. The module is loaded from an inlined base64 string, so it
+Lengths are whole millimetres, weights whole grams. An item's `orientations` is `'fixed'`, `'upright'`,
+`'free'`, `{ up: ['x', 'z'], yaw: false }` (the axes that may point up and whether it may be turned about
+the vertical) or the bit mask itself (`orientationMask` makes one). `solve` throws for input that makes no
+sense, and never returns a plan that breaks a hard rule. The module is loaded from an inlined base64 string, so it
 works in every bundler; `ts/Packer3D.ts` reaches it and the glue through dynamic imports, which is what
 lets `@archiyou/core` load it only for scripts that plan a load.
+
+### In Archiyou scripts
+
+`@archiyou/core` wraps this in `make.pack3d(shapes, { bins: [...] })`: it measures the shapes (their
+bounding boxes, z up, in the units of the model), takes weights in kg from the options or from a shape's
+material, calls `solve`, and returns copies of the shapes turned and moved into place, one group per bin with
+the outline of the bin, with the report at `modeler.stats`. Core loads this package on demand, only for a
+script that calls `pack3d(`; see the TSDoc of `Make.pack3d` for the options and three worked examples.
 
 ## Building
 

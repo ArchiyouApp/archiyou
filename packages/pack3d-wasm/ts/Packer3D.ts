@@ -36,8 +36,9 @@ export interface Item
     dims: Vec3;
     /** How many identical items there are (default 1). */
     count?: number;
-    /** Which orientations are allowed, as a bit mask over the six orientations. Build one with {@link orientationMask}. */
-    orientations?: number;
+    /** Which orientations are allowed: `'fixed'`, `'upright'`, `'free'`, the axes that may point up, or the bit mask over
+     *  the six orientations itself ({@link orientationMask} turns the first kinds into the last). Default: free. */
+    orientations?: number | Orientations;
     /** Weight in grams (default 0). */
     weight?: number;
     /** The weight in grams that may rest on the item, directly or through others; absent for no limit, 0 for nothing. */
@@ -211,6 +212,17 @@ const whole = (value: unknown, what: string, min = 0): void =>
     }
 };
 
+/** The instance as the module reads it: the orientations as bit masks. */
+function toWire(instance: Instance): unknown
+{
+    return {
+        ...instance,
+        items: instance.items.map(item => (item.orientations === undefined || typeof item.orientations === 'number'
+            ? item
+            : { ...item, orientations: orientationMask(item.orientations) })),
+    };
+}
+
 /** Checks that give a plain message for what the module would reject with a serde error. */
 function check(instance: Instance, options: Options): void
 {
@@ -226,7 +238,7 @@ function check(instance: Instance, options: Options): void
         if (item.weight !== undefined) whole(item.weight, `item ${i}: weight in grams`);
         if (item.maxLoad !== undefined && item.maxLoad !== null) whole(item.maxLoad, `item ${i}: maxLoad in grams`);
         if (item.stop !== undefined) whole(item.stop, `item ${i}: stop`);
-        if (item.orientations !== undefined) whole(item.orientations, `item ${i}: orientations`, 1);
+        if (typeof item.orientations === 'number') whole(item.orientations, `item ${i}: orientations`, 1);
     });
     instance.bins.forEach((bin, i) =>
     {
@@ -297,7 +309,7 @@ export class Packer3D
         check(instance, options);
         try
         {
-            return JSON.parse(module.solve(JSON.stringify(instance), config(options))) as Solution;
+            return JSON.parse(module.solve(JSON.stringify(toWire(instance)), config(options))) as Solution;
         }
         catch (error)
         {
@@ -312,7 +324,7 @@ export class Packer3D
         const module = this.#loaded();
         try
         {
-            return JSON.parse(module.validate(JSON.stringify(instance), config({ ...options, iterations: 0 }), JSON.stringify(solution))) as string[];
+            return JSON.parse(module.validate(JSON.stringify(toWire(instance)), config({ ...options, iterations: 0 }), JSON.stringify(solution))) as string[];
         }
         catch (error)
         {
