@@ -23,7 +23,8 @@ pub fn generate_instance(json_instance: &mut JsonInstance, config: &Config) -> I
             part_id,
             json_part.length,
             json_part.height,
-            if config.rotation_allowed { None } else { Some(Rotation::Default) },
+            // archiyou: a part can lock its own rotation; without a say it follows the config
+            if json_part.can_rotate.unwrap_or(config.rotation_allowed) { None } else { Some(Rotation::Default) },
         );
         let demand = json_part.demand;
         parts.push((parttype, demand));
@@ -41,12 +42,18 @@ pub fn generate_instance(json_instance: &mut JsonInstance, config: &Config) -> I
 
         let max_stages = config.max_stages.unwrap_or(u8::MAX);
 
+        // archiyou: the direction of the first cut can be fixed per sheet
+        let first_cut = json_sheet.first_cut.as_ref().map(|orientation| match orientation {
+            JsonOrientation::H => Orientation::Horizontal,
+            JsonOrientation::V => Orientation::Vertical,
+        });
+
         let sheettype = SheetType::new(
             sheet_id,
             json_sheet.length,
             json_sheet.height,
             sheet_value,
-            None,
+            first_cut,
             max_stages
         );
 

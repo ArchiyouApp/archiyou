@@ -17,7 +17,7 @@ import type * as brepTypes from './brep/index';
 import { Table } from '../calc/Table';
 import { roundTo } from '../utils';
 
-import { BinPacker } from '@archiyou/gdrr2bp-wasm';
+import { BinPacker, DEFAULT_ITERATIONS } from '@archiyou/gdrr2bp-wasm';
 import { collectParts } from './parts';
 import type { CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm';
 
@@ -43,6 +43,20 @@ function loadSharedBinPacker(): Promise<BinPacker>
     }
     return _sharedBinPackerReady;
 }
+
+/** Iterations of the nesting that only feeds the stats of make.boarding(): an estimate, so it keeps
+ *  the small budget it always had instead of the larger one of a pack() call. */
+const BOARDING_STATS_ITERATIONS = 200;
+
+/** The solver works in whole units. A part is rounded up and the sheet down, so a part never comes
+ *  out smaller than it is; 1e-6 of tolerance keeps float noise from costing a unit (600.0000001
+ *  stays 600). */
+const unitsUp = (value: number): number => Math.ceil(value - 1e-6);
+const unitsDown = (value: number): number => Math.floor(value + 1e-6);
+
+/** The solver's name for the direction of the first cut: horizontal cuts run along the sheet's
+ *  length and leave strips stacked along its height, vertical ones the other way round. */
+const FIRST_CUT_DIRECTION = { horizontal: 'H', vertical: 'V' } as const;
 
 export type PackOptions = Static<typeof PackOptionsSchema>;
 
@@ -1392,6 +1406,7 @@ export class Make
             height: o.stockHeight,
             kerf: o.cutMargin,
             rotation: false,
+            maxIterations: BOARDING_STATS_ITERATIONS,
         }).tmp();
 
         // pack() groups its results per sheet (sheet1, sheet2, …): one sheet = one stock piece
@@ -1503,9 +1518,19 @@ export class Make
      * @param options The sheets and the solver:
      *   - width, height: one sheet (default 2440 x 1220)
      *   - kerf: gap between the parts, like the saw blade (default 0)
-     *   - rotation: allow turning parts 90° (default true)
-     *   - maxIterations: cap on the solver's rounds (default 200)
-     *   - maxTime: time budget of the solver in seconds (default none)
+     *   - rotation: allow turning parts 90° (default true). Pass a function `(shape, index) => boolean`
+     *     to decide per part: a part it returns false for keeps the orientation it has when laid flat,
+     *     its x along the sheet's width (for a part with grain)
+     *   - seed: the solver's random choices (default 0). The same parts and seed always give the same
+     *     layout, on every machine; another seed tries another layout
+     *   - maxIterations: cap on the solver's rounds (default 2000)
+     *   - maxStages: most cutting stages per sheet; 2 cuts strips first and then pieces out of each
+     *     strip, as on a panel saw (default unlimited)
+     *   - firstCut: 'horizontal' or 'vertical' fixes the direction of the first cut on every sheet:
+     *     horizontal cuts run along the sheet's width and leave strips stacked along its height,
+     *     vertical cuts the other way round (default: the solver chooses)
+     *   - maxTime: time budget of the solver in seconds (default none). It ends the run by the clock,
+     *     so the layout then depends on how fast the machine is: prefer maxIterations
      * @returns A group 'packed' of the placed copies with the sheet outlines, side by side
      *   along x. The solver's statistics are at `modeler.stats`.
      *
@@ -1513,6 +1538,10 @@ export class Make
      * // Nest the panels of a cabinet onto sheets, with a 4 mm saw kerf
      * panels = collection(box(800, 400, 18), box(800, 400, 18), box(600, 400, 18), box(564, 600, 18))
      * sheets = make.pack(panels, { width: 2440, height: 1220, kerf: 4 })
+     *
+     * @example
+     * // Panels named 'door…' have grain along x and must not be turned; the rest may
+     * sheets = make.pack(panels, { width: 2440, height: 1220, kerf: 4, rotation: (panel) => !panel.name().startsWith('door') })
      */
     public pack(shapes: ShapeCollection, options: PackOptions): ShapeCollection
     {
@@ -1520,14 +1549,17 @@ export class Make
             width: 2440,
             height: 1220,
             kerf: 0,
-            // Bound search by iterations, not wall-clock: the GDRR solver finds the
-            // optimal layout for small jobs almost instantly but would otherwise burn
-            // the full maxTime budget. 200 iterations is instant for a handful of
-            // parts and still explores meaningfully for larger nestings. maxTime is
-            // left opt-in (null) as a hard cap for very large jobs.
+            // Bound the search by iterations, not by the clock: the same parts then give the same
+            // layout on every machine (maxTime ends the run by the clock, so it stays opt-in as a
+            // hard cap for very large jobs). 2000 iterations take about 100 ms for a few hundred
+            // parts, and on the cabinet jobs measured it is enough for the sheet count not to
+            // depend on the seed; 200 was not.
             maxTime: null,
-            maxIterations: 200,
-            rotation: true
+            maxIterations: DEFAULT_ITERATIONS,
+            rotation: true,
+            seed: 0,
+            maxStages: null,
+            firstCut: null
         };
 
         const opts = { ...DEFAULT_PACK_OPTIONS, ...options };
@@ -1573,11 +1605,15 @@ export class Make
         const bp = this._binPacker;
         const kerf = opts.kerf;
 
+        // Whether a shape may be turned: one answer for all, or asked per shape (parts with grain)
+        const mayTurn = (s: any, index: number): boolean =>
+            (typeof opts.rotation === 'function') ? Boolean(opts.rotation(s, index)) : opts.rotation;
+
         // Copy each shape, lay flat, record 2D footprint
-        type PreparedShape = { shape: any; fw: number; fh: number };
+        type PreparedShape = { shape: any; fw: number; fh: number; canRotate: boolean };
         const prepared: PreparedShape[] = [];
 
-        shapes.forEach(s =>
+        shapes.forEach((s, index) =>
         {
             const copy: any = (s as any).copy();
             if (typeof copy.layflat === 'function') copy.layflat();
@@ -1586,7 +1622,8 @@ export class Make
             prepared.push({
                 shape: copy,
                 fw: bb.width() as number,
-                fh: bb.depth() as number
+                fh: bb.depth() as number,
+                canRotate: mayTurn(s, index)
             });
         });
 
@@ -1594,12 +1631,13 @@ export class Make
 
         // Group shapes with identical footprints so the solver can treat them as
         // interchangeable (demand > 1), giving it more freedom to find a tighter layout.
-        type DimGroup = { fw: number; fh: number; indices: number[] };
+        // Parts that may be turned and parts that may not are never the same kind.
+        type DimGroup = { fw: number; fh: number; canRotate: boolean; indices: number[] };
         const dimMap = new Map<string, DimGroup>();
-        prepared.forEach(({ fw, fh }, i) =>
+        prepared.forEach(({ fw, fh, canRotate }, i) =>
         {
-            const key = `${Math.round(fw + kerf)}x${Math.round(fh + kerf)}`;
-            if (!dimMap.has(key)) dimMap.set(key, { fw, fh, indices: [] });
+            const key = `${unitsUp(fw + kerf)}x${unitsUp(fh + kerf)}${canRotate ? '' : ' fixed'}`;
+            if (!dimMap.has(key)) dimMap.set(key, { fw, fh, canRotate, indices: [] });
             dimMap.get(key)!.indices.push(i);
         });
         const groups = Array.from(dimMap.values());
@@ -1607,11 +1645,12 @@ export class Make
         const groupCursors = groups.map(() => 0);
 
         const parts: Part[] = groups.map((g, gi) => ({
-            length: Math.round(g.fw + kerf),
-            height: Math.round(g.fh + kerf),
+            length: unitsUp(g.fw + kerf),
+            height: unitsUp(g.fh + kerf),
             demand: g.indices.length,
             value: 1,
-            reference: gi
+            reference: gi,
+            canRotate: g.canRotate
         }));
 
         // Every part carries one kerf, so the sheet does too: n parts then fit when the parts
@@ -1620,19 +1659,22 @@ export class Make
             name: 'pack',
             sheets: [
                 {
-                    length: Math.round(opts.width + kerf),
-                    height: Math.round(opts.height + kerf),
+                    length: unitsDown(opts.width + kerf),
+                    height: unitsDown(opts.height + kerf),
                     cost: 1,
-                    stock: null
+                    stock: null,
+                    firstCut: opts.firstCut ? FIRST_CUT_DIRECTION[opts.firstCut] : null
                 }
             ],
             parts
         };
 
         const solution = bp.solve(instance, {
-            rotationAllowed: opts.rotation,
+            rotationAllowed: true, // every part carries its own say, see canRotate above
             maxRunTime: opts.maxTime,
-            maxRRIterations: opts.maxIterations
+            maxRRIterations: opts.maxIterations,
+            seed: opts.seed,
+            maxStages: opts.maxStages
         });
 
         const SHEET_MARGIN = 100;
@@ -1665,16 +1707,17 @@ export class Make
                 const gi = solution.parts[pl.partIndex].reference;
                 if (gi === null || gi === undefined) continue;
                 const idx = groups[gi as number].indices[groupCursors[gi as number]++];
-                const { shape, fw, fh } = prepared[idx];
+                const { shape, fw, fh, canRotate } = prepared[idx];
 
-                // Determine whether the solver rotated this part (length/height swapped)
+                // Determine whether the solver rotated this part (length/height swapped); a part
+                // that is not allowed to turn never was, however close its sides are
                 const fitsNormal =
                     Math.abs(pl.length - (fw + kerf)) < tol &&
                     Math.abs(pl.height - (fh + kerf)) < tol;
                 const fitsRotated =
                     Math.abs(pl.length - (fh + kerf)) < tol &&
                     Math.abs(pl.height - (fw + kerf)) < tol;
-                if (!fitsNormal && fitsRotated) shape.rotateZ(90);
+                if (canRotate && !fitsNormal && fitsRotated) shape.rotateZ(90);
 
                 const bb = shape.bbox?.();
                 if (!bb) continue;

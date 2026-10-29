@@ -13,6 +13,12 @@
 //!   - `mimalloc` global allocator and `ctrlc` handler removed (no wasm support)
 //!   - the per-thread monitor is bypassed; `lahc` enforces `maxRunTime` itself
 //!   - logging macros route to `console.log` instead of stdout
+//!
+//! Changes by Archiyou (marked `// archiyou:`):
+//!   - every run is seeded (`seed` in the config, `DEFAULT_SEED` without) and the generator is a
+//!     fixed algorithm (`util::rng`), so the same instance, config and seed give the same layout
+//!     on every machine; there is no OS entropy in the build any more
+//!   - `CanRotate` on a part and `FirstCut` on a sheet in the instance JSON
 
 use std::cmp::Ordering;
 use std::path::PathBuf;
@@ -47,8 +53,11 @@ pub const COST_COMPARATOR: fn(&Cost, &Cost) -> Ordering = |a: &Cost, b: &Cost| {
     }
 };
 
-/// Fixes the RNG seed when true (reproducible runs). Kept false to match upstream.
-pub const DETERMINISTIC_MODE: bool = false;
+/// archiyou: the seed used when the config has none (this replaces upstream's `DETERMINISTIC_MODE`
+/// switch: runs are always seeded). The default is fixed rather than derived from the instance, so
+/// a dimension that changes a little leaves the search on much the same path and a parametric
+/// model keeps a steady layout.
+pub const DEFAULT_SEED: u64 = 0;
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]

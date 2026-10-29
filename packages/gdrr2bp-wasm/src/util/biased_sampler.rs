@@ -1,5 +1,5 @@
 use rand::RngExt;
-use rand::rngs::SmallRng;
+use crate::util::rng::PortableRng;
 
 const DEFAULT_N_SAMPLES: usize = 3;
 const DEFAULT_CHANCE_ARRAY: [f64; DEFAULT_N_SAMPLES] = [0.625, 0.875, 1.0];
@@ -37,7 +37,7 @@ impl<T, V, const N: usize> BiasedSampler<T, V, N> where V: Ord {
         }
     }
 
-    pub fn sample(&self, random: &mut SmallRng) -> Option<&T> {
+    pub fn sample(&self, random: &mut PortableRng) -> Option<&T> {
         if self.entries.is_empty() {
             return None;
         }

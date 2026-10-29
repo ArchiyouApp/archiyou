@@ -34,6 +34,9 @@ pub struct JsonSheetType {
     pub cost: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference: Option<usize>,
+    /// archiyou: direction of the first cut on this sheet, `H` or `V`; absent = the solver chooses
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_cut: Option<JsonOrientation>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -45,6 +48,9 @@ pub struct JsonPartType {
     pub value: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference: Option<usize>,
+    /// archiyou: `false` keeps the part in the orientation given (grain); absent = `rotationAllowed`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_rotate: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

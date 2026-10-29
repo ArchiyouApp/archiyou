@@ -16,6 +16,9 @@ pub struct Config {
     pub n_threads: usize,
     pub sheet_valuation_mode : SheetValuationMode,
     pub max_stages: Option<u8>,
+    /// archiyou: seed of the random choices. The same instance, config and seed give the same
+    /// layout on every machine; another seed explores another one. `DEFAULT_SEED` when absent.
+    pub seed: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize)]

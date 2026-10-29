@@ -36,6 +36,10 @@ export interface Sheet
     cost: number;
     /** Optional caller id, echoed back on the matching sheet in the solution. */
     reference?: number | null;
+    /** Direction of the first cut on this sheet. `'H'` cuts straight across the length, so the
+     *  sheet falls into strips stacked along its height; `'V'` cuts across the height, so it falls
+     *  into strips side by side along its length. Omit/null to let the solver choose. */
+    firstCut?: Orientation | null;
 }
 
 /** A part (item) that must be cut from the sheets. */
@@ -48,6 +52,9 @@ export interface Part
     value: number;
     /** Optional caller id, echoed back on the matching part in the solution. */
     reference?: number | null;
+    /** `false` keeps this part in the orientation given, its length along the sheet's length (for
+     *  a part with grain). Omit/null to follow `BinPackerOptions.rotationAllowed`. */
+    canRotate?: boolean | null;
 }
 
 /** A bin-packing problem instance: the parts to place and the sheets available. */
@@ -58,16 +65,29 @@ export interface Instance
     parts: Part[];
 }
 
-/** Algorithm parameters. At least one of `maxRunTime` / `maxRRIterations` should
- *  be set, otherwise the solver runs until its minimum material limit is reached
- *  (effectively unbounded for large instances). */
+/** Iterations used when neither `maxRRIterations` nor `maxRunTime` is given. Without a budget the
+ *  solver runs until it reaches a material bound, which can take very long. 2000 takes about
+ *  100 ms for a few hundred parts, and on the cabinet jobs it was measured on it is enough for the
+ *  sheet count to stop depending on the seed (200 left it to chance). */
+export const DEFAULT_ITERATIONS = 2000;
+
+/** Algorithm parameters.
+ *
+ *  A run is reproducible: the same instance, options and `seed` give the same solution on every
+ *  machine, natively and in WASM. That holds while the budget is `maxRRIterations`; a
+ *  `maxRunTime` ends the run by the clock, so the result then depends on the machine's speed. */
 export interface BinPackerOptions
 {
-    /** Wall-clock budget in seconds. Omit/null for no time limit. */
+    /** Wall-clock budget in whole seconds, on top of `maxRRIterations`. Makes the result depend on
+     *  how fast the machine is: prefer `maxRRIterations`. Omit/null for no time limit. */
     maxRunTime?: number | null;
-    /** Hard cap on ruin & recreate iterations. Omit/null for no limit. */
+    /** Hard cap on ruin & recreate iterations. Omit/null for no limit, except when `maxRunTime` is
+     *  not set either: then `DEFAULT_ITERATIONS` applies. */
     maxRRIterations?: number | null;
-    /** Allow 90° rotation of parts. Default `true`. */
+    /** Seed of the solver's random choices: a non-negative integer, default `0`. The same seed
+     *  gives the same layout, another seed explores another one. */
+    seed?: number;
+    /** Allow 90° rotation of parts. Default `true`. A part's own `canRotate` takes precedence. */
     rotationAllowed?: boolean;
     /** Average number of nodes removed per ruin step. Default `5`. */
     avgNodesRemoved?: number;
@@ -79,7 +99,8 @@ export interface BinPackerOptions
     historyLength?: number;
     /** How sheets are valued when comparing solutions. Default `'area'`. */
     sheetValuationMode?: SheetValuationMode;
-    /** Max number of guillotine cutting stages. Omit/null for unlimited. */
+    /** Max number of guillotine cutting stages per sheet (2: strips first, then pieces out of each
+     *  strip, as on a panel saw). Omit/null for unlimited. */
     maxStages?: number | null;
 }
 
@@ -135,7 +156,7 @@ export interface Solution
 type WasmSolve = (inputJson: string, configJson: string) => string;
 
 /** Default algorithm options, merged with whatever the caller passes to `solve`. */
-const DEFAULT_OPTIONS: Required<Omit<BinPackerOptions, 'maxRunTime' | 'maxRRIterations' | 'maxStages'>> = {
+const DEFAULT_OPTIONS: Required<Omit<BinPackerOptions, 'maxRunTime' | 'maxRRIterations' | 'maxStages' | 'seed'>> = {
     rotationAllowed: true,
     avgNodesRemoved: 5,
     blinkRate: 0.01,
@@ -144,13 +165,40 @@ const DEFAULT_OPTIONS: Required<Omit<BinPackerOptions, 'maxRunTime' | 'maxRRIter
     sheetValuationMode: 'area',
 };
 
+/** One WebAssembly instance per process, shared by every BinPacker. The wasm-bindgen glue keeps the
+ *  instance, and cached views of its memory, in module state: a second instance leaves the first
+ *  one reading its strings from the wrong memory ("encoded data was not valid for encoding
+ *  utf-8"). It also makes concurrent `init()` calls load the module once. */
+let sharedSolve: Promise<WasmSolve> | null = null;
+
+async function loadWasm(): Promise<WasmSolve>
+{
+    const { GDRR2BP_WASM_BASE64 } = await import('./gdrr2bp-wasm-binary');
+    const bg = await import('../pkg/gdrr2bp_wasm_bg.js');
+
+    const bytes = typeof Buffer !== 'undefined'
+        ? Buffer.from(GDRR2BP_WASM_BASE64, 'base64')
+        : Uint8Array.from(atob(GDRR2BP_WASM_BASE64), c => c.charCodeAt(0));
+
+    // Double cast: a module namespace is not structurally a WebAssembly.Imports entry —
+    // bundler resolution synthesises a `default` member on it, and that is not an
+    // ImportValue. wasm-bindgen's contract is "hand the glue module back to the module it
+    // came from", which the type system has no way to express.
+    const imports = { './gdrr2bp_wasm_bg.js': bg };
+    const { instance } = await WebAssembly.instantiate(bytes, imports as unknown as WebAssembly.Imports);
+    bg.__wbg_set_wasm(instance.exports);
+
+    return bg.solve as WasmSolve;
+}
+
 export class BinPacker
 {
     #solve: WasmSolve | null = null;
 
     /** Load and instantiate the WebAssembly module. Must be awaited before
      *  calling `solve`. Returns `this` so you can write
-     *  `const bp = await new BinPacker().init()`. Safe to call more than once.
+     *  `const bp = await new BinPacker().init()`. Safe to call more than once, also on
+     *  several BinPackers at the same time: they share one instance of the module.
      *
      *  Loads the WASM from an inlined base64 string so it works in every
      *  bundler and test environment without needing ESM WASM support. */
@@ -158,22 +206,13 @@ export class BinPacker
     {
         if (this.#solve !== null) return this;
 
-        const { GDRR2BP_WASM_BASE64 } = await import('./gdrr2bp-wasm-binary');
-        const bg = await import('../pkg/gdrr2bp_wasm_bg.js');
-
-        const bytes = typeof Buffer !== 'undefined'
-            ? Buffer.from(GDRR2BP_WASM_BASE64, 'base64')
-            : Uint8Array.from(atob(GDRR2BP_WASM_BASE64), c => c.charCodeAt(0));
-
-        // Double cast: a module namespace is not structurally a WebAssembly.Imports entry —
-        // bundler resolution synthesises a `default` member on it, and that is not an
-        // ImportValue. wasm-bindgen's contract is "hand the glue module back to the module it
-        // came from", which the type system has no way to express.
-        const imports = { './gdrr2bp_wasm_bg.js': bg };
-        const { instance } = await WebAssembly.instantiate(bytes, imports as unknown as WebAssembly.Imports);
-        bg.__wbg_set_wasm(instance.exports);
-
-        this.#solve = bg.solve as WasmSolve;
+        // a failed load is not remembered, so a later init() tries again
+        sharedSolve ??= loadWasm().catch(error =>
+        {
+            sharedSolve = null;
+            throw error;
+        });
+        this.#solve = await sharedSolve;
         return this;
     }
 
@@ -225,8 +264,8 @@ export class BinPacker
 // config, however, is already camelCase. These helpers translate to/from the
 // clean public types above and are the single place that knows the wire shape.
 
-interface WireSheet { Length: number; Height: number; Stock: number | null; Cost: number; Reference?: number | null }
-interface WirePart { Length: number; Height: number; Demand: number; Value: number; Reference?: number | null }
+interface WireSheet { Length: number; Height: number; Stock: number | null; Cost: number; Reference?: number | null; FirstCut?: Orientation | null }
+interface WirePart { Length: number; Height: number; Demand: number; Value: number; Reference?: number | null; CanRotate?: boolean | null }
 interface WireInstance { Name: string; Objects: WireSheet[]; Items: WirePart[] }
 
 interface WireConfig
@@ -241,6 +280,7 @@ interface WireConfig
     nThreads: number;
     sheetValuationMode: SheetValuationMode;
     maxStages: number | null;
+    seed: number | null;
 }
 
 interface WireNode
@@ -266,6 +306,7 @@ function toWireInstance(instance: Instance): WireInstance
             Stock: s.stock ?? null,
             Cost: s.cost,
             Reference: s.reference ?? null,
+            FirstCut: s.firstCut ?? null,
         })),
         Items: instance.parts.map((p): WirePart => ({
             Length: p.length,
@@ -273,6 +314,7 @@ function toWireInstance(instance: Instance): WireInstance
             Demand: p.demand,
             Value: p.value,
             Reference: p.reference ?? null,
+            CanRotate: p.canRotate ?? null,
         })),
     };
 }
@@ -280,17 +322,23 @@ function toWireInstance(instance: Instance): WireInstance
 function toWireConfig(options: BinPackerOptions): WireConfig
 {
     const o = { ...DEFAULT_OPTIONS, ...options };
+    if (options.seed != null && !(Number.isSafeInteger(options.seed) && options.seed >= 0))
+    {
+        throw new Error(`BinPacker.solve(): seed must be a non-negative integer, got ${options.seed}`);
+    }
     return {
         avgNodesRemoved: o.avgNodesRemoved,
         blinkRate: o.blinkRate,
         maxRunTime: options.maxRunTime ?? null,
-        maxRRIterations: options.maxRRIterations ?? null,
+        // the solver would run until a material bound with no budget at all, see DEFAULT_ITERATIONS
+        maxRRIterations: options.maxRRIterations ?? (options.maxRunTime == null ? DEFAULT_ITERATIONS : null),
         leftoverValuationPower: o.leftoverValuationPower,
         historyLength: o.historyLength,
         rotationAllowed: o.rotationAllowed,
         nThreads: 1, // ignored by the wasm build; always single-threaded
         sheetValuationMode: o.sheetValuationMode,
         maxStages: options.maxStages ?? null,
+        seed: options.seed ?? null,
     };
 }
 
@@ -302,12 +350,12 @@ const NODE_KIND: Record<WireNode['Type'], NodeKind> = {
 
 function fromWireSheet(s: WireSheet): Sheet
 {
-    return { length: s.Length, height: s.Height, stock: s.Stock, cost: s.Cost, reference: s.Reference ?? null };
+    return { length: s.Length, height: s.Height, stock: s.Stock, cost: s.Cost, reference: s.Reference ?? null, firstCut: s.FirstCut ?? null };
 }
 
 function fromWirePart(p: WirePart): Part
 {
-    return { length: p.Length, height: p.Height, demand: p.Demand, value: p.Value, reference: p.Reference ?? null };
+    return { length: p.Length, height: p.Height, demand: p.Demand, value: p.Value, reference: p.Reference ?? null, canRotate: p.CanRotate ?? null };
 }
 
 function fromWireNode(n: WireNode): CuttingNode

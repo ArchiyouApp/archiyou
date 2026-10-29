@@ -6,7 +6,6 @@ use itertools::Itertools;
 use ordered_float::NotNan;
 use rand::prelude::{IndexedRandom, SliceRandom};
 use rand::RngExt;
-use rand::rngs::SmallRng;
 
 use crate::core::cost::Cost;
 use crate::core::entities::parttype::PartType;
@@ -22,6 +21,7 @@ use crate::optimization::solutions::problem_solution::ProblemSolution;
 use crate::optimization::solutions::solution::Solution;
 use crate::util::{assertions, blink};
 use crate::util::biased_sampler::{BiasedSampler, BiasMode};
+use crate::util::rng::PortableRng;
 use crate::timed_thread_println;
 use crate::util::util;
 
@@ -38,7 +38,8 @@ pub struct GDRR<'a> {
 
 impl<'a> GDRR<'a> {
     pub fn new(instance: &'a Instance, config: &'a Config, local_sol_collector: LocalSolCollector<'a>) -> Self {
-        let problem = Problem::new(instance);
+        // archiyou: every run is seeded, see lib.rs DEFAULT_SEED
+        let problem = Problem::new(instance, config.seed.unwrap_or(crate::DEFAULT_SEED));
         leftover_valuator::set_power(config.leftover_valuation_power);
         let cost_comparator = crate::COST_COMPARATOR;
         Self {
@@ -266,7 +267,7 @@ impl<'a> GDRR<'a> {
         }
     }
 
-    fn select_next_parttype(parttypes: &[&'a PartType], insertion_option_cache: &InsertionOptionCache<'a>, rand: &mut SmallRng, config: &Config) -> &'a PartType {
+    fn select_next_parttype(parttypes: &[&'a PartType], insertion_option_cache: &InsertionOptionCache<'a>, rand: &mut PortableRng, config: &Config) -> &'a PartType {
         let mut indices = (0..parttypes.len()).collect_vec();
         indices.shuffle(rand);
 

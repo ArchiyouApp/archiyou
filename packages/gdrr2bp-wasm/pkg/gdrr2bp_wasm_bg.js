@@ -52,9 +52,6 @@ export function __wbg_error_a6fa202b58aa1cd3(arg0, arg1) {
         wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
     }
 }
-export function __wbg_getRandomValues_76dfc69825c9c552() { return handleError(function (arg0, arg1) {
-    globalThis.crypto.getRandomValues(getArrayU8FromWasm0(arg0, arg1));
-}, arguments); }
 export function __wbg_log_6e0ed7c9093eed0b(arg0, arg1) {
     console.log(getStringFromWasm0(arg0, arg1));
 }
@@ -113,11 +110,6 @@ function addToExternrefTable0(obj) {
     return idx;
 }
 
-function getArrayU8FromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
-}
-
 let cachedDataViewMemory0 = null;
 function getDataViewMemory0() {
     if (cachedDataViewMemory0 === null || cachedDataViewMemory0.buffer.detached === true || (cachedDataViewMemory0.buffer.detached === undefined && cachedDataViewMemory0.buffer !== wasm.memory.buffer)) {
@@ -136,15 +128,6 @@ function getUint8ArrayMemory0() {
         cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
     }
     return cachedUint8ArrayMemory0;
-}
-
-function handleError(f, args) {
-    try {
-        return f.apply(this, args);
-    } catch (e) {
-        const idx = addToExternrefTable0(e);
-        wasm.__wbindgen_exn_store(idx);
-    }
 }
 
 function isLikeNone(x) {

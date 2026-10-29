@@ -1,19 +1,17 @@
 use generational_arena::{Arena, Index};
-use rand::SeedableRng;
-use rand::rngs::SmallRng;
 
 use crate::core::cost::Cost;
 use crate::core::entities::layout::Layout;
 use crate::core::insertion::insertion_blueprint::InsertionBlueprint;
 use crate::core::layout_index::LayoutIndex;
 use crate::core::orientation::Orientation;
-use crate::DETERMINISTIC_MODE;
 use crate::optimization::instance::Instance;
 use crate::optimization::rr::cache_updates::IOCUpdates;
 use crate::optimization::solutions::problem_solution::ProblemSolution;
 use crate::optimization::solutions::sendable_solution::SendableSolution;
 use crate::optimization::solutions::solution::Solution;
 use crate::util::assertions;
+use crate::util::rng::PortableRng;
 
 /// Problem is the main representation of the optimization problem.
 /// A Problem is based on an Instance and contains a collection of Layouts.
@@ -25,7 +23,7 @@ pub struct Problem<'a> {
     sheettype_qtys: Vec<usize>,
     layouts: Arena<Layout<'a>>,
     empty_layouts: Vec<Layout<'a>>,
-    rng: SmallRng,
+    rng: PortableRng,
     changed_layouts: Vec<usize>,
     solution_id_changed_layouts: Option<usize>,
     solution_id_counter: usize,
@@ -33,13 +31,11 @@ pub struct Problem<'a> {
 }
 
 impl<'a> Problem<'a> {
-    pub fn new(instance: &'a Instance) -> Self {
+    pub fn new(instance: &'a Instance, seed: u64) -> Self {
         let parttype_qtys = instance.parts().iter().map(|(_, qty)| *qty).collect::<Vec<_>>();
         let sheettype_qtys = instance.sheets().iter().map(|(_, qty)| *qty).collect::<Vec<_>>();
-        let random = match DETERMINISTIC_MODE {
-            true => SmallRng::seed_from_u64(0),
-            false => SmallRng::from_rng(&mut rand::rng())
-        };
+        // archiyou: always seeded (upstream seeded from the OS unless DETERMINISTIC_MODE was set)
+        let random = PortableRng::seed_from_u64(seed);
 
         let mut problem = Problem {
             instance,
@@ -256,7 +252,7 @@ impl<'a> Problem<'a> {
         &self.sheettype_qtys
     }
 
-    pub fn rng(&mut self) -> &mut SmallRng {
+    pub fn rng(&mut self) -> &mut PortableRng {
         &mut self.rng
     }
 
