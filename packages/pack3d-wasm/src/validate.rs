@@ -9,7 +9,55 @@
 //! their own tests in `geom.rs`, one of them against a brute-force implementation.
 
 use crate::geom::{Cuboid, PERMS, V3, stands};
-use crate::model::{Config, Instance, Solution};
+use crate::model::{Config, Door, Instance, Solution};
+
+/// A placement as the validator reads it.
+struct Boxed
+{
+    name: String,
+    item: usize,
+    real: Cuboid,
+    spaced: Cuboid,
+}
+
+/// The weight that rests on each box, directly or through others.
+///
+/// Worked out from the finished plan, from the top down: a box passes on its own weight and what
+/// rests on it to the boxes under it, each getting a share in proportion to the area of contact,
+/// rounded up to the gram. Nothing is carried over from how the plan was built.
+fn carried_loads(instance: &Instance, boxes: &[Boxed]) -> Vec<u64>
+{
+    let mut load = vec![0u64; boxes.len()];
+    let mut top_down: Vec<usize> = (0..boxes.len()).collect();
+    top_down.sort_by(|&a, &b| boxes[b].real.min[2].cmp(&boxes[a].real.min[2]).then(a.cmp(&b)));
+    top_down.iter().for_each(|&j| {
+        let under: Vec<(usize, i64)> = (0..boxes.len())
+            .filter(|&q| q != j && boxes[q].real.max[2] == boxes[j].real.min[2])
+            .map(|q| (q, boxes[j].real.footprint_overlap(&boxes[q].real)))
+            .filter(|&(_, area)| area > 0)
+            .collect();
+        let area: u128 = under.iter().map(|&(_, a)| a as u128).sum();
+        let passed = (instance.items[boxes[j].item].weight + load[j]) as u128;
+        under.iter().for_each(|&(q, a)| load[q] += ((passed * a as u128).div_ceil(area)) as u64);
+    });
+    load
+}
+
+/// Whether `late`, which is unloaded after `early`, is in the way of it: over it, or between it and the door.
+fn blocks(door: Option<Door>, late: &Cuboid, early: &Cuboid) -> bool
+{
+    let overlap = |axis: usize| late.min[axis] < early.max[axis] && early.min[axis] < late.max[axis];
+    let above = late.min[2] >= early.max[2] && overlap(0) && overlap(1);
+    let in_front = match door
+    {
+        Some(Door::PosX) => late.min[0] >= early.max[0] && overlap(1) && overlap(2),
+        Some(Door::NegX) => late.max[0] <= early.min[0] && overlap(1) && overlap(2),
+        Some(Door::PosY) => late.min[1] >= early.max[1] && overlap(0) && overlap(2),
+        Some(Door::NegY) => late.max[1] <= early.min[1] && overlap(0) && overlap(2),
+        None => false,
+    };
+    above || in_front
+}
 
 /// Every rule that the solution breaks, in words. Empty when the solution is valid.
 pub fn validate(instance: &Instance, config: &Config, solution: &Solution) -> Vec<String>
@@ -55,8 +103,8 @@ pub fn validate(instance: &Instance, config: &Config, solution: &Solution) -> Ve
         };
         let bound = Cuboid { min: [0, 0, 0], max: [bin.dims[0] as i64 + gap, bin.dims[1] as i64 + gap, bin.dims[2] as i64] };
 
-        // the boxes of the placements that name an existing item and orientation, with who they are
-        let boxes: Vec<(String, Cuboid, Cuboid)> = load
+        // the boxes of the placements that name an existing item and orientation
+        let boxes: Vec<Boxed> = load
             .placements
             .iter()
             .filter_map(|p| {
@@ -80,34 +128,67 @@ pub fn validate(instance: &Instance, config: &Config, solution: &Solution) -> Ve
                 let extent: V3 = [item.dims[perm[0]] as i64, item.dims[perm[1]] as i64, item.dims[perm[2]] as i64];
                 let real = Cuboid::new([p.x as i64, p.y as i64, p.z as i64], extent);
                 let spaced = Cuboid::new(real.min, [extent[0] + gap, extent[1] + gap, extent[2]]);
-                Some((name, real, spaced))
+                Some(Boxed { name, item: p.item, real, spaced })
             })
             .collect();
 
-        boxes.iter().for_each(|(name, _, spaced)| {
-            if !spaced.within(&bound)
+        boxes.iter().for_each(|boxed| {
+            if !boxed.spaced.within(&bound)
             {
-                problems.push(format!("{name}: sticks out of the bin (or leaves less than the gap at its far side)"));
+                problems.push(format!("{}: sticks out of the bin (or leaves less than the gap at its far side)", boxed.name));
             }
         });
-        boxes.iter().enumerate().for_each(|(i, (a, _, spaced_a))| {
-            boxes[i + 1..].iter().filter(|(_, _, spaced_b)| spaced_a.overlaps(spaced_b)).for_each(|(c, _, _)| {
-                problems.push(format!("{a} overlaps (or is closer than the gap to) {c}"));
+        boxes.iter().enumerate().for_each(|(i, a)| {
+            boxes[i + 1..].iter().filter(|c| a.spaced.overlaps(&c.spaced)).for_each(|c| {
+                problems.push(format!("{} overlaps (or is closer than the gap to) {}", a.name, c.name));
             });
         });
-        boxes.iter().enumerate().for_each(|(i, (name, real, _))| {
-            let others = boxes.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, (_, other, _))| other);
-            if !stands(real, others, permille)
+        boxes.iter().enumerate().for_each(|(i, boxed)| {
+            let others = boxes.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, other)| &other.real);
+            if !stands(&boxed.real, others, permille)
             {
-                problems.push(format!("{name}: does not stand (needs {permille}/1000 of its base on the floor or on box tops, with its centre over them)"));
+                problems.push(format!("{}: does not stand (needs {permille}/1000 of its base on the floor or on box tops, with its centre over them)", boxed.name));
             }
         });
 
-        let volume: u128 = boxes.iter().map(|(_, real, _)| real.volume() as u128).sum();
+        let volume: u128 = boxes.iter().map(|boxed| boxed.real.volume() as u128).sum();
         if volume != load.volume as u128
         {
             problems.push(format!("bin {b}: reports a volume of {}, the items add up to {volume}", load.volume));
         }
+
+        // weight
+        let weight: u64 = boxes.iter().map(|boxed| instance.items[boxed.item].weight).sum();
+        if let Some(max) = bin.max_weight.filter(|&max| weight > max)
+        {
+            problems.push(format!("bin {b}: carries {weight} g, the most is {max} g"));
+        }
+
+        // what rests on what
+        if instance.items.iter().any(|item| item.max_load.is_some())
+        {
+            let loads = carried_loads(instance, &boxes);
+            boxes.iter().zip(&loads).for_each(|(boxed, &carried)| {
+                if let Some(max) = instance.items[boxed.item].max_load.filter(|&max| carried > max)
+                {
+                    problems.push(format!("{}: carries {carried} g, the most it may carry is {max} g", boxed.name));
+                }
+            });
+        }
+
+        // unloading order: nothing that is unloaded later may be over an item or between it and the door
+        boxes.iter().for_each(|early| {
+            boxes
+                .iter()
+                .filter(|late| {
+                    let (s_early, s_late) = (instance.items[early.item].stop, instance.items[late.item].stop);
+                    s_early > 0 && s_late > s_early
+                })
+                .filter(|late| blocks(bin.door, &late.real, &early.real))
+                .for_each(|late| {
+                    problems.push(format!("{} is unloaded before {} but {} is in the way", early.name, late.name, late.name));
+                });
+        });
     });
 
     problems
@@ -240,5 +321,117 @@ mod tests
         let mut s = valid();
         s.bins[0].volume += 1;
         assert!(problems(&s, &Config::default()).iter().any(|p| p.contains("volume")));
+    }
+
+    /// A plan for any instance: the placements as (item, copy, orientation, x, y, z), nothing unplaced.
+    fn plan(instance: &Instance, placements: &[(usize, u32, u8, u32, u32, u32)]) -> Solution
+    {
+        let placements: Vec<Placement> = placements.iter().map(|&(item, copy, orientation, x, y, z)| Placement { item, copy, orientation, x, y, z }).collect();
+        let volume = placements
+            .iter()
+            .map(|p| {
+                let perm = PERMS[p.orientation as usize];
+                (0..3).map(|k| instance.items[p.item].dims[perm[k]] as u64).product::<u64>()
+            })
+            .sum();
+        Solution { bins: vec![BinLoad { bin: 0, placements, volume }], unplaced: vec![], stats: Stats { evaluations: 0, bins: 1, cost: 1.0 } }
+    }
+
+    fn from_json(json: &str) -> Instance
+    {
+        serde_json::from_str(json).unwrap()
+    }
+
+    fn found(instance: &Instance, config: &Config, solution: &Solution, word: &str) -> bool
+    {
+        validate(instance, config, solution).iter().any(|p| p.contains(word))
+    }
+
+    #[test]
+    fn a_bin_over_its_weight_limit_is_found()
+    {
+        let json = |max: u64| format!(r#"{{ "items": [{{ "dims": [400, 400, 400], "count": 3, "weight": 20000 }}], "bins": [{{ "dims": [1200, 400, 400], "maxWeight": {max} }}] }}"#);
+        let placements = [(0, 0, 0, 0, 0, 0), (0, 1, 0, 400, 0, 0), (0, 2, 0, 800, 0, 0)];
+        let (heavy, fine) = (from_json(&json(50000)), from_json(&json(60000)));
+        assert!(found(&heavy, &Config::default(), &plan(&heavy, &placements), "carries 60000 g, the most is 50000 g"));
+        assert!(!found(&fine, &Config::default(), &plan(&fine, &placements), "carries"), "the control: 60000 g is allowed up to 60000");
+    }
+
+    #[test]
+    fn an_item_under_more_than_it_may_carry_is_found()
+    {
+        let json = |top_weight: u64| format!(r#"{{ "items": [{{ "dims": [400, 400, 400], "weight": 10000, "maxLoad": 5000 }}, {{ "dims": [400, 400, 400], "weight": {top_weight} }}], "bins": [{{ "dims": [400, 400, 800] }}] }}"#);
+        let placements = [(0, 0, 0, 0, 0, 0), (1, 0, 0, 0, 0, 400)];
+        let (too_heavy, ok) = (from_json(&json(8000)), from_json(&json(4000)));
+        assert!(found(&too_heavy, &Config::default(), &plan(&too_heavy, &placements), "carries 8000 g, the most it may carry is 5000 g"));
+        assert!(!found(&ok, &Config::default(), &plan(&ok, &placements), "may carry"), "the control: 4000 g is under the limit");
+    }
+
+    #[test]
+    fn nothing_may_rest_on_an_item_that_carries_nothing()
+    {
+        let json = |max_load: &str| format!(r#"{{ "items": [{{ "dims": [400, 400, 400], "weight": 1000, "maxLoad": {max_load} }}, {{ "dims": [400, 400, 400], "weight": 1 }}], "bins": [{{ "dims": [400, 400, 800] }}] }}"#);
+        let placements = [(0, 0, 0, 0, 0, 0), (1, 0, 0, 0, 0, 400)];
+        let (fragile, sturdy) = (from_json(&json("0")), from_json(&json("null")));
+        assert!(found(&fragile, &Config::default(), &plan(&fragile, &placements), "the most it may carry is 0 g"));
+        assert!(!found(&sturdy, &Config::default(), &plan(&sturdy, &placements), "may carry"), "the control: no limit");
+    }
+
+    #[test]
+    fn a_plate_on_two_columns_puts_half_of_its_weight_on_each()
+    {
+        // 10 kg plate on two equal columns: 5 kg on each, so a limit of 5000 g holds and 4999 g does not
+        let json = |limit: u64| format!(r#"{{ "items": [{{ "dims": [200, 400, 300], "count": 2, "maxLoad": {limit} }}, {{ "dims": [800, 400, 50], "weight": 10000 }}], "bins": [{{ "dims": [800, 400, 400] }}] }}"#);
+        let placements = [(0, 0, 0, 0, 0, 0), (0, 1, 0, 600, 0, 0), (1, 0, 0, 0, 0, 300)];
+        let half = Config { support: 0.5, ..Config::default() };
+        let (exact, short) = (from_json(&json(5000)), from_json(&json(4999)));
+        assert_eq!(validate(&exact, &half, &plan(&exact, &placements)), Vec::<String>::new());
+        assert!(found(&short, &half, &plan(&short, &placements), "carries 5000 g"));
+    }
+
+    #[test]
+    fn the_load_passes_down_through_the_boxes_in_between()
+    {
+        // three boxes of 1000 g in a column: the bottom one carries 2000 g
+        let json = |limit: u64| format!(r#"{{ "items": [{{ "dims": [400, 400, 400], "weight": 1000, "maxLoad": {limit}, "count": 3 }}], "bins": [{{ "dims": [400, 400, 1200] }}] }}"#);
+        let placements = [(0, 0, 0, 0, 0, 0), (0, 1, 0, 0, 0, 400), (0, 2, 0, 0, 0, 800)];
+        let (low, high) = (from_json(&json(1500)), from_json(&json(2000)));
+        assert!(found(&low, &Config::default(), &plan(&low, &placements), "carries 2000 g"));
+        assert_eq!(validate(&high, &Config::default(), &plan(&high, &placements)), Vec::<String>::new());
+    }
+
+    #[test]
+    fn an_item_with_a_later_stop_in_front_of_the_door_is_found()
+    {
+        let json = |door: &str, early_stop: u32, late_stop: u32| {
+            format!(r#"{{ "items": [{{ "dims": [400, 400, 400], "stop": {early_stop} }}, {{ "dims": [400, 400, 400], "stop": {late_stop} }}], "bins": [{{ "dims": [800, 400, 400], "door": {door} }}] }}"#)
+        };
+        // item 0 (early) at the front of the bin, item 1 (late) between it and the door at +x
+        let placements = [(0, 0, 0, 0, 0, 0), (1, 0, 0, 400, 0, 0)];
+        let blocked = from_json(&json(r#""+x""#, 1, 2));
+        assert!(found(&blocked, &Config::default(), &plan(&blocked, &placements), "is unloaded before"));
+        // the controls: the door on the other side, no door (top only), the same stop, no stop
+        for ok in [json(r#""-x""#, 1, 2), json("null", 1, 2), json(r#""+x""#, 2, 2), json(r#""+x""#, 0, 2), json(r#""+x""#, 1, 0)]
+        {
+            let instance = from_json(&ok);
+            assert!(!found(&instance, &Config::default(), &plan(&instance, &placements), "is unloaded before"), "{ok}");
+        }
+        // and the late item the other way round (deeper than the early one) is fine at +x
+        let fine = from_json(&json(r#""+x""#, 2, 1));
+        assert!(!found(&fine, &Config::default(), &plan(&fine, &placements), "is unloaded before"));
+    }
+
+    #[test]
+    fn an_item_with_a_later_stop_on_top_is_found_with_or_without_a_door()
+    {
+        let json = |door: &str| format!(r#"{{ "items": [{{ "dims": [400, 400, 400], "stop": 1 }}, {{ "dims": [400, 400, 400], "stop": 2 }}], "bins": [{{ "dims": [400, 400, 800], "door": {door} }}] }}"#);
+        let early_below = [(0, 0, 0, 0, 0, 0), (1, 0, 0, 0, 0, 400)];
+        let late_below = [(1, 0, 0, 0, 0, 0), (0, 0, 0, 0, 0, 400)];
+        for door in ["null", r#""+y""#]
+        {
+            let instance = from_json(&json(door));
+            assert!(found(&instance, &Config::default(), &plan(&instance, &early_below), "is unloaded before"), "{door}");
+            assert!(!found(&instance, &Config::default(), &plan(&instance, &late_below), "is unloaded before"), "the control, {door}");
+        }
     }
 }

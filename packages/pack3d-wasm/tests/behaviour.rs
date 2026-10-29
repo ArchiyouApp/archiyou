@@ -154,3 +154,78 @@ fn nothing_to_load_is_an_empty_plan()
     let solution = solved(json!({ "items": [], "bins": [{ "dims": [20, 20, 20] }] }), Config::default());
     assert_eq!((solution.bins.len(), solution.unplaced.len(), solution.stats.cost), (0, 0, 0.0));
 }
+
+/// Where the items of a plan are, by item and copy.
+fn position_of(solution: &Solution, item: usize, copy: u32) -> [u32; 3]
+{
+    all_placements(solution).into_iter().find(|p| p.0 == item && p.1 == copy).expect("the item is placed").3
+}
+
+#[test]
+fn a_bin_takes_no_more_than_its_weight_limit()
+{
+    let value = |max: serde_json::Value| json!({ "items": [{ "dims": [300, 300, 300], "count": 3, "weight": 40000, "orientations": 1 }], "bins": [{ "dims": [1000, 1000, 1000], "maxWeight": max }] });
+    assert_eq!(solved(value(json!(100000)), Config::default()).bins.len(), 2, "two 40 kg boxes make 80 kg, three 120 kg");
+    assert_eq!(solved(value(json!(null)), Config::default()).bins.len(), 1, "the control: without a limit they share a bin");
+}
+
+#[test]
+fn an_item_that_carries_nothing_ends_up_on_top()
+{
+    // one fragile box and two sturdy ones in a bin that takes a column of three
+    let value = |fragile_limit: serde_json::Value| {
+        json!({
+            "items": [
+                { "dims": [400, 400, 400], "weight": 5000, "maxLoad": fragile_limit, "orientations": 1 },
+                { "dims": [400, 400, 400], "weight": 10000, "count": 2, "orientations": 1 }
+            ],
+            "bins": [{ "dims": [400, 400, 1200] }]
+        })
+    };
+    let solution = solved(value(json!(0)), Config::default());
+    assert_eq!(solution.bins.len(), 1);
+    assert_eq!(position_of(&solution, 0, 0)[2], 800, "the fragile box is the top of the column");
+    // the control: when every box is fragile nothing can be stacked, so each gets a bin
+    let all_fragile = json!({ "items": [{ "dims": [400, 400, 400], "weight": 5000, "maxLoad": 0, "count": 3, "orientations": 1 }], "bins": [{ "dims": [400, 400, 1200] }] });
+    assert_eq!(solved(all_fragile, Config::default()).bins.len(), 3);
+}
+
+#[test]
+fn a_stack_limit_in_grams_caps_how_high_a_column_goes()
+{
+    // 10 kg boxes that may carry 25 kg: a column of three (the bottom box carries 20 kg), not four (30 kg)
+    let value = |limit: serde_json::Value| json!({ "items": [{ "dims": [400, 400, 400], "weight": 10000, "maxLoad": limit, "count": 4, "orientations": 1 }], "bins": [{ "dims": [400, 400, 1600] }] });
+    assert_eq!(solved(value(json!(25000)), Config::default()).bins.iter().map(|b| b.placements.len()).collect::<Vec<_>>(), [3, 1]);
+    assert_eq!(solved(value(json!(30000)), Config::default()).bins.len(), 1, "the control: 30 kg is enough for all four");
+}
+
+#[test]
+fn the_last_stop_is_loaded_first_and_ends_up_deepest()
+{
+    // three cubes along a trailer that opens at +x; item 0 is unloaded first, item 2 last
+    let value = |door: serde_json::Value, stops: [u32; 3]| {
+        json!({
+            "items": [
+                { "dims": [400, 400, 400], "stop": stops[0], "orientations": 1 }, { "dims": [400, 400, 400], "stop": stops[1], "orientations": 1 }, { "dims": [400, 400, 400], "stop": stops[2], "orientations": 1 }
+            ],
+            "bins": [{ "dims": [1200, 400, 400], "door": door }]
+        })
+    };
+    let at_x = |solution: &Solution| [0, 1, 2].map(|item| position_of(solution, item, 0)[0]);
+    assert_eq!(at_x(&solved(value(json!("+x"), [1, 2, 3]), Config::default())), [800, 400, 0], "the first stop is next to the door");
+    assert_eq!(at_x(&solved(value(json!("-x"), [1, 2, 3]), Config::default())), [0, 400, 800], "with the door at -x it is the other way round");
+    assert_eq!(at_x(&solved(value(json!("+x"), [0, 0, 0]), Config::default())), [0, 400, 800], "the control: without stops the order is the order of the list");
+}
+
+#[test]
+fn items_for_the_earlier_stop_never_sit_under_the_later_ones()
+{
+    // a pallet that is only unloaded from the top: the stop 2 boxes go first, the stop 1 boxes on top of them
+    let value = json!({
+        "items": [{ "dims": [400, 400, 400], "stop": 1, "count": 2, "orientations": 1 }, { "dims": [400, 400, 400], "stop": 2, "count": 2, "orientations": 1 }],
+        "bins": [{ "dims": [400, 400, 1600] }]
+    });
+    let solution = solved(value, Config::default());
+    let height = |item: usize, copy: u32| position_of(&solution, item, copy)[2];
+    assert!(height(1, 0) < height(0, 0) && height(1, 1) < height(0, 0), "both stop 2 boxes are under both stop 1 boxes");
+}

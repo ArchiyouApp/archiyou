@@ -18,12 +18,13 @@ validator re-checks every plan before it is returned.
 | Support: `support` (default 0.8) of the base on the floor or on box tops, and the centre inside the convex hull of the contact | now |
 | `gap`: clearance kept between items along x and y | now |
 | Several bin types with a cost and an optional stock | now |
-| Weight limit per bin, load limit on top of an item | planned |
-| Unloading order (stops, door side) | planned |
+| Weight limit per bin (`maxWeight`) | now |
+| Load limit on top of an item (`maxLoad`, 0 for fragile): a box passes its weight and what it carries to the boxes under it, shared by contact area and rounded up to the gram | now |
+| Unloading order (`stop`, `door`): what is unloaded earlier is not under, and not between the door and, what is unloaded later | now |
 | Load balance (centre of gravity, axle loads), best effort and always reported | planned |
 
-Axes: x is the length of the bin, y its width, z its height (up). Everything is a whole number of
-millimetres.
+Axes: x is the length of the bin, y its width, z its height (up). Lengths are whole millimetres,
+weights whole grams.
 
 ## How it works
 
@@ -34,6 +35,15 @@ they touch a box or a wall. A position is taken when the item fits there and sta
 runs (four sequences by volume, base, longest side and height, each in two fill orders, layers and
 walls, with two ways to pick among the free positions) is tried and the best plan by the objective
 wins: fewest unplaced items, then lowest cost, then fewest bins, then the fullest bins.
+
+The sequences put the items of the later stops first, so that they end up deepest and lowest; items
+without a stop come last. With weights, heavy-first and sturdy-first sequences join the portfolio.
+A bin whose door is at the low end of an axis is decoded mirrored and flipped back afterwards, so
+the load is built from the far wall towards the door whichever side that is; a door on y adds a
+third fill order that runs its walls along y.
+
+While some item has a load limit, loads are tracked as boxes are placed, and a box is never slipped
+in under one that is already there (its weight would then have been shared out without it).
 
 ## Reproducible
 
@@ -46,7 +56,10 @@ separate Python port).
 
 - Items are their bounding boxes, with uniform density. A part that is not a box wastes its corners.
 - Stability is static. Nothing is checked about braking, sliding or tipping in transport; straps and
-  dunnage are not modelled.
+  dunnage are not modelled. The load a box carries is a statics estimate from contact areas, not a
+  structural calculation.
+- A fragile item (`maxLoad` 0) needs a flat top to sit on or a floor space of its own; the first-fit
+  portfolio does not plan flat tops, so such items can cost extra bins until the search is in.
 - A few thousand items per call (`MAX_PIECES` is 20 000).
 
 ## Testing

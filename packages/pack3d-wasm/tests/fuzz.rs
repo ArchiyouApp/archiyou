@@ -20,9 +20,9 @@ impl Lcg
         lo + self.next() % (hi - lo + 1)
     }
 
-    fn pick<T: Copy>(&mut self, options: &[T]) -> T
+    fn pick<T: Clone>(&mut self, options: &[T]) -> T
     {
-        options[self.range(0, options.len() as u64 - 1) as usize]
+        options[self.range(0, options.len() as u64 - 1) as usize].clone()
     }
 }
 
@@ -33,10 +33,16 @@ fn random_case(seed: u64) -> (Instance, Config)
         .map(|_| {
             let any_mask = r.range(1, 63);
             let orientations = r.pick(&[1u64, 3, 63, 63, 12, 48, any_mask]);
+            let weight = r.pick(&[0u64, 0, 500, 5000, 40000]);
+            let max_load = r.pick(&[json!(null), json!(null), json!(0), json!(10000), json!(60000)]);
+            let stop = r.pick(&[0u64, 0, 1, 2, 3]);
             json!({
                 "dims": [r.range(20, 500), r.range(20, 500), r.range(20, 500)],
                 "count": r.range(1, 5),
                 "orientations": orientations,
+                "weight": weight,
+                "maxLoad": max_load,
+                "stop": stop,
             })
         })
         .collect();
@@ -44,20 +50,23 @@ fn random_case(seed: u64) -> (Instance, Config)
     let bins: Vec<_> = (0..r.range(1, 3))
         .map(|_| {
             let stock = if limited { json!(r.range(1, 3)) } else { json!(null) };
-            json!({ "dims": [r.range(300, 1200), r.range(300, 1200), r.range(300, 1200)], "cost": r.range(1, 5), "stock": stock })
+            let max_weight = r.pick(&[json!(null), json!(null), json!(80000), json!(300000)]);
+            let door = r.pick(&[json!(null), json!("+x"), json!("-x"), json!("+y"), json!("-y")]);
+            json!({ "dims": [r.range(300, 1200), r.range(300, 1200), r.range(300, 1200)], "cost": r.range(1, 5), "stock": stock, "maxWeight": max_weight, "door": door })
         })
         .collect();
     let config = json!({ "support": r.pick(&[0.0, 0.5, 0.8, 1.0]), "gap": r.pick(&[0u64, 0, 5, 10]) });
     (serde_json::from_value(json!({ "items": items, "bins": bins })).unwrap(), serde_json::from_value(config).unwrap())
 }
 
-/// Whether the item can go in an empty bin of this kind at all.
+/// Whether the item can go in an empty bin of some kind at all: it fits in one orientation and is not too heavy.
 fn fits_some_bin(instance: &Instance, item: usize) -> bool
 {
     let dims = instance.items[item].dims.map(|d| d as i64);
-    distinct_orientations(dims, instance.items[item].orientations)
-        .into_iter()
-        .any(|o| instance.bins.iter().any(|bin| (0..3).all(|a| pack3d_wasm::geom::extents(dims, o)[a] <= bin.dims[a] as i64)))
+    let weight = instance.items[item].weight;
+    distinct_orientations(dims, instance.items[item].orientations).into_iter().any(|o| {
+        instance.bins.iter().any(|bin| bin.max_weight.is_none_or(|max| weight <= max) && (0..3).all(|a| pack3d_wasm::geom::extents(dims, o)[a] <= bin.dims[a] as i64))
+    })
 }
 
 fn check(seed: u64)

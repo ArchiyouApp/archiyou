@@ -35,6 +35,20 @@ fn default_support() -> f64
     0.8
 }
 
+/// The side of a bin that the load leaves by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum Door
+{
+    #[serde(rename = "+x")]
+    PosX,
+    #[serde(rename = "-x")]
+    NegX,
+    #[serde(rename = "+y")]
+    PosY,
+    #[serde(rename = "-y")]
+    NegY,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Instance
@@ -57,6 +71,16 @@ pub struct ItemType
     /// Which of the six orientations (see `geom::PERMS`) the item may be loaded in, one bit each.
     #[serde(default = "all_orientations")]
     pub orientations: u8,
+    /// Weight in grams.
+    #[serde(default)]
+    pub weight: u64,
+    /// The weight in grams that may rest on this item, directly or through others; absent means
+    /// no limit, 0 means nothing may be put on it.
+    #[serde(default)]
+    pub max_load: Option<u64>,
+    /// At which stop this item is unloaded; lower stops are unloaded first, 0 means no order.
+    #[serde(default)]
+    pub stop: u32,
 }
 
 /// A kind of bin: pallet, crate, trailer.
@@ -71,6 +95,12 @@ pub struct BinType
     /// How many of this kind there are; absent means as many as needed.
     #[serde(default)]
     pub stock: Option<u32>,
+    /// The most the load may weigh, in grams; absent means no limit.
+    #[serde(default)]
+    pub max_weight: Option<u64>,
+    /// The side the load leaves by; absent means from the top only.
+    #[serde(default)]
+    pub door: Option<Door>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -178,6 +208,9 @@ pub struct Piece
     pub dims: V3,
     /// The orientations to try, each with its extents; equal extents appear once.
     pub orientations: Vec<(u8, V3)>,
+    pub weight: u64,
+    pub max_load: Option<u64>,
+    pub stop: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -187,6 +220,13 @@ pub struct Kind
     /// In thousandths of the cost unit, so that sums and comparisons are exact.
     pub cost: u64,
     pub stock: Option<u32>,
+    pub max_weight: Option<u64>,
+    /// The door as the decoder sees it: always at the high end of an axis (`+x`, `+y`) or none. A bin
+    /// whose door is at the low end is decoded mirrored along that axis and flipped back afterwards,
+    /// so that the load is built from the far wall towards the door whichever side it is.
+    pub door: Option<Door>,
+    /// Whether the decoded layout has to be mirrored along x and along y to get the real one.
+    pub flip: [bool; 2],
 }
 
 /// The input after the checks: what the decoder and the validator's callers work with.
@@ -198,6 +238,8 @@ pub struct Problem
     pub gap: i64,
     /// Required share of the base on its support, in thousandths.
     pub permille: i64,
+    /// Whether any item has a limit on the load it carries: only then is the load tracked.
+    pub stacking: bool,
 }
 
 impl Problem
@@ -243,15 +285,24 @@ impl Problem
             .flat_map(|(item, kind)| {
                 let dims = kind.dims.map(|d| d as i64);
                 let orientations: Vec<(u8, V3)> = distinct_orientations(dims, kind.orientations).into_iter().map(|o| (o, extents(dims, o))).collect();
-                (0..kind.count).map(move |copy| Piece { item, copy, dims, orientations: orientations.clone() })
+                (0..kind.count).map(move |copy| Piece { item, copy, dims, orientations: orientations.clone(), weight: kind.weight, max_load: kind.max_load, stop: kind.stop })
             })
             .collect();
         let kinds = instance
             .bins
             .iter()
-            .map(|bin| Kind { dims: bin.dims.map(|d| d as i64), cost: (bin.cost * 1000.0).round() as u64, stock: bin.stock })
+            .map(|bin| {
+                let (door, flip) = match bin.door
+                {
+                    Some(Door::NegX) => (Some(Door::PosX), [true, false]),
+                    Some(Door::NegY) => (Some(Door::PosY), [false, true]),
+                    other => (other, [false, false]),
+                };
+                Kind { dims: bin.dims.map(|d| d as i64), cost: (bin.cost * 1000.0).round() as u64, stock: bin.stock, max_weight: bin.max_weight, door, flip }
+            })
             .collect();
-        Ok(Problem { pieces, kinds, gap: config.gap as i64, permille: (config.support * 1000.0).round() as i64 })
+        let stacking = instance.items.iter().any(|item| item.max_load.is_some());
+        Ok(Problem { pieces, kinds, gap: config.gap as i64, permille: (config.support * 1000.0).round() as i64, stacking })
     }
 }
 
@@ -309,6 +360,22 @@ mod tests
         assert!(check(r#"{ "items": [{ "dims": [1, 1, 1] }], "bins": [{ "dims": [1, 1, 1], "cost": -1 }] }"#, Config::default()).contains("cost"));
         assert!(check(r#"{ "items": [{ "dims": [1, 1, 1] }], "bins": [{ "dims": [1, 1, 1] }] }"#, Config { support: 1.5, ..Config::default() }).contains("support"));
         assert!(check(r#"{ "items": [{ "dims": [1, 1, 1], "count": 20001 }], "bins": [{ "dims": [1, 1, 1] }] }"#, Config::default()).contains("20001"));
+    }
+
+    #[test]
+    fn a_door_at_the_low_end_is_decoded_mirrored()
+    {
+        let door = |d: &str| format!(r#"{{ "items": [{{ "dims": [1, 1, 1] }}], "bins": [{{ "dims": [9, 9, 9], "door": {d} }}] }}"#);
+        let kind = |d: &str| Problem::new(&instance(&door(d)), &Config::default()).unwrap().kinds.remove(0);
+        let seen = |d: &str| {
+            let k = kind(d);
+            (k.door, k.flip)
+        };
+        assert_eq!(seen(r#""+x""#), (Some(Door::PosX), [false, false]));
+        assert_eq!(seen(r#""-x""#), (Some(Door::PosX), [true, false]));
+        assert_eq!(seen(r#""+y""#), (Some(Door::PosY), [false, false]));
+        assert_eq!(seen(r#""-y""#), (Some(Door::PosY), [false, true]));
+        assert_eq!(seen("null"), (None, [false, false]));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //! validator before it is returned.
 
 use crate::layout::{Fill, Layout, Pick, Strategy, decode, objective};
-use crate::model::{BinLoad, Config, Error, Instance, ItemRef, Placement, Problem, Solution, Stats};
+use crate::model::{BinLoad, Config, Door, Error, Instance, ItemRef, Piece, Placement, Problem, Solution, Stats};
 use crate::validate::validate;
 
 /// What the pieces are ordered by, biggest first.
@@ -13,36 +13,61 @@ enum Key
     Footprint,
     Longest,
     Height,
+    /// Heaviest first, so that heavy things end up at the bottom.
+    Weight,
+    /// Those that may carry the most first (an item without a limit counts as carrying anything).
+    Sturdy,
 }
-
-const KEYS: [Key; 4] = [Key::Volume, Key::Footprint, Key::Longest, Key::Height];
 
 impl Key
 {
-    fn value(self, dims: [i64; 3]) -> i128
+    fn value(self, piece: &Piece) -> i128
     {
         match self
         {
-            Key::Volume => dims.iter().map(|&d| d as i128).product(),
-            Key::Footprint => dims[0] as i128 * dims[1] as i128,
-            Key::Longest => dims.into_iter().max().unwrap_or(0) as i128,
-            Key::Height => dims[2] as i128,
+            Key::Volume => piece.dims.iter().map(|&d| d as i128).product(),
+            Key::Footprint => piece.dims[0] as i128 * piece.dims[1] as i128,
+            Key::Longest => piece.dims.into_iter().max().unwrap_or(0) as i128,
+            Key::Height => piece.dims[2] as i128,
+            Key::Weight => piece.weight as i128,
+            Key::Sturdy => piece.max_load.map_or(i128::MAX, |max| max as i128),
         }
     }
 }
 
-/// The pieces by `key`, biggest first; equal ones keep their order, so the sequence is the same every time.
+/// The keys the portfolio sorts by: the weight and the sturdiness only count when some item has any.
+fn keys(problem: &Problem) -> Vec<Key>
+{
+    let weighed = problem.pieces.iter().any(|piece| piece.weight > 0);
+    [(Key::Volume, true), (Key::Footprint, true), (Key::Longest, true), (Key::Height, true), (Key::Weight, weighed), (Key::Sturdy, problem.stacking)]
+        .into_iter()
+        .filter_map(|(key, wanted)| wanted.then_some(key))
+        .collect()
+}
+
+/// The pieces by `key`, biggest first, with the items of the later stops before those of the earlier
+/// ones (the load goes in last stop first, and items without a stop come last); equal ones keep
+/// their order, so the sequence is the same every time.
 fn sequence(problem: &Problem, key: Key) -> Vec<usize>
 {
+    let volume = |piece: &Piece| Key::Volume.value(piece);
     let mut order: Vec<usize> = (0..problem.pieces.len()).collect();
-    order.sort_by(|&a, &b| key.value(problem.pieces[b].dims).cmp(&key.value(problem.pieces[a].dims)).then(a.cmp(&b)));
+    order.sort_by(|&a, &b| {
+        let (pa, pb) = (&problem.pieces[a], &problem.pieces[b]);
+        pb.stop.cmp(&pa.stop).then(key.value(pb).cmp(&key.value(pa))).then(volume(pb).cmp(&volume(pa))).then(a.cmp(&b))
+    });
     order
 }
 
-/// Every strategy the portfolio tries, in the order that decides ties.
-fn strategies() -> Vec<Strategy>
+/// Every strategy the portfolio tries, in the order that decides ties. Rows only when some bin has its door on y.
+fn strategies(problem: &Problem) -> Vec<Strategy>
 {
-    [Fill::Layers, Fill::Walls].into_iter().flat_map(|fill| [Pick::Lowest, Pick::Contact].map(|pick| Strategy { fill, pick })).collect()
+    let rows = problem.kinds.iter().any(|kind| kind.door == Some(Door::PosY));
+    [(Fill::Layers, true), (Fill::Walls, true), (Fill::Rows, rows)]
+        .into_iter()
+        .filter(|&(_, wanted)| wanted)
+        .flat_map(|(fill, _)| [Pick::Lowest, Pick::Contact].map(|pick| Strategy { fill, pick }))
+        .collect()
 }
 
 /// Load the items into bins. The same instance and config give the same solution, byte for byte.
@@ -53,11 +78,11 @@ pub fn solve(instance: &Instance, config: &Config) -> Result<Solution, Error>
 {
     let problem = Problem::new(instance, config)?;
     let mut evaluations = 0u64;
-    let strategies = strategies();
+    let strategies = strategies(&problem);
 
-    let best = KEYS
-        .iter()
-        .map(|&key| sequence(&problem, key))
+    let best = keys(&problem)
+        .into_iter()
+        .map(|key| sequence(&problem, key))
         .flat_map(|order| strategies.iter().map(move |&strategy| (order.clone(), strategy)).collect::<Vec<_>>())
         .map(|(order, strategy)| decode(&problem, &order, strategy, &mut evaluations))
         .min_by_key(|layout| objective(&problem, layout))
@@ -84,17 +109,22 @@ fn assemble(problem: &Problem, layout: &Layout, evaluations: u64) -> Solution
     let bins: Vec<BinLoad> = layout
         .bins
         .iter()
-        .map(|bin| BinLoad {
-            bin: bin.kind,
-            placements: bin
-                .placed
-                .iter()
-                .map(|placed| {
-                    let (item, copy) = reference(placed.piece);
-                    Placement { item, copy, orientation: placed.orientation, x: placed.real.min[0] as u32, y: placed.real.min[1] as u32, z: placed.real.min[2] as u32 }
-                })
-                .collect(),
-            volume: bin.volume() as u64,
+        .map(|bin| {
+            // a bin whose door is at the low end was decoded mirrored: put it back the way round it really is
+            let kind = &problem.kinds[bin.kind];
+            let corner = |placed: &crate::layout::Placed, axis: usize| if kind.flip.get(axis).copied().unwrap_or(false) { kind.dims[axis] - placed.real.max[axis] } else { placed.real.min[axis] };
+            BinLoad {
+                bin: bin.kind,
+                placements: bin
+                    .placed
+                    .iter()
+                    .map(|placed| {
+                        let (item, copy) = reference(placed.piece);
+                        Placement { item, copy, orientation: placed.orientation, x: corner(placed, 0) as u32, y: corner(placed, 1) as u32, z: placed.real.min[2] as u32 }
+                    })
+                    .collect(),
+                volume: bin.volume() as u64,
+            }
         })
         .collect();
     let cost: u64 = layout.bins.iter().map(|bin| problem.kinds[bin.kind].cost).sum();
