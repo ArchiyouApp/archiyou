@@ -19,6 +19,12 @@
  *                                  exploded, layout, turntable, assembly)
  *   ui.loop=1 | 0 | pingpong       over and over, once, or back and forth; without it the
  *                                  animation's own
+ *   ui.primary=1a659e              the colours of the site around it, as 6-digit hex (the #
+ *   ui.secondary=180c2d            may stay or go): primary paints buttons, links and active
+ *   ui.accent=f1c232               states, secondary the author mark and metric icons, accent
+ *   ui.alert=dc2626                the slider thumb, tab indicator and preset buttons, alert
+ *                                  errors; one not given keeps Archiyou's own (styles/brand-colors)
+ *   ui.theme=light | dark          light or dark chrome, whatever the visitor's own preference
  *
  * The `ui.` prefix keeps these apart from the script's params: a param name is a script
  * identifier and can never contain a dot, so `?GRID=600` stays the GRID param of a script
@@ -35,6 +41,12 @@ import type { ScriptParam } from '@archiyou/core/src/execution/ScriptParam';
 import type { AnimationLoopMode } from './viewer.js';
 
 export type ViewerMenuPlacement = 'bottom' | 'top' | 'left' | 'right' | 'none';
+
+export type BrandColorName = 'primary' | 'secondary' | 'accent' | 'alert';
+export const BRAND_COLOR_NAMES: BrandColorName[] = ['primary', 'secondary', 'accent', 'alert'];
+/** The colours of the site around an embedded configurator, as `#rrggbb`; null: Archiyou's own. */
+export type BrandColors = Record<BrandColorName, string | null>;
+export type ChromeTheme = 'light' | 'dark';
 
 export interface ConfiguratorDisplay
 {
@@ -54,6 +66,9 @@ export interface ConfiguratorDisplay
   animation:  string | null;
   /** How it plays; null: as the animation says. */
   loop:       AnimationLoopMode | null;
+  colors:     BrandColors;
+  /** Light or dark chrome; null: the visitor's preference. */
+  theme:      ChromeTheme | null;
 }
 
 export const DEFAULT_DISPLAY: ConfiguratorDisplay = {
@@ -67,6 +82,8 @@ export const DEFAULT_DISPLAY: ConfiguratorDisplay = {
   menu:    'bottom',
   animation: null,
   loop:      null,
+  colors:    { primary: null, secondary: null, accent: null, alert: null },
+  theme:     null,
 };
 
 const MENU_PLACEMENTS: ViewerMenuPlacement[] = ['bottom', 'top', 'left', 'right', 'none'];
@@ -87,6 +104,25 @@ function loopMode(raw: string | null): AnimationLoopMode | null
   if (v === 'loop' || v === 'repeat') return 'loop';
   const on = flag(raw ?? null);
   return (on === null) ? null : (on ? 'loop' : 'none');
+}
+
+/** `1a659e`, `#1a659e` or the short `#1a6` as `#rrggbb`; anything else is no colour. Only a hex
+ *  colour gets through: the value becomes a CSS custom property, where nothing else belongs. */
+export function hexColor(raw: string | null): string | null
+{
+  const m = raw?.trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!m) return null;
+  const hex = m[1].length === 3 ? [...m[1]].map(c => c + c).join('') : m[1];
+  return `#${hex.toLowerCase()}`;
+}
+
+/** The colours a query string gives (`ui.primary=1a659e`), null for the ones it does not. */
+function brandColors(query: URLSearchParams): BrandColors
+{
+  return BRAND_COLOR_NAMES.reduce(
+    (colors, name) => ({ ...colors, [name]: hexColor(query.get(`ui.${name}`)) }),
+    {} as BrandColors,
+  );
 }
 
 /** The configurator as the link that opened it asks for. Always the defaults in the editor's
@@ -114,6 +150,7 @@ export function displayFromQuery(search: string): ConfiguratorDisplay
   const menu = text('ui.menu') as ViewerMenuPlacement | null;
   // as written: an animation's name is the script's, and can have capitals
   const animation = query.get('ui.animation')?.trim() || null;
+  const theme = text('ui.theme');
 
   return {
     header:  flag(query.get('ui.header')) ?? DEFAULT_DISPLAY.header,
@@ -126,6 +163,8 @@ export function displayFromQuery(search: string): ConfiguratorDisplay
     menu:    (menu && MENU_PLACEMENTS.includes(menu)) ? menu : DEFAULT_DISPLAY.menu,
     animation: (animation && isAnimationName(animation)) ? animation : null,
     loop:      loopMode(query.get('ui.loop')),
+    colors:    brandColors(query),
+    theme:     (theme === 'light' || theme === 'dark') ? theme : null,
   };
 }
 

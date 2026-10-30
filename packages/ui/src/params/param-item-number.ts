@@ -466,8 +466,9 @@ export class ParamItemNumber extends SignalWatcher(LitElement)
             min-width: 0;
             cursor:    pointer;
             /* Tints the native range track/thumb so it follows the theme
-               (avoids a glaring white track in dark mode). */
-            accent-color: var(--color-primary);
+               (avoids a glaring white track in dark mode), or the accent colour of
+               the site around an embedded configurator (styles/brand-colors). */
+            accent-color: var(--configurator-accent, var(--color-primary));
         }
 
         /* ── step arrows ── */

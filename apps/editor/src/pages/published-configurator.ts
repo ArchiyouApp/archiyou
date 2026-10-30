@@ -15,7 +15,8 @@
  * the two backends is how you check a server result renders identically).
  *
  * `?embed=1` marks a configurator shown inside another site (see isEmbedded()), the `ui.*`
- * keys set what it shows (state/configurator-display) and `?preset=Large` opens a preset.
+ * keys set what it shows (state/configurator-display) and the colours and theme it shows it in
+ * (styles/brand-colors), and `?preset=Large` opens a preset.
  */
 
 import { LitElement, html, css } from 'lit';
@@ -32,7 +33,9 @@ import '@archiyou/ui/configurator/configurator.js';
 
 import { openSharedScript } from '../state/workspace';
 import { applyConfiguratorParamsFromQuery, deliveryTokenFromUrl, isEmbedded } from '../state/configurator-url';
-import { applyDisplayFromQuery, resetDisplay } from '../state/configurator-display';
+import { applyDisplayFromQuery, configuratorDisplay, resetDisplay } from '../state/configurator-display';
+import { applyBrandColors, removeBrandColors } from '../styles/brand-colors.js';
+import { overrideTheme } from '../styles/dark-theme.js';
 import { applyLocaleFromQuery, detectPreferredLocale } from '../state/locale';
 import { setChromeLocale } from '../i18n/locale-config';
 import { allLocales } from '../i18n/locale-codes';
@@ -61,6 +64,11 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
     this._embedded = isEmbedded(window.location.search);
     // ?ui.header=0&ui.style=techdraw… — what the site embedding it wants to show.
     applyDisplayFromQuery(window.location.search);
+    // ?ui.primary=1a659e&ui.theme=light — in the colours of the site around it, set on this
+    // element so they reach every component below and outlive a theme switch.
+    const display = configuratorDisplay.get();
+    applyBrandColors(this, display.colors);
+    overrideTheme(display.theme);
     // Until the script is here, its languages are unknown: the visitor's own language
     // for the loading and error states. The configurator takes over once it mounts.
     void setChromeLocale(detectPreferredLocale([...allLocales]));
@@ -76,7 +84,10 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
     // order can leave a stale one behind.
     setServerExecutionTarget(null);
     setPublishedScript(null);
-    // Nor its display options: the editor's Configurator Preview shows everything.
+    // Nor its display options, colours and theme: the editor's Configurator Preview shows
+    // everything, in Archiyou's colours and the visitor's own theme.
+    removeBrandColors(this);
+    overrideTheme(null);
     resetDisplay();
   }
 

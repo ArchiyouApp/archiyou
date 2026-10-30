@@ -131,8 +131,20 @@ function _systemPrefersDark(): boolean {
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
+// ── A theme the page asks for ────────────────────────────────────────────────
+// An embedded configurator follows the site around it (`ui.theme`, state/configurator-display),
+// not the visitor's preference, which stays stored for the editor.
+
+let _override: 'light' | 'dark' | null = null;
+
+/** Show this theme whatever the preference says; null follows the preference again. */
+export function overrideTheme(theme: 'light' | 'dark' | null): void {
+  _override = theme;
+  _applyPreference(getThemePreference());
+}
+
 function _applyPreference(preference: ThemePreference): void {
-  const dark = preference === 'dark' || (preference === 'system' && _systemPrefersDark());
+  const dark = _override ? _override === 'dark' : preference === 'dark' || (preference === 'system' && _systemPrefersDark());
   if (dark) applyDarkTheme();
   else removeDarkTheme();
 }

@@ -247,7 +247,8 @@ export class ConfiguratorParams extends SignalWatcher(LitElement)
     wa-tab-group
     {
       --track-color: var(--color-border);
-      --indicator-color: var(--color-primary);
+      /* The site's accent colour when the link gives one (styles/brand-colors). */
+      --indicator-color: var(--configurator-accent, var(--color-primary));
     }
 
     wa-tab-group::part(tabs)

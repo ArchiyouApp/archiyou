@@ -78,7 +78,7 @@ export class ConfiguratorMetricCard extends LitElement
     .card-icon
     {
       font-size: var(--text-sm);
-      color: var(--color-primary);
+      color: var(--configurator-secondary, var(--color-primary));
       flex-shrink: 0;
     }
 

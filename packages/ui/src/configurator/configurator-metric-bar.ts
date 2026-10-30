@@ -383,7 +383,7 @@ export class ConfiguratorMetricBar extends SignalWatcher(LitElement)
       border: none;
       border-radius: var(--radius-md, 8px);
       background: var(--color-primary);
-      color: var(--color-white, #fff);
+      color: var(--color-on-primary, #fff);
       cursor: pointer;
       font-family: var(--font-sans);
       font-size: var(--text-sm);

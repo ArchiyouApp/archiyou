@@ -322,7 +322,7 @@ export class ConfiguratorAttribution extends LitElement
       border: none;
       border-radius: var(--radius-sm, 4px);
       background: var(--color-alert, #f10827);
-      color: var(--color-white, #fff);
+      color: var(--configurator-on-alert, var(--color-white, #fff));
       font-family: var(--font-sans);
       font-size: var(--text-xs);
       font-weight: 600;

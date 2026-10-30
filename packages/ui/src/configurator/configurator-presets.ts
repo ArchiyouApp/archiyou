@@ -137,16 +137,17 @@ export class ConfiguratorPresets extends SignalWatcher(LitElement)
       white-space: nowrap;
     }
 
+    /* Lit in the site's accent colour when the link gives one (styles/brand-colors). */
     .preset-btn:hover
     {
-      border-color: var(--color-primary);
+      border-color: var(--configurator-accent, var(--color-primary));
       color: var(--color-primary);
-      background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-elevated));
+      background: color-mix(in srgb, var(--configurator-accent, var(--color-primary)) 8%, var(--color-bg-elevated));
     }
 
     .preset-btn:active
     {
-      background: color-mix(in srgb, var(--color-primary) 16%, var(--color-bg-elevated));
+      background: color-mix(in srgb, var(--configurator-accent, var(--color-primary)) 16%, var(--color-bg-elevated));
     }
 
     @media (pointer: coarse)

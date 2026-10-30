@@ -117,8 +117,9 @@ export class ConfiguratorHeader extends SignalWatcher(LitElement)
       width: 40px;
       height: 40px;
       border-radius: var(--radius-full, 9999px);
-      background: var(--color-primary);
-      color: var(--color-white, #fff);
+      /* The site's secondary colour when the link gives one (styles/brand-colors). */
+      background: var(--configurator-secondary, var(--color-primary));
+      color: var(--configurator-on-secondary, var(--color-on-primary, #fff));
       display: flex;
       align-items: center;
       justify-content: center;

@@ -339,7 +339,7 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
       border: none;
       border-radius: var(--radius-sm, 4px);
       background: var(--color-primary);
-      color: var(--color-white, #fff);
+      color: var(--color-on-primary, #fff);
       font-family: var(--font-sans);
       font-size: var(--text-xs);
       font-weight: 600;

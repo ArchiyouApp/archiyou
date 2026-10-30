@@ -122,7 +122,7 @@ export class ConfiguratorActionButton extends LitElement
       --size: 34px;
       border-color: var(--color-primary);
       background: var(--color-primary);
-      color: var(--color-white, #fff);
+      color: var(--color-on-primary, #fff);
       font-size: var(--text-sm);
       font-weight: 600;
     }
@@ -130,7 +130,7 @@ export class ConfiguratorActionButton extends LitElement
     :host([primary]) .btn:hover
     {
       background: color-mix(in srgb, var(--color-black, #000) 12%, var(--color-primary));
-      color: var(--color-white, #fff);
+      color: var(--color-on-primary, #fff);
     }
 
     @media (prefers-reduced-motion: reduce)
