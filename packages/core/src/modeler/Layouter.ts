@@ -10,10 +10,12 @@ import type {
     LayoutTransformationResult,
     LayoutViewOptions,
     PartStackLayoutOptions,
+    PackedLayoutOptions,
     AnyShape,
 } from './types'
 import { collectParts } from './parts'
 import { placementsOf, type LayoutPlacement } from './placements'
+import { loadedPack3d } from './Make'
 
 import { TOLERANCE } from '@archiyou/meshup'
 
@@ -21,10 +23,13 @@ export class Layouter
 {
     private _scene: MeshupSceneNode
     private _result: LayoutTransformationResult | null = null
+    /** Millimetres in one model unit: the 3D packer works in whole millimetres. */
+    private _mmPerUnit: number
 
-    constructor(sceneOrShapes: MeshupSceneNode | ShapeCollection<any>)
+    constructor(sceneOrShapes: MeshupSceneNode | ShapeCollection<any>, options: { mmPerUnit?: number } = {})
     {
         this._scene = this._normalizeInput(sceneOrShapes)
+        this._mmPerUnit = options.mmPerUnit ?? 1
     }
 
     scene(): MeshupSceneNode
@@ -303,6 +308,114 @@ export class Layouter
         return this
     }
 
+    /** Pack every part into bins in 3D, the pieces of a part together.
+     *
+     *  Like partStack(), the pieces of a part (same layer, kind, section and length, see `collectParts()`) are laid flat,
+     *  longest side along X and thinnest along Z, and piled on each other. The piles are what is packed: boxes of the
+     *  part's length and width, and as high as its pieces stacked (a pile that is higher than the bin is split into the
+     *  fewest piles that fit). The 3D load planner puts the piles in a bin, turned about the vertical if that helps, so that
+     *  each stands on the floor or on other piles; when one bin is not enough, bins stand side by side along X.
+     *
+     *  Because the pieces of a part are in one pile, the same parts always end up together. The bin is
+     *  `length` x `width` x `height` (default 2400 x 1200 x 1200 mm) and grows to hold the biggest pile.
+     *
+     *  Anything that is not a part (a curve, a point, a solid too degenerate to measure) gets no transform and stays where it
+     *  was, with a warning, as in partStack().
+     *
+     *  The planner is loaded on demand: scripts get it when they call `packed(`; from code, await `loadPack3dModule()` of
+     *  the Make module first.
+     */
+    packed(options: PackedLayoutOptions = {}): this
+    {
+        const planner = loadedPack3d();
+        if (!planner)
+        {
+            throw new Error('Layouter::packed(): the 3D load planner is not loaded. Scripts get it automatically when they call packed(); '
+                + 'from code, await loadPack3dModule() from the Make module first.');
+        }
+
+        const scale = this._mmPerUnit;
+        const mm = (value: number): number => Math.ceil(value * scale - 1e-6);
+        const spacing = options.spacing ?? 5;
+        const gap = options.gap ?? 0;
+        const [ox, oy, oz] = options.origin ?? [0, 0, 0];
+        const parts = options.parts
+            ?? collectParts(this._scene, { labels: false, order: 'scene', includeHidden: options.includeHidden === true });
+
+        /*  A pile per part, split when it is higher than the bin: `perPile` pieces of thickness t stand
+            perPile * t + (perPile - 1) * gap high. The bin grows to hold the biggest pile. */
+        const binHeight = Math.max(options.height ?? 1200 / scale, ...parts.map(p => p.measure.thickness));
+        const piles = parts.flatMap(part =>
+        {
+            const { thickness, width, length } = part.measure;
+            const perPile = Math.max(1, Math.floor((binHeight + gap) / (thickness + gap)));
+            return Array.from({ length: Math.ceil(part.shapes.length / perPile) }, (_, k) =>
+            {
+                const shapes = part.shapes.slice(k * perPile, (k + 1) * perPile);
+                return { part, shapes, thickness, width, length, height: shapes.length * thickness + (shapes.length - 1) * gap };
+            });
+        });
+        const bin = {
+            length: Math.max(options.length ?? 2400 / scale, ...piles.map(p => p.length)),
+            width: Math.max(options.width ?? 1200 / scale, ...piles.map(p => p.width)),
+            height: Math.max(binHeight, ...piles.map(p => p.height)),
+        };
+
+        const plan = planner.solve({
+            name: 'packed layout',
+            // a pile is turned about the vertical at most: it stands as it is laid
+            items: piles.map(p => ({ dims: [mm(p.length), mm(p.width), mm(p.height)], orientations: 'upright' as const })),
+            bins: [{ dims: [mm(bin.length), mm(bin.width), mm(bin.height)] }],
+        }, { gap: mm(spacing), support: options.support, iterations: options.iterations });
+
+        const nodesByShape = new Map<AnyShape, MeshupSceneNode>(
+            this._shapeNodes().map(node => [node.shape(), node] as [AnyShape, MeshupSceneNode]));
+        const yaw: [number, number, number, number] = [0, 0, Math.SQRT1_2, Math.SQRT1_2];
+
+        const transforms = plan.bins.flatMap((load, b) =>
+        {
+            const binX = ox + b * (bin.length + Math.max(bin.length / 10, spacing * 10));
+            return load.placements.flatMap(placement =>
+            {
+                const pile = piles[placement.item];
+                const turned = placement.orientation === 1;
+                const corner = [binX + placement.x / scale, oy + placement.y / scale, oz + placement.z / scale];
+                return pile.shapes.flatMap((shape, i) =>
+                {
+                    const node = nodesByShape.get(shape);
+                    if (!node) { return [] }
+                    const obbox = shape.obbox();
+                    // the piece's centre in the pile as laid out, then turned about the pile's corner when the pile is
+                    const px = pile.length / 2, py = pile.width / 2;
+                    const centre = [
+                        corner[0] + (turned ? pile.width - py : px),
+                        corner[1] + (turned ? px : py),
+                        corner[2] + pile.thickness / 2 + i * (pile.thickness + gap),
+                    ];
+                    const ortho = Object.values(obbox.toOrthoQuaternion()) as [number, number, number, number];
+                    return [{
+                        sceneNode: node,
+                        translation: obbox.center().toVector().reverse().add(centre).toArray() as [number, number, number],
+                        rotation: turned ? multiplyQuaternions(yaw, ortho) : ortho,
+                        scale: [1, 1, 1] as [number, number, number],
+                    }];
+                });
+            });
+        }) as Array<LayoutTransformation>;
+
+        const placed = new Set(transforms.map(transform => transform.sceneNode));
+        const skipped = this._shapeNodes().filter(node => !placed.has(node)).length;
+        if (skipped)
+        {
+            console.warn(`Layouter::packed(): ${skipped} shape${skipped === 1 ? ' is' : 's are'} not packed: `
+                + `curves, points and solids with no measurable volume are not parts, and a pile that fitted no bin stays out. `
+                + `${skipped === 1 ? 'It was' : 'They were'} left where ${skipped === 1 ? 'it is' : 'they are'}.`);
+        }
+
+        this._result = { name: 'packed', translationMode: 'relative', transforms };
+        return this
+    }
+
     apply(): this
     {
         this._applyTransforms(this._requireResult().transforms)
@@ -505,4 +618,17 @@ export class Layouter
             && Math.abs(scale[1] - 1) < TOLERANCE
             && Math.abs(scale[2] - 1) < TOLERANCE
     }
+}
+
+/** The rotation that turns by `b` first and then by `a`, as [x, y, z, w]. */
+function multiplyQuaternions(a: [number, number, number, number], b: [number, number, number, number]): [number, number, number, number]
+{
+    const [ax, ay, az, aw] = a;
+    const [bx, by, bz, bw] = b;
+    return [
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
+    ];
 }

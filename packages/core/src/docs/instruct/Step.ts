@@ -131,8 +131,10 @@ export class Step
      *                    high, so a model with any repetition still fits on the page.
      *      'row'         every piece laid flat in a row, rowOrtho
      *      'exploded'    every piece pushed out from the middle, exploded
+     *      'packed'      the stacks of 'partstack', packed into a bin by the 3D load planner (the
+     *                    load of the job); the planner loads when the script mentions 'packed'
      *
-     *  A 'partstack' step stacks what THIS MANUAL calls a part — the same A, B, C its labels
+     *  A 'partstack' or 'packed' step stacks what THIS MANUAL calls a part — the same A, B, C its labels
      *  and its prose use — not whatever the step's own shapes would merge into.
      *
      *  The layout is a TRANSFORM applied for this step only; the scene itself is never moved,

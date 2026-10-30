@@ -40,7 +40,7 @@ import { PARAM_FRAMES_DEFAULT, PARAM_FRAMES_MAX } from './standard'
 export const EASINGS: Array<Easing> = ['linear', 'easeIn', 'easeOut', 'easeInOut', 'spring']
 export const LOOPS: Array<AnimationLoop> = ['none', 'loop', 'pingpong']
 
-export type LayoutKind = 'partstack' | 'row' | 'exploded'
+export type LayoutKind = 'partstack' | 'row' | 'exploded' | 'packed'
 export type AnimationOrder = 'bottomUp' | 'topDown' | 'scene' | 'stack'
 export const ORDERS: Array<AnimationOrder> = ['bottomUp', 'topDown', 'scene', 'stack']
 
@@ -171,7 +171,7 @@ export class Animation
 
     //// LAYOUTS ////
 
-    /** Start laid out, end as modelled: 'partstack' (stacks of stock), 'row' or 'exploded'. */
+    /** Start laid out, end as modelled: 'partstack' (stacks of stock), 'row', 'exploded' or 'packed' (the stacks packed into bins). */
     from(kind: LayoutKind, options: LayoutOptions = {}): this
     {
         this._spec.layout = { kind: this._layoutKind(kind, 'from'), direction: 'from', options: { ...options } }
@@ -481,7 +481,7 @@ export class Animation
     _layoutKind(kind: any, verb: string): LayoutKind
     {
         const k = layoutKindOf(kind)
-        if (!k) { throw new Error(`${this._where(verb)}: "${kind}" is not a layout. Use 'partstack', 'row' or 'exploded'.`) }
+        if (!k) { throw new Error(`${this._where(verb)}: "${kind}" is not a layout. Use 'partstack', 'row', 'exploded' or 'packed'.`) }
         return k
     }
 
@@ -530,6 +530,7 @@ export function layoutKindOf(kind: any): LayoutKind | null
     if (['partstack', 'stack', 'stacks'].includes(k)) { return 'partstack' }
     if (['row', 'layout', 'flat'].includes(k)) { return 'row' }
     if (['exploded', 'explode'].includes(k)) { return 'exploded' }
+    if (k === 'packed') { return 'packed' }
     return null
 }
 

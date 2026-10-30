@@ -92,6 +92,12 @@ export function isPack3dLoaded(): boolean
     return _pack3d !== null;
 }
 
+/** The loaded 3D load planner, or null when nothing has loaded it (Layouter.packed() uses it). */
+export function loadedPack3d(): Packer3D | null
+{
+    return _pack3d;
+}
+
 /** Iterations of the nesting that only feeds the stats of make.boarding(): an estimate, so it keeps
  *  the small budget it always had instead of the larger one of a pack() call. */
 const BOARDING_STATS_ITERATIONS = 200;

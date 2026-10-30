@@ -109,12 +109,12 @@ export interface ResolvedMove
 //// LAYOUT ////
 
 /** Layouts a step can ask for, named after the Layouter methods that do them. */
-export type StepLayoutKind = 'row' | 'exploded' | 'partstack'
+export type StepLayoutKind = 'row' | 'exploded' | 'partstack' | 'packed'
 
 export interface StepLayoutSpec
 {
     kind: StepLayoutKind
-    /** rowOrtho / partStack spacing, or exploded distance. */
+    /** rowOrtho / partStack / packed spacing, or exploded distance. */
     spacing?: number
     distance?: number
 }

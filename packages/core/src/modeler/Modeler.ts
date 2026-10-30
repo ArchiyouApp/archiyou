@@ -88,7 +88,7 @@ import { Animator, animationNamesFor } from "../animator/Animator";
 import { Make } from './Make';
 import { brepShapeToMeshup, meshupShapeToBrep, isBrepShape, DEFAULT_MESHING_QUALITY } from './brep/toMeshup';
 
-import { systemOfUnit } from '../units/UnitConverter';
+import { systemOfUnit, MM_PER_UNIT } from '../units/UnitConverter';
 
 // Union classes that combine meshup and brep
 type PointLike = meshup.PointLike // only use one
@@ -376,7 +376,7 @@ export class Modeler
 
     layouter(): Layouter
     {
-        return new Layouter(this._scene)
+        return new Layouter(this._scene, { mmPerUnit: MM_PER_UNIT[this._units] ?? 1 })
     }
 
     /** Add a meshup shape (or array of shapes) to the scene at the active layer. Tags each

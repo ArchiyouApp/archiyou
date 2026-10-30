@@ -13,6 +13,7 @@ import { Instruct, SUBJECT_GROUP, CONTEXT_GROUP } from '../../../src/docs/instru
 import { Step } from '../../../src/docs/instruct/Step'
 import type { ArchiyouModules } from '../../../src/types'
 import { projectMeshes } from '../../../src/modeler/SVGExporter'
+import { loadPack3dModule } from '../../../src/modeler/Make'
 
 let modeler: Modeler
 let calc: Calc
@@ -309,6 +310,19 @@ describe('layout', () =>
         }, [])
 
         expect(columns.map(c => c.length)).toEqual([4, 2, 1])    // most used first
+    })
+
+    it('packs the stacks into a bin when asked for a packed layout', async () =>
+    {
+        await loadPack3dModule()
+        manual.step('the load').shapes('A', 'B', 'C').layout('packed')
+        const [step] = manual.toData().steps
+
+        // the same piles as a partstack, so four legs share one footprint, and nothing is outside the 2400 x 1200 bin
+        const footprints = step.placements!.map(p => [p.position[0], p.position[1]].map(v => v.toFixed(3)).join())
+        expect(step.placements).toHaveLength(7)
+        expect(new Set(footprints).size).toBe(3)
+        step.placements!.forEach(p => expect(p.position[0]).toBeLessThanOrEqual(2400))
     })
 
     it('stacks what the MANUAL calls a part, not what the step\'s shapes would merge into', () =>

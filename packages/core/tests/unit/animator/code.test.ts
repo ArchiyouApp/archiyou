@@ -106,6 +106,18 @@ print(JSON.stringify({ n: laid.length, named: laid.every(l => typeof l.shape.nam
         expect(JSON.stringify(result.messages)).toContain('{\\"n\\":3,\\"named\\":true,\\"p\\":3,\\"r\\":4}')
         expect(() => new Animator().layout('pile' as any)).toThrow(/"pile" is not a layout/)
     })
+
+    it('animator.layout(\'packed\') packs the stacks into a bin beside the model, and the name alone loads the planner', async () =>
+    {
+        const code = MODEL + `
+laid = animator.layout('packed');
+bins = laid.map(l => l.shape.bbox());
+print(JSON.stringify({ n: laid.length, p: laid[0].position.length, r: laid[0].rotation.length,
+    inFront: laid.every(l => l.position[1] < 0), inBin: laid.every(l => l.position[0] < 2400 + 1200) }));
+`
+        const { result } = await run(code, [])
+        expect(JSON.stringify(result.messages)).toContain('{\\"n\\":3,\\"p\\":3,\\"r\\":4,\\"inFront\\":true,\\"inBin\\":true}')
+    })
 })
 
 describe('the preset', () =>

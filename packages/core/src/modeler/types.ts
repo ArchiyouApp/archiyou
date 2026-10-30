@@ -148,6 +148,30 @@ export interface PartStackLayoutOptions
     parts?: Array<Part>
 }
 
+/** Options for {@link Layouter.packed}: every part as a pile of its pieces, the piles packed into bins. */
+export interface PackedLayoutOptions
+{
+    /** The bin the piles are packed into, in model units (default 2400 x 1200 x 1200 mm). It grows to hold the biggest
+     *  pile, and more bins are used side by side when one is not enough. */
+    length?: number
+    width?: number
+    height?: number
+    /** Clearance between piles, and between a pile and the walls of the bin, in model units. Default 5, as partStack. */
+    spacing?: number
+    /** Gap between the pieces WITHIN a pile. Default 0. */
+    gap?: number
+    /** The share of a pile's base that has to rest on the floor or on other piles (0 to 1). Default 0.8. */
+    support?: number
+    /** Steps of the planner's search for a tighter packing. Default 100. */
+    iterations?: number
+    /** Pack shapes whose style marks them invisible too. Default false. */
+    includeHidden?: boolean
+    /** Where the first bin stands: its lowest corner at this point. Default [0, 0, 0]. */
+    origin?: [number, number, number]
+    /** The parts to pack, when the caller has already worked them out (see PartStackLayoutOptions.parts). */
+    parts?: Array<Part>
+}
+
 export interface LayoutAnimationOptions
 {
     duration?: number

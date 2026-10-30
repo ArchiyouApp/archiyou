@@ -988,6 +988,10 @@ export class Instruct
             const layouter = new Layouter(collection)
 
             if (spec.kind === 'exploded') { layouter.exploded({ distance: spec.distance }) }
+            else if (spec.kind === 'packed')
+            {
+                layouter.packed({ spacing: spec.spacing ?? spec.distance, parts: this._stepParts(entries) })
+            }
             else if (spec.kind === 'partstack')
             {
                 layouter.partStack({

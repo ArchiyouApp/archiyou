@@ -96,7 +96,8 @@ export class Animator
     }
 
     /** Where each shape lies in a layout, to key the shapes yourself: 'partstack' (stacks of
-     *  stock beside the model), 'row' (laid flat in a row in front of it) or 'exploded'.
+     *  stock beside the model), 'row' (laid flat in a row in front of it), 'exploded' or 'packed'
+     *  (the stacks packed into a bin beside the model, by the 3D load planner).
      *
      *      animator.layout('partstack').forEach(stock =>
      *          flyin.key(0, stock.shape, { position: stock.position, rotation: stock.rotation }));
@@ -110,7 +111,7 @@ export class Animator
         const k = layoutKindOf(kind)
         if (!k)
         {
-            throw new Error(`animator.layout(): "${kind}" is not a layout. Use 'partstack', 'row' or 'exploded'.`)
+            throw new Error(`animator.layout(): "${kind}" is not a layout. Use 'partstack', 'row', 'exploded' or 'packed'.`)
         }
         const modeler = this._archiyou?.modeler
         if (!modeler?.scene)

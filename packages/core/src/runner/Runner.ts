@@ -940,14 +940,14 @@ export class Runner
         if (codes.some(code => typeof code === 'string' && /\b(pack|pack2d|boarding)\s*\(/.test(code))) await loadBinPackerModule()
     }
 
-    /** Load the 3D load planner (pack3d) before a run whose script, or any of its components, calls pack3d() or pack():
+    /** Load the 3D load planner (pack3d) before a run whose script, or any of its components, calls pack3d(), pack() a packed() layout or the layout name 'packed':
      *  make.pack3d() is synchronous for scripts and cannot wait for a dynamic import. make.pack() decides between 2D and 3D
      *  by the shapes it gets, which the scan cannot know, so it loads both packers. A call that the scan cannot see (a
      *  computed name) gets a clear error from make.pack3d() instead. A script that never mentions them loads nothing. */
     private async _loadPack3dWhenUsed(request: RunnerScriptExecutionRequest): Promise<void>
     {
         const codes = [request.script?.code, ...Object.values(this._componentScripts).map(s => (s as any)?.code)]
-        if (codes.some(code => typeof code === 'string' && /\b(pack|pack3d)\s*\(/.test(code))) await loadPack3dModule()
+        if (codes.some(code => typeof code === 'string' && /\b(pack|pack3d|packed)\s*\(|['"]packed['"]/.test(code))) await loadPack3dModule()
     }
 
     private _finalizeExecutionDuration(result: RunnerScriptExecutionResult | null | undefined, executeStartTime: number): void
