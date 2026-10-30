@@ -157,3 +157,14 @@ cargo run --release --example bench          # the benchmark families
 
 `src/validate.rs` is the oracle: it re-reads the instance and checks the finished plan pair by pair.
 `solve` runs it on every result and returns an error instead of a plan that breaks a rule.
+
+## References
+
+- T. G. Crainic, G. Perboli, R. Tadei, "Extreme point-based heuristics for three-dimensional bin packing",
+  INFORMS Journal on Computing 20(3), 2008: the candidate positions.
+- E. K. Burke, Y. Bykov, "The late acceptance hill-climbing heuristic", European Journal of Operational
+  Research 258(1), 2017 (first presented at PATAT 2008): the search.
+- A. Bortfeldt, G. Wäscher, "Constraints in container loading: a state-of-the-art review", European Journal
+  of Operational Research 229(1), 2013: which rules a real load has to meet (stability, weight, stacking,
+  unloading order, balance).
+- D. Blackman, S. Vigna, "Scrambled linear pseudorandom number generators", 2018 (xoshiro256++, public domain).
