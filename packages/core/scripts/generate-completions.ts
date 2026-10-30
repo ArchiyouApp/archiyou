@@ -34,6 +34,7 @@
  *   src/docs/Docs.ts                  → Docs members (the `doc` global)
  *   src/docs/Document.ts              → Document members (what doc.create() and the chain return)
  *   src/modeler/Make.ts               → Make members (the `make` global)
+ *   src/products/ProductManager.ts    → ProductManager members (what make.products() returns)
  *   src/animator/Animator.ts          → Animator members (the `animator` global)
  *   src/animator/Animation.ts         → Animation members (what animator.create() returns)
  *
@@ -425,6 +426,8 @@ const makeMethods = extractPublicMethods(
     new Set(['setArchiyou', 'packReady']),
 )
 
+const productManagerMethods = extractPublicMethods(getClass('src/products/ProductManager.ts', 'ProductManager'))
+
 /* ------------------------------------------------------------------ */
 /*  Extract: animator (the `animator` global and the Animation it makes) */
 /* ------------------------------------------------------------------ */
@@ -526,6 +529,11 @@ const shapeClasses: ShapeClassInfo[] = [
         label: 'Make',
         detail: 'the make global: frames, walls, boarding, packing and part lists',
         members: makeMethods,
+    },
+    {
+        label: 'ProductManager',
+        detail: 'make.products(): parts of a model matched to the products of a product sheet, and their costs',
+        members: productManagerMethods,
     },
     {
         label: 'Animator',

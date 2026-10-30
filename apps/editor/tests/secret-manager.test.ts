@@ -49,6 +49,11 @@ async function google(input: string | URL, init?: RequestInit) : Promise<Respons
   {
     return new Response(bytes('public-xlsx'), { status: 200, headers: { 'content-type': XLSX_TYPE } });
   }
+  if (url.startsWith(`https://docs.google.com/spreadsheets/d/${PRIVATE}/export`))
+  {
+    // what a browser makes of Google's redirect to its sign-in page: a refused cross-origin request
+    throw new TypeError('Failed to fetch');
+  }
   if (url.startsWith('https://docs.google.com/spreadsheets/d/'))
   {
     return new Response('<html>sign in</html>', { status: 401, headers: { 'content-type': 'text/html' } });
@@ -235,13 +240,60 @@ describe('content', () =>
     expect(notShared.problems[0]!.message).toContain(EMAIL);
   });
 
-  it('serves a public sheet from memory within a minute', async () =>
+  it('serves a public sheet from memory for 10 minutes', async () =>
   {
     const sm = await fresh();
     await sm.resolve([{ kind: 'google-sheet', id: PUBLIC }], { own: true });
     await sm.resolve([{ kind: 'google-sheet', id: PUBLIC }], { own: true });
     expect(calls.filter((c) => c.includes(PUBLIC))).toHaveLength(1);
     expect(sm.activity.get().map((u) => u.outcome)).toEqual(['cached', 'used']);
+  });
+
+  it('after 10 minutes, fetches a public sheet again for the next runs, and does not keep this one waiting', async () =>
+  {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try
+    {
+      const sm = await fresh();
+      const first = (await sm.resolve([{ kind: 'google-sheet', id: PUBLIC }], { own: true })).content[`google-sheet:${PUBLIC}`];
+      vi.setSystemTime(Date.now() + 10 * 60_000 + 1000);
+      const later = (await sm.resolve([{ kind: 'google-sheet', id: PUBLIC }], { own: true })).content[`google-sheet:${PUBLIC}`];
+      expect(later).toBe(first);                                     // from memory
+      expect(calls.filter((c) => c.includes(PUBLIC))).toHaveLength(2); // and fetched again alongside
+      await new Promise((r) => setTimeout(r, 0));
+      await sm.resolve([{ kind: 'google-sheet', id: PUBLIC }], { own: true });
+      expect(calls.filter((c) => c.includes(PUBLIC))).toHaveLength(2);
+    }
+    finally
+    {
+      vi.useRealTimers();
+    }
+  });
+
+  it('asks Google once whether a sheet is public: the browser refuses its sign-in page, and the key fetches it from then on', async () =>
+  {
+    const sm = await fresh();
+    await sm.put({ name: 'urbuild', kind: 'google-service-account', value: serviceAccountJson });
+    const runs = await Promise.all([0, 1].map(async () => (await sm.resolve([{ kind: 'google-sheet', id: PRIVATE }], { own: true }))));
+    const again = await sm.resolve([{ kind: 'google-sheet', id: PRIVATE }], { own: true });
+    [...runs, again].forEach(({ content, problems }) =>
+    {
+      expect(problems).toEqual([]);
+      expect(content[`google-sheet:${PRIVATE}`]).toMatchObject({ via: 'key' });
+    });
+    expect(calls.filter((c) => c.startsWith(`https://docs.google.com/spreadsheets/d/${PRIVATE}`)).length).toBeLessThanOrEqual(2);
+    calls.length = 0;
+    await sm.resolve([{ kind: 'google-sheet', id: PRIVATE }], { own: true });
+    expect(calls.filter((c) => c.startsWith('https://docs.google.com/'))).toEqual([]);
+  });
+
+  it('asks anonymously again when a sheet that seemed private has no key to read it: the fetch may have failed on the network', async () =>
+  {
+    const sm = await fresh();
+    expect((await sm.resolve([{ kind: 'google-sheet', id: PRIVATE }], { own: true })).problems[0]).toMatchObject({ code: 'no_key' });
+    calls.length = 0;
+    await sm.resolve([{ kind: 'google-sheet', id: PRIVATE }], { own: true });
+    expect(calls.filter((c) => c.startsWith(`https://docs.google.com/spreadsheets/d/${PRIVATE}`))).toHaveLength(1);
   });
 });
 

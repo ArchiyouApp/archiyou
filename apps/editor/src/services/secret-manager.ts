@@ -169,10 +169,14 @@ interface CachedContent
   checkedAt: number;
 }
 
-/** Public sheets have no cheap "has it changed" check: fetch again after this. */
-const PUBLIC_TTL_MS = 60_000;
+/** Public sheets have no cheap "has it changed" check: fetch again after this — in the
+ *  background, while runs go on with what was fetched before. */
+const PUBLIC_TTL_MS = 10 * 60_000;
+/** A sheet found not to be public is fetched with a key, without asking anonymously
+ *  first, for this long: asking costs a round trip to Google's sign-in page per run. */
+const PRIVATE_RECHECK_MS = 10 * 60_000;
 /** A keyed sheet is checked against Drive's modifiedTime at most this often. */
-const KEYED_RECHECK_MS = 15_000;
+const KEYED_RECHECK_MS = 10 * 60_000;
 const ACTIVITY_MAX = 200;
 
 /** Reading is all a run needs. */
@@ -193,6 +197,10 @@ class ClientSecretManager
   /** Folder ids copies go into, by `<key>|<parent>|<name>` (and `<key>|parent|<sheet>`): for the session. */
   private readonly _folders = new Map<string, Promise<string>>();
   private readonly _content = new Map<string, CachedContent>();
+  /** When a sheet was last found not to be public, by id. */
+  private readonly _private = new Map<string, number>();
+  /** Public sheets being fetched again in the background, by id. */
+  private readonly _refreshing = new Map<string, Promise<void>>();
 
   constructor()
   {
@@ -299,32 +307,41 @@ class ClientSecretManager
   forgetContent() : void
   {
     this._content.clear();
+    this._private.clear();
   }
 
   private async _resolveSheet(need: AyContentNeed, trust: RunTrust) : Promise<{ item?: AyContentItem; problem?: ContentProblem }>
   {
     const problem = (code: ContentProblemCode, message: string, keyName?: string) =>
     {
+      // not public and no key that reads it: ask anonymously again next time (a failed fetch
+      // may have been the network, not Google's sign-in page)
+      this._private.delete(need.id);
       this._log({ id: need.id, via: null, keyName, outcome: code });
       return { problem: { id: need.id, code, message } };
     };
 
     try
     {
-      // 1. Anonymously: a public sheet is public for everyone, in every run.
+      // 1. Anonymously: a public sheet is public for everyone, in every run. Once fetched, a
+      //    run gets it from memory; after PUBLIC_TTL_MS it is fetched again for the runs after.
       const cachedPublic = this._content.get(`${need.id}|public`);
-      if (cachedPublic && Date.now() - cachedPublic.checkedAt < PUBLIC_TTL_MS)
+      if (cachedPublic)
       {
+        if (Date.now() - cachedPublic.checkedAt >= PUBLIC_TTL_MS) this._refreshPublic(need.id);
         this._log({ id: need.id, via: 'public', outcome: 'cached' });
         return { item: cachedPublic.item };
       }
-      const pub = await this._fetchPublic(need.id);
+      const knownPrivate = Date.now() - (this._private.get(need.id) ?? -Infinity) < PRIVATE_RECHECK_MS;
+      const pub = knownPrivate ? null : await this._fetchPublic(need.id);
       if (pub)
       {
+        this._private.delete(need.id);
         this._content.set(`${need.id}|public`, { item: pub, checkedAt: Date.now() });
         this._log({ id: need.id, via: 'public', outcome: 'used' });
         return { item: pub };
       }
+      if (!knownPrivate) this._private.set(need.id, Date.now());
 
       // 2. Private: only for the user's own script, with one of the user's keys.
       if (!trust.own)
@@ -357,10 +374,30 @@ class ClientSecretManager
     }
   }
 
-  /** The public xlsx export, or null when the sheet is not public. */
+  /** Fetch a public sheet again for the next runs; this run goes on with the one in memory.
+   *  When it is no longer public, the next run asks again. */
+  private _refreshPublic(id: string) : void
+  {
+    if (this._refreshing.has(id)) return;
+    const done = this._fetchPublic(id)
+      .then((pub) =>
+      {
+        if (pub) this._content.set(`${id}|public`, { item: pub, checkedAt: Date.now() });
+        else this._content.delete(`${id}|public`);
+      })
+      .catch(() => { /* keep the one in memory, try again after the next PUBLIC_TTL_MS */ })
+      .finally(() => this._refreshing.delete(id));
+    this._refreshing.set(id, done);
+  }
+
+  /** The public xlsx export, or null when the sheet is not public. In a browser, Google
+   *  answers a private sheet with a redirect to its sign-in page, which the browser refuses
+   *  as a cross-origin request: the fetch fails instead of answering 401. */
   private async _fetchPublic(id: string) : Promise<AyContentItem | null>
   {
-    const res = await fetch(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/export?format=xlsx`, { credentials: 'omit' });
+    const res = await fetch(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/export?format=xlsx`, { credentials: 'omit' })
+      .catch(() => null);
+    if (!res) return null;
     const type = res.headers.get('content-type') ?? '';
     if (!res.ok || !type.includes('spreadsheetml')) return null;
     const bytes = await res.arrayBuffer();

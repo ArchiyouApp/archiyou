@@ -18,6 +18,7 @@ import { Table } from '../calc/Table';
 import { roundTo } from '../utils';
 
 import { collectParts } from './parts';
+import { ProductManager } from '../products/ProductManager';
 import type { BinPacker, CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm';
 import type { Packer3D } from '@archiyou/pack3d-wasm';
 
@@ -2157,6 +2158,22 @@ export class Make
     }
 
     //// DATA GATHERING /////
+
+    /** Products of a product sheet for the parts of a model, and their costs: a new
+     *  ProductManager. It reads nothing until fromSheet(url) or fromRows(rows).
+     *
+     *  @example
+     *  // In practice: $module('cloudcalc'); products = make.products().fromSheet(url)
+     *  products = make.products().fromRows([
+     *      { product_id: 'sls-38x140', productgroep: 'SLS', vorm: 'balk', breedte: 38, hoogte: 140, lengte: 5400 },
+     *  ])
+     *  products.assign('SLS', make.wall(3000, 2700, 140))
+     *  products.toTable()
+     */
+    products(): ProductManager
+    {
+        return new ProductManager(() => this.archiyou);
+    }
 
     /** Generate a part list Calc table from a ShapeCollection of cuboid parts
      *  (beam-like and plate-like solids). Without shapes it lists everything in the

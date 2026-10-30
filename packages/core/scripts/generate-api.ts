@@ -43,6 +43,7 @@ const ENTRY_POINTS = [
     'src/calc/Calc.ts',
     'src/modeler/Make.ts',
     'src/materials/MaterialManager.ts',
+    'src/products/ProductManager.ts',
     'src/execution/ParamManager.ts',
     'src/interaction/Handle.ts',
     'src/animator/Animator.ts',
@@ -54,7 +55,7 @@ const ENTRY_POINTS = [
 const CLASSES = [
     'Mesh', 'Curve', 'Polygon', 'ShapeCollection', 'SceneNode', 'Sketch',
     'Point', 'Vector', 'Vertex', 'Bbox', 'OBbox',
-    'Docs', 'Document', 'Calc', 'Make', 'MaterialManager',
+    'Docs', 'Document', 'Calc', 'Make', 'ProductManager', 'MaterialManager',
     'ParamManager', 'RunnerComponentImporter', 'Handle',
     'Animator', 'Animation',
 ]
