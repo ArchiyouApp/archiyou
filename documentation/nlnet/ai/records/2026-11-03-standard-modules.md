@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-11-03 → (open) |
+| Dates | 2026-11-03 → 2026-11-03 |
 | Model | Claude Fable 5.1 (claude-fable-5-1), 1M context, Claude Code agent |
 | Tool | Claude Code as agent (a study question, then "execute the idea") |
 | Human | Mark van der Net: asked for the study, decided that standard implies public, approved the design, reviewed the code |
@@ -14,7 +14,12 @@ NLnet scope; its one-line manifest change (`"standard": true`) is committed ther
 This record covers the engine, module SDK, server and editor side.
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+```
+2026-11-03 11:20 +0100  The module cloudcalc is used a lot, structurally. For example in ProductManager. I think it would be best to have modules that are standard and are preloaded by default. Can you study how this could work simply?
+2026-11-03 11:53 +0100  Standard does implies public. Execute the idea
+```
+The study's answer (the plan below) was given in the terminal; the two commit questions were
+answered by choosing the proposed summary and "Yes, commit both".
 
 ## Plan (agent output, reviewed by the human before implementation)
 
@@ -67,7 +72,21 @@ re-run loop (exact, but a wasted partial run and more machinery than the trigger
 
 ## Review and decisions by the human
 
-- 2026-11-03: "Standard does implies public." A standard module needs no entitlement.
+- 2026-11-03: "Standard does implies public." A standard module needs no entitlement; one predicate
+  (`isPublicModule`) serves the catalog, the bundle route and the call route.
+- Approved the design as studied, without changes; chose the proposed commit summary.
+- Left ProductManager's doc and error-text changes (the same wording change, in a file carrying
+  unrelated products work) to be committed with that work.
+- Checks: core module suites (ModuleRegistry, runner.modules: 69 tests) and server module suites
+  (modules.public, modules.gating, moduleHost: 80 tests) pass; core and module-sdk type-check (the
+  Shape.ts errors present at the time come from other uncommitted work); the API help data was
+  regenerated and only the `$module` entry changed.
 
 ## Commits
 | Commit | Subject | Prompt it answers |
+|---|---|---|
+| 211ba23 | Standard modules: cloudcalc without a `$module()` declaration | 11:53 "Execute the idea" |
+| (this commit) | Close the disclosure record for standard modules | — |
+
+Out of scope, in the private `archiyou-modules` repo: 0cb9499 `cloudcalc: standard module (no $module() needed, public)`, one manifest line.
+
