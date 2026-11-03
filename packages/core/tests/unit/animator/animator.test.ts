@@ -168,7 +168,7 @@ all().forEach(shape => lift.key(0, shape, {}).key(1, shape, { move: [0, 0, 50] }
         expect(clipNames(await glbOf(result))).toEqual(['lift'])
     })
 
-    it('flyin starts every part in stacks in front of the model and ends it where the model has it', async () =>
+    it('flyin starts every part packed at the origin and ends it where the model has it', async () =>
     {
         const { result } = await run(ANIMATED, ['default/model/glb?animations=flyin'])
         const doc = await glbOf(result)
@@ -194,10 +194,11 @@ all().forEach(shape => lift.key(0, shape, {}).key(1, shape, { move: [0, 0, 50] }
                 return [t[i * 3] + turned[0], t[i * 3 + 1] + turned[1], t[i * 3 + 2] + turned[2]]
             }
 
-            // in front of the model (its front is y = -22), in stacks on the ground: two legs
-            // of 44 make a stack 88 high, the top lies flat
+            // in the bin at the origin, in stacks on the ground: two legs of 44 make a stack
+            // 88 high, the top lies flat
             const start = centreAt(0)
-            expect(start[1]).toBeLessThan(-22)
+            expect(start[0]).toBeGreaterThan(0)
+            expect(start[1]).toBeGreaterThan(0)
             expect(start[2]).toBeLessThan(88)
 
             // and home at the end, as modelled

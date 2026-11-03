@@ -1898,7 +1898,7 @@ export class Make
      *   - maxIterations: steps of the search that improves the plan (default 100; 0 for the first plan found)
      *   - maxEvaluations: a limit on the work in placements tried, not on the time (default 40 million)
      * @returns A group 'loaded' with a sub-group per bin (bin1, bin2, …): the outline of the bin and the placed copies,
-     *   side by side along x. The report is at `modeler.stats`: `bins` (name, items, fill, weight, centre of gravity,
+     *   side by side along y. The report is at `modeler.stats`: `bins` (name, items, fill, weight, centre of gravity,
      *   support loads and `balanceOk` of each), `unplaced` (the indices of the shapes that fitted no bin, were too heavy
      *   or ran out of stock), `cost`.
      *
@@ -1957,15 +1957,15 @@ export class Make
             console.warn('Make::pack3d(): no shape has a weight, so the weight limits and the balance have nothing to work with. Give weight: kg, or a material.');
         }
 
-        // the bins side by side along x, with a tenth of their length between them
-        const lengths = plan.bins.map(load => instance.bins[load.bin].dims[0] / context.mmPerUnit);
-        const offsets = lengths.map((_, b) => lengths.slice(0, b).reduce((sum, length) => sum + length * 1.1, 0));
+        // the bins side by side along y, with a tenth of their width between them
+        const widths = plan.bins.map(load => instance.bins[load.bin].dims[1] / context.mmPerUnit);
+        const offsets = widths.map((_, b) => widths.slice(0, b).reduce((sum, width) => sum + width * 1.1, 0));
 
         const result = modeler.group().name('loaded');
         plan.bins.forEach((load, b) =>
         {
             const [length, width, height] = instance.bins[load.bin].dims.map(side => side / context.mmPerUnit);
-            const outline = modeler.boxBetween([offsets[b], 0, 0], [offsets[b] + length, width, height]).wireframe();
+            const outline = modeler.boxBetween([0, offsets[b], 0], [length, offsets[b] + width, height]).wireframe();
             const placed = load.placements.map(p =>
             {
                 const copy = groups[p.item].members[p.copy].shape.copy();

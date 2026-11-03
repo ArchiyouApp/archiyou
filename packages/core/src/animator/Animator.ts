@@ -96,16 +96,16 @@ export class Animator
     }
 
     /** Where each shape lies in a layout, to key the shapes yourself: 'partstack' (stacks of
-     *  stock beside the model), 'row' (laid flat in a row in front of it), 'exploded' or 'packed'
-     *  (the stacks packed into a bin beside the model, by the 3D load planner).
+     *  stock at the origin), 'row' (laid flat in a row in front of the model), 'exploded' or 'packed'
+     *  (the stacks packed into a bin at the origin, by the 3D load planner).
      *
      *      animator.layout('partstack').forEach(stock =>
      *          flyin.key(0, stock.shape, { position: stock.position, rotation: stock.rotation }));
      *
      *  `position` is where the shape's centre goes, `rotation` a quaternion about that centre:
      *  a pose as key() takes it. It lays the model out when called, on every run of the script.
-     *  @param options spacing, beside (default true: on the ground in front of the model),
-     *      distance (exploded) */
+     *  @param options spacing, beside (on the ground in front of the model; default true
+     *      for the row, false for the stacks), distance (exploded) */
     layout(kind: LayoutKind, options: LayoutOptions = {}): Array<{ shape: any, position: Array<number>, rotation: Array<number> }>
     {
         const k = layoutKindOf(kind)

@@ -2,8 +2,8 @@
  *  animator/layouts.ts
  *
  *  Where each shape of the model lies in the layouts animations start or end in: stacks of
- *  stock beside the model ('partstack'), those stacks packed into a bin ('packed'), laid flat in a
- *  row ('row'), or pulled apart ('exploded'). resolve.ts runs them for `from()` and `to()`; `animator.layout()` hands them
+ *  stock at the origin ('partstack'), those stacks packed into a bin at the origin ('packed'), laid flat in a
+ *  row in front of the model ('row'), or pulled apart ('exploded'). resolve.ts runs them for `from()` and `to()`; `animator.layout()` hands them
  *  to a script that keys its parts itself.
  *
  *  Never mutates the scene: Layouter.placements() only says where each shape would go.
@@ -14,6 +14,7 @@ import { Layouter } from '../modeler/Layouter'
 import { collectParts, type Part } from '../modeler/parts'
 import type { LayoutPlacement } from '../modeler/placements'
 import { MM_PER_UNIT } from '../units/UnitConverter'
+import { isPack3dLoaded } from '../modeler/Make'
 
 /** The placements of a layout, about each part's own centre, keyed by the path of the scene
  *  node the shape is in.
@@ -22,28 +23,46 @@ export function layoutPlacements(modeler: any, kind: LayoutKind, options: Layout
 {
     const root = modeler.scene()
     const source = only.length ? modeler.collection(...only) : root
-    const layouter = new Layouter(source, { mmPerUnit: MM_PER_UNIT[modeler.units?.()] ?? 1 })
+    const mmPerUnit = MM_PER_UNIT[modeler.units?.()] ?? 1
+    const layouter = new Layouter(source, { mmPerUnit })
+    const laid = usableLayout(kind)
 
-    if (kind === 'exploded')
+    if (laid === 'exploded')
     {
         layouter.exploded({ distance: options.distance })
     }
     else
     {
         const bounds = boundsOf(root.shapes().toArray())
-        const beside = options.beside !== false
+        // the stacks stand at the origin, as layout() puts them; the row in front of the model
+        const beside = options.beside ?? (laid === 'row')
         const size = Math.max(bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2]) || 1
         const spacing = options.spacing ?? (beside ? Math.max(size * 0.05, 1) : undefined)
         const parts = collectParts(source, { labels: false, order: 'scene' })
-        const origin = beside ? besideOrigin(kind, bounds, parts, spacing ?? 5, MM_PER_UNIT[modeler.units?.()] ?? 1) : undefined
+        const origin = beside ? besideOrigin(laid, bounds, parts, spacing ?? 5, mmPerUnit) : undefined
+        const centerX = beside ? (bounds[0] + bounds[3]) / 2 : undefined // exactly in front of the model
 
-        if (kind === 'partstack') { layouter.partStack({ spacing, parts, origin }) }
-        else if (kind === 'packed') { layouter.packed({ spacing, parts, origin }) }
-        else { layouter.rowOrtho({ spacing, origin }) }
+        if (laid === 'partstack') { layouter.partStack({ spacing, parts, origin, centerX }) }
+        else if (laid === 'packed')
+        {
+            // as tight as layout('packed'): the spacing beside the model is its distance to the bin, not the room in the
+            // bin. Beside the model, further bins go away from it.
+            layouter.packed({ spacing: options.spacing, parts, origin, centerX, binDirection: beside ? -1 : 1 })
+        }
+        else { layouter.rowOrtho({ spacing, origin, centerX }) }
     }
 
     // the Layouter of a collection has nodes of its own: name each by the shape's real node
     return layouter.placements().map(p => ({ ...p, path: p.shape?._node?.path?.() ?? p.path }))
+}
+
+/** The layout to run: 'packed' needs the 3D load planner, which the Runner loads only for a run
+ *  that names it (or the fly-in). A run it did not see starts from the stacks, unpacked. */
+function usableLayout(kind: LayoutKind): LayoutKind
+{
+    if (kind !== 'packed' || isPack3dLoaded()) { return kind }
+    console.warn(`animator: the packed layout needs the 3D load planner, which this run did not load. The parts start from stacks instead.`)
+    return 'partstack'
 }
 
 /** [minX, minY, minZ, maxX, maxY, maxZ] of shapes. */
@@ -60,7 +79,7 @@ export function boundsOf(shapes: Array<any>): [number, number, number, number, n
 }
 
 /** Where a row or the stacks start so they stand on the ground in front of the model, one
- *  spacing away: laid out, a part's longest side runs along X and its thinnest along Z, so
+ *  spacing away (x is the Layouter's to center, by centerX): laid out, a part's longest side runs along X and its thinnest along Z, so
  *  the row is as deep as the widest part. A packed layout starts with the bin standing in front. */
 function besideOrigin(kind: LayoutKind, bounds: Array<number>, parts: Array<Part>, spacing: number, mmPerUnit: number): [number, number, number]
 {

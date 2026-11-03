@@ -123,6 +123,8 @@ export interface LayoutViewOptions
     /** Where the row starts: its first shape's left side is at origin x, the row runs along +X
      *  at origin y, centred on origin z. Default [0, 0, 0]. */
     origin?: [number, number, number]
+    /** Put the middle of the layout at this x, whatever origin x says. Default: not centered. */
+    centerX?: number
 }
 
 /** Options for {@link Layouter.partStack} — one flat stack per part, side by side. */
@@ -138,6 +140,8 @@ export interface PartStackLayoutOptions
     /** Where the stacks stand: the first one's left side at origin x, the row running along +X
      *  at origin y, the stacks standing ON origin z. Default [0, 0, 0]. */
     origin?: [number, number, number]
+    /** Put the middle of the layout at this x, whatever origin x says. Default: not centered. */
+    centerX?: number
     /** The parts to stack, when the caller has already worked them out. Left out, they are
      *  detected from the scene with collectParts().
      *
@@ -152,11 +156,11 @@ export interface PartStackLayoutOptions
 export interface PackedLayoutOptions
 {
     /** The bin the piles are packed into, in model units (default 2400 x 1200 x 1200 mm). It grows to hold the biggest
-     *  pile, and more bins are used side by side when one is not enough. */
+     *  pile, and more bins are used side by side along Y when one is not enough. */
     length?: number
     width?: number
     height?: number
-    /** Clearance between piles, and between a pile and the walls of the bin, in model units. Default 5, as partStack. */
+    /** Clearance between piles, and between a pile and the walls of the bin, in model units. Default 5 mm. */
     spacing?: number
     /** Gap between the pieces WITHIN a pile. Default 0. */
     gap?: number
@@ -168,6 +172,10 @@ export interface PackedLayoutOptions
     includeHidden?: boolean
     /** Where the first bin stands: its lowest corner at this point. Default [0, 0, 0]. */
     origin?: [number, number, number]
+    /** Put the middle of what is packed at this x, whatever origin x says: the piles, not the bin around them. Default: not centered. */
+    centerX?: number
+    /** The way the next bins go from the first along Y: 1 towards +Y (default), -1 towards -Y. */
+    binDirection?: 1 | -1
     /** The parts to pack, when the caller has already worked them out (see PartStackLayoutOptions.parts). */
     parts?: Array<Part>
 }

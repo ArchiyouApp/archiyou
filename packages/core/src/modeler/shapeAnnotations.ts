@@ -23,6 +23,7 @@ import type { toDAEOptions } from './DAEExporter'
 import type { DimensionOptions, LabelOptions } from '../annotator/types'
 import { collectAnnotations } from '../annotator/annotationLayer'
 import { renderDrawing, sceneSVG } from './SVGExporter'
+import { layoutShapes } from './Layouter'
 
 /** meshup's own collection serializer, kept as the fallback for a drawing with nothing
  *  core can add to it (an empty collection, which meshup answers with a placeholder). */
@@ -87,6 +88,10 @@ declare module '@archiyou/meshup' {
         carbon(): number | undefined
         /** Per-material mass/carbon breakdown — feed to calc.table('carbon', …). */
         materialTotals(): any
+        /** Lay the shapes out, moving them: 'packed' (in bins, by the 3D load planner),
+         *  'partstack' (stacks of stock), 'row' (laid flat in a row) or 'exploded'. Short for
+         *  `new Layouter(collection).packed(options).apply()`, see Layouter. */
+        layout(name: string, options?: Record<string, any>): this
     }
 }
 
@@ -244,6 +249,15 @@ function linkedAnnotations(modeler: any, shapes: Array<any>): Array<any> {
     // DXF and SVG can never disagree about which dimensions exist, or how many times.
     const annotations = [...new Set([...linkedAnnotations(this._modeler, shapes), ...collectAnnotations(this)])]
     return buildDXF(shapes, annotations, { units: this._modeler?.units?.(), ...options })
+}
+
+//// LAYOUT (ShapeCollection) ////
+
+/*  `collection.layout('packed')`: the Layouter on this collection, applied. Brep's collection
+    has a layout() of its own for its older 'line' and 'binpack' orders, which hands these
+    names on to the same function. */
+;(meshup.ShapeCollection.prototype as any).layout = function (this: any, name: string, options: Record<string, any> = {}) {
+    return layoutShapes(this, name, options)
 }
 
 //// SVG (Shape + ShapeCollection) ////

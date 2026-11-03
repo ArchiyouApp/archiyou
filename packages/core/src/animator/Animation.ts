@@ -65,12 +65,13 @@ export interface PoseInput
 /** Options of a layout an animation starts or ends in. */
 export interface LayoutOptions
 {
-    /** Gap between shapes or stacks. Default a twentieth of the model's largest side. */
+    /** Gap between shapes or stacks. Default a twentieth of the model's largest side beside the model, else that of the layout. */
     spacing?: number
     /** How far an exploded view pushes parts out. Default automatic. */
     distance?: number
-    /** Put the row or the stacks beside the model, on the ground in front of it, rather than
-     *  where the layout starts by itself (on top of the model). Default true. */
+    /** Put the row or the stacks beside the model, on the ground exactly in front of its middle, rather than
+     *  where the layout starts by itself (at the origin). Default true for the row, false for
+     *  the stacks ('partstack', 'packed'). */
     beside?: boolean
 }
 

@@ -201,13 +201,13 @@ export function exampleCode(kind: PresetKind, name: string, variable: string): s
     const lines: Record<PresetKind, Array<string>> = {
         flyin: [
             `${v} = animator.create(${n}).duration(3);`,
-            `animator.layout('partstack')`,
+            `animator.layout('packed')`,
             `${I}.sort((a, b) => a.shape.bbox().min().z - b.shape.bbox().min().z)    // lowest first`,
             `${I}.forEach((stock, i, stacks) =>`,
             `${I}{`,
             `${I}${I}const leave = 1.8 * i / Math.max(1, stacks.length - 1);  // the last one leaves at 1.8 s`,
             `${I}${I}const lying = { position: stock.position, rotation: stock.rotation };`,
-            `${I}${I}${v}.key(0, stock.shape, lying);  // in the stacks,`,
+            `${I}${I}${v}.key(0, stock.shape, lying);  // in the bin,`,
             `${I}${I}${v}.key(leave, stock.shape, lying);  // until it leaves,`,
             `${I}${I}${v}.key(leave + 1.2, stock.shape, {}, 'easeOut');  // to its place in the model`,
             `${I}});`,

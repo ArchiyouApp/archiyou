@@ -77,10 +77,18 @@ describe('make.pack3d', () =>
         const shape = modeler.box(200, 300, 500)
         put(shape, 3, [100, 40, 20], 5000, { mmPerUnit: 1, imperial: false })
         const box = shape.bbox()
-        expect(near([box.minX(), box.minY(), box.minZ()], [5100, 40, 20])).toBe(true)
+        expect(near([box.minX(), box.minY(), box.minZ()], [100, 5040, 20])).toBe(true)
         const metres = modeler.box(0.2, 0.3, 0.5)
         put(metres, 0, [100, 40, 20], 0, { mmPerUnit: 1000, imperial: false })
         expect(near([metres.bbox().minX(), metres.bbox().minY(), metres.bbox().minZ()], [0.1, 0.04, 0.02])).toBe(true)
+    })
+
+    it('stands the bins side by side along y, a tenth of their width apart', () =>
+    {
+        const bin = { length: 1000, width: 500, height: 500 }
+        const result = modeler.make.pack3d(boxes([[1000, 500, 500], [1000, 500, 500]]), { bins: [bin], maxIterations: 0 })
+        const corners = [1, 2].map(i => result.getGroup(`bin${i}`).bbox()).map((b: any) => [b.minX(), b.minY(), b.maxX(), b.maxY()])
+        expect(corners).toEqual([[0, 0, 1000, 500], [0, 550, 1000, 1050]])
     })
 
     it('loads shapes into a bin: inside it, side by side without overlap, on the floor or on each other', () =>

@@ -107,16 +107,16 @@ print(JSON.stringify({ n: laid.length, named: laid.every(l => typeof l.shape.nam
         expect(() => new Animator().layout('pile' as any)).toThrow(/"pile" is not a layout/)
     })
 
-    it('animator.layout(\'packed\') packs the stacks into a bin beside the model, and the name alone loads the planner', async () =>
+    it('animator.layout(\'packed\') packs the stacks into a bin at the origin, or beside the model when asked, and the name alone loads the planner', async () =>
     {
         const code = MODEL + `
 laid = animator.layout('packed');
-bins = laid.map(l => l.shape.bbox());
+beside = animator.layout('packed', { beside: true });
 print(JSON.stringify({ n: laid.length, p: laid[0].position.length, r: laid[0].rotation.length,
-    inFront: laid.every(l => l.position[1] < 0), inBin: laid.every(l => l.position[0] < 2400 + 1200) }));
+    atOrigin: laid.every(l => l.position[0] > 0 && l.position[1] > 0), inFront: beside.every(l => l.position[1] < 0) }));
 `
         const { result } = await run(code, [])
-        expect(JSON.stringify(result.messages)).toContain('{\\"n\\":3,\\"p\\":3,\\"r\\":4,\\"inFront\\":true,\\"inBin\\":true}')
+        expect(JSON.stringify(result.messages)).toContain('{\\"n\\":3,\\"p\\":3,\\"r\\":4,\\"atOrigin\\":true,\\"inFront\\":true}')
     })
 })
 
@@ -127,7 +127,7 @@ describe('the preset', () =>
         const a = new Animator()
         expect(a.preset('turntable', { degrees: 180, duration: 5 })._spec).toMatchObject({ turntable: { degrees: 180 }, duration: 5, loop: 'loop' })
         expect(a.preset('flyin', { stagger: 0.2, turntable: 90, interpolation: 'linear' })._spec)
-            .toMatchObject({ stagger: 0.2, turntable: { degrees: 90 }, easing: 'linear', layout: { kind: 'partstack', direction: 'from' } })
+            .toMatchObject({ stagger: 0.2, turntable: { degrees: 90 }, easing: 'linear', layout: { kind: 'packed', direction: 'from' } })
         expect(a.preset('build', { name: 'b' }).duration(6)._spec).toMatchObject({ name: 'b', build: {}, order: 'bottomUp', duration: 6 })
         expect(a.get('b')!.info()).toMatchObject({ preset: { kind: 'build' } })
     })

@@ -16,8 +16,46 @@ import type {
 import { collectParts } from './parts'
 import { placementsOf, type LayoutPlacement } from './placements'
 import { loadedPack3d } from './Make'
+import { layoutKindOf, type LayoutKind } from '../animator/Animation'
+import { MM_PER_UNIT } from '../units/UnitConverter'
 
 import { TOLERANCE } from '@archiyou/meshup'
+
+/** The shortcut behind `collection.layout(name, options)`: `new Layouter(collection).<name>(options).apply()`.
+ *  Moves the shapes of the collection themselves and returns the collection.
+ *  @param name 'packed', 'partstack' (or 'stack', 'stacks'), 'row' (or 'flat') or 'exploded'
+ *  @param options those of packed(), partStack(), rowOrtho() or exploded() */
+export function layoutShapes<T>(shapes: T, name: LayoutKind | string, options: Record<string, any> = {}): T
+{
+    const kind = layoutKindOf(name)
+    if (!kind)
+    {
+        throw new Error(`ShapeCollection::layout(): "${name}" is not a layout. Use 'packed', 'partstack', 'row' or 'exploded'.`)
+    }
+
+    const modeler = (shapes as any)._modeler ?? (shapes as any).toArray?.().find((s: any) => s?._modeler)?._modeler
+    const layouter = new Layouter(shapes as any, { mmPerUnit: MM_PER_UNIT[modeler?.units?.()] ?? 1 })
+    const run: Record<LayoutKind, () => Layouter> = {
+        packed: () => layouter.packed(options),
+        partstack: () => layouter.partStack(options),
+        row: () => layouter.rowOrtho(options),
+        exploded: () => layouter.exploded(options),
+    }
+    run[kind]().apply()
+    return shapes
+}
+
+/** The transforms moved along X so that what runs from minX to maxX has its middle at `centerX`. No centerX, no move. */
+function centeredOnX(transforms: Array<LayoutTransformation>, minX: number, maxX: number, centerX?: number): Array<LayoutTransformation>
+{
+    if (centerX === undefined) { return transforms }
+    const shift = centerX - (minX + maxX) / 2;
+    return transforms.map(transform =>
+    {
+        const [x, y, z] = transform.translation;
+        return { ...transform, translation: [x + shift, y, z] as [number, number, number] };
+    });
+}
 
 export class Layouter
 {
@@ -187,9 +225,9 @@ export class Layouter
             const quaternion = obbox.toOrthoQuaternion();
             // NOTE: we don't really need to work with shapes here
             const translate = obbox.center().toVector().reverse() // to origin
-                                    .add([ox + lastX + obbox.width()/2, oy, oz]); // then in row
+                                    .add([ox + lastX + obbox.length()/2, oy, oz]); // then in row: laid flat, the longest side runs along X
 
-            lastX += obbox.width() + spacing; // update lastX for next shape, add spacing
+            lastX += obbox.length() + spacing; // update lastX for next shape, add spacing
 
             return {
                 sceneNode: node,
@@ -202,7 +240,7 @@ export class Layouter
         this._result = {
             name: 'layout',
             translationMode: 'relative',
-            transforms,
+            transforms: centeredOnX(transforms, ox, ox + lastX - spacing, options.centerX),
         }
 
         return this;
@@ -302,7 +340,7 @@ export class Layouter
         this._result = {
             name: 'partstack',
             translationMode: 'relative',
-            transforms,
+            transforms: centeredOnX(transforms, ox, ox + lastX - spacing, options.centerX),
         }
 
         return this
@@ -314,7 +352,7 @@ export class Layouter
      *  longest side along X and thinnest along Z, and piled on each other. The piles are what is packed: boxes of the
      *  part's length and width, and as high as its pieces stacked (a pile that is higher than the bin is split into the
      *  fewest piles that fit). The 3D load planner puts the piles in a bin, turned about the vertical if that helps, so that
-     *  each stands on the floor or on other piles; when one bin is not enough, bins stand side by side along X.
+     *  each stands on the floor or on other piles; when one bin is not enough, bins stand side by side along Y.
      *
      *  Because the pieces of a part are in one pile, the same parts always end up together. The bin is
      *  `length` x `width` x `height` (default 2400 x 1200 x 1200 mm) and grows to hold the biggest pile.
@@ -336,9 +374,10 @@ export class Layouter
 
         const scale = this._mmPerUnit;
         const mm = (value: number): number => Math.ceil(value * scale - 1e-6);
-        const spacing = options.spacing ?? 5;
+        const spacing = options.spacing ?? 5 / scale;
         const gap = options.gap ?? 0;
         const [ox, oy, oz] = options.origin ?? [0, 0, 0];
+        const binDirection = options.binDirection ?? 1;
         const parts = options.parts
             ?? collectParts(this._scene, { labels: false, order: 'scene', includeHidden: options.includeHidden === true });
 
@@ -374,12 +413,12 @@ export class Layouter
 
         const transforms = plan.bins.flatMap((load, b) =>
         {
-            const binX = ox + b * (bin.length + Math.max(bin.length / 10, spacing * 10));
+            const binY = oy + binDirection * b * (bin.width + Math.max(bin.width / 10, spacing * 10));
             return load.placements.flatMap(placement =>
             {
                 const pile = piles[placement.item];
                 const turned = placement.orientation === 1;
-                const corner = [binX + placement.x / scale, oy + placement.y / scale, oz + placement.z / scale];
+                const corner = [ox + placement.x / scale, binY + placement.y / scale, oz + placement.z / scale];
                 return pile.shapes.flatMap((shape, i) =>
                 {
                     const node = nodesByShape.get(shape);
@@ -412,7 +451,19 @@ export class Layouter
                 + `${skipped === 1 ? 'It was' : 'They were'} left where ${skipped === 1 ? 'it is' : 'they are'}.`);
         }
 
-        this._result = { name: 'packed', translationMode: 'relative', transforms };
+        // how far the piles really reach along X: a bin is rarely full
+        const reach = plan.bins.flatMap(load => load.placements.flatMap(placement =>
+        {
+            const start = ox + placement.x / scale;
+            const pile = piles[placement.item];
+            return [start, start + (placement.orientation === 1 ? pile.width : pile.length)];
+        }));
+
+        this._result = {
+            name: 'packed',
+            translationMode: 'relative',
+            transforms: centeredOnX(transforms, Math.min(...reach), Math.max(...reach), options.centerX),
+        };
         return this
     }
 

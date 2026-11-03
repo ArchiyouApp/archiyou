@@ -163,14 +163,14 @@ export function turn(shape: any, orientation: number): void
 }
 
 /** Turn a shape into its orientation and move it so that its lowest corner is at `corner` (in millimetres from the front lower corner of
- *  the bin), the bin itself standing `offsetX` model units along x. */
-export function put(shape: any, orientation: number, corner: [number, number, number], offsetX: number, context: Pack3DContext): void
+ *  the bin), the bin itself standing `offsetY` model units along y. */
+export function put(shape: any, orientation: number, corner: [number, number, number], offsetY: number, context: Pack3DContext): void
 {
     turn(shape, orientation);
     const box = shape.bbox();
     shape.translate(
-        corner[0] / context.mmPerUnit + offsetX - box.minX(),
-        corner[1] / context.mmPerUnit - box.minY(),
+        corner[0] / context.mmPerUnit - box.minX(),
+        corner[1] / context.mmPerUnit + offsetY - box.minY(),
         corner[2] / context.mmPerUnit - box.minZ()
     );
 }

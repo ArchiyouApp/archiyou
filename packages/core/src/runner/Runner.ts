@@ -943,11 +943,15 @@ export class Runner
     /** Load the 3D load planner (pack3d) before a run whose script, or any of its components, calls pack3d(), pack() a packed() layout or the layout name 'packed':
      *  make.pack3d() is synchronous for scripts and cannot wait for a dynamic import. make.pack() decides between 2D and 3D
      *  by the shapes it gets, which the scan cannot know, so it loads both packers. A call that the scan cannot see (a
-     *  computed name) gets a clear error from make.pack3d() instead. A script that never mentions them loads nothing. */
+     *  computed name) gets a clear error from make.pack3d() instead. A script that never mentions them loads nothing.
+     *  The fly-in starts from the packed layout, so naming 'flyin' in the script, or asking an output for it
+     *  (`?animations=flyin` or `=*`), loads the planner too. */
     private async _loadPack3dWhenUsed(request: RunnerScriptExecutionRequest): Promise<void>
     {
         const codes = [request.script?.code, ...Object.values(this._componentScripts).map(s => (s as any)?.code)]
-        if (codes.some(code => typeof code === 'string' && /\b(pack|pack3d|packed)\s*\(|['"]packed['"]/.test(code))) await loadPack3dModule()
+        const named = codes.some(code => typeof code === 'string' && /\b(pack|pack3d|packed)\s*\(|['"](packed|flyin)['"]/.test(code))
+        const flyinAsked = (request.outputs ?? []).some(path => /[?&]animations=([^&]*,)?(flyin|\*|%2A)(,|&|$)/i.test(String(path)))
+        if (named || flyinAsked) await loadPack3dModule()
     }
 
     private _finalizeExecutionDuration(result: RunnerScriptExecutionResult | null | undefined, executeStartTime: number): void

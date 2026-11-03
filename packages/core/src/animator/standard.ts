@@ -4,7 +4,7 @@
  *  The standard animations, as data. Each is the list of calls that makes it:
  *
  *      flyin = animator.create('flyin')
- *          .from('partstack').order('bottomUp').stagger({ last: 0.6 }).duration(3).easing('easeOut')
+ *          .from('packed').order('bottomUp').stagger({ last: 0.6 }).duration(3).easing('easeOut')
  *
  *  `animator.preset('flyin')` makes a new animation and runs these calls on it. What comes
  *  after the calls wins, as it does in any chain: `animator.preset('flyin').duration(6)` is the
@@ -29,7 +29,7 @@ export type PresetCall = [verb: string, ...args: Array<any>]
 
 /** What the editor shows of a standard animation. */
 export const PRESETS: Record<PresetKind, { title: string, description: string }> = {
-    flyin: { title: 'Fly in', description: 'The parts fly from stacks of stock beside the model to where the model has them.' },
+    flyin: { title: 'Fly in', description: 'The parts fly from a packed bin of stock at the origin to where the model has them.' },
     exploded: { title: 'Exploded', description: 'The model comes apart along its explode directions.' },
     layout: { title: 'Layout', description: 'Every shape laid flat in a row.' },
     turntable: { title: 'Turntable', description: 'The camera circles the model.' },
@@ -52,7 +52,7 @@ export function presetCalls(kind: PresetKind, options: Record<string, any> = {})
     // 1 s for exploded and layout: what `animations: true` has always baked them at
     const own: Record<PresetKind, Array<PresetCall>> = {
         // the last part leaves at 60 % of the way, so it still has time to arrive
-        flyin: [['from', 'partstack', layout], ['order', 'bottomUp'], ['stagger', { last: 0.6 }],
+        flyin: [['from', 'packed', layout], ['order', 'bottomUp'], ['stagger', { last: 0.6 }],
             ['duration', 3], ['easing', 'easeOut']],
         exploded: [['to', 'exploded', layout], ['duration', 1], ['loop', 'pingpong']],
         // where the row has always been: from the origin, as rowOrtho() puts it
