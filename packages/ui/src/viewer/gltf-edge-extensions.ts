@@ -15,6 +15,7 @@ import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 export async function applyEdgeExtensions(gltf: GLTF, root: THREE.Object3D): Promise<void>
 {
     const tasks: Promise<void>[] = [];
+    const edgesByGeometry = new Map<string, HardEdges>();
     let meshCount = 0;
     let extCount = 0;
 
@@ -26,7 +27,7 @@ export async function applyEdgeExtensions(gltf: GLTF, root: THREE.Object3D): Pro
         const ext = mesh.userData?.gltfExtensions?.['EXT_mesh_primitive_edge_visibility'];
         if (!ext) return;
         extCount++;
-        tasks.push(_attachEdgeLines(mesh, ext, gltf.parser));
+        tasks.push(_attachEdgeLines(mesh, ext, gltf.parser, edgesByGeometry));
     });
 
     await Promise.all(tasks);
@@ -90,10 +91,23 @@ function _circlePointTexture(): THREE.CanvasTexture
     return _circleTex;
 }
 
+/** The hard edges of one geometry. Copies of a shape share their geometry in the GLB (see
+ *  meshup GLTFBuilder._sharedAccessor()), so the edges are worked out once per geometry and
+ *  the line geometries are shared by the copies too. */
+interface HardEdges
+{
+    verts: number[];
+    /** The vertex pair of each segment, for a mesh that morphs: its lines morph with it. */
+    pairs: number[];
+    plain?: THREE.BufferGeometry;
+    fat?: LineSegmentsGeometry;
+}
+
 async function _attachEdgeLines(
     mesh: THREE.Mesh,
     ext: { visibility: number; material?: number },
     parser: GLTF['parser'],
+    edgesByGeometry: Map<string, HardEdges>,
 ): Promise<void>
 {
     // Only render edges when an explicit stroke material was set by the user.
@@ -123,7 +137,58 @@ async function _attachEdgeLines(
         ? rawArr
         : new Uint8Array(rawArr.buffer, rawArr.byteOffset, (accDef?.count ?? rawArr.length));
 
+    const key = `${mesh.geometry.uuid}|${ext.visibility}`;
+    const edges = edgesByGeometry.get(key) ?? _hardEdges(indices, posAttr, visData);
+    edgesByGeometry.set(key, edges);
+    if (!edges.verts.length) return;
 
+    // Push mesh faces slightly back so lines win the depth test (no z-fighting)
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    mats.forEach((m) => { m.polygonOffset = true; m.polygonOffsetFactor = 1; m.polygonOffsetUnits = 1; });
+
+    const morphs = mesh.geometry.morphAttributes?.position;
+    // A mesh that morphs (a parameter sweep) draws its edges as hairlines: fat lines are
+    // instanced segments, which three.js cannot morph
+    const mat = _morphable(_resolveLineMaterial(ext.material, parser), !!morphs?.length);
+
+    // Mark the source mesh so the scene explorer skips it (container node is shown instead)
+    mesh.userData.isEdgeSurface = true;
+
+    if (mat instanceof THREE.LineBasicMaterial)
+    {
+        // morph targets are set on the line geometry per mesh, so a morphing mesh gets its own
+        const geo = (morphs?.length) ? _plainLineGeometry(edges.verts) : (edges.plain ??= _plainLineGeometry(edges.verts));
+        const lines = new THREE.LineSegments(geo, mat);
+        if (morphs?.length) _morphLikeMesh(lines, mesh, edges.pairs);
+        lines.userData.cannotReceiveAO = true;
+        lines.userData.isEdgeOverlay = true;
+        mesh.add(lines);
+    }
+    else
+    {
+        const geo2 = edges.fat ??= new LineSegmentsGeometry().setPositions(edges.verts);
+        const lines2 = new LineSegments2(geo2, mat as LineMaterial);
+        lines2.userData.cannotReceiveAO = true;
+        lines2.userData.isEdgeOverlay = true;
+        mesh.add(lines2);
+    }
+}
+
+function _plainLineGeometry(verts: number[]): THREE.BufferGeometry
+{
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    return geo;
+}
+
+/** The hard (crease) edges of a triangle mesh, as segments, from its 2-bit-per-edge
+ *  visibility bitfield. */
+function _hardEdges(
+    indices: THREE.TypedArray,
+    posAttr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
+    visData: Uint8Array,
+): HardEdges
+{
     const lineVerts: number[] = [];
     // the vertex pair of each segment, for a mesh that morphs: its lines morph with it
     const linePairs: number[] = [];
@@ -169,38 +234,7 @@ async function _attachEdgeLines(
         dedupedPairs.push(linePairs[i / 3], linePairs[i / 3 + 1]);
     }
 
-    if (!dedupedVerts.length) return;
-
-    // Push mesh faces slightly back so lines win the depth test (no z-fighting)
-    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    mats.forEach((m) => { m.polygonOffset = true; m.polygonOffsetFactor = 1; m.polygonOffsetUnits = 1; });
-
-    const morphs = mesh.geometry.morphAttributes?.position;
-    // A mesh that morphs (a parameter sweep) draws its edges as hairlines: fat lines are
-    // instanced segments, which three.js cannot morph
-    const mat = _morphable(_resolveLineMaterial(ext.material, parser), !!morphs?.length);
-
-    // Mark the source mesh so the scene explorer skips it (container node is shown instead)
-    mesh.userData.isEdgeSurface = true;
-
-    if (mat instanceof THREE.LineBasicMaterial)
-    {
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(dedupedVerts, 3));
-        const lines = new THREE.LineSegments(geo, mat);
-        if (morphs?.length) _morphLikeMesh(lines, mesh, dedupedPairs);
-        lines.userData.cannotReceiveAO = true;
-        lines.userData.isEdgeOverlay = true;
-        mesh.add(lines);
-    }
-    else
-    {
-        const geo2 = new LineSegmentsGeometry().setPositions(dedupedVerts);
-        const lines2 = new LineSegments2(geo2, mat as LineMaterial);
-        lines2.userData.cannotReceiveAO = true;
-        lines2.userData.isEdgeOverlay = true;
-        mesh.add(lines2);
-    }
+    return { verts: dedupedVerts, pairs: dedupedPairs };
 }
 
 /** The edges of a mesh with morph targets follow its targets: each segment end takes the
