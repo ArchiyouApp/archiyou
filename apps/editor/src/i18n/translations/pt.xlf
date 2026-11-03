@@ -1096,6 +1096,26 @@
   <source>Switch to isometric</source>
   <target>Mudar para isométrica</target>
 </trans-unit>
+<trans-unit id="se5784a16a6799dad">
+  <source>Back to <x id="0" equiv-text="${project.label}"/></source>
+  <target>Voltar a <x id="0" equiv-text="${project.label}"/></target>
+</trans-unit>
+<trans-unit id="s464cbc1d85e9cc4a">
+  <source>Back to project</source>
+  <target>Voltar ao projeto</target>
+</trans-unit>
+<trans-unit id="s9d2d0ffa8688530c">
+  <source>Add to project</source>
+  <target>Adicionar ao projeto</target>
+</trans-unit>
+<trans-unit id="s88cc54d11bdbf907">
+  <source>Add this design to your project</source>
+  <target>Adicionar este design ao seu projeto</target>
+</trans-unit>
+<trans-unit id="sed1bdd152de1bc53">
+  <source>Add this design to one of your projects, or a new one</source>
+  <target>Adicionar este design a um dos seus projetos ou a um novo</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

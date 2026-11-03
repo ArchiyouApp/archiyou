@@ -11,7 +11,7 @@
  * semver is assigned only when publishing/sharing, and is unique per file).
  */
 
-import { eq, and, desc, inArray, isNotNull, sql, type AnyColumn } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNotNull, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import semver from 'semver';
 
 import { Script } from '@archiyou/core/src/Script';
@@ -21,6 +21,9 @@ import { uuid4 } from '@archiyou/core/src/utils';
 import { configuratorUrl } from '../routes/scriptUrl';
 import { db } from '../db/client';
 import { scriptVersions, type ScriptVersionRow, type NewScriptVersionRow } from '../db/schema';
+
+/** What picks a library version: libraryRows() reads these, not the code. */
+type LibraryRowHead = Pick<ScriptVersionRow, 'id' | 'version' | 'updated'>;
 
 export class ScriptStoreError extends Error {
   constructor(public readonly code: 'invalid' | 'not_found' | 'conflict', message: string) {
@@ -239,7 +242,7 @@ export class ScriptStore {
    *  copies that inherit `shared` on every save — they power `:dev`) sort last by
    *  newest `updated`. Without the version-first rule the newest working copy
    *  would masquerade as the library's latest release. */
-  private compareLibraryRows(a: ScriptVersionRow, b: ScriptVersionRow): number {
+  private compareLibraryRows(a: Pick<ScriptVersionRow, 'version' | 'updated'>, b: Pick<ScriptVersionRow, 'version' | 'updated'>): number {
     const av = a.version ? semver.coerce(a.version) : null;
     const bv = b.version ? semver.coerce(b.version) : null;
     if (av && bv) {
@@ -252,8 +255,8 @@ export class ScriptStore {
 
   /** Reduce library rows to one per fileId — the latest per `compareLibraryRows`
    *  (i.e. the newest released version, not the unversioned working copy). */
-  private latestReleasePerFile(rows: ScriptVersionRow[]): ScriptVersionRow[] {
-    const byFile = new Map<string, ScriptVersionRow>();
+  private latestReleasePerFile<R extends Pick<ScriptVersionRow, 'fileId' | 'version' | 'updated'>>(rows: R[]): R[] {
+    const byFile = new Map<string, R>();
     for (const r of rows) {
       const cur = byFile.get(r.fileId);
       if (!cur || this.compareLibraryRows(r, cur) < 0) byFile.set(r.fileId, r);
@@ -266,8 +269,24 @@ export class ScriptStore {
     const cond = author
       ? and(eq(scriptVersions.author, author.toLowerCase()), isNotNull(col))
       : isNotNull(col);
-    const rows = await db.select().from(scriptVersions).where(cond).orderBy(desc(scriptVersions.updated));
-    return this.latestReleasePerFile(rows).map((r) => this.rowToData(r));
+    return (await this.latestRowsWhere(cond)).map((r) => this.rowToData(r));
+  }
+
+  /**
+   * The latest release per file among the rows matching `cond`, newest first. Picked from
+   * the small columns, then only those rows are read whole: a library holds every
+   * released version with its code (hundreds of versions for a few dozen files), and the
+   * list needs one per file.
+   */
+  private async latestRowsWhere(cond: SQL | undefined): Promise<ScriptVersionRow[]> {
+    const heads = await db
+      .select({ id: scriptVersions.id, fileId: scriptVersions.fileId, version: scriptVersions.version, updated: scriptVersions.updated })
+      .from(scriptVersions)
+      .where(cond);
+    const picked = this.latestReleasePerFile(heads).map((h) => h.id);
+    if (picked.length === 0) return [];
+    const rows = await db.select().from(scriptVersions).where(inArray(scriptVersions.id, picked));
+    return rows.sort((a, b) => b.updated.getTime() - a.updated.getTime());
   }
 
   /** The fileId an author/name refers to — rename-aware.
@@ -306,23 +325,37 @@ export class ScriptStore {
     const candidates = inLibrary ? files.filter((fileId) => inLibrary.has(fileId)) : files;
     if (candidates.length === 0) return null;
 
-    const heads = await Promise.all(candidates.map(async (fileId) => (await this.fileRows(a, fileId))[0]));
+    // Only each file's current name: not fileRows(), which reads every version's `code`
+    // (a file with a thousand autosaves is tens of MB per configurator load)
+    const heads = await Promise.all(candidates.map(async (fileId) => (await db
+      .select({ name: scriptVersions.name })
+      .from(scriptVersions)
+      .where(and(eq(scriptVersions.fileId, fileId), eq(scriptVersions.author, a)))
+      .orderBy(desc(scriptVersions.updated))
+      .limit(1))[0]));
     const current = heads.findIndex((r) => r?.name?.toLowerCase() === name.toLowerCase());
     return current === -1 ? candidates[0] : candidates[current];
   }
 
-  /** All rows in a library for an author/name (any version), newest first.
+  /** All rows in a library for an author/name (any version), newest first: only what picks
+   *  one (id, version, updated), never the code; libraryRow() loads the one picked.
    *  Rename-aware (see resolveFileIdByName): an old name yields the rows of the file
    *  that carried it, including the versions saved under its new name. */
-  private async libraryRows(col: AnyColumn, author: string, name: string): Promise<ScriptVersionRow[]> {
+  private async libraryRows(col: AnyColumn, author: string, name: string): Promise<LibraryRowHead[]> {
     const a = author.toLowerCase();
     const fileId = await this.resolveFileIdByName(a, name, col);
     if (!fileId) return [];
     return db
-      .select()
+      .select({ id: scriptVersions.id, version: scriptVersions.version, updated: scriptVersions.updated })
       .from(scriptVersions)
       .where(and(eq(scriptVersions.author, a), eq(scriptVersions.fileId, fileId), isNotNull(col)))
       .orderBy(desc(scriptVersions.updated));
+  }
+
+  /** The whole row of the version libraryRows() picked. */
+  private async libraryRow(id: string): Promise<ScriptVersionRow | null> {
+    const [row] = await db.select().from(scriptVersions).where(eq(scriptVersions.id, id)).limit(1);
+    return row ?? null;
   }
 
   /** Version strings for a library author/name, latest (semver) first. */
@@ -338,16 +371,18 @@ export class ScriptStore {
     const rows = await this.libraryRows(col, author, name);
     if (rows.length === 0) return null;
 
+    // Matched as semver, so `0.4` finds a stored `0.4.0`: in JS over the small heads
+    let picked: LibraryRowHead | undefined;
     if (version) {
       const want = semver.coerce(version);
-      const row = rows.find((r) => r.version && want && semver.eq(semver.coerce(r.version) ?? '0.0.0', want));
-      return row ? this.rowToData(row) : null;
+      picked = rows.find((r) => r.version && want && semver.eq(semver.coerce(r.version) ?? '0.0.0', want));
+    } else {
+      // Latest: the newest released version; only an entirely unreleased file falls
+      // back to its newest working copy (see compareLibraryRows).
+      picked = [...rows].sort((a, b) => this.compareLibraryRows(a, b))[0];
     }
-
-    // Latest: the newest released version; only an entirely unreleased file falls
-    // back to its newest working copy (see compareLibraryRows).
-    const sorted = [...rows].sort((a, b) => this.compareLibraryRows(a, b));
-    return this.rowToData(sorted[0]);
+    const row = picked && await this.libraryRow(picked.id);
+    return row ? this.rowToData(row) : null;
   }
 
   // Published library
@@ -595,8 +630,8 @@ export class ScriptStore {
    *  has `dev` enabled. Enforces nothing about onlyUsers — callers must gate. */
   async getShared(author: string, name: string, version?: string): Promise<ScriptData | null> {
     if (version === 'dev') {
-      const rows = await this.libraryRows(scriptVersions.shared, author, name); // newest first
-      const row = rows[0];
+      const [newest] = await this.libraryRows(scriptVersions.shared, author, name); // newest first
+      const row = newest && await this.libraryRow(newest.id);
       return row && (row.shared as ScriptShared | null)?.dev ? this.rowToData(row) : null;
     }
     return this.libraryGet(scriptVersions.shared, author, name, version);
@@ -604,12 +639,7 @@ export class ScriptStore {
 
   /** All shared files (latest released version each) whose shared metadata carries the row. */
   private async sharedLatestPerFile(): Promise<ScriptVersionRow[]> {
-    const rows = await db
-      .select()
-      .from(scriptVersions)
-      .where(isNotNull(scriptVersions.shared))
-      .orderBy(desc(scriptVersions.updated));
-    return this.latestReleasePerFile(rows);
+    return this.latestRowsWhere(isNotNull(scriptVersions.shared));
   }
 
   /** Community-shared scripts: shared with no `onlyUsers` restriction. */

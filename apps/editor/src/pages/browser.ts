@@ -8,11 +8,12 @@
  *
  * Sections — the sidebar and the tabs are two views of the same list, and the
  * URL is the source of truth for which one is active:
- *   /browser                Home: everything below together
+ *   /browser                Home: my scripts, community shares and public configurators
  *   /browser/scripts        My Scripts: the local script collection (synced when signed in)
- *   /browser/shared         Shared Scripts: community shares + those shared with me
- *   /browser/configurators  Configurators: public published configurators + my own
- *   /browser/projects       Projects: the signed-in professional's projects, filtered by
+ *   /browser/shared         Shared Scripts: what I shared (to everyone or to named
+ *                           users) and what others shared with me by name
+ *   /browser/configurators  My Configurators: the configurators I published
+ *   /browser/projects       My Projects: the signed-in professional's projects, filtered by
  *                           status in `?status=` (request | active | won | lost | archived)
  *
  * Home leaves projects out: they are a different kind of thing (work for clients) and
@@ -25,7 +26,7 @@
 import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
-import { msg } from '@lit/localize';
+import { msg, str } from '@lit/localize';
 import { Router, type RouterLocation } from '@vaadin/router';
 
 import { Script } from '@archiyou/core/src/Script';
@@ -43,7 +44,7 @@ import { publicConfiguratorUrl } from '@archiyou/ui/editor/publish-constants.js'
 
 import { assetUrl } from '../services/api.js';
 import { authService } from '../services/auth-service.js';
-import { fetchPublicShared, fetchSharedWithMe } from '../services/sharing.js';
+import { fetchPublicShared, fetchSharedWithMe, fetchSharedByAuthor } from '../services/sharing.js';
 import { fetchPublishedConfigurators } from '../services/publishing.js';
 import { enqueueBackfill, THUMBNAIL_STORED_EVENT, type BackfillTarget, type ThumbnailStoredDetail } from '../services/thumbnails.js';
 import { editorPathFor } from '../services/script-links.js';
@@ -161,8 +162,11 @@ export class PageBrowser extends SignalWatcher(LitElement)
   /** Set by the router. */
   @property({ attribute: false }) location?: RouterLocation;
 
-  /** Latest shared version per file, by fileId: community shares and those shared with me. */
+  /** Latest shared version per file, by fileId: community shares, mine and those shared
+   *  with me. */
   @state() private _shared = new Map<string, ScriptData>();
+  /** The files someone shared with me by name (their `onlyUsers` lists me). */
+  @state() private _sharedWithMe = new Set<string>();
   /** Latest published version per file, by fileId: public ones and my own. */
   @state() private _configurators = new Map<string, ScriptData>();
   @state() private _loading = false;
@@ -207,10 +211,10 @@ export class PageBrowser extends SignalWatcher(LitElement)
       { id: 'scripts', name: msg('My Scripts'), tab: msg('My Scripts'), icon: 'file-code', route: '/browser/scripts',
         kinds: ['script'], empty: msg('You have no scripts yet.') },
       { id: 'shared', name: msg('Shared Scripts'), tab: msg('Shared Scripts'), icon: 'users', route: '/browser/shared',
-        kinds: ['shared'], empty: msg('No shared scripts yet.') },
-      { id: 'configurators', name: msg('Configurators'), tab: msg('Configurators'), icon: 'tv-minimal-play', route: '/browser/configurators',
-        kinds: ['configurator'], empty: msg('No configurators yet.') },
-      { id: 'projects', name: msg('Projects'), tab: msg('Projects'), icon: 'folder', route: '/browser/projects',
+        kinds: ['shared'], empty: msg('You have not shared a script, and nobody shared one with you yet.') },
+      { id: 'configurators', name: msg('My Configurators'), tab: msg('My Configurators'), icon: 'tv-minimal-play', route: '/browser/configurators',
+        kinds: ['configurator'], empty: msg('You have not published a configurator yet.') },
+      { id: 'projects', name: msg('My Projects'), tab: msg('My Projects'), icon: 'folder', route: '/browser/projects',
         kinds: ['project'], empty: userState.get().anonymous
           ? msg('Sign in to keep projects for your clients.')
           : msg('No projects here. Add a configuration to a project from the editor or a configurator, or create one.') },
@@ -230,14 +234,15 @@ export class PageBrowser extends SignalWatcher(LitElement)
     this._error = '';
     try
     {
-      const [publicShared, sharedWithMe, published] = await Promise.all([
-        fetchPublicShared(), fetchSharedWithMe(), fetchPublishedConfigurators(),
+      const me = authService.getUser()?.id ?? null;
+      const [publicShared, sharedWithMe, sharedByMe, published] = await Promise.all([
+        fetchPublicShared(), fetchSharedWithMe(), me ? fetchSharedByAuthor(me) : Promise.resolve([]), fetchPublishedConfigurators(),
       ]);
-      this._shared = new Map([...publicShared, ...sharedWithMe]
+      this._shared = new Map([...publicShared, ...sharedByMe, ...sharedWithMe]
         .filter(d => d.fileId)
         .map(d => [d.fileId as string, d]));
+      this._sharedWithMe = new Set(sharedWithMe.map(d => d.fileId as string));
 
-      const me = authService.getUser()?.id ?? null;
       this._configurators = new Map(published
         .filter(d => d.fileId && (d.published?.public === true || (!!me && d.author === me)))
         .map(d => [d.fileId as string, d]));
@@ -363,13 +368,18 @@ export class PageBrowser extends SignalWatcher(LitElement)
     }
     if (section.kinds.includes('shared'))
     {
-      // Home lists my scripts already; a share of one of them would be the same file twice.
-      const shared = [...this._shared.values()].filter(d => section.id !== 'all' || !myFileIds.has(d.fileId as string));
+      // Home: everything shared, but not my own files, which it lists as scripts already.
+      // The tab: what I shared (restricted shares too) and what was shared with me by name.
+      const shared = [...this._shared.values()].filter(d => section.id === 'all'
+        ? !myFileIds.has(d.fileId as string)
+        : (!!me && d.author === me) || this._sharedWithMe.has(d.fileId as string));
       assets.push(...shared.map(d => this._libraryAsset(d, 'shared', me)));
     }
     if (section.kinds.includes('configurator'))
     {
-      assets.push(...[...this._configurators.values()].map(d => this._libraryAsset(d, 'configurator', me)));
+      // Home: the public ones too; the tab: mine
+      const configurators = [...this._configurators.values()].filter(d => section.id === 'all' || (!!me && d.author === me));
+      assets.push(...configurators.map(d => this._libraryAsset(d, 'configurator', me)));
     }
     if (section.kinds.includes('project'))
     {
@@ -400,7 +410,17 @@ export class PageBrowser extends SignalWatcher(LitElement)
       created: Date.parse(data.created ?? '') || undefined,
       updated: Date.parse(data.updated ?? '') || undefined,
       thumbnail: assetUrl(data.thumbnail),
+      subtitle: kind === 'shared' ? this._sharedWith(data, me) : undefined,
     };
+  }
+
+  /** Who a share is for: "Public", or the users it names ("you" when it names me). */
+  private _sharedWith(data: ScriptData, me: string | null): string
+  {
+    const only = data.shared?.onlyUsers ?? [];
+    if (!only.length) return msg('Public');
+    const names = data.author === me ? only.join(', ') : msg('you');
+    return msg(str`Shared with ${names}`);
   }
 
   private _projectAsset(p: ProjectSummary): BrowserAsset
@@ -481,7 +501,8 @@ export class PageBrowser extends SignalWatcher(LitElement)
     }
     try
     {
-      const project = await createProject({ title: msg('New project') });
+      // The project page's code loads while the server makes the project
+      const [project] = await Promise.all([createProject({ title: msg('New project') }), import('./project.js')]);
       Router.go(`/projects/${project.id}`);
     }
     catch (err)
@@ -542,14 +563,20 @@ export class PageBrowser extends SignalWatcher(LitElement)
     .filters {
       display: flex;
       flex-wrap: wrap;
-      gap: var(--space-sm);
+      gap: var(--space-xs);
       padding: var(--space-md) var(--space-lg) 0;
     }
 
+    /* Small chips: Web Awesome sizes a button from its font */
+    .filters wa-button {
+      font-size: var(--text-xs);
+    }
+
+    /* The count is a hint beside the status, not part of it */
     .filters .count {
       margin-left: var(--space-xs);
       font-variant-numeric: tabular-nums;
-      opacity: 0.8;
+      opacity: 0.55;
     }
 
     /* Compact: the tabs already list every section, and the operator link is

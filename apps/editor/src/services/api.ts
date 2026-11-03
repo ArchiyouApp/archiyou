@@ -101,6 +101,22 @@ export const api = {
   putBinary<T>(path: string, body: BinaryBody, bodyType: string): Promise<T> {
     return request<T>('PUT', path, body, bodyType);
   },
+  /** POST raw bytes (a file for a project's dossier). */
+  postBinary<T>(path: string, body: BinaryBody, bodyType: string): Promise<T> {
+    return request<T>('POST', path, body, bodyType);
+  },
+  /** A file the API serves only to the signed-in user, as a Blob (an <a href> cannot send
+   *  the token). */
+  async blob(path: string): Promise<Blob> {
+    const token = await authService.getToken();
+    const response = await netFetch(`${BASE_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!response.ok) {
+      let errorBody: unknown;
+      try { errorBody = await response.json(); } catch { errorBody = null; }
+      throw new ApiError(response.status, errorBody);
+    }
+    return response.blob();
+  },
   delete<T>(path: string): Promise<T> {
     return request<T>('DELETE', path);
   },

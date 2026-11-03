@@ -56,7 +56,7 @@ export class AddToProjectMenu extends SignalWatcher(LitElement)
   {
     if (userState.get().anonymous)
     {
-      return html`<p class="note">${msg('Sign in to keep configurations in your projects.')}</p>`;
+      return html`<p class="note">${msg('Sign in to keep designs in your projects.')}</p>`;
     }
     if (this._unverified)
     {
@@ -113,9 +113,6 @@ export class AddToProjectMenu extends SignalWatcher(LitElement)
         </div>
       </div>
 
-      <wa-input class="label" size="small" label=${msg('Label (optional)')} placeholder=${msg('e.g. Oak, wider top')}
-        .value=${this._label} @input=${(e: Event) => { this._label = (e.target as HTMLInputElement).value; }}></wa-input>
-
       ${this._error ? html`<p class="error" role="alert">${this._error}</p>` : nothing}
     `;
   }
@@ -156,7 +153,6 @@ export class AddToProjectMenu extends SignalWatcher(LitElement)
   /** A project id, or 'new'. */
   @state() private _target = 'new';
   @state() private _title = '';
-  @state() private _label = '';
   @state() private _added: { projectId: string; configurationId: string; rev: number; label: string } | null = null;
 
   // ── 3. Lifecycle ──
@@ -170,7 +166,6 @@ export class AddToProjectMenu extends SignalWatcher(LitElement)
   {
     this._added = null;
     this._error = '';
-    this._label = '';
     this._query = '';
     this._target = 'new';
     this._title = this.suggestedTitle;
@@ -202,7 +197,7 @@ export class AddToProjectMenu extends SignalWatcher(LitElement)
       this._error = msg('There is no script to add.');
       return;
     }
-    const configuration = { ...input, label: this._label.trim() || null };
+    const configuration = { ...input, label: null };
 
     this._submitting = true;
     this._error = '';
@@ -354,8 +349,9 @@ export class AddToProjectMenu extends SignalWatcher(LitElement)
       font-variant-numeric: tabular-nums;
     }
 
-    .label {
-      margin-top: var(--space-md);
+    .list .choice {
+      min-height: 0;
+      font-size: var(--text-xs);
     }
 
     .error {

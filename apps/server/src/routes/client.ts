@@ -32,7 +32,8 @@ import type { ScriptPublishedFulfillmentData } from '@archiyou/core/src/ScriptSc
 
 import { config } from '../config';
 import { emailService } from '../services/EmailService';
-import { deliveryFileStore, deliveryFileType } from '../services/DeliveryFileStore';
+import { attachmentFileType, deliveryFileStore, deliveryFileType } from '../services/DeliveryFileStore';
+import { projectFileType } from '../services/ProjectFileStore';
 import { projectStore, rowToDelivery, visitorOf, TEXT_MAX } from '../services/ProjectStore';
 import { scriptStore } from '../services/ScriptStore';
 import { thumbnailStore } from '../services/ThumbnailStore';
@@ -257,9 +258,10 @@ export async function registerClientRoutes(fastify: FastifyInstance): Promise<vo
     {
       const { token, name } = request.params;
       const row = await projectStore.deliveryByToken(token);
-      const listed = row?.status === 'sent' && row.files.some((f) => f.name === name);
-      const type = deliveryFileType(name);
-      const file = listed && type ? await deliveryFileStore.read(row.professional, row.id, name) : null;
+      // The type as listed: made files by their extension, attachments by the dossier's
+      const listed = row?.status === 'sent' ? row.files.find((f) => f.name === name) : undefined;
+      const type = listed && (listed.kind === 'attachment' ? attachmentFileType(name) : deliveryFileType(name));
+      const file = type ? await deliveryFileStore.read(row!.professional, row!.id, name) : null;
       if (!row || !file || !type)
       {
         reply.code(row?.status === 'revoked' ? 410 : 404);
@@ -272,8 +274,10 @@ export async function registerClientRoutes(fastify: FastifyInstance): Promise<vo
         const visitor = await clientVisitor(request, row.professional);
         if (visitor) await projectStore.recordDownload(row, name, visitor);
       }
-      // A spreadsheet is always saved, never opened in the browser
-      const disposition = download || type.kind === 'sheet' ? 'attachment' : 'inline';
+      // A spreadsheet is always saved, never opened in the browser; of the attachments only
+      // a PDF or a picture opens in place
+      const opens = type.kind === 'attachment' ? !!projectFileType(name)?.inline : type.kind !== 'sheet';
+      const disposition = download || !opens ? 'attachment' : 'inline';
       reply
         .header('Content-Type', type.mime)
         .header('Content-Length', String(file.bytes))

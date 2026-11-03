@@ -16,7 +16,8 @@ export type ConfigurationOrigin = 'order' | 'added' | 'adjust';
 
 export type DeliveryStatus = 'draft' | 'sent' | 'revoked';
 export type DeliveryResponse = 'accepted' | 'declined' | 'changes';
-export type DeliveryFileKind = 'model' | 'document' | 'sheet' | 'preview';
+/** `attachment`: a file of the project's dossier that the professional added to it. */
+export type DeliveryFileKind = 'model' | 'document' | 'sheet' | 'preview' | 'attachment';
 
 export type ProjectEventActor = 'professional' | 'client';
 
@@ -162,6 +163,17 @@ export interface ProjectEvent
   created: string;
 }
 
+/** A file in a project's dossier: anything the professional keeps with the project
+ *  (drawings, photos, quotes). Private; a copy goes to a client only with a delivery. */
+export interface ProjectFileData
+{
+  id: string;
+  name: string;
+  mime: string;
+  bytes: number;
+  created: string;
+}
+
 /** A row of the project list. */
 export interface ProjectSummary
 {
@@ -186,6 +198,8 @@ export interface ProjectData extends ProjectSummary
   client: ClientData | null;
   configurations: ConfigurationData[];
   deliveries: DeliveryData[];
+  /** The dossier, newest first. */
+  files: ProjectFileData[];
   events: ProjectEvent[];
 }
 

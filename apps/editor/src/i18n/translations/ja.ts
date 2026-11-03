@@ -340,5 +340,10 @@
 's55b7a743c168f90a': `Verify configurators`,
 's76294c90a39eac9d': `Validating a configurator lets that exact version run on the server instead of in the visitor’s browser. Read its code before you do.`,
 'sb93a9026712ac758': `What visitors sent with the feedback button on a configurator. Star what is worth keeping.`,
+'se5784a16a6799dad': str`${0} に戻る`,
+'s464cbc1d85e9cc4a': `プロジェクトに戻る`,
+'s9d2d0ffa8688530c': `プロジェクトに追加`,
+'s88cc54d11bdbf907': `このデザインをプロジェクトに追加`,
+'sed1bdd152de1bc53': `このデザインを既存のプロジェクトか新しいプロジェクトに追加`,
     };
   

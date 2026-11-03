@@ -24,6 +24,8 @@
  * editor's Configurator Preview the address bar belongs to the editor.
  */
 
+import { signal } from '@lit-labs/signals';
+
 import { decodeParamValues, encodeParamValues } from '@archiyou/core/src/execution/ScriptParam';
 
 import { applyConfiguratorPreset, configuratorParams, configuratorPresets, configuratorValues, configuratorValueFor } from './configurator';
@@ -39,6 +41,17 @@ export function deliveryTokenFromUrl(search: string = window.location.search): s
 {
   return new URLSearchParams(search).get('delivery') || null;
 }
+
+/** `?project=<id>`: opened from a project's "From configurator". "Save as project" then adds
+ *  the design to that project and goes back to it. */
+export function projectIdFromUrl(search: string = window.location.search): string | null
+{
+  return new URLSearchParams(search).get('project') || null;
+}
+
+/** The project the configurator was opened from, with its number (`P-005`) and title once
+ *  known; null for a configurator opened by itself. Set by the published configurator page. */
+export const configuratorProject = signal<{ id: string; label: string; title: string } | null>(null);
 
 /**
  * `?embed=1` (or a bare `?embed`): the configurator is shown inside another site's page,

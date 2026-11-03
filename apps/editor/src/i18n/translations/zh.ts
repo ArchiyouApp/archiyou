@@ -340,5 +340,10 @@
 's55b7a743c168f90a': `Verify configurators`,
 's76294c90a39eac9d': `Validating a configurator lets that exact version run on the server instead of in the visitor’s browser. Read its code before you do.`,
 'sb93a9026712ac758': `What visitors sent with the feedback button on a configurator. Star what is worth keeping.`,
+'se5784a16a6799dad': str`返回 ${0}`,
+'s464cbc1d85e9cc4a': `返回项目`,
+'s9d2d0ffa8688530c': `添加到项目`,
+'s88cc54d11bdbf907': `将此设计添加到你的项目`,
+'sed1bdd152de1bc53': `将此设计添加到你的某个项目或新项目`,
     };
   

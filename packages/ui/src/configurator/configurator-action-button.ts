@@ -23,7 +23,7 @@ export class ConfiguratorActionButton extends LitElement
   {
     const content = html`
       <wa-icon library="lucide" name=${this.icon}></wa-icon>
-      <span class="label"><span>${this.label}</span></span>
+      <span class="label"><span>${this.label}${this.name ? html` <em>${this.name}</em>` : nothing}</span></span>
     `;
     return this.href
       ? html`<a class="btn" part="button" href=${this.href} target=${this.target || nothing}
@@ -36,6 +36,8 @@ export class ConfiguratorActionButton extends LitElement
   /** Lucide icon name. */
   @property() icon = '';
   @property() label = '';
+  /** A name after the label, in italics: what the action is about ("Add to project <em>P-014 Shed</em>"). */
+  @property() name = '';
   /** Tooltip: what the button does, in a few more words than its label. */
   @property() hint = '';
   @property() href = '';

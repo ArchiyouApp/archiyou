@@ -32,9 +32,8 @@ export class AppShell extends LitElement
     // NO kernel warmup here. This runs before the router has resolved anything, so
     // warming up would download ~26MB of CAD kernel on EVERY page — including a
     // published configurator that is going to execute server-side and never needs
-    // one. <layout-main> warms up instead: it is the parent route of the pages that
-    // do need a kernel (/editor, /browser) and is not in the configurator's
-    // route tree. See services/execution-service.ts.
+    // one. The pages that run scripts warm up themselves (the editor, a configurator,
+    // the delivery dialog). See services/execution-service.ts.
 
     const outlet = this.renderRoot.querySelector<HTMLElement>('#outlet')!;
     initRouter(outlet);

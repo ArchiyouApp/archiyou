@@ -13,9 +13,13 @@
  *   PUT    /projects/:id/configurations/:cid/thumbnail image/png
  *   POST   /projects/:id/deliveries                   { configurationId, title, message?, offer?, recipientEmail?, recipientName?, allowAdjust? }
  *   PUT    /projects/:id/deliveries/:did/files/:name  application/octet-stream, while a draft
+ *   POST   /projects/:id/deliveries/:did/attachments   { fileId }: a copy of a dossier file, while a draft
  *   POST   /projects/:id/deliveries/:did/send          freezes it, gives it its link, emails the client
  *   POST   /projects/:id/deliveries/:did/revoke
  *   DELETE /projects/:id/deliveries/:did               a draft
+ *   POST   /projects/:id/files/:name                   application/octet-stream: a file for the dossier
+ *   GET    /projects/:id/files/:fid                    the file, to save
+ *   DELETE /projects/:id/files/:fid
  *   GET    /clients?q · GET /clients/:id · POST /clients · PUT /clients/:id · DELETE /clients/:id
  *
  * Every route needs a signed-in user with a verified email (the professional is
@@ -30,6 +34,7 @@ import { PROJECT_STATUSES, type ProjectStatus } from '@archiyou/types';
 
 import { config } from '../config';
 import { deliveryFileStore } from '../services/DeliveryFileStore';
+import { projectFileStore } from '../services/ProjectFileStore';
 import { emailService } from '../services/EmailService';
 import { projectStore, snapshotOf, TEXT_MAX, TITLE_MAX } from '../services/ProjectStore';
 import { thumbnailStore } from '../services/ThumbnailStore';
@@ -93,6 +98,8 @@ const DeliverySchema = Type.Object({
   allowAdjust: Type.Optional(Type.Boolean()),
 });
 
+const AttachSchema = Type.Object({ fileId: Type.String({ minLength: 1, maxLength: 100 }) });
+
 type IdParams = { Params: { id: string } };
 type ConfigurationParams = { Params: { id: string; cid: string } };
 type DeliveryParams = { Params: { id: string; did: string } };
@@ -151,6 +158,7 @@ export async function registerProjectRoutes(fastify: FastifyInstance): Promise<v
   {
     const { deliveryIds } = await projectStore.deleteProject(request.user.sub, request.params.id);
     await Promise.all(deliveryIds.map((did) => deliveryFileStore.remove(request.user.sub, did)));
+    await projectFileStore.removeProject(request.user.sub, request.params.id);
     // Configuration thumbnails live under the project's id (see the thumbnail route)
     await thumbnailStore.remove(request.user.sub, request.params.id);
     reply.code(204);
@@ -230,6 +238,19 @@ export async function registerProjectRoutes(fastify: FastifyInstance): Promise<v
     },
   );
 
+  // A file of the project's dossier goes with the delivery: copied in, so the delivery keeps
+  // it when the dossier file is deleted.
+  fastify.post<DeliveryParams>('/projects/:id/deliveries/:did/attachments', verified, async (request) =>
+  {
+    const { id, did } = request.params;
+    const { fileId } = parse(AttachSchema, request.body);
+    const delivery = await projectStore.attachProjectFile(
+      request.user.sub, id, did, fileId, config.deliveries,
+      (name) => deliveryFileStore.put(request.user.sub, did, name, (path) => projectFileStore.copyTo(request.user.sub, id, fileId, path)),
+    );
+    return { success: true, data: delivery };
+  });
+
   fastify.post<DeliveryParams>('/projects/:id/deliveries/:did/send', verified, async (request) =>
   {
     const { id, did } = request.params;
@@ -258,6 +279,60 @@ export async function registerProjectRoutes(fastify: FastifyInstance): Promise<v
     const { id, did } = request.params;
     await projectStore.deleteDraft(request.user.sub, id, did);
     await deliveryFileStore.remove(request.user.sub, did);
+    reply.code(204);
+  });
+
+  //// DOSSIER ////
+
+  // A file to keep with the project, as the raw body under the name it had.
+  fastify.post<{ Params: { id: string; name: string }; Body: Buffer }>(
+    '/projects/:id/files/:name',
+    { ...verified, bodyLimit: config.projectFiles.maxFileBytes + 1024 },
+    async (request, reply) =>
+    {
+      const { id, name } = request.params;
+      const body = request.body;
+      if (!Buffer.isBuffer(body) || body.length === 0)
+      {
+        reply.code(422);
+        return { success: false, error: 'The file is empty' };
+      }
+      const file = await projectStore.addProjectFile(
+        request.user.sub, id, name, body.length, config.projectFiles,
+        (fid) => projectFileStore.write(request.user.sub, id, fid, body),
+      );
+      reply.code(201);
+      return { success: true, data: file };
+    },
+  );
+
+  // Only ever a download, under the name it was uploaded with: these are the professional's
+  // own files, and none is shown in place on the API's origin.
+  fastify.get<{ Params: { id: string; fid: string } }>('/projects/:id/files/:fid', verified, async (request, reply) =>
+  {
+    const { id, fid } = request.params;
+    const row = await projectStore.projectFileRow(request.user.sub, id, fid);
+    const file = await projectFileStore.read(request.user.sub, id, fid);
+    if (!file)
+    {
+      reply.code(404);
+      return { success: false, error: 'This file is not available' };
+    }
+    const ascii = row.name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+    return reply
+      .header('Content-Type', row.mime)
+      .header('Content-Length', String(file.bytes))
+      .header('Content-Disposition', `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(row.name)}`)
+      .header('X-Content-Type-Options', 'nosniff')
+      .header('Cache-Control', 'private, no-store')
+      .send(file.stream);
+  });
+
+  fastify.delete<{ Params: { id: string; fid: string } }>('/projects/:id/files/:fid', verified, async (request, reply) =>
+  {
+    const { id, fid } = request.params;
+    await projectStore.deleteProjectFile(request.user.sub, id, fid);
+    await projectFileStore.remove(request.user.sub, id, fid);
     reply.code(204);
   });
 

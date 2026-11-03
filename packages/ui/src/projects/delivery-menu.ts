@@ -2,16 +2,17 @@
  * <delivery-menu> — send a client a delivery of one configuration (plans/PROJECTS.md).
  *
  * One form: the configuration, what goes in (the 3D model always; documents and
- * spreadsheets when the script makes them), an optional offer, a message and the
- * recipient. Sending makes the files here in the browser, uploads them to a draft and
+ * spreadsheets when the script makes them), an optional offer and a message. It goes to
+ * the project's client: without one, or without their email address, it cannot be sent. Sending makes the files here in the browser, uploads them to a draft and
  * sends it: the server freezes it, gives it a link and emails the client.
  *
  * Of another author's configurator only the 3D model and what it offers for download can
  * go in (the server checks the same).
  *
  * Emits:
- *   delivery-menu-sent   detail = DeliveryData   a delivery went out
- *   delivery-menu-close  the dialog closed
+ *   delivery-menu-sent         detail = DeliveryData       a delivery went out
+ *   delivery-menu-file-added   detail = ProjectFileData    a new file went into the dossier
+ *   delivery-menu-close        the dialog closed
  */
 
 import { LitElement, html, css, nothing } from 'lit';
@@ -29,13 +30,17 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 
 import type { ScriptData } from '@archiyou/core/src/execution/types';
-import type { ConfigurationData, DeliveryData, ProjectData } from '@archiyou/types';
+import type { ConfigurationData, DeliveryData, ProjectData, ProjectFileData } from '@archiyou/types';
 
 import {
   fetchConfiguration, createDelivery, uploadDeliveryFile, sendDelivery, deleteDelivery, generateDeliveryFiles,
+  attachProjectFile, uploadProjectFile, PROJECT_FILE_ACCEPT,
 } from '@archiyou/editor/src/services/projects';
+import { formatBytes } from './project-files.js';
+import { warmupWorker } from '@archiyou/editor/src/services/execution-service';
 
-const CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF'];
+// For the offer fields, off for now (see render)
+// const CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF'];
 
 type Step = 'form' | 'making' | 'uploading' | 'sending' | 'sent';
 
@@ -80,14 +85,18 @@ export class DeliveryMenu extends LitElement
       <form class="form" @submit=${this._submit}>
         <!-- \`selected\` on the option, not .value on the select: a value set before the
              options are slotted is cleared again (as in share-script-menu). -->
-        <wa-select size="small" label=${msg('Configuration')}
+        <wa-select size="small" label=${msg('Design')}
           @change=${(e: Event) => this._chooseConfiguration((e.target as HTMLSelectElement).value)}>
           ${project.configurations.map(c => html`
-            <wa-option value=${c.id} ?selected=${c.id === this._configurationId}>v${c.rev} ${c.label || c.scriptName || ''}</wa-option>`)}
+            <wa-option value=${c.id} ?selected=${c.id === this._configurationId}
+              label=${`v${c.rev} · ${c.label || c.scriptName || ''}`}><span class="rev">v${c.rev}</span>${c.label || c.scriptName || ''}</wa-option>`)}
         </wa-select>
 
+        <wa-input size="small" label=${msg('Title')} required maxlength="120" .value=${this._title}
+          @input=${(e: Event) => { this._title = (e.target as HTMLInputElement).value; }}></wa-input>
+
         <fieldset>
-          <legend>${msg('Included')}</legend>
+          <legend>${msg('Include fulfillment outputs')}</legend>
           <wa-checkbox size="small" checked disabled>${msg('3D model')}</wa-checkbox>
           <wa-checkbox size="small" ?checked=${this._documents} ?disabled=${!this._allowed.documents}
             @change=${(e: Event) => { this._documents = (e.target as HTMLInputElement).checked; }}>
@@ -102,14 +111,17 @@ export class DeliveryMenu extends LitElement
             : nothing}
         </fieldset>
 
-        <wa-input size="small" label=${msg('Title')} required maxlength="120" .value=${this._title}
-          @input=${(e: Event) => { this._title = (e.target as HTMLInputElement).value; }}></wa-input>
+        ${this._renderAttachments()}
 
-        <wa-checkbox size="small" ?checked=${this._withOffer}
-          @change=${(e: Event) => { this._withOffer = (e.target as HTMLInputElement).checked; }}>
-          ${msg('This is an offer')}
-        </wa-checkbox>
-        ${this._withOffer
+
+        ${nothing /* Offers are off for now (turn back on: this block, and _withOffer in _reset)
+        <fieldset>
+          <legend>${msg('Offer')}</legend>
+          <wa-checkbox size="small" ?checked=${this._withOffer}
+            @change=${(e: Event) => { this._withOffer = (e.target as HTMLInputElement).checked; }}>
+            ${msg('This is an offer')}
+          </wa-checkbox>
+          ${this._withOffer
           ? html`
             <div class="row">
               <wa-input size="small" type="number" min="0" step="0.01" label=${msg('Total')} required
@@ -124,16 +136,13 @@ export class DeliveryMenu extends LitElement
             <wa-input size="small" label=${msg('Offer note (optional)')} placeholder=${msg('e.g. excl. delivery and VAT')}
               .value=${this._offerNote} @input=${(e: Event) => { this._offerNote = (e.target as HTMLInputElement).value; }}></wa-input>`
           : nothing}
+        </fieldset>
+        */}
 
         <wa-textarea size="small" label=${msg('Message')} rows="3" maxlength="2000" .value=${this._message}
           @input=${(e: Event) => { this._message = (e.target as HTMLTextAreaElement).value; }}></wa-textarea>
 
-        <div class="row">
-          <wa-input size="small" type="email" label=${msg('To')} required .value=${this._recipientEmail}
-            @input=${(e: Event) => { this._recipientEmail = (e.target as HTMLInputElement).value; }}></wa-input>
-          <wa-input size="small" label=${msg('Name')} .value=${this._recipientName}
-            @input=${(e: Event) => { this._recipientName = (e.target as HTMLInputElement).value; }}></wa-input>
-        </div>
+        ${this._renderRecipient(project)}
 
         ${configuration?.configurator
           ? html`
@@ -149,6 +158,51 @@ export class DeliveryMenu extends LitElement
     `;
   }
 
+  /** Files of the project's dossier to send along, and a way to add one: a new file goes
+   *  into the dossier too, so whatever a client was sent can be found in the project. */
+  private _renderAttachments()
+  {
+    return html`
+      <fieldset>
+        <legend>${msg('Attach extra files')}</legend>
+        ${this._files.length
+          ? this._files.map(f => html`
+            <wa-checkbox size="small" ?checked=${this._attach.includes(f.id)}
+              @change=${(e: Event) => this._toggleAttach(f.id, (e.target as HTMLInputElement).checked)}>
+              ${f.name} <span class="size">${formatBytes(f.bytes)}</span>
+            </wa-checkbox>`)
+          : html`<p class="hint">${msg('No dossier files in this project yet.')}</p>`}
+        <div class="attach-new">
+          <wa-button size="small" appearance="outlined" ?loading=${this._uploadingFile} @click=${this._pickFile}>
+            <wa-icon slot="start" library="lucide" name="upload"></wa-icon>${msg('Upload a new file')}
+          </wa-button>
+          <span class="hint">${msg('It is also kept in the project\'s dossier files.')}</span>
+        </div>
+        <input class="file-input" type="file" multiple accept=${PROJECT_FILE_ACCEPT} @change=${this._onFileChosen}>
+      </fieldset>`;
+  }
+
+  /** Who it goes to: the project's client, never typed here. Without one (or without their
+   *  email address) there is no one to send it to. */
+  private _renderRecipient(project: ProjectData)
+  {
+    const client = project.client;
+    if (!client)
+    {
+      return html`<p class="recipient missing" role="alert">${msg('No client for this project yet. Please make one before you can send things!')}</p>`;
+    }
+    if (!client.email)
+    {
+      return html`<p class="recipient missing" role="alert">${msg('The client has no email address yet. Please add one before you can send things!')}</p>`;
+    }
+    const name = client.name ?? client.company;
+    return html`
+      <p class="recipient">
+        <wa-icon library="lucide" name="mail"></wa-icon>
+        ${name ? msg(str`Sent to ${name} (${client.email})`) : msg(str`Sent to ${client.email}`)}
+      </p>`;
+  }
+
   private _renderFooter()
   {
     if (this._step === 'sent')
@@ -162,7 +216,7 @@ export class DeliveryMenu extends LitElement
     const busy = this._step !== 'form';
     return html`
       <wa-button slot="footer" appearance="outlined" ?disabled=${busy} @click=${this._close}>${msg('Cancel')}</wa-button>
-      <wa-button slot="footer" variant="brand" ?loading=${busy}
+      <wa-button slot="footer" variant="brand" ?loading=${busy} ?disabled=${!this.project?.client?.email}
         @click=${() => this.renderRoot.querySelector<HTMLFormElement>('form')?.requestSubmit()}>
         <wa-icon slot="start" library="lucide" name="send"></wa-icon>${msg('Send')}
       </wa-button>`;
@@ -191,14 +245,23 @@ export class DeliveryMenu extends LitElement
   @state() private _validUntil = '';
   @state() private _offerNote = '';
   @state() private _message = '';
-  @state() private _recipientEmail = '';
-  @state() private _recipientName = '';
   @state() private _allowAdjust = false;
+  /** The dossier as this dialog knows it: the project's files and any uploaded here. */
+  @state() private _files: ProjectFileData[] = [];
+  /** Dossier files to attach, by id. */
+  @state() private _attach: string[] = [];
+  @state() private _uploadingFile = false;
 
   // ── 3. Lifecycle ──
   override updated(changed: Map<string, unknown>)
   {
-    if (changed.has('open') && this.open) this._reset();
+    if (changed.has('open') && this.open)
+    {
+      this._reset();
+      // Sending runs the script for the files; the project page does not load the kernel,
+      // so start it while the form is being filled in. Best-effort: a failure shows on send.
+      warmupWorker().catch(err => console.warn('delivery-menu: kernel warmup failed:', err));
+    }
   }
 
   // ── 4. Behaviour & Methods ──
@@ -209,15 +272,18 @@ export class DeliveryMenu extends LitElement
     this._step = 'form';
     this._error = '';
     this._sent = null;
-    this._title = msg(str`Offer ${project.title}`);
-    this._withOffer = true;
+    // Offers are off for now: back on with `Offer ${project.title}` and _withOffer = true
+    // this._title = msg(str`Offer ${project.title}`);
+    // this._withOffer = true;
+    this._title = project.title;
+    this._withOffer = false;
     this._total = '';
     this._validUntil = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
     this._offerNote = '';
     this._message = '';
-    this._recipientEmail = project.client?.email ?? '';
-    this._recipientName = project.client?.name ?? '';
     this._allowAdjust = false;
+    this._files = project.files ?? [];
+    this._attach = [];
     void this._chooseConfiguration(this.configuration?.id ?? project.configurations[0]?.id ?? '');
   }
 
@@ -249,8 +315,46 @@ export class DeliveryMenu extends LitElement
     }
     catch (err)
     {
-      this._error = (err as Error)?.message ?? msg('Could not load the configuration.');
+      this._error = (err as Error)?.message ?? msg('Could not load the design.');
     }
+  }
+
+  private _toggleAttach(id: string, on: boolean)
+  {
+    this._attach = on ? [...new Set([...this._attach, id])] : this._attach.filter(a => a !== id);
+  }
+
+  private _pickFile()
+  {
+    this.renderRoot.querySelector<HTMLInputElement>('.file-input')?.click();
+  }
+
+  /** Into the dossier, then ticked to go with this delivery. */
+  private async _onFileChosen(e: Event)
+  {
+    const input = e.target as HTMLInputElement;
+    const chosen = [...(input.files ?? [])];
+    input.value = '';
+    const project = this.project;
+    if (!project || !chosen.length) return;
+    this._uploadingFile = true;
+    this._error = '';
+    for (const file of chosen)
+    {
+      try
+      {
+        const kept = await uploadProjectFile(project.id, file);
+        this._files = [kept, ...this._files];
+        this._attach = [...this._attach, kept.id];
+        this.dispatchEvent(new CustomEvent('delivery-menu-file-added', { detail: kept, bubbles: true, composed: true }));
+      }
+      catch (err)
+      {
+        const body = (err as { body?: { error?: string } }).body;
+        this._error = body?.error ?? msg(str`Could not upload ${file.name}.`);
+      }
+    }
+    this._uploadingFile = false;
   }
 
   private async _submit(e: Event)
@@ -258,7 +362,7 @@ export class DeliveryMenu extends LitElement
     e.preventDefault();
     const project = this.project;
     const configuration = project?.configurations.find(c => c.id === this._configurationId);
-    if (!project || !configuration || this._step !== 'form') return;
+    if (!project?.client?.email || !configuration || this._step !== 'form') return;
     if (this._withOffer && !(Number(this._total) >= 0 && this._total !== ''))
     {
       this._error = msg('What is the total of the offer?');
@@ -280,12 +384,13 @@ export class DeliveryMenu extends LitElement
         offer: this._withOffer
           ? { total: Number(this._total), currency: this._currency, validUntil: this._validUntil || null, note: this._offerNote.trim() || null }
           : null,
-        recipientEmail: this._recipientEmail.trim(),
-        recipientName: this._recipientName.trim() || null,
+        recipientEmail: project.client.email,
+        recipientName: project.client.name ?? null,
         allowAdjust: this._allowAdjust,
       });
       draftId = draft.id;
       for (const file of files) await uploadDeliveryFile(project.id, draft.id, file);
+      for (const fileId of this._attach) await attachProjectFile(project.id, draft.id, fileId);
 
       this._step = 'sending';
       this._sent = await sendDelivery(project.id, draft.id);
@@ -321,8 +426,9 @@ export class DeliveryMenu extends LitElement
 
   // ── 5. Styles ──
   static override styles = css`
+    /* A third of the screen, never narrower than the form needs */
     wa-dialog {
-      --width: min(34rem, 100vw);
+      --width: min(max(40rem, 33vw), 100vw);
     }
 
     .form {
@@ -340,6 +446,15 @@ export class DeliveryMenu extends LitElement
       border: none;
     }
 
+    /* The lists and the offer's fields: small, under their legend. Web Awesome sizes a
+       control from its font, so xs text makes the whole control small */
+    fieldset wa-checkbox,
+    fieldset wa-input,
+    fieldset wa-select,
+    fieldset .attach-new wa-button {
+      font-size: var(--text-xs);
+    }
+
     legend {
       margin-bottom: var(--space-xs);
       font-size: var(--text-sm);
@@ -355,6 +470,46 @@ export class DeliveryMenu extends LitElement
       margin: 0;
       font-size: var(--text-xs);
       color: var(--color-text-muted);
+    }
+
+    /* The version before a design's name in the list: quiet, with room after it */
+    wa-option .rev {
+      margin-right: var(--space-sm);
+      color: var(--color-text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .size {
+      margin-left: var(--space-xs);
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+    }
+
+    .attach-new {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-sm);
+      margin-top: var(--space-xs);
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    .recipient {
+      display: flex;
+      align-items: center;
+      gap: var(--space-xs);
+      margin: 0;
+      font-size: var(--text-sm);
+    }
+
+    .recipient.missing {
+      padding: var(--space-sm) var(--space-md);
+      border: 1px solid var(--color-warning);
+      border-radius: var(--radius-md);
+      color: var(--color-text);
     }
 
     .error {

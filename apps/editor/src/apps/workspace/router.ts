@@ -11,6 +11,7 @@
 import { Router, type Route } from '@vaadin/router';
 
 import { userState } from '../../state/core.js';
+import { authReady } from '../../services/auth-service.js';
 
 export const routes: Route[] = [
   // --- OAuth pages (no layout) ---
@@ -70,7 +71,10 @@ export const routes: Route[] = [
   {
     path: '/',
     component: 'layout-main',
-    action: async () => { await import('../../layouts/layout-main.js'); },
+    // Its pages ask the server for the signed-in user's data as they open, so they wait for
+    // the session check (instant without a stored token): too early, the projects list and
+    // a project read "signed out" and never load
+    action: async () => { await Promise.all([import('../../layouts/layout-main.js'), authReady.catch(() => null)]); },
     children: [
       {
         path: '',
@@ -109,8 +113,8 @@ export const routes: Route[] = [
         path: 'admin/:section?',
         component: 'page-admin',
         action: async (_ctx, commands) => {
-          // userState is derived from the auth service's restored session, so this is
-          // already settled by the time a route resolves.
+          // userState is derived from the auth service's restored session, which the
+          // parent route waited for.
           if (!userState.get().isAdmin) return commands.redirect('/editor');
           await import('../../pages/admin.js');
           return undefined;

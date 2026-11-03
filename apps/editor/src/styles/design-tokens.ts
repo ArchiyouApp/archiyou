@@ -199,7 +199,8 @@ export function applyDesignTokens(root: HTMLElement = document.documentElement):
   root.style.setProperty('--wa-color-danger-50',  tokens.colorDanger);
 
   // --- Foundational surface colors ---
-  root.style.setProperty('--wa-color-surface-raised',  tokens.colorBgDark);
+  // Dialogs, dropdowns and popovers: white, as the panels they float over
+  root.style.setProperty('--wa-color-surface-raised',  tokens.colorBgElevated);
   root.style.setProperty('--wa-color-surface-default', tokens.colorBg);
   root.style.setProperty('--wa-color-surface-lowered', tokens.colorBg);
   root.style.setProperty('--wa-color-surface-border',  tokens.colorBorder);

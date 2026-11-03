@@ -113,14 +113,14 @@ export class ProjectActivity extends LitElement
 
     .empty {
       margin: 0;
-      font-size: var(--text-sm);
+      font-size: var(--text-xs);
       color: var(--color-text-muted);
     }
 
     ol {
       display: flex;
       flex-direction: column;
-      gap: var(--space-sm);
+      gap: var(--space-xs);
       margin: 0;
       padding: 0;
       list-style: none;
@@ -131,7 +131,7 @@ export class ProjectActivity extends LitElement
       grid-template-columns: auto 1fr auto;
       align-items: baseline;
       gap: var(--space-sm);
-      font-size: var(--text-sm);
+      font-size: var(--text-xs);
     }
 
     li wa-icon {

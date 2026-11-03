@@ -20,16 +20,18 @@ import {
   PROJECT_STATUSES,
   type ClientData, type ClientInput, type ConfigurationData, type ConfigurationOrigin,
   type DeliveryData, type DeliveryFile, type DeliveryFileKind, type DeliveryOffer, type DeliveryResponse, type ProjectCounts, type ProjectData, type ProjectEvent, type ProjectEventActor,
+  type ProjectFileData,
   type ProjectStatus, type ProjectSummary,
 } from '@archiyou/types';
 
 import { config } from '../config';
 import { db } from '../db/client';
 import {
-  clients, configurations, deliveries, events, projects,
-  type ClientRow, type ConfigurationRow, type DeliveryRow, type EventRow, type ProjectRow,
+  clients, configurations, deliveries, events, projectFiles, projects,
+  type ClientRow, type ConfigurationRow, type DeliveryRow, type EventRow, type ProjectFileRow, type ProjectRow,
 } from '../db/schema';
-import { deliveryFileType } from './DeliveryFileStore';
+import { attachmentFileType, attachmentName, deliveryFileType } from './DeliveryFileStore';
+import { cleanFileName, projectFileType } from './ProjectFileStore';
 import { uniqueViolation } from './ScriptStore';
 
 export class ProjectStoreError extends Error
@@ -255,6 +257,11 @@ export function rowToDelivery(row: DeliveryRow): DeliveryData
     created: row.created.toISOString(),
     updated: row.updated.toISOString(),
   };
+}
+
+function rowToProjectFile(row: ProjectFileRow): ProjectFileData
+{
+  return { id: row.id, name: row.name, mime: row.mime, bytes: row.bytes, created: row.created.toISOString() };
 }
 
 function rowToEvent(row: EventRow): ProjectEvent
@@ -574,6 +581,9 @@ export class ProjectStore
       .where(and(eq(events.professional, professional), eq(events.projectId, id)))
       .orderBy(desc(events.created), desc(events.id))
       .limit(EVENTS_IN_PROJECT);
+    const fileRows = await db.select().from(projectFiles)
+      .where(and(eq(projectFiles.professional, professional), eq(projectFiles.projectId, id)))
+      .orderBy(desc(projectFiles.created));
 
     const thumbnail = configurationRows.find((c) => c.thumbnail)?.thumbnail ?? null;
     return {
@@ -582,6 +592,7 @@ export class ProjectStore
       client: client ? rowToClient(client) : null,
       configurations: configurationRows.map((c) => rowToConfiguration(c)),
       deliveries: deliveryRows.map(rowToDelivery),
+      files: fileRows.map(rowToProjectFile),
       events: eventRows.map(rowToEvent),
     };
   }
@@ -626,12 +637,13 @@ export class ProjectStore
   async deleteProject(professional: string, id: string): Promise<{ deliveryIds: string[] }>
   {
     await this.projectRow(professional, id);
-    const owned = (table: typeof configurations | typeof deliveries | typeof events) =>
+    const owned = (table: typeof configurations | typeof deliveries | typeof events | typeof projectFiles) =>
       and(eq(table.professional, professional), eq(table.projectId, id));
     const deliveryIds = (await db.select({ id: deliveries.id }).from(deliveries).where(owned(deliveries))).map((r) => r.id);
     await db.transaction(async (tx) =>
     {
       await tx.delete(events).where(owned(events));
+      await tx.delete(projectFiles).where(owned(projectFiles));
       await tx.delete(deliveries).where(owned(deliveries));
       await tx.delete(configurations).where(owned(configurations));
       await tx.delete(projects).where(and(eq(projects.professional, professional), eq(projects.id, id)));
@@ -820,18 +832,105 @@ export class ProjectStore
     {
       throw new ProjectStoreError('invalid', 'From another author\'s configurator you can only deliver the 3D model and what it offers for download');
     }
+    return this.putDeliveryFile(professional, row, { name, kind: type.kind, bytes, mime: type.mime }, limits, write);
+  }
 
-    const files: DeliveryFile[] = [...row.files.filter((f) => f.name !== name), { name, kind: type.kind, bytes, mime: type.mime }];
+  /**
+   * Attach a file of the project's dossier to a draft: `copy` puts a copy of it in the
+   * delivery under the name given (attachmentName of the dossier name), so the delivery
+   * keeps it when the dossier file goes. The professional's own file, so it may go with
+   * any configuration, another author's too.
+   */
+  async attachProjectFile(
+    professional: string,
+    projectId: string,
+    id: string,
+    fileId: string,
+    limits: Pick<DeliveryLimits, 'maxDeliveryBytes' | 'quotaBytes'>,
+    copy: (name: string) => Promise<void>,
+  ): Promise<DeliveryData>
+  {
+    const row = await this.deliveryRow(professional, projectId, id);
+    if (row.status !== 'draft') throw new ProjectStoreError('conflict', 'A sent delivery cannot change');
+    const file = await this.projectFileRow(professional, projectId, fileId);
+    const name = attachmentName(file.name, row.files.map((f) => f.name));
+    const type = attachmentFileType(name);
+    if (!type) throw new ProjectStoreError('invalid', `A delivery cannot hold "${file.name}"`);
+    return this.putDeliveryFile(professional, row, { name, kind: type.kind, bytes: file.bytes, mime: type.mime }, limits, () => copy(name));
+  }
+
+  /** List one file in a draft (replacing one of its name) once the size and the quota
+   *  allow it and `write` has put it on disk. */
+  private async putDeliveryFile(
+    professional: string,
+    row: DeliveryRow,
+    file: DeliveryFile,
+    limits: Pick<DeliveryLimits, 'maxDeliveryBytes' | 'quotaBytes'>,
+    write: () => Promise<void>,
+  ): Promise<DeliveryData>
+  {
+    const files: DeliveryFile[] = [...row.files.filter((f) => f.name !== file.name), file];
     const total = files.reduce((sum, f) => sum + f.bytes, 0);
     if (total > limits.maxDeliveryBytes) throw new ProjectStoreError('limit', 'This delivery is too large');
     const [{ used }] = await db.select({ used: sql<number>`coalesce(sum(${deliveries.bytes}), 0)`.mapWith(Number) })
-      .from(deliveries).where(and(eq(deliveries.professional, professional), ne(deliveries.id, id)));
+      .from(deliveries).where(and(eq(deliveries.professional, professional), ne(deliveries.id, row.id)));
     if (used + total > limits.quotaBytes) throw new ProjectStoreError('limit', 'Your deliveries take up all the space you have. Delete old projects to make room.');
 
     await write();
     const [updated] = await db.update(deliveries).set({ files, bytes: total, updated: new Date() })
-      .where(eq(deliveries.id, id)).returning();
+      .where(eq(deliveries.id, row.id)).returning();
     return rowToDelivery(updated);
+  }
+
+  //// DOSSIER ////
+
+  async projectFileRow(professional: string, projectId: string, id: string): Promise<ProjectFileRow>
+  {
+    const [row] = await db.select().from(projectFiles)
+      .where(and(eq(projectFiles.professional, professional), eq(projectFiles.projectId, projectId), eq(projectFiles.id, id)))
+      .limit(1);
+    if (!row) throw new ProjectStoreError('not_found', `File ${id} not found`);
+    return row;
+  }
+
+  /**
+   * Keep a file with the project. Checks the name, its type, its size and the
+   * professional's quota before `write` puts the bytes on disk under the new id; only then
+   * is it listed.
+   */
+  async addProjectFile(
+    professional: string,
+    projectId: string,
+    name: string,
+    bytes: number,
+    limits: { maxFileBytes: number; quotaBytes: number },
+    write: (id: string) => Promise<void>,
+  ): Promise<ProjectFileData>
+  {
+    await this.projectRow(professional, projectId);
+    const clean = cleanFileName(name);
+    const type = clean ? projectFileType(clean) : null;
+    if (!clean || !type) throw new ProjectStoreError('invalid', `A project cannot keep "${name}": documents, images, drawings, 3D models and zip files only`);
+    if (bytes > limits.maxFileBytes) throw new ProjectStoreError('limit', `This file is too large (at most ${Math.round(limits.maxFileBytes / 1024 / 1024)} MB)`);
+    const [{ used }] = await db.select({ used: sql<number>`coalesce(sum(${projectFiles.bytes}), 0)`.mapWith(Number) })
+      .from(projectFiles).where(eq(projectFiles.professional, professional));
+    if (used + bytes > limits.quotaBytes) throw new ProjectStoreError('limit', 'Your project files take up all the space you have. Delete files you no longer need to make room.');
+
+    const id = uuid4();
+    await write(id);
+    const [row] = await db.insert(projectFiles).values({
+      id, professional, projectId, name: clean, mime: type.mime, bytes, created: new Date(),
+    }).returning();
+    await db.update(projects).set({ updated: new Date() })
+      .where(and(eq(projects.professional, professional), eq(projects.id, projectId)));
+    return rowToProjectFile(row);
+  }
+
+  /** Forget a dossier file; the route removes its bytes. Copies in deliveries stay. */
+  async deleteProjectFile(professional: string, projectId: string, id: string): Promise<void>
+  {
+    await this.projectFileRow(professional, projectId, id);
+    await db.delete(projectFiles).where(and(eq(projectFiles.professional, professional), eq(projectFiles.id, id)));
   }
 
   /**

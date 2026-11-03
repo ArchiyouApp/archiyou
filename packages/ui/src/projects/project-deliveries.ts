@@ -41,7 +41,7 @@ export class ProjectDeliveries extends LitElement
     const shown = this.deliveries.filter(d => d.status !== 'draft');
     if (shown.length === 0)
     {
-      return html`<p class="empty">${msg('Nothing sent yet. Send the client a delivery of a configuration: the 3D model, its documents and an offer.')}</p>`;
+      return html`<p class="empty">${msg('Nothing sent of this design yet. Send the client a delivery: the 3D model, its documents and an offer.')}</p>`;
     }
     return html`${shown.map(d => this._renderRow(d))}`;
   }
@@ -191,6 +191,11 @@ export class ProjectDeliveries extends LitElement
       flex-wrap: wrap;
       gap: var(--space-sm);
       margin-top: var(--space-xs);
+    }
+
+    /* Small, as in the design rows: xs text makes the whole button small */
+    .actions wa-button {
+      font-size: var(--text-xs);
     }
   `;
 }

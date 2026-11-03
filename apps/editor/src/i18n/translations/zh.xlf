@@ -1096,6 +1096,26 @@
   <source>Switch to isometric</source>
   <target>切换到等轴测</target>
 </trans-unit>
+<trans-unit id="se5784a16a6799dad">
+  <source>Back to <x id="0" equiv-text="${project.label}"/></source>
+  <target>返回 <x id="0" equiv-text="${project.label}"/></target>
+</trans-unit>
+<trans-unit id="s464cbc1d85e9cc4a">
+  <source>Back to project</source>
+  <target>返回项目</target>
+</trans-unit>
+<trans-unit id="s9d2d0ffa8688530c">
+  <source>Add to project</source>
+  <target>添加到项目</target>
+</trans-unit>
+<trans-unit id="s88cc54d11bdbf907">
+  <source>Add this design to your project</source>
+  <target>将此设计添加到你的项目</target>
+</trans-unit>
+<trans-unit id="sed1bdd152de1bc53">
+  <source>Add this design to one of your projects, or a new one</source>
+  <target>将此设计添加到你的某个项目或新项目</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

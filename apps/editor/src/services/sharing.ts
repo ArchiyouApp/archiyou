@@ -38,6 +38,13 @@ export async function fetchSharedWithMe(): Promise<ScriptData[]> {
   return res.data ?? [];
 }
 
+/** An author's shared scripts, latest version each. The server leaves out the ones shared
+ *  with named users unless the caller is the author or one of them. */
+export async function fetchSharedByAuthor(author: string): Promise<ScriptData[]> {
+  const res = await api.get<Envelope<ScriptData[]>>(`/scripts/shared/${encodeURIComponent(author)}`);
+  return res.data ?? [];
+}
+
 /** Existing shared version strings for a file (author/name), latest first. */
 export async function fetchSharedVersions(author: string, name: string): Promise<string[]> {
   try {

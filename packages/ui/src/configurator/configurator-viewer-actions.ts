@@ -10,23 +10,30 @@
  *     "Embed", which opens a ready-to-paste <iframe> snippet. Neither when the
  *     page is embedded in another site (`embedded`, from `?embed=1`): that site
  *     offers its own links.
- *     And "Save as project" (unless the link says `ui.project=0`), also inside
- *     another site: a link to the editor's /projects/new with the design on
- *     screen, which signs the visitor in or up if needed and opens the new
- *     project (services/save-project.ts). From another site's page it opens in a
- *     new tab, where the visitor's Archiyou session lives.
+ *     And "Add to project" (unless the link says `ui.project=0`). For a signed-in
+ *     visitor on this page it opens <add-to-project-menu>: one of their projects or
+ *     a new one. Otherwise, also inside another site, it is a link to the editor's
+ *     /projects/new with the design on screen, which signs the visitor in or up if
+ *     needed and opens the new project (services/save-project.ts). From another
+ *     site's page it opens in a new tab, where the visitor's Archiyou session lives.
+ *     Opened from a project's "From configurator" (`?project=<id>`) it reads
+ *     "Add to project P-005 <title>" and adds the design to that project, next to a
+ *     way back to it.
  */
 
 import { LitElement, html, css, nothing, unsafeCSS } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
-import { localized, msg } from '@lit/localize';
+import { localized, msg, str } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import './configurator-action-button.js';
+import '../projects/add-to-project-menu.js';
 
-import { editorScript } from '@archiyou/editor/src/state/workspace';
-import { configurationQuery } from '@archiyou/editor/src/state/configurator-url';
+import type { ScriptData } from '@archiyou/core/src/execution/types';
+import { editorScript, userState, buildConfiguratorRequest } from '@archiyou/editor/src/state/workspace';
+import type { ConfigurationInput } from '@archiyou/editor/src/services/projects';
+import { configurationQuery, configuratorProject } from '@archiyou/editor/src/state/configurator-url';
 import { configuratorDisplay } from '@archiyou/editor/src/state/configurator-display';
 import { configuratorLocale } from '@archiyou/editor/src/state/locale';
 import { saveProjectUrl } from '@archiyou/editor/src/services/save-project';
@@ -64,15 +71,32 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
     const sourceUrl  = this.embedded ? null : this._sourceUrl();
     const embedUrl   = this.embedded ? null : this._embedUrl();
     const projectUrl = this._projectUrl();
+    const project    = configuratorProject.get();
 
     // Nothing to offer → stay out of the way entirely rather than show dead buttons.
-    this.toggleAttribute('hidden', !sourceUrl && !embedUrl && !projectUrl);
-    if (!sourceUrl && !embedUrl && !projectUrl) return nothing;
+    this.toggleAttribute('hidden', !sourceUrl && !embedUrl && !projectUrl && !project);
+    if (!sourceUrl && !embedUrl && !projectUrl && !project) return nothing;
 
     return html`
       <div class="actions">
-        ${projectUrl ? html`
-          <configurator-action-button icon="folder-plus" label=${msg('Save as project')}
+        ${project ? html`
+          <configurator-action-button icon="arrow-left"
+              label=${project.label ? msg(str`Back to ${project.label}`) : msg('Back to project')}
+              href=${`/projects/${encodeURIComponent(project.id)}`}></configurator-action-button>` : nothing}
+
+        ${projectUrl && project ? html`
+          <configurator-action-button primary expanded icon="folder-plus"
+              label=${msg('Add to project')} name=${[project.label, project.title].filter(Boolean).join(' ')}
+              hint=${msg('Add this design to your project')}
+              href=${projectUrl}></configurator-action-button>` : nothing}
+
+        ${projectUrl && !project && this._choosesProject() ? html`
+          <configurator-action-button icon="folder-plus" label=${msg('Add to project')}
+              hint=${msg('Add this design to one of your projects, or a new one')}
+              @click=${() => { this._choosingProject = true; }}></configurator-action-button>` : nothing}
+
+        ${projectUrl && !project && !this._choosesProject() ? html`
+          <configurator-action-button icon="folder-plus" label=${msg('Add to project')}
               hint=${msg('Keep this design in a new project of yours')}
               href=${projectUrl} target=${this.embedded ? '_blank' : '_self'}></configurator-action-button>` : nothing}
 
@@ -88,6 +112,14 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
       </div>
 
       ${this._embedOpen && embedUrl ? this._renderEmbedPanel(embedUrl) : nothing}
+
+      ${projectUrl && !project && this._choosesProject() ? html`
+        <add-to-project-menu
+          ?open=${this._choosingProject}
+          .build=${this._buildConfiguration}
+          suggestedTitle=${editorScript.get()?.published?.title ?? editorScript.get()?.name ?? ''}
+          @add-to-project-close=${() => { this._choosingProject = false; }}
+        ></add-to-project-menu>` : nothing}
     `;
   }
 
@@ -134,6 +166,8 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
 
   @state() private _embedOpen = false;
   @state() private _copied = false;
+  /** <add-to-project-menu> is open. */
+  @state() private _choosingProject = false;
 
   private _copiedTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -175,7 +209,30 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
     return publicConfiguratorUrl(script.published.url, script.author, script.name, script.version);
   }
 
-  /** "Save as project": the editor's /projects/new with the published configurator and the
+  /** A signed-in visitor on this page chooses the project; inside another site, where
+   *  their session is not, and signed out, the button is the /projects/new link. */
+  private _choosesProject(): boolean
+  {
+    return !this.embedded && !userState.get().anonymous;
+  }
+
+  /** The design on screen: the configurator's script with the values set in it now. */
+  private _buildConfiguration = (): ConfigurationInput | null =>
+  {
+    const request = buildConfiguratorRequest([]);
+    // buildConfiguratorRequest puts the script's toData() here
+    const script = request.script as ScriptData | undefined;
+    if (!script) return null;
+    return {
+      script,
+      values: request.params ?? {},
+      unitSystem: request.unitSystem ?? null,
+      lang: configuratorLocale.get(),
+      sourceVersionId: script.id ?? null,
+    };
+  };
+
+  /** "Add to project" as a link: the editor's /projects/new with the published configurator and the
    *  configuration on screen (read here, so the link follows every change). */
   private _projectUrl(): string | null
   {
@@ -184,7 +241,7 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
     const base = (typeof window !== 'undefined' && window.location?.origin) || '';
     const query = new URLSearchParams(configurationQuery());
     query.set('lang', configuratorLocale.get());
-    return saveProjectUrl(base, script.author, script.name, script.version, query.toString());
+    return saveProjectUrl(base, script.author, script.name, script.version, query.toString(), configuratorProject.get()?.id);
   }
 
   private _snippet(embedUrl: string): string

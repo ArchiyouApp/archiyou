@@ -16,7 +16,8 @@
  *
  * `?embed=1` marks a configurator shown inside another site (see isEmbedded()), the `ui.*`
  * keys set what it shows (state/configurator-display) and the colours and theme it shows it in
- * (styles/brand-colors), and `?preset=Large` opens a preset.
+ * (styles/brand-colors), and `?preset=Large` opens a preset. `?project=<id>` comes from a
+ * project's "From configurator": "Save as project" then adds to that project.
  */
 
 import { LitElement, html, css } from 'lit';
@@ -26,13 +27,16 @@ import { localized, msg, str } from '@lit/localize';
 import { type RouterLocation } from '@vaadin/router';
 
 import type { ScriptData } from '@archiyou/core/src/execution/types';
+import { projectLabel } from '@archiyou/types';
 
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@archiyou/ui/configurator/configurator.js';
 
 import { openSharedScript } from '../state/workspace';
-import { applyConfiguratorParamsFromQuery, deliveryTokenFromUrl, isEmbedded } from '../state/configurator-url';
+import {
+  applyConfiguratorParamsFromQuery, configuratorProject, deliveryTokenFromUrl, isEmbedded, projectIdFromUrl,
+} from '../state/configurator-url';
 import { applyDisplayFromQuery, configuratorDisplay, resetDisplay } from '../state/configurator-display';
 import { applyBrandColors, removeBrandColors } from '../styles/brand-colors.js';
 import { overrideTheme } from '../styles/dark-theme.js';
@@ -40,7 +44,7 @@ import { applyLocaleFromQuery, detectPreferredLocale } from '../state/locale';
 import { setChromeLocale } from '../i18n/locale-config';
 import { allLocales } from '../i18n/locale-codes';
 import { fetchPublishedScriptVersion } from '../services/publishing.js';
-import { reportAdjustOpened } from '../services/projects.js';
+import { fetchProject, reportAdjustOpened } from '../services/projects.js';
 import { setServerExecutionTarget, setPublishedScript, type ServerExecutionTarget } from '../services/execution-service.js';
 
 @localized()
@@ -84,6 +88,7 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
     // order can leave a stale one behind.
     setServerExecutionTarget(null);
     setPublishedScript(null);
+    configuratorProject.set(null);
     // Nor its display options, colours and theme: the editor's Configurator Preview shows
     // everything, in Archiyou's colours and the visitor's own theme.
     removeBrandColors(this);
@@ -128,6 +133,7 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
       // Opened from a delivery's "Adjust this design": the professional sees that it was
       const delivery = deliveryTokenFromUrl();
       if (delivery) reportAdjustOpened(delivery);
+      this._setProject(projectIdFromUrl());
       this._status = 'ready';
     }
     catch (err)
@@ -135,6 +141,17 @@ export class PagePublishedConfigurator extends SignalWatcher(LitElement)
       this._status = 'error';
       this._error = { reason: 'failed', detail: (err as Error)?.message };
     }
+  }
+
+  /** The project this was opened from: its id at once, its number and title when the server answers
+   *  (not at all for someone else's project or a signed-out visitor, who still get the link). */
+  private _setProject(id: string | null)
+  {
+    configuratorProject.set(id ? { id, label: '', title: '' } : null);
+    if (!id) return;
+    fetchProject(id)
+      .then(p => { if (configuratorProject.get()?.id === id) configuratorProject.set({ id, label: projectLabel(p.number), title: p.title }); })
+      .catch(() => { /* the button still works, without the number */ });
   }
 
   /** Server-side when an admin validated this version, unless ?exec=client says

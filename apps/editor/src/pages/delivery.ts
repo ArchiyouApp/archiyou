@@ -27,7 +27,7 @@ import { fetchDeliveryView, deliveryFileUrl, respondToDelivery } from '../servic
 import type { ApiError } from '../services/api.js';
 import { BREAKPOINT_COMPACT } from '../styles/design-tokens.js';
 
-const KIND_ICONS: Record<string, string> = { model: 'box', document: 'file-text', sheet: 'sheet', preview: 'image' };
+const KIND_ICONS: Record<string, string> = { model: 'box', document: 'file-text', sheet: 'sheet', preview: 'image', attachment: 'paperclip' };
 
 @customElement('page-delivery')
 export class PageDelivery extends LitElement
@@ -49,7 +49,7 @@ export class PageDelivery extends LitElement
     if (!d) return nothing;
 
     const model = d.files.find(f => f.kind === 'model');
-    const others = d.files.filter(f => f.kind === 'document' || f.kind === 'sheet');
+    const others = d.files.filter(f => f.kind === 'document' || f.kind === 'sheet' || f.kind === 'attachment');
     return html`
       <header class="bar">
         <img class="logo" src="/img/archiyou_logo_header.png" alt="Archiyou">
@@ -158,7 +158,10 @@ export class PageDelivery extends LitElement
 
   private _renderFile(f: DeliveryFile)
   {
-    const viewable = f.kind === 'document';
+    // What the browser shows in place (the server serves these inline): the documents, and
+    // of the attachments a PDF or a picture
+    const viewable = f.kind === 'document'
+      || (f.kind === 'attachment' && (f.mime === 'application/pdf' || /^image\/(png|jpeg|webp|gif)$/.test(f.mime)));
     return html`
       <div class="file">
         <wa-icon library="lucide" name=${KIND_ICONS[f.kind] ?? 'file'}></wa-icon>

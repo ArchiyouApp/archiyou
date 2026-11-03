@@ -340,5 +340,10 @@
 's55b7a743c168f90a': `Verify configurators`,
 's76294c90a39eac9d': `Validating a configurator lets that exact version run on the server instead of in the visitor’s browser. Read its code before you do.`,
 'sb93a9026712ac758': `What visitors sent with the feedback button on a configurator. Star what is worth keeping.`,
+'se5784a16a6799dad': str`Назад к ${0}`,
+'s464cbc1d85e9cc4a': `Назад к проекту`,
+'s9d2d0ffa8688530c': `Добавить в проект`,
+'s88cc54d11bdbf907': `Добавить этот дизайн в проект`,
+'sed1bdd152de1bc53': `Добавить этот дизайн в один из ваших проектов или в новый`,
     };
   

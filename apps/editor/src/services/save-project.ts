@@ -6,7 +6,8 @@
  *     /projects/new?configurator=urbuild/urhouse:0.4&WIDTH=5400&lang=nl
  *
  * That page (pages/project-new.ts) makes a project with this design as its first
- * configuration and opens it. Until it can, the design waits here: a visitor who first has
+ * configuration and opens it. Opened from a project's "From configurator", the link also
+ * names that project (`&project=<id>`): the design is then added to it instead. Until it can, the design waits here: a visitor who first has
  * to sign in, create an account or confirm their email address comes back to it, also when
  * the confirmation link opens in another tab.
  *
@@ -15,10 +16,9 @@
  * do not see. That is also why the button is a link and the design rides in it.
  */
 
-import type { ProjectData } from '@archiyou/types';
 import { Script } from '@archiyou/core/src/Script';
 
-import { createProject } from './projects.js';
+import { createProject, addConfiguration } from './projects.js';
 import { fetchPublishedScriptVersion } from './publishing.js';
 import { decodeParamValues } from '../state/configurator-url';
 
@@ -36,16 +36,20 @@ export interface PendingProject
   configurator: string;
   /** Its configuration as the configurator writes it in a link (`WIDTH=5400&lang=nl`). */
   query: string;
+  /** The project to add it to; none makes a new project. */
+  project?: string;
   at: number;
   /** The project made of it, once there is one: a second tab, a reload or the
    *  confirmation link opens that project instead of making another. */
   savedAs?: string;
 }
 
-/** The link for "Save as project": the configurator, then its configuration. */
-export function saveProjectUrl(origin: string, author: string, name: string, version: string, query: string): string
+/** The link for "Save as project": the configurator, the project it goes to (if any), then
+ *  its configuration. */
+export function saveProjectUrl(origin: string, author: string, name: string, version: string, query: string, project?: string | null): string
 {
   const search = new URLSearchParams({ configurator: `${author}/${name}:${version}` });
+  if (project) search.set('project', project);
   new URLSearchParams(query).forEach((value, key) => search.append(key, value));
   return `${origin}${SAVE_PROJECT_PATH}?${search}`;
 }
@@ -56,8 +60,10 @@ export function pendingProjectFromQuery(search: string): PendingProject | null
   const query = new URLSearchParams(search);
   const configurator = query.get('configurator');
   if (!configurator || !/^[^/]+\/[^/:]+(:[^/:]+)?$/.test(configurator)) return null;
+  const project = query.get('project');
   query.delete('configurator');
-  return { configurator, query: query.toString(), at: Date.now() };
+  query.delete('project');
+  return { configurator, query: query.toString(), ...(project ? { project } : {}), at: Date.now() };
 }
 
 /** The design waiting to become a project, or null (none, unreadable or too old). */
@@ -101,7 +107,7 @@ export async function savePendingProject(): Promise<string | null>
   {
     const pending = pendingProject();
     if (!pending) return null;
-    return pending.savedAs ?? (await createPendingProject(pending)).id;
+    return pending.savedAs ?? await createPendingProject(pending);
   };
   return typeof navigator !== 'undefined' && navigator.locks
     ? navigator.locks.request(SAVE_PROJECT_STORAGE_KEY, save)
@@ -110,10 +116,11 @@ export async function savePendingProject(): Promise<string | null>
 
 /**
  * Make the project: the published configurator's script with the values of the link (the
- * script's defaults for what the link does not set), titled after the configurator. Throws
- * the server's error (`email_not_verified` until the address is confirmed).
+ * script's defaults for what the link does not set), titled after the configurator. Or, when
+ * the link names a project, add it to that one. Returns the project's id. Throws the server's
+ * error (`email_not_verified` until the address is confirmed).
  */
-export async function createPendingProject(pending: PendingProject): Promise<ProjectData>
+export async function createPendingProject(pending: PendingProject): Promise<string>
 {
   const slash = pending.configurator.indexOf('/');
   const data = await fetchPublishedScriptVersion(pending.configurator.slice(0, slash), pending.configurator.slice(slash + 1));
@@ -125,15 +132,21 @@ export async function createPendingProject(pending: PendingProject): Promise<Pro
     ...Object.fromEntries(params.map(p => [p.name, p.default])),
     ...decodeParamValues(pending.query, params),
   };
-  const project = await createProject({
-    title: data.published?.title || data.name || null,
-    configuration: {
-      script: data,
-      values,
-      lang: new URLSearchParams(pending.query).get('lang'),
-      sourceVersionId: data.id ?? null,
-    },
-  });
-  storePendingProject({ ...pending, savedAs: project.id });
-  return project;
+  const configuration = {
+    script: data,
+    values,
+    lang: new URLSearchParams(pending.query).get('lang'),
+    sourceVersionId: data.id ?? null,
+  };
+  let id = pending.project;
+  if (id)
+  {
+    await addConfiguration(id, configuration);
+  }
+  else
+  {
+    id = (await createProject({ title: data.published?.title || data.name || null, configuration })).id;
+  }
+  storePendingProject({ ...pending, savedAs: id });
+  return id;
 }

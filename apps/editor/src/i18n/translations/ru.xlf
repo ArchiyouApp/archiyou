@@ -1096,6 +1096,26 @@
   <source>Switch to isometric</source>
   <target>Перейти к изометрии</target>
 </trans-unit>
+<trans-unit id="se5784a16a6799dad">
+  <source>Back to <x id="0" equiv-text="${project.label}"/></source>
+  <target>Назад к <x id="0" equiv-text="${project.label}"/></target>
+</trans-unit>
+<trans-unit id="s464cbc1d85e9cc4a">
+  <source>Back to project</source>
+  <target>Назад к проекту</target>
+</trans-unit>
+<trans-unit id="s9d2d0ffa8688530c">
+  <source>Add to project</source>
+  <target>Добавить в проект</target>
+</trans-unit>
+<trans-unit id="s88cc54d11bdbf907">
+  <source>Add this design to your project</source>
+  <target>Добавить этот дизайн в проект</target>
+</trans-unit>
+<trans-unit id="sed1bdd152de1bc53">
+  <source>Add this design to one of your projects, or a new one</source>
+  <target>Добавить этот дизайн в один из ваших проектов или в новый</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

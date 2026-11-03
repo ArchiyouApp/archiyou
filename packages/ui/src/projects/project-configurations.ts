@@ -1,11 +1,13 @@
 /**
  * <project-configurations> — a project's configurations, newest first (plans/PROJECTS.md).
+ * The screen calls them designs; the data keeps `configuration`.
  *
  * Presentational: each row shows the picture, `v3`, how it got here, the script, the
  * values that make it (those that differ from the defaults) and the client's message.
- * The page does the opening.
+ * One row is `selected` (the page shows its deliveries); the page does the opening.
  *
  * Emits (detail = the ConfigurationData):
+ *   configuration-select              a row was chosen
  *   configuration-open-configurator   it came from a published configurator
  *   configuration-open-editor
  *   configuration-deliver             make a delivery of it
@@ -25,11 +27,16 @@ import type { ConfigurationData, ConfigurationOrigin } from '@archiyou/types';
 
 import { assetUrl } from '@archiyou/editor/src/services/api';
 
-/** A parameter value as a person reads it. */
+/** A parameter value as a person reads it. An item of a list parameter by its name when it
+ *  has one (openings: "Frontdoor, SlidingdoorBack"); the whole value is in the tooltip. */
 export function formatValue(value: unknown): string
 {
   if (Array.isArray(value)) return value.map(v => formatValue(v)).join(', ');
-  if (value !== null && typeof value === 'object') return JSON.stringify(value);
+  if (value !== null && typeof value === 'object')
+  {
+    const named = (value as Record<string, unknown>).name ?? (value as Record<string, unknown>).label;
+    return typeof named === 'string' && named ? named : JSON.stringify(value);
+  }
   if (typeof value === 'boolean') return value ? msg('yes') : msg('no');
   return String(value ?? '');
 }
@@ -53,7 +60,7 @@ export class ProjectConfigurations extends LitElement
     {
       return html`
         <p class="empty">
-          ${msg('No configurations yet. In the editor choose Add to project… in the menu, or Add to project on a configurator.')}
+          ${msg('No designs yet. Add one from a configurator, or in the editor choose Add to project… in the menu.')}
         </p>`;
     }
     return html`${this.configurations.map(c => this._renderRow(c))}`;
@@ -63,8 +70,10 @@ export class ProjectConfigurations extends LitElement
   {
     const changed = Object.entries(c.changed);
     const foreign = !!c.scriptAuthor && c.scriptAuthor !== this.me;
+    const selected = c.id === this.selected;
     return html`
-      <article class="row">
+      <article class=${selected ? 'row selected' : 'row'} tabindex="0" aria-current=${selected ? 'true' : 'false'}
+        @click=${(e: Event) => this._select(e, c)} @keydown=${(e: KeyboardEvent) => this._selectByKey(e, c)}>
         <div class="thumb">
           ${c.thumbnail
             ? html`<img src=${assetUrl(c.thumbnail) ?? ''} alt="" loading="lazy">`
@@ -83,7 +92,8 @@ export class ProjectConfigurations extends LitElement
                 <span class="name">${c.label || c.scriptName || msg('untitled')}</span>
                 <button class="icon-button" title=${msg('Rename')} @click=${() => { this._editing = c.id; }}>
                   <wa-icon library="lucide" name="pencil"></wa-icon>
-                </button>`}
+                </button>
+                <span class="day">${formatDay(c.created)}</span>`}
             <wa-badge variant=${this._originVariant(c.origin)} appearance="filled-outlined">${this._originLabel(c)}</wa-badge>
           </div>
 
@@ -91,14 +101,13 @@ export class ProjectConfigurations extends LitElement
             ${c.label && c.scriptName ? html`<span>${c.scriptName}</span>` : nothing}
             ${foreign ? html`<span>${msg(str`by ${c.scriptAuthor}`)}</span>` : nothing}
             ${c.configurator ? html`<span>${c.configurator.name}:${c.configurator.version}</span>` : nothing}
-            <span>${formatDay(c.created)}</span>
           </div>
 
-          <div class="values">
+          <p class="values" title=${changed.map(([name, value]) => `${name}: ${JSON.stringify(value)}`).join('\n')}>
             ${changed.length
-              ? changed.map(([name, value]) => html`<span class="value"><span class="param">${name}</span> ${formatValue(value)}</span>`)
-              : html`<span class="value muted">${msg('All parameters at their defaults')}</span>`}
-          </div>
+              ? changed.map(([name, value], i) => html`${i ? ' · ' : ''}<span class="param">${name.toLowerCase()}</span> ${formatValue(value)}`)
+              : msg('All parameters at their defaults')}
+          </p>
 
           ${c.message ? html`<blockquote class="message">${c.message}</blockquote>` : nothing}
 
@@ -136,11 +145,27 @@ export class ProjectConfigurations extends LitElement
   @property({ type: String }) me = '';
   /** Show "New delivery" on each row. */
   @property({ type: Boolean }) canDeliver = false;
+  /** Id of the chosen row. */
+  @property({ type: String }) selected = '';
 
   /** The configuration whose label is being edited. */
   @state() private _editing: string | null = null;
 
   // ── 4. Behaviour & Methods ──
+  /** A click on the row, not on one of its buttons or the label field. */
+  private _select(e: Event, c: ConfigurationData)
+  {
+    const interactive = e.composedPath().some(el => el instanceof HTMLElement && el.matches('button, wa-button, wa-input, a'));
+    if (!interactive && c.id !== this.selected) this._emit('configuration-select', c);
+  }
+
+  private _selectByKey(e: KeyboardEvent, c: ConfigurationData)
+  {
+    if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault();
+    if (c.id !== this.selected) this._emit('configuration-select', c);
+  }
+
   private _originLabel(c: ConfigurationData): string
   {
     const labels: Record<ConfigurationOrigin, string> = {
@@ -173,7 +198,7 @@ export class ProjectConfigurations extends LitElement
     :host {
       display: flex;
       flex-direction: column;
-      gap: var(--space-md);
+      gap: var(--space-sm);
     }
 
     .empty {
@@ -185,19 +210,36 @@ export class ProjectConfigurations extends LitElement
     .row {
       display: flex;
       gap: var(--space-md);
-      padding: var(--space-md);
+      padding: var(--space-sm);
       background: var(--color-bg);
       border: 1px solid var(--color-border);
       border-radius: var(--radius-md);
+      cursor: pointer;
+    }
+
+    .row:hover {
+      border-color: var(--color-gray-dark);
+    }
+
+    .row:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 2px;
+    }
+
+    /* Chosen: a blue outline, no fill, so the picture and text keep a white ground */
+    .row.selected {
+      border-color: var(--color-primary);
+      box-shadow: inset 0 0 0 1px var(--color-primary);
+      cursor: default;
     }
 
     .thumb {
-      flex: 0 0 6rem;
-      height: 6rem;
+      flex: 0 0 5rem;
+      height: 5rem;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--color-gray);
+      background: var(--color-bg);
       border-radius: var(--radius-sm);
       color: var(--color-text-muted);
       overflow: hidden;
@@ -207,6 +249,8 @@ export class ProjectConfigurations extends LitElement
       width: 100%;
       height: 100%;
       object-fit: contain;
+      padding: var(--space-xs);
+      box-sizing: border-box;
     }
 
     .body {
@@ -243,6 +287,12 @@ export class ProjectConfigurations extends LitElement
       min-width: 0;
     }
 
+    .day {
+      flex-shrink: 0;
+      font-size: var(--text-sm);
+      color: var(--color-text-muted);
+    }
+
     .head wa-badge {
       margin-left: auto;
       flex-shrink: 0;
@@ -269,24 +319,18 @@ export class ProjectConfigurations extends LitElement
       color: var(--color-text-muted);
     }
 
+    /* The values that make it, as one quiet line (two at most; all of it in the tooltip) */
     .values {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-xs);
-    }
-
-    .value {
-      padding: 0 var(--space-sm);
-      border-radius: var(--radius-sm);
-      background: var(--color-surface-subtle);
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+      margin: 0;
       font-size: var(--text-xs);
+      color: var(--color-text);
     }
 
-    .value .param {
-      color: var(--color-text-muted);
-    }
-
-    .value.muted {
+    .values .param {
       color: var(--color-text-muted);
     }
 
@@ -301,8 +345,13 @@ export class ProjectConfigurations extends LitElement
     .actions {
       display: flex;
       flex-wrap: wrap;
-      gap: var(--space-sm);
+      gap: var(--space-xs);
       margin-top: var(--space-xs);
+    }
+
+    /* Web Awesome sizes a button from its font: xs text makes the whole button small */
+    .actions wa-button {
+      font-size: var(--text-xs);
     }
   `;
 }

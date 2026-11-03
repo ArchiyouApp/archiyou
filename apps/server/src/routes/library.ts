@@ -102,10 +102,14 @@ function registerKind(fastify: FastifyInstance, kind: LibraryKind): void {
     }
   });
 
-  // By author.
+  // By author. Shared scripts with an `onlyUsers` list only for the author and the listed
+  // users, as for one script below: the list carries the code too.
   fastify.get<{ Params: { user: string } }>(`${base}/:user`, async (request, reply): Promise<GetResponse> => {
     try {
-      return { success: true, data: await a.byAuthor(request.params.user) };
+      const scripts = await a.byAuthor(request.params.user);
+      if (kind !== 'shared') return { success: true, data: scripts };
+      const caller = await optionalUser(request);
+      return { success: true, data: scripts.filter((script) => scriptStore.canAccessShared(script, caller)) };
     } catch (error) {
       return fail(reply, 500, `Failed to load ${kind} scripts for ${request.params.user}: ${(error as Error).message}`);
     }

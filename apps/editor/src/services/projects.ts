@@ -9,7 +9,7 @@
 
 import type {
   ClientData, ClientInput, ConfigurationData, DeliveryData, DeliveryOffer, DeliveryResponse, DeliveryView,
-  ProjectData, ProjectList, ProjectStatus,
+  ProjectData, ProjectFileData, ProjectList, ProjectStatus,
 } from '@archiyou/types';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
@@ -59,6 +59,18 @@ export async function fetchProject(id: string): Promise<ProjectData>
   return (await api.get<Envelope<ProjectData>>(`/projects/${encodeURIComponent(id)}`)).data;
 }
 
+/** The project createProject just made, as the server returned it. */
+let _created: ProjectData | null = null;
+
+/** The project just made here, once: its page opens with it instead of asking the server
+ *  again (a new project has no client activity to mark seen). */
+export function takeCreatedProject(id: string): ProjectData | null
+{
+  const created = _created?.id === id ? _created : null;
+  _created = null;
+  return created;
+}
+
 /** A new project; with `configuration` it starts with that as v1 (one request, so a failed
  *  configuration never leaves an empty project behind). */
 export async function createProject(input: {
@@ -68,7 +80,8 @@ export async function createProject(input: {
   configuration?: ConfigurationInput | null;
 } = {}): Promise<ProjectData>
 {
-  return (await api.post<Envelope<ProjectData>>('/projects', input)).data;
+  _created = (await api.post<Envelope<ProjectData>>('/projects', input)).data;
+  return _created;
 }
 
 export async function updateProject(
@@ -232,6 +245,12 @@ export async function uploadDeliveryFile(projectId: string, id: string, file: Fu
   )).data;
 }
 
+/** A copy of a dossier file goes with a draft (the server copies it in). */
+export async function attachProjectFile(projectId: string, id: string, fileId: string): Promise<DeliveryData>
+{
+  return (await api.post<Envelope<DeliveryData>>(`${deliveryPath(projectId, id)}/attachments`, { fileId })).data;
+}
+
 /** Send a draft: the server freezes it, gives it its link and emails the client. */
 export async function sendDelivery(projectId: string, id: string): Promise<DeliveryData>
 {
@@ -301,6 +320,39 @@ export async function generateDeliveryFiles(
     .map(f => ({ ...f, name: safeFileName(f.name) }));
   const png = await renderThumbnailPng(glbOf(result), scenegraphOf(result));
   return png ? [...files, { name: 'preview.png', data: new Uint8Array(png), mime: 'image/png' }] : files;
+}
+
+//// DOSSIER ////
+
+/** What a dossier takes (the server's list in ProjectFileStore.ts), for a file picker. */
+export const PROJECT_FILE_ACCEPT = [
+  'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'heic', 'txt', 'csv', 'md', 'rtf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  'odt', 'ods', 'odp', 'dxf', 'dwg', 'step', 'stp', 'stl', 'obj', 'glb', '3dm', 'ifc', 'skp', 'zip',
+].map(ext => `.${ext}`).join(',');
+
+/** Keep a file with the project, under its own name. */
+export async function uploadProjectFile(projectId: string, file: File): Promise<ProjectFileData>
+{
+  return (await api.postBinary<Envelope<ProjectFileData>>(
+    `${projectPath(projectId)}/files/${encodeURIComponent(file.name)}`, file, 'application/octet-stream',
+  )).data;
+}
+
+export async function deleteProjectFile(projectId: string, fileId: string): Promise<void>
+{
+  await api.delete(`${projectPath(projectId)}/files/${encodeURIComponent(fileId)}`);
+}
+
+/** Save a dossier file on this computer under its own name. */
+export async function downloadProjectFile(projectId: string, file: ProjectFileData): Promise<void>
+{
+  const blob = await api.blob(`${projectPath(projectId)}/files/${encodeURIComponent(file.id)}`);
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: file.name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 //// THE CLIENT'S PAGE ////

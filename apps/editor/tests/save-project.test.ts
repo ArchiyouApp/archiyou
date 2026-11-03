@@ -8,8 +8,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const createProject = vi.fn();
+const addConfiguration = vi.fn();
 const fetchPublishedScriptVersion = vi.fn();
-vi.mock('../src/services/projects.js', () => ({ createProject }));
+vi.mock('../src/services/projects.js', () => ({ createProject, addConfiguration }));
 vi.mock('../src/services/publishing.js', () => ({ fetchPublishedScriptVersion }));
 
 const storage = new Map<string, string>();
@@ -51,6 +52,7 @@ beforeEach(() =>
 {
   storage.clear();
   createProject.mockReset();
+  addConfiguration.mockReset();
   fetchPublishedScriptVersion.mockReset();
 });
 
@@ -121,6 +123,20 @@ describe('the kept design', () =>
 
     await expect(createPendingProject(pending)).rejects.toThrow();
     expect(hasUnsavedProject()).toBe(true);
+  });
+
+  it('names the project it was opened from, and is added to that one instead of a new one', async () =>
+  {
+    const url = saveProjectUrl('https://archiyou.com', 'urbuild', 'urhouse', '0.4', 'WIDTH=5400', 'p9');
+    const pending = pendingProjectFromQuery(new URL(url).search);
+    expect(pending).toMatchObject({ configurator: 'urbuild/urhouse:0.4', query: 'WIDTH=5400', project: 'p9' });
+
+    fetchPublishedScriptVersion.mockResolvedValue(PUBLISHED);
+    addConfiguration.mockResolvedValue({ id: 'c1' });
+    expect(await createPendingProject(pending!)).toBe('p9');
+    expect(addConfiguration).toHaveBeenCalledWith('p9', expect.objectContaining({ values: { WIDTH: 5400, ROOF: 'gable' } }));
+    expect(createProject).not.toHaveBeenCalled();
+    expect(pendingProject()?.savedAs).toBe('p9');
   });
 
   it('is refused when the configurator is no longer published', async () =>

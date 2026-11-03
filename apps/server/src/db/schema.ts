@@ -292,6 +292,24 @@ export const deliveries = pgTable('deliveries', {
 
 export type DeliveryRow = typeof deliveries.$inferSelect;
 
+/** A project's dossier: files the professional keeps with it (plans/PROJECTS.md). The
+ *  bytes are on disk (services/ProjectFileStore.ts), under the row's id; `name` is the
+ *  name it was uploaded with, for showing and downloading. */
+export const projectFiles = pgTable('project_files', {
+  id: text('id').primaryKey(),
+  professional: text('professional').notNull(),
+  projectId: text('project_id').notNull(),
+  name: text('name').notNull(),
+  mime: text('mime').notNull(),
+  bytes: integer('bytes').notNull(),
+  created: at('created').notNull().defaultNow(),
+}, (t) => [
+  index('project_files_by_project').on(t.projectId, t.created),
+  index('project_files_by_professional').on(t.professional),
+]);
+
+export type ProjectFileRow = typeof projectFiles.$inferSelect;
+
 /** A project's activity. Client events carry `visitor`, a daily-salted hash for counting
  *  unique opens — never an IP. Purged after config.events.retentionDays. */
 export const events = pgTable('events', {

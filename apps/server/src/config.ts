@@ -289,6 +289,18 @@ export const config = {
     /** Accounts younger than a day: registering to send spam should not pay. */
     newAccountSendPerDay: Number(process.env.SERVER_DELIVERY_NEW_ACCOUNT_SEND_PER_DAY ?? 5),
   },
+  /**
+   * A project's dossier (services/ProjectFileStore.ts): files the professional uploads to
+   * keep with a project and can attach to a delivery. Private: served only to them, and to
+   * a client only as a copy inside a delivery.
+   * ⚠️  `path` must be a persistent volume in production, as for deliveries.
+   */
+  projectFiles: {
+    path: process.env.SERVER_PROJECT_FILE_PATH ?? './data/project-files',
+    maxFileBytes: Number(process.env.SERVER_PROJECT_FILE_MAX_BYTES ?? 25 * 1024 * 1024),
+    /** All of one professional's dossier files together. */
+    quotaBytes: Number(process.env.SERVER_PROJECT_FILE_QUOTA_BYTES ?? 2 * 1024 * 1024 * 1024),
+  },
   /** Per-IP rate limit on the client's side of a delivery (the page and its files). */
   deliveryRateLimit: {
     max: Number(process.env.SERVER_DELIVERY_RATE_LIMIT ?? 120),

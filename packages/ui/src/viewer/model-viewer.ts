@@ -2700,6 +2700,15 @@ export class ModelViewer extends SignalWatcher(LitElement)
     const contentRoot = model.children.find(c => !c.userData.isViewerHelper) ?? model;
     this._buildPathMap(contentRoot, this._pendingScenegraph);
 
+    // A GLB on its own (a delivery, load()) has no scenegraph to say what is hidden: its
+    // nodes carry it (GLTFBuilder's `defaultVisible: false` extras, which GLTFLoader puts in
+    // userData). Hidden helpers such as the boxes that cut openings stay out of view. With a
+    // scenegraph, that decides, so the scene navigator can still show them.
+    if (!this._pendingScenegraph)
+    {
+      contentRoot.traverse(obj => { if (obj.userData?.defaultVisible === false) obj.visible = false; });
+    }
+
     // Re-apply current view style to newly loaded geometry. This also calls
     // _applyScenegraphVisibility against the latest scenegraph signal so any
     // user-toggled or runner-declared hidden nodes are hidden from the start.
