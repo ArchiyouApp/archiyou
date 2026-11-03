@@ -763,21 +763,10 @@ export class ScriptStore {
    *    - under the same name: a rename appends, because resolveFileIdByName needs the old
    *      row to keep resolving `$component('./oldname')`.
    *  `checkpoint` always appends: a restore is its own row. The merged row keeps its id,
-   *  `created`, `shared` and thumbnail. A save that changes nothing writes nothing.
-   *
-   *  `base` is the row the saved copy was made from: its id and when it was last written
-   *  (`updated`, as a merge keeps the id). When the latest row is another one, or the same one
-   *  written since (a save from another tab, browser or script), the save is refused as a
-   *  conflict instead of putting the older copy on top, or merging it into the newer row and
-   *  losing that one. A save equal to the latest row is no conflict. Without `base` there is
-   *  no such check (scripts, older editors). */
-  async saveVersion(author: string, fileId: string, payload: unknown,
-    opts: { checkpoint?: boolean; base?: { id: string; updated?: string | number } } = {}): Promise<ScriptData> {
+   *  `created`, `shared` and thumbnail. A save that changes nothing writes nothing. */
+  async saveVersion(author: string, fileId: string, payload: unknown, opts: { checkpoint?: boolean } = {}): Promise<ScriptData> {
     const latest = await this.latestRow(author, fileId); // ownership gate (throws not_found)
     const data = this.normalize(payload);
-    if (opts.base && !this.isBase(latest, opts.base) && !this.sameContent(latest, data)) {
-      throw new ScriptStoreError('conflict', `The file has a newer version (${latest.id}) than the one this save was made from (${opts.base.id})`);
-    }
     const now = new Date();
     const shared = latest.shared ?? null; // versions inherit the file's shared state
     // …and its preview: the working copy's thumbnail is stamped on whatever row is latest
@@ -803,14 +792,6 @@ export class ScriptStore {
     const row = this.toRow(data, author, { id: uuid4(), fileId, version: null, shared, thumbnail, now });
     await this.insertRow(row);
     return this.rowToData({ ...row, created: now, updated: now } as ScriptVersionRow);
-  }
-
-  /** Whether a row is still the one a save was made from (see saveVersion). */
-  private isBase(row: ScriptVersionRow, base: { id: string; updated?: string | number }): boolean {
-    if (row.id !== base.id) return false;
-    if (base.updated === undefined || base.updated === '') return true;
-    const ms = typeof base.updated === 'number' ? base.updated : (/^\d+$/.test(base.updated) ? Number(base.updated) : Date.parse(base.updated));
-    return row.updated.getTime() === ms;
   }
 
   /** Whether a payload carries exactly the content a row already holds. */

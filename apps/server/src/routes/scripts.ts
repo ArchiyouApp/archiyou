@@ -117,15 +117,12 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
 
   // Save the working copy of an existing file: merges into a recent autosave row, or
   // appends a new version. `?checkpoint=1` always appends (a restore, see saveVersion).
-  // `?base=<row id>&baseUpdated=<its updated, ISO or ms>` is the version the copy was made
-  // from: 409 when the file has a newer one (see saveVersion).
-  fastify.put<{ Params: { user: string; fileId: string }; Querystring: { checkpoint?: string; base?: string; baseUpdated?: string } }>(
+  fastify.put<{ Params: { user: string; fileId: string }; Querystring: { checkpoint?: string } }>(
     '/scripts/:user/:fileId',
     auth,
     async (request) => {
       const checkpoint = request.query.checkpoint === '1';
-      const base = request.query.base ? { id: request.query.base, updated: request.query.baseUpdated } : undefined;
-      return await scriptStore.saveVersion(request.user.sub, request.params.fileId, request.body, { checkpoint, base });
+      return await scriptStore.saveVersion(request.user.sub, request.params.fileId, request.body, { checkpoint });
     },
   );
 
