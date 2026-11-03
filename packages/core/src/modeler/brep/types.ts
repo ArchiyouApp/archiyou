@@ -108,9 +108,7 @@ export interface BeamLikeDims
     length:number
 }
 
-export type LayoutOrderType = 'line'|'grid'|'binpack'|'nest'
-
-/** Options for ShapeCollection.layout() and pack() */
+/** Options for ShapeCollection.pack() */
 export interface LayoutOptions
 {
     autoRotate?:boolean // lay shapes flat first (default true)

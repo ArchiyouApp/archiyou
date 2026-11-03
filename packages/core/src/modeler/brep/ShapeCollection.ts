@@ -17,7 +17,7 @@ import type { ArchiyouApp, PointLike, PointLikeOrAnyShapeOrCollection,
          MakeShapeCollectionInput,
          Pivot,AnyShapeSequence, Alignment, Bbox, Side, ProjectionOptions,
          MeshingQualitySettings,ExportGLTFOptions,
-         LayoutOrderType, LayoutOptions, 
+         LayoutOptions, 
          DimensionLevelSettings, AnnotationAutoDimStrategy,
          MeshShape, MeshShapeBuffer, MeshShapeBufferStats,
          Annotation, MainAxis, toDXFOptions, toSVGOptions  } from '.' // see types
@@ -2421,63 +2421,6 @@ import { getOc } from './index' // OC global getter
          return this;
       }
 
-
-      /** Layout Shapes on XY plane within a given Layout order */
-      @checkInput([ ['String','binpack'], ['Boolean', true], ['LayoutOptions', null]], ['String','auto','auto'])
-      layout(order:LayoutOrderType, copy:boolean, options:LayoutOptions):ShapeCollection
-      {
-         let lastItemPosition:Point = new Point(0,0,0);
-         let layoutCollection = new ShapeCollection();
-
-         this.forEach( (shape,index) => 
-         {
-            let workShape = (copy) ? shape._copy() : shape;
-            // autoRotate (default)
-            workShape = (options?.autoRotate == undefined || options?.autoRotate) ? workShape.rotateToLayFlat() : workShape;
-            // flatten if given as option
-            // NOTE: _flattened() can return a ShapeCollection of Faces when a Shape flattens
-            // onto more than one outline; it answers the same move/bbox/addToScene API used below.
-            workShape = (options?.flatten) ? workShape._flattened() as AnyShape : workShape;
-
-            switch (order)
-            {
-               case 'line':
-                  lastItemPosition = this._placeLine(workShape, lastItemPosition, options?.margin, index);
-                  break
-               case 'binpack':
-                     // do when ShapeCollection is done: see underneath
-                     break;
-               default:
-                  throw new Error(`layout:: Unknown layout order "${order}". Please use: 'line','grid','binpack' or 'nest'`)
-            }
-            
-            workShape._addToScene(); // tmp() Shapes stay out of the scene
-            layoutCollection.add(workShape);
-         })
-
-         // actions after ShapeCollection is made
-         switch(order)
-         {
-            case 'line':
-               // nothing
-               break;
-            case 'binpack':
-               layoutCollection = layoutCollection.pack(options); // add bin Shapes to layouted collection
-               break;
-         }
-
-         return layoutCollection;
-      }
-
-
-      _placeLine(shape:AnyShape, prevPosition:Point, margin:number=10, index:number):Point // returns last position
-      {
-         let workShapeBbox = shape.bbox();
-         let offset = prevPosition.moved(workShapeBbox.width()/2);
-         shape.moveTo(offset.x, offset.y, shape.center().z);
-         
-         return prevPosition.moved(workShapeBbox.width() + margin)
-      }
 
       pack(options:LayoutOptions, copy:boolean=true):ShapeCollection
       {

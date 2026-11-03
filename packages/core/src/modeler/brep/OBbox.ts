@@ -12,7 +12,7 @@ import { getOc } from './index' // OC global getter
 // Import decorators directly (not via the barrel) — the barrel is a cycle and decorators
 // run at class-definition time, before it has finished initialising.
 import { checkInput } from './decorators'
-import { addResultToScene } from '@archiyou/meshup'
+import { addResultToScene, OBbox as MeshupOBbox } from '@archiyou/meshup'
 
 export class OBbox
 {
@@ -156,6 +156,24 @@ export class OBbox
     thickness():number
     {
         return this.minSize();
+    }
+
+    /** Quaternion that turns this box's frame onto world XYZ: the longest side along +X, the
+     *  middle one along +Y and the thinnest along +Z, as meshup OBbox.toOrthoQuaternion(), which
+     *  the Layouter lays shapes flat with. With two equal sides the turn about the third is not unique. */
+    toOrthoQuaternion():{ x:number, y:number, z:number, w:number }
+    {
+        const [x, y, z] = this.axes().map(a => a.normalized());
+        const turned = (a:Vector, b:Vector) => [a.reversed(), b.reversed()];
+        // right-handed, the thinnest side pointing up, the longest towards +X
+        const [x1, y1] = [x, (x.crossed(y).dot(z) < 0) ? y.reversed() : y];
+        const [x2, z2] = (z.dot(0, 0, 1) < 0) ? turned(x1, z) : [x1, z];
+        const [x3, y3] = (x2.dot(1, 0, 0) < 0) ? turned(x2, y1) : [x2, y1];
+        return MeshupOBbox.quaternionFromRotationMatrix(
+            x3.x, x3.y, x3.z,
+            y3.x, y3.y, y3.z,
+            z2.x, z2.y, z2.z,
+        );
     }
 
     private _sortedAxes():Array<{ dir:Vector, size:number }>

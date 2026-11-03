@@ -424,6 +424,15 @@ export class Bbox
         return new Bbox(this.min().toVector().subtracted(amountVec), this.max().toVector().added(amountVec));
     }
 
+    /** The shortest distance between this box and another, 0 when they touch or overlap
+     *  (as meshup Bbox.distance(): the Layouter's exploded view keeps shapes apart with it). */
+    distance(other:Bbox):number
+    {
+        const [min, max, otherMin, otherMax] = [this.min(), this.max(), other.min(), other.max()];
+        const gap = (axis:'x'|'y'|'z') => Math.max(0, otherMin[axis] - max[axis], min[axis] - otherMax[axis]);
+        return Math.hypot(gap('x'), gap('y'), gap('z'));
+    }
+
     /** Return a new Bbox by adding another */
     added(other:Bbox):Bbox
     {
