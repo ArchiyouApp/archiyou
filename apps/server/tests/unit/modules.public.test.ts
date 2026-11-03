@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { ModuleHost, splitRoots } from '../../src/modules/ModuleHost';
+import { isPublicModule } from '../../src/modules/manifestSchema';
 
 let roots: string[] = [];
 
@@ -80,6 +81,41 @@ describe('public modules', () => {
     const root = makeRoot();
     install(root, 'open', { public: true });
     expect(new ModuleHost().load(root).catalogFor([]).find((m) => m.id === 'open')!.public).toBe(true);
+  });
+});
+
+describe('standard modules', () => {
+  // `standard` (usable without $module(), see AyModuleManifest.standard) implies public:
+  // the catalog marks it entitled for everybody, the routes follow the same predicate.
+  it('is entitled for an account holding nothing, like a public module', () => {
+    const root = makeRoot();
+    install(root, 'std', { standard: true });
+    install(root, 'paid');
+
+    const catalog = new ModuleHost().load(root).catalogFor([]);
+    expect(catalog.find((m) => m.id === 'std')!.entitled).toBe(true);
+    expect(catalog.find((m) => m.id === 'paid')!.entitled).toBe(false);
+  });
+
+  it('carries the flag through to the catalog, so the runner and the editor see it', () => {
+    const root = makeRoot();
+    install(root, 'std', { standard: true });
+    expect(new ModuleHost().load(root).catalogFor([]).find((m) => m.id === 'std')!.standard).toBe(true);
+  });
+
+  it('treats only a literal true as standard', () => {
+    const root = makeRoot();
+    install(root, 'std', { standard: 'yes' });
+    expect(new ModuleHost().load(root).list()).toHaveLength(0);
+  });
+
+  it('serves the bundle and allows a call without an entitlement', () => {
+    const root = makeRoot();
+    install(root, 'std', { standard: true });
+    const host = new ModuleHost().load(root);
+    expect(isPublicModule(host.get('std')!)).toBe(true);
+    expect(isPublicModule(host.get('std')!)).toBe(isPublicModule({ public: true }));
+    expect(isPublicModule({})).toBe(false);
   });
 });
 

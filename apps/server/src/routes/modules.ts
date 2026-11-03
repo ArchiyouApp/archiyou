@@ -23,7 +23,7 @@ import { readFile } from 'node:fs/promises';
 import { config } from '../config';
 import { moduleHost } from '../modules/ModuleHost';
 import { ModuleCallError } from '../modules/ModuleWorkerPool';
-import { ModuleCallSchema } from '../modules/manifestSchema';
+import { ModuleCallSchema, isPublicModule } from '../modules/manifestSchema';
 import semver from 'semver';
 
 import { userService } from '../services/UserService';
@@ -159,9 +159,10 @@ export async function registerModuleRoutes(fastify: FastifyInstance): Promise<vo
       const manifest = moduleHost.get(id);
       if (!manifest) return reply.code(404).send({ success: false, error: `Unknown module '${id}'` });
 
-      // A public module skips the entitlement check entirely — see AyModuleManifest.public.
-      // Gating stays the default; this is the opt-out an open-source module declares.
-      const entitled = manifest.public
+      // A public (or standard) module skips the entitlement check entirely — see
+      // AyModuleManifest.public. Gating stays the default; this is the opt-out an
+      // open-source module declares.
+      const entitled = isPublicModule(manifest)
         || (username !== null && await userService.hasModule(username, id))
         || await publishedScriptEntitles(request.query.script, id);
       if (!entitled) {
@@ -226,7 +227,7 @@ export async function registerModuleRoutes(fastify: FastifyInstance): Promise<vo
       // A public module skips the entitlement check entirely — see AyModuleManifest.public.
       // Gating stays the default; this is the opt-out an open-source module declares.
       const entitleStart = performance.now();
-      const entitled = manifest.public || (await userService.hasModule(username, id));
+      const entitled = isPublicModule(manifest) || (await userService.hasModule(username, id));
       lap('entitle', entitleStart);
       if (!entitled) {
         return reply.code(403).send({

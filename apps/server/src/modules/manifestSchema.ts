@@ -59,6 +59,8 @@ export const ModuleManifestSchema = Type.Object({
   types: Type.Optional(Type.Record(TypeNameSchema, Type.Array(ModuleCompletionSchema, { maxItems: 500 }), { maxProperties: 50, additionalProperties: false })),
   /** Available without an entitlement. See AyModuleManifest.public. */
   public: Type.Optional(Type.Boolean()),
+  /** Usable without `$module()`, and public. See AyModuleManifest.standard. */
+  standard: Type.Optional(Type.Boolean()),
   /** A server module that also ships a client wrapper bundle. See AyModuleManifest.client. */
   client: Type.Optional(Type.Boolean()),
   /** Keep a server module's worker thread per user between calls. See AyModuleManifest.keepAlive. */
@@ -70,6 +72,13 @@ export const ModuleManifestSchema = Type.Object({
 });
 
 export type ModuleManifest = Static<typeof ModuleManifestSchema>;
+
+/** Entitled for everybody: `public`, or `standard` (which implies public). The one
+ *  predicate behind the catalog, the bundle route and the call route, so the two
+ *  flags can never drift apart between them. */
+export function isPublicModule(manifest: Pick<ModuleManifest, 'public' | 'standard'>): boolean {
+  return manifest.public === true || manifest.standard === true;
+}
 
 /** Body of POST /modules/:id/call. `args` is deliberately unconstrained — only
  *  the module knows its own argument shape. `method` is constrained because it

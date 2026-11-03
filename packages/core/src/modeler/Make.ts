@@ -2163,7 +2163,7 @@ export class Make
      *  ProductManager. It reads nothing until fromSheet(url) or fromRows(rows).
      *
      *  @example
-     *  // In practice: $module('cloudcalc'); products = make.products().fromSheet(url)
+     *  // In practice: products = make.products().fromSheet(url)   // a Google Sheet, read with cloudcalc
      *  products = make.products().fromRows([
      *      { product_id: 'sls-38x140', productgroep: 'SLS', vorm: 'balk', breedte: 38, hoogte: 140, lengte: 5400 },
      *  ])

@@ -289,6 +289,26 @@ describe('Runner — script modules', () =>
         expect(loads).toBe(0)
     })
 
+    it('lets a script use a STANDARD module without declaring it', async () =>
+    {
+        const runner = await new Runner().load()
+        let loads = 0
+        runner.modules.setOptions({
+            loadClient: async () => { loads++; return { setArchiyou() {}, double: (n: number) => n * 2 } as any },
+        })
+
+        const result = await runner.execute({
+            script: { code: 'w = example.double(21)\nbox(w,10,10)' },
+            modules: [entry({ standard: true })],
+            outputs: [],
+        } as any)
+
+        // Part of the standard library: used like `calc`, loaded for this run
+        // because the source names it — and only then (see the registry tests).
+        expect(result.status).toBe('success')
+        expect(loads).toBe(1)
+    })
+
     it('leaves ordinary scripts completely untouched (regression: no catalog)', async () =>
     {
         const runner = await new Runner().load()

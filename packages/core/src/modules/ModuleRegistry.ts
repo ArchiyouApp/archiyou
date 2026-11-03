@@ -16,6 +16,13 @@
  * its source without executing it — which is what lets the runner fetch exactly
  * the right bundles up front, and lets publishing report what a design needs.
  *
+ * The one exception is a STANDARD module (manifest `standard`): part of the
+ * standard library, so a script uses it as it uses `calc`, without declaring it.
+ * It is still loaded only for a run that needs it — one whose source names the
+ * global, or uses a core feature that needs the module (STANDARD_MODULE_USES) —
+ * and still before the run, by the same pre-scan. What changes is only who writes
+ * the declaration: the scan, instead of the script.
+ *
  * Modules live outside this repository (see modules/README.md), so nothing here
  * knows any module by name.
  */
@@ -23,7 +30,7 @@
 import semver from 'semver';
 import type { AyArchiyou, AyModule, AyModuleCatalogEntry, AyModuleFactoryContext, AyModuleWarmContext } from './sdkTypes';
 
-import { MODELER_METHODS_INTO_GLOBAL, ARCHIYOU_CORE_VERSION, SCRIPT_OUTPUT_MODEL_FORMATS, MODULE_FORMAT_RE } from '../constants';
+import { MODELER_METHODS_INTO_GLOBAL, ARCHIYOU_CORE_VERSION, SCRIPT_OUTPUT_MODEL_FORMATS, MODULE_FORMAT_RE, STANDARD_MODULE_USES } from '../constants';
 import { loadClientModule, ModuleLoadError } from './loadClientModule';
 import { serverModuleStub, type SyncTransport } from './serverModuleStub';
 import { unavailableStub, ModuleUnavailableError } from './unavailableStub';
@@ -255,9 +262,11 @@ export class ModuleRegistry
         usable.forEach(e => claims.set(e.global, (claims.get(e.global) ?? 0) + 1));
 
         // A module is loaded ONLY when the script declares it with $module('name'),
-        // by id or by global. Nothing else fetches anything.
+        // by id or by global — except a standard module, which the scan declares
+        // for the script (see isStandardUse). Nothing else fetches anything.
         const declared = new Set(ModuleRegistry.extractDeclaredNames(code));
-        const isDeclared = (e: AyModuleCatalogEntry) => declared.has(e.id) || declared.has(e.global);
+        const isDeclared = (e: AyModuleCatalogEntry) => declared.has(e.id) || declared.has(e.global)
+            || ModuleRegistry.isStandardUse(code, e);
         const referenced = usable.filter(isDeclared);
 
         // A script that uses a module's global WITHOUT declaring it gets a stub
@@ -374,6 +383,20 @@ export class ModuleRegistry
         this._reasons[entry.id] = reason;
         this._reasons[entry.global] = reason;
         this._globals[entry.global] = unavailableStub(entry.global, entry.id, reason);
+    }
+
+    /** Does this run need a STANDARD module (manifest `standard`) without declaring it?
+     *
+     *  Yes when the code names its global (the word match that otherwise only binds
+     *  a stub), or uses a core feature that opens it (STANDARD_MODULE_USES). For a
+     *  standard module the roughness of the word match is accepted: a mention in a
+     *  comment costs one bundle load per session, which is the price of using the
+     *  module like a built-in. A non-standard module is never loaded this way. */
+    static isStandardUse(code: string, entry: AyModuleCatalogEntry): boolean
+    {
+        if(entry?.standard !== true || !code) return false;
+        if(ModuleRegistry.referencesGlobal(code, entry.global)) return true;
+        return STANDARD_MODULE_USES.some(u => u.module === entry.id && u.pattern.test(code));
     }
 
     /** Names declared with `$module('name')`. Extracting these is what lets a

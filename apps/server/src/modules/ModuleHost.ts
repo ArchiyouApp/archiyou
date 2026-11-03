@@ -35,7 +35,7 @@ import type { AyModuleCatalogEntry } from '@archiyou/module-sdk';
 import { config } from '../config';
 import { parse, ValidationError } from '../validate';
 import { grantsAllModules } from './entitlements';
-import { ModuleManifestSchema, type ModuleManifest } from './manifestSchema';
+import { ModuleManifestSchema, isPublicModule, type ModuleManifest } from './manifestSchema';
 import { moduleWorkerPool, ModuleCallError } from './ModuleWorkerPool';
 
 interface InstalledModule {
@@ -297,9 +297,9 @@ export class ModuleHost {
     const owned = new Set(entitledIds);
     return [...this._modules.values()].map((m) => ({
       ...m.manifest,
-      // A public module is available to everybody, including anonymous callers. See
-      // AyModuleManifest.public — gating is the default, this is the deliberate opt-out.
-      entitled: m.manifest.public === true || all || owned.has(m.manifest.id),
+      // A public (or standard) module is available to everybody, including anonymous callers.
+      // See AyModuleManifest.public — gating is the default, this is the deliberate opt-out.
+      entitled: isPublicModule(m.manifest) || all || owned.has(m.manifest.id),
       // Only the FLAG, never the text: the catalog is fetched on every run and
       // a page of documentation is orders of magnitude larger than the rest of
       // an entry. The editor asks for the markdown itself only when someone

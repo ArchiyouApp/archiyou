@@ -143,6 +143,23 @@ export interface AyModuleManifest {
      */
     public?: boolean;
     /**
+     * Part of the standard library: usable without `$module()`.
+     *
+     * A normal module is loaded only when the script declares it, so that nothing is
+     * fetched by accident and the dependency is written where a reader looks for it. A
+     * standard module is one the engine itself leans on (core's `make.products()` opens
+     * its sheets with cloudcalc) and that every script should be able to use as it uses
+     * `calc`. The runner then loads it for a run that names its global, or that uses a
+     * core feature which needs it (core's STANDARD_MODULE_USES), still before the run
+     * and still only then: a script that never touches it pays nothing. `$module()`
+     * keeps working, and remains the fix when the name is built dynamically.
+     *
+     * Standard implies public: it is entitled for everybody, like `public: true`.
+     *
+     * Set by the DEPLOYMENT, like `public`.
+     */
+    standard?: boolean;
+    /**
      * A `runtime: 'server'` module that ALSO ships a client wrapper bundle.
      *
      * The wrapper is loaded like a client module, but its factory receives the

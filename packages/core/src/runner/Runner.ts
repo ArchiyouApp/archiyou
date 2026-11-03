@@ -150,6 +150,7 @@ export interface ScriptGlobals
      */
     $pipeline(name: string, fn: (mainScope?: any) => any): Pipeline;
     /** Declare a script module (an optional extension installed on the server) and get it.
+     *  A standard module (cloudcalc) needs no declaration: use its global directly.
      *
      *  @param name Name of the module, e.g. `'cloudcalc'`
      */
@@ -628,8 +629,11 @@ export class Runner
         // Declare a script module (see modules/README.md). Returns the module, so
         // both forms work:
         //
-        //     $module('cloudcalc')                  // declare; use the global
-        //     cc = $module('cloudcalc')             // declare and alias
+        //     $module('fem')                        // declare; use the global
+        //     fem = $module('fem')                  // declare and alias
+        //
+        // A STANDARD module (manifest `standard`, e.g. cloudcalc) needs none of
+        // this: the registry's pre-scan declares it for a run that uses it.
         //
         // Synchronous, like $import: the module was resolved by _prepareModules()
         // before the run. Throws HERE if it is unavailable, which is the point —

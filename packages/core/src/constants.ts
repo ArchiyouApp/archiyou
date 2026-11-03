@@ -80,6 +80,16 @@ export const SCRIPT_OUTPUT_MODEL_FORMATS = ['gltf','glb','step','stl','svg', 'da
 /** A model format a script module builds (manifest `outputs`, e.g. 'btlx'): any plain lowercase
  *  token that is not one of the built-in formats above. See ModuleRegistry.outputProvider(). */
 export const MODULE_FORMAT_RE = /^[a-z][a-z0-9-]*$/
+/** Core features that need a STANDARD script module (manifest `standard`, see ModuleRegistry).
+ *  A standard module needs no `$module()`: the registry loads it for a run whose code names its
+ *  global, or matches one of these patterns. Each entry is a core feature that opens a module
+ *  without the script writing the module's name — so the dependency is declared here, where
+ *  the feature lives, not in the module's manifest. Scanned on the source before the run, like
+ *  `$module()` itself; a dynamic name the scan misses is still fixed by writing `$module()`. */
+export const STANDARD_MODULE_USES: ReadonlyArray<{ module: string, pattern: RegExp }> = [
+    // make.products().fromSheet(url) / .fromOffer(url) open a Google Sheet with cloudcalc
+    { module: 'cloudcalc', pattern: /\.(fromSheet|fromOffer)\s*\(|docs\.google\.com\/spreadsheets\// },
+]
 /** Model formats whose exporter reads shape recipes (see src/modeler/Recipe.ts). A run that
  *  requests one of these records how every shape was made; every other run records nothing. */
 export const SCRIPT_OUTPUT_RECIPE_FORMATS = ['fcstd', 'ifc', 'scad']

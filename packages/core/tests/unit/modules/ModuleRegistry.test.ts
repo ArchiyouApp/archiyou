@@ -11,7 +11,7 @@ import type { AyModule, AyModuleCatalogEntry } from '@archiyou/module-sdk'
 import { ModuleRegistry } from '../../../src/modules/ModuleRegistry'
 import { ModuleLoadError } from '../../../src/modules/loadClientModule'
 import { ModuleUnavailableError } from '../../../src/modules/unavailableStub'
-import { ARCHIYOU_CORE_VERSION } from '../../../src/constants'
+import { ARCHIYOU_CORE_VERSION, STANDARD_MODULE_USES } from '../../../src/constants'
 
 /** A catalog entry with sane defaults; override per test. */
 function entry(over: Partial<AyModuleCatalogEntry> = {}): AyModuleCatalogEntry
@@ -147,6 +147,74 @@ describe('ModuleRegistry — pre-scan', () =>
         await reg.prepare("$module('example')\nexample.double(1)", [entry({ version: '1.1.0' })])
 
         expect(loadClient).toHaveBeenCalledTimes(2)
+    })
+})
+
+describe('ModuleRegistry — standard modules', () =>
+{
+    // A standard module (manifest `standard`) is the one exception to "declaration
+    // required": the pre-scan declares it for a run that uses it.
+
+    it('loads a standard module the script uses without declaring it', async () =>
+    {
+        const loadClient = vi.fn(async () => fakeModule())
+        const reg = new ModuleRegistry().setOptions({ loadClient })
+
+        await reg.prepare('r = example.double(4)', [entry({ standard: true })])
+
+        expect(loadClient).toHaveBeenCalledTimes(1)
+        expect(reg.globals().example.double(4)).toBe(8)
+    })
+
+    it('still loads nothing for a script that never names it', async () =>
+    {
+        const loadClient = vi.fn(async () => fakeModule())
+        const reg = new ModuleRegistry().setOptions({ loadClient })
+
+        await reg.prepare('box(10,10,10)', [entry({ standard: true })])
+
+        expect(loadClient).not.toHaveBeenCalled()
+        expect(reg.globals()).toEqual({})
+    })
+
+    it('never extends the courtesy to a module that is not standard', async () =>
+    {
+        const loadClient = vi.fn(async () => fakeModule())
+        const reg = new ModuleRegistry().setOptions({ loadClient })
+
+        await reg.prepare('r = example.double(4)', [entry()])
+
+        // The ordinary rule: a stub that asks for the declaration, no download.
+        expect(loadClient).not.toHaveBeenCalled()
+        expect(() => reg.globals().example.double(4)).toThrow(/not declared/)
+    })
+
+    it('declares a standard module for a core feature that opens it', () =>
+    {
+        // The table in core names the real module it stands for — it is core's own
+        // dependency, not a test fixture — so the test checks its patterns through
+        // a fictional entry carrying the same id.
+        const use = STANDARD_MODULE_USES.find(u => u.module === 'cloudcalc')!
+        const asStandard = entry({ id: use.module, global: 'example', standard: true })
+
+        expect(ModuleRegistry.isStandardUse("products = make.products().fromSheet('https://docs.google.com/spreadsheets/d/abc/edit')", asStandard)).toBe(true)
+        expect(ModuleRegistry.isStandardUse('products = make.products().fromOffer(TEMPLATE)', asStandard)).toBe(true)
+        expect(ModuleRegistry.isStandardUse("sheet = 'https://docs.google.com/spreadsheets/d/abc'", asStandard)).toBe(true)
+        // fromRows() reads nothing from a sheet, so it must not cost the bundle
+        expect(ModuleRegistry.isStandardUse('products = make.products().fromRows(rows)', asStandard)).toBe(false)
+        // and the patterns are for standard modules only
+        expect(ModuleRegistry.isStandardUse('make.products().fromSheet(url)', entry({ id: use.module }))).toBe(false)
+    })
+
+    it('keeps $module() working for a standard module', async () =>
+    {
+        const loadClient = vi.fn(async () => fakeModule())
+        const reg = new ModuleRegistry().setOptions({ loadClient })
+
+        await reg.prepare("ex = $module('example')\nr = ex.double(4)", [entry({ standard: true })])
+
+        expect(loadClient).toHaveBeenCalledTimes(1)
+        expect(reg.resolve('example').double(4)).toBe(8)
     })
 })
 

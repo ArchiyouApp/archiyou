@@ -517,6 +517,41 @@ describe('ScriptStore autosave merging', () => {
     expect(await store.listVersions(AUTHOR, fileId)).toEqual([before]);
   });
 
+  it('refuses a save made from an older row, and keeps the newer one', async () => {
+    const fileId = await newFile('two-tabs');
+    const [first] = await store.listVersions(AUTHOR, fileId);
+    const base = { id: first.id, updated: first.updated };
+    await tick();
+    // another tab saves on top of the same row: merged into it, so its id stays
+    const other = await store.saveVersion(AUTHOR, fileId, payload({ name: 'two-tabs', code: 'const other = 1;' }), { base });
+    expect(other.id).toBe(first.id);
+    await tick();
+    // this tab still has the first row as its base
+    const stale = store.saveVersion(AUTHOR, fileId, payload({ name: 'two-tabs', code: 'const mine = 1;' }), { base });
+    await expect(stale).rejects.toMatchObject({ code: 'conflict' });
+    expect((await store.getFile(AUTHOR, fileId)).code).toBe('const other = 1;');
+
+    // a save from the latest row goes through, a save equal to the latest is no conflict
+    const latest = { id: other.id as string, updated: other.updated as string };
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'two-tabs', code: 'const other = 1;' }), { base });
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'two-tabs', code: 'const next = 1;' }), { base: latest });
+    expect((await store.getFile(AUTHOR, fileId)).code).toBe('const next = 1;');
+  });
+
+  it('refuses a save made from a row that is no longer the latest', async () => {
+    store.coalesceMs = 0;
+    const fileId = await newFile('appended');
+    const [first] = await store.listVersions(AUTHOR, fileId);
+    await tick();
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'appended', code: 'const newer = 1;' }));
+    await tick();
+    await expect(store.saveVersion(AUTHOR, fileId, payload({ name: 'appended', code: 'const old = 1;' }), { base: { id: first.id } }))
+      .rejects.toMatchObject({ code: 'conflict' });
+    // without a base, as before: the save goes on top
+    await store.saveVersion(AUTHOR, fileId, payload({ name: 'appended', code: 'const old = 1;' }));
+    expect((await store.getFile(AUTHOR, fileId)).code).toBe('const old = 1;');
+  });
+
   it('keeps the thumbnail on a merged row', async () => {
     const fileId = await newFile('pictured');
     await store.setFileThumbnail(AUTHOR, fileId, '/thumbs/pictured.png');

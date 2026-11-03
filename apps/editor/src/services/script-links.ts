@@ -28,7 +28,7 @@ import type { ScriptData } from '@archiyou/core/src/execution/types';
 
 import { api, ApiError } from './api.js';
 import { authService, authReady } from './auth-service.js';
-import { pullUserScripts } from './scripts-sync.js';
+import { pullUserScripts, refreshFromServer } from './scripts-sync.js';
 import { scripts, openScript, openSharedScript } from '../state/core.js';
 
 /** A parsed `{name}[:{version}]` URL segment. `version` is undefined for "latest". */
@@ -170,6 +170,8 @@ export async function resolveScriptLink(author: string | null, scriptAndVersion:
   if (!ref.version) {
     const local = findLocal(ref.name);
     if (local) {
+      // the server may have a newer version than this browser (another tab or device)
+      if (me) await refreshFromServer(local.fileId);
       const opened = openScript(local.fileId);
       if (opened) return { ok: true, script: opened };
     }

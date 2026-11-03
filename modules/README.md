@@ -14,6 +14,7 @@ Two kinds, and the difference is one manifest field:
 |---|---|
 | **Gated** (the default) | Available only to accounts entitled to it. What the system was built for. |
 | **Public** (`"public": true`) | Available to everybody, no grant needed. For open-source modules, whose source anyone can read and build anyway. |
+| **Standard** (`"standard": true`) | Public, and usable without `$module()`, like `calc`. For a module the engine itself leans on (cloudcalc, which `make.products()` opens its sheets with). |
 
 > **A copyleft module must never enter this repository's dependency graph.** archiyou-web is
 > Apache-2.0. A module under the GPL or AGPL lives in its own repository, is built to its own
@@ -73,6 +74,21 @@ Forget it and the message says so, naming the line to add:
 
 ```
 Module 'fem': not declared in this script — add $module('fem') before using it
+```
+
+**Standard modules are the exception.** A module installed with `"standard": true` is part of the
+standard library: use its global as you use `calc`, with no `$module()` line. The runner still loads
+it only for a run that needs it — one whose source names the global, or calls a core feature that
+opens the module (`make.products().fromSheet(url)` opens a Google Sheet with cloudcalc) — and still
+before the run, by the same pre-scan that reads `$module()`. Only who writes the declaration changes:
+the scan, instead of you. Two consequences: a mention in a comment can cost a standard module's
+bundle load once per session, and an unusable standard module fails at its first use rather than at
+the top. `$module('cloudcalc')` keeps working, and is the fix when the scan cannot see the use (a
+name or URL built at run time).
+
+```js
+wb  = cloudcalc.open('https://docs.google.com/spreadsheets/d/…')   // no $module() line
+out = wb.compute({ width: 300 })
 ```
 
 > `$module()` is deliberately separate from `$import()`, which fetches a remote **asset** by URL
@@ -351,6 +367,20 @@ with a name Archiyou already uses. `public` affects entitlement, and only entitl
 It is set by the **deployment**, not by a user — manifests live in the installed module's own
 directory, so whoever installs a module decides whether it is public. The schema accepts only a literal
 `true`; `"yes"` or `1` is a malformed manifest and the module is skipped.
+
+### `standard` — part of the standard library
+
+`"standard": true` makes a module usable without `$module()` (see [Using a module](#using-a-module-in-a-cadscript))
+and implies `public`: the catalog, the bundle route and the call route treat it as entitled for
+everybody. Loading stays lazy and ahead of the run: `ModuleRegistry.prepare()` declares a standard
+module for a run whose code names its global, or matches a pattern in core's `STANDARD_MODULE_USES`
+(`packages/core/src/constants.ts`) — the table where a core feature that opens a module without the
+script writing its name states that dependency. Add a row there when core grows such a feature;
+nothing in the manifest knows core's API.
+
+Use it sparingly. It is for a module the engine leans on and every script should have at hand,
+not a shortcut around declaring an optional one: a standard module's bundle is fetched for every
+script that so much as mentions its global.
 
 ---
 

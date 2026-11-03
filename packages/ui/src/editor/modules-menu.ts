@@ -137,11 +137,15 @@ export class ModulesMenu extends SignalWatcher(LitElement)
         <div class="body">
           <span class="name">${m.global}</span>
           ${m.description ? html`<p class="description">${m.description}</p>` : ''}
-          ${m.entitled
-            // The one thing a user needs to know to actually use it: nothing
-            // loads unless the script declares it.
-            ? html`<p class="use">${msg('Use it with')} <code>$module('${m.id}')</code></p>`
-            : ''}
+          ${m.standard
+            // A standard module is used like a built-in; the run loads it when the
+            // script uses it.
+            ? html`<p class="use">${msg('Standard module: use')} <code>${m.global}</code> ${msg('directly, no declaration needed')}</p>`
+            : m.entitled
+              // The one thing a user needs to know to actually use it: nothing
+              // loads unless the script declares it.
+              ? html`<p class="use">${msg('Use it with')} <code>$module('${m.id}')</code></p>`
+              : ''}
           ${m.docsUrl
             ? html`<a
                 class="description"
