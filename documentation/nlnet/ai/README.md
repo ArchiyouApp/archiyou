@@ -149,3 +149,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-10-05 | [Projects: requests, configurations, deliveries and client activity](./records/2026-10-05-projects.md) | Claude Opus 5.5 (research and design subagents on Claude Fable 5.1) | projects (WIP) → develop | 6 |
 | 2026-10-29 | [Save as project from a configurator, and Projects merged into develop](./records/2026-10-29-save-as-project.md) | Claude Opus 5.5 | projects-merge → develop | 4 |
 | 2026-11-03 | [Standard modules: cloudcalc without a `$module()` declaration](./records/2026-11-03-standard-modules.md) | Claude Fable 5.1 | develop | 2 |
+| 2026-10-30 | [Shared geometry in the GLB, and layouts on both kernels](./records/2026-10-30-shared-geometry-and-layouts.md) | Claude Opus 5.5 | develop | 6 |
