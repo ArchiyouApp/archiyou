@@ -6,7 +6,7 @@ import type { AnyShapeOrCollection } from '../modeler/types'
 import { stripOuterSVGTags, getPreserveAspectRatio, convertValueFromToUnit } from './utils'
 import { collectAnnotations, annotationMarginMm } from '../annotator/annotationLayer'
 import { drawableLayer, renderDrawingFromLayer, type SVGLayer } from '../modeler/SVGExporter'
-import { STYLER_DEFAULT_RULES, toStylerRuleEntries, type Styler, type StylerRule, type StylerRuleEntry } from './styler/Styler'
+import { STYLER_DEFAULT_RULES, toStylerRuleEntries, drawnClassLists, unmatchedSelectors, unmatchedMessage, type Styler, type StylerRule, type StylerRuleEntry } from './styler/Styler'
 import { resolveScale, scaleLabel, type ResolvedScale } from './scale'
 import { buildViewFurniture, type Furniture } from './viewFurniture'
 import type { ViewOptions, CaptionOptions, BarOptions } from './types'
@@ -37,6 +37,7 @@ export class View extends Container
     _css:Record<string,string>|null = null;
     /** How classes are drawn in this view, on top of the styler's — see style(). */
     _styleRules:Array<StylerRuleEntry> = [];
+    _styleWarned:boolean = false;
     _dimension:any; // TODO
     _forceAll:boolean = false;
 
@@ -237,7 +238,21 @@ export class View extends Container
                                     align: this._contentAlign ?? this.CONTENT_ALIGN_DEFAULT },
                     });
 
+        if(svg){ this._noteStyled(svg) }
         return svg ?? this.resolveShapesToSVG();
+    }
+
+    /** Tell the styler what this drawing has, and say which rules of this view match nothing in it */
+    _noteStyled(svg:string):void
+    {
+        const styler = (this._page?._docs?._archiyou as any)?.styler as Styler|undefined;
+        styler?._noteDrawing(svg);
+
+        if(this._styleWarned || this._styleRules.length === 0){ return }
+        this._styleWarned = true;
+        const drawn = drawnClassLists(svg);
+        unmatchedSelectors(this._styleRules.map(r => r.selector), drawn)
+            .forEach(selector => console.warn(unmatchedMessage(`View '${this.name}' style`, selector, drawn)));
     }
 
     /** What this view needs on the page, where it was told to size itself to its content.
@@ -440,7 +455,7 @@ export class View extends Container
     }
 
     /** How classes are drawn in this view only, on top of the styler's rules (see Styler):
-     *  `view.style({ '.cut': { weight: 0.7 }, '.hidden': { visible: false } })`. Weights and
+     *  `view.style({ cut: { weight: 0.7 }, hidden: { visible: false } })`. Weights and
      *  dashes in millimeters on paper. */
     style(rules:Record<string,StylerRule>):this
     {

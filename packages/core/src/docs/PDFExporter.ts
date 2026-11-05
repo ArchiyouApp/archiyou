@@ -295,7 +295,31 @@ export class PDFExporter
             const width = measurer.getStringUnitWidth(this.textContent ?? '') * fontSize;
             return { x: 0, y: 0, width, height: fontSize };
         };
+
+        // svg2pdf asks an Image how big a bitmap is (a hatch with a texture, a picture on a
+        // page); jsdom's Image never loads without a canvas. jsPDF reads it off the file.
+        this._NodeImage = class
+        {
+            width = 0; height = 0
+            onload:(() => void)|null = null
+            onerror:((e:any) => void)|null = null
+            set src(src:string)
+            {
+                setTimeout(() =>
+                {
+                    try
+                    {
+                        const { width, height } = measurer.getImageProperties(src);
+                        this.width = width; this.height = height;
+                        this.onload?.();
+                    }
+                    catch(e){ this.onerror?.(e) }
+                });
+            }
+        };
     }
+
+    _NodeImage:any; // see loadDomForNode
 
     /** Put the jsdom globals that svg2pdf reaches for on globalThis; returns the function that
      *  puts back what was there. `window` is left alone: other code tests it to detect a browser. */
@@ -303,9 +327,9 @@ export class PDFExporter
     {
         const g = globalThis as any;
         const w = this._jsdomWindow;
-        const names = ['document', 'DOMParser', 'CSSStyleSheet', 'CSSStyleRule'];
+        const names = ['document', 'DOMParser', 'CSSStyleSheet', 'CSSStyleRule', 'Image'];
         const before = names.map(n => [n, Object.getOwnPropertyDescriptor(g, n)] as const);
-        names.forEach(n => { g[n] = w[n]; });
+        names.forEach(n => { g[n] = (n === 'Image') ? this._NodeImage : w[n]; });
 
         return () =>
         {

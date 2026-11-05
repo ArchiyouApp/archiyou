@@ -1407,8 +1407,8 @@ export class Edge extends Shape
         /*  Line styling comes from the meshup Style model: stroke.{color,opacity,width,dash}.
 
             ONLY EXPLICIT styling is written inline. Anything the author did not set is left to
-            the CSS classes below (`line`, `silhouette`, `dashed`, …), which is exactly what the
-            mesh kernel does — it emits bare `<path class="line silhouette"/>` and lets the
+            the CSS classes below (`line`, `outline`, `dashed`, …), which is exactly what the
+            mesh kernel does — it emits bare `<path class="line outline"/>` and lets the
             document stylesheet decide. Baking the kernel defaults in instead meant every brep
             drawing came out in the default colour at a fixed width, so the same document looked
             different depending on which kernel drew it. */

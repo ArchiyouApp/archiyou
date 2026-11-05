@@ -1529,8 +1529,8 @@ export class Document
     }
 
     /** How classes are drawn in the active view, on top of the styler's rules:
-     *  `.view('plan').style({ '.cut': { weight: 0.7 } })`. Weights and dashes in mm on paper.
-     *  @param rules  Selector (classes, like '.cut' or '.cut.wood') to how it is drawn.
+     *  `.view('plan').style({ cut: { weight: 0.7 } })`. Weights and dashes in mm on paper.
+     *  @param rules  Classes (like 'cut', or 'cut.wood' for both) to how they are drawn.
      */
     style(rules:Record<string,StylerRule>):this
     {

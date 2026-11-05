@@ -128,9 +128,11 @@ describe('view scale', () =>
         const svg = await pageWith(modules, shapes)
         const view = viewsOf(svg)[0]
 
-        // the drawing fills the view: its own extents are the window
-        expect(view.vb[2]).toBeCloseTo(1000, 3)
-        expect(mmPerUnit(view)).toBeCloseTo(view.wMm / 1000, 6)
+        // the drawing fills the view: its own extents are the window, with room for half the
+        // heaviest line on each side (a line is drawn centred on its path)
+        expect(view.vb[2]).toBeGreaterThan(1000)
+        expect(view.vb[2]).toBeLessThan(1010)
+        expect(mmPerUnit(view)).toBeCloseTo(view.wMm / view.vb[2], 6)
     })
 
     it('reports what it drew, so a caption can say it', async () =>

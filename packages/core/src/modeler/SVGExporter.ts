@@ -49,7 +49,7 @@ import { detectExportFrame, drawnInPlane, isPlanFrame, planeTolerance, projector
 import { annotationLayer, annotationMarginMm, collectAnnotations } from '../annotator/annotationLayer'
 import type { AnnotationFormat } from '../annotator/annotationLayer'
 import { isKernelShapeCollection } from './typeguards'
-import { STYLER_DEFAULT_RULES, STYLER_EXPORT_RULES, compileStylerRules, modelColorClass, modelColorsIn, withLineWeight } from '../docs/styler/Styler'
+import { STYLER_DEFAULT_RULES, stylerExportRules, stylerOf, compileStylerRules, stylerPaintOrder, stylerHatchDefs, drawnClassLists, modelColorClass, modelColorsIn, withLineWeight } from '../docs/styler/Styler'
 import type { StylerRuleEntry } from '../docs/styler/Styler'
 
 //// TYPES ////
@@ -371,9 +371,9 @@ export function drawableFaces(collection: any): Array<any>
  *
  *  Curves AND flat faces — see isDrawableFace().
  *
- *  NOTE: the 'silhouette' group tags the SAME Curve objects as 'visible' (it is a
+ *  NOTE: the 'outline' group tags the SAME Curve objects as 'visible' (it is a
  *  classification, not a separate edge set), so it must never be emitted as its own
- *  path list — that would draw every silhouette edge twice.
+ *  path list — that would draw every outline edge twice.
  */
 function prepareCurves(collection: any): Array<PreparedCurve>
 {
@@ -386,7 +386,7 @@ function prepareCurves(collection: any): Array<PreparedCurve>
     // Ask for the 'hidden' group only when it is actually there: ShapeCollection.group()
     // logs an ERROR for a missing group, and it is missing in both common cases — authored
     // 2D geometry has no groups at all, and a projection taken with hidden lines off only
-    // has 'visible'/'silhouette'. That console error is exactly the kind of noise that
+    // has 'visible'/'outline'. That console error is exactly the kind of noise that
     // makes a working thumbnail look like a failed one. Read through `_groups` rather than
     // importing meshup, which this module deliberately does not do at runtime.
     const groups = collection?._groups
@@ -415,7 +415,7 @@ function prepareCurves(collection: any): Array<PreparedCurve>
 const CLASS_NAME_RE = /^-?[_a-zA-Z][_a-zA-Z0-9-]*$/
 
 /** The drawing groups each curve belongs to: what it is in the drawing (`cut`, `visible`,
- *  `silhouette`, `hidden`, …), every one of them. The per-shape provenance tags (`shape-0`, …)
+ *  `outline`, `hidden`, …), every one of them. The per-shape provenance tags (`shape-0`, …)
  *  are left out: they say where a curve came from, not what it is. */
 function meshGroupClasses(collection: any): Map<any, Array<string>>
 {
@@ -451,6 +451,36 @@ function styleClasses(style: any): Array<string>
 function classAttr(classes: Array<string>): string
 {
     return [...new Set(['line', ...classes])].join(' ')
+}
+
+/** The closed rings of a section's cut, those with the same classes as one path, filled
+ *  even-odd: a ring inside another (the hollow of a tube, a hole through a plate) is then a
+ *  hole and not filled over. The slice gives loose rings, which a fill or a hatch would each fill
+ *  whole. Rings apart from each other fill as before. A circle is written as a path to join in. */
+function mergeCutRings(elements: Array<string>): Array<string>
+{
+    const ringOf = (e: string): { classes: string, d: string } | null =>
+    {
+        const classes = e.match(/\sclass="([^"]*)"/)?.[1] ?? ''
+        if (!/\bcut\b/.test(classes)) return null
+        const d = e.match(/^<path d="([^"]*[Zz])"/)?.[1]
+        if (d) return { classes, d }
+        const c = e.match(/^<circle cx="([^"]+)" cy="([^"]+)" r="([^"]+)"/)
+        if (!c) return null
+        const [cx, cy, r] = c.slice(1).map(Number)
+        return { classes, d: `M${cx - r} ${cy} A${r} ${r} 0 1 0 ${cx + r} ${cy} A${r} ${r} 0 1 0 ${cx - r} ${cy} Z` }
+    }
+    const rings = new Map<string, Array<string>>()
+    elements.forEach(e => { const r = ringOf(e); if (r) rings.set(r.classes, [...(rings.get(r.classes) ?? []), r.d]) })
+    const written = new Set<string>()
+    return elements.flatMap(e =>
+    {
+        const r = ringOf(e)
+        if (!r) return [e]
+        if (written.has(r.classes)) return []
+        written.add(r.classes)
+        return [`<path d="${rings.get(r.classes)!.join(' ')}" class="${r.classes}" fill-rule="evenodd"/>`]
+    })
 }
 
 /** Cut line work last: what a section cuts through covers what lies beyond it (see the
@@ -494,7 +524,7 @@ function meshDrawableLayer(collection: any, plane: ExportPlane): SVGLayer
         })
     })
 
-    return { elements: cutLast(elements), box, frame }
+    return { elements: cutLast(mergeCutRings(elements)), box, frame }
 }
 
 /** The 2D line-work of a brep Shape or ShapeCollection.
@@ -687,14 +717,6 @@ export function buildSVGDocument(o: BuildSVGDocumentOptions): string | null
         It applies to a scaled frame just as much as to a fitted one. Leaving it out there
         anchored the drawing flush against the frame and cut every label and arrowhead on the
         leading edges; the scale is unaffected either way, since only the window MOVES. */
-    const framed = frame.margin
-                        ? { minX: box.minX - frame.margin, minY: box.minY - frame.margin,
-                            maxX: box.maxX + frame.margin, maxY: box.maxY + frame.margin }
-                        : box
-    const viewBox = (frame.mode === 'scale')
-                        ? scaledViewBox(framed, frame, decimals)
-                        : viewBoxFor(framed, frame.padding ?? DEFAULT_PADDING, frame.square === true, decimals)
-
     const stroke: SVGStroke = o.stroke ?? { mode: 'device' }
     const scope = o.scoped ? `.${o.scoped} ` : ''
     /*  On paper the Styler's rules draw the drawing, in model units at its scale. A width in
@@ -702,11 +724,26 @@ export function buildSVGDocument(o: BuildSVGDocumentOptions): string | null
     const unitsPerMm = (stroke.mode === 'mm') ? stroke.unitsPerMm
                         : (stroke.mode === 'units') ? stroke.width / DRAWING_LINE_WIDTH_MM
                         : 0
+    const rules = withLineWeight(o.rules ?? STYLER_DEFAULT_RULES, (stroke.mode === 'mm') ? stroke.widthMm : undefined)
+
+    /*  A line is drawn centred on its path, so half of it lies outside the drawing's box. The
+        frame clips what is outside (a view is a nested <svg>), and a frame flush against the
+        box cut the outer lines to half their weight: the top plate of a wall drawn thinner
+        than the studs. So the frame leaves room for half the heaviest line. */
+    const heaviestMm = Math.max(0, ...rules.filter(r => r.visible !== false).map(r => r.weight ?? 0))
+    const margin = (frame.margin ?? 0) + unitsPerMm * heaviestMm / 2
+    const framed = margin
+                        ? { minX: box.minX - margin, minY: box.minY - margin,
+                            maxX: box.maxX + margin, maxY: box.maxY + margin }
+                        : box
+    const viewBox = (frame.mode === 'scale')
+                        ? scaledViewBox(framed, frame, decimals)
+                        : viewBoxFor(framed, frame.padding ?? DEFAULT_PADDING, frame.square === true, decimals)
+
     const base = (stroke.mode === 'device')
                     ? stylesheet(stroke.width ?? DEFAULT_STROKE_WIDTH, scope)
-                    : '<style>' + compileStylerRules(
-                        withLineWeight(o.rules ?? STYLER_DEFAULT_RULES, (stroke.mode === 'mm') ? stroke.widthMm : undefined),
-                        scope, unitsPerMm, modelColorsIn(layers.flatMap(l => l.elements))) + '</style>'
+                    : '<style>' + compileStylerRules(rules, scope, unitsPerMm,
+                        modelColorsIn(layers.flatMap(l => l.elements))) + '</style>'
 
     /*  Extra rules go in their own <style>, AFTER the base one. Same specificity, later
         source, so they win — which is what lets a caller draw one group of a drawing
@@ -717,7 +754,9 @@ export function buildSVGDocument(o: BuildSVGDocumentOptions): string | null
 
     const content = layers.map(l =>
         {
-            const body = l.elements.join('')
+            // on paper the rules say how heavy each line is, and so what goes on top (see
+            // stylerPaintOrder); a layer of its own (the annotations) keeps the order it has
+            const body = (stroke.mode === 'device' || l.cssClass ? l.elements : stylerPaintOrder(l.elements, rules)).join('')
             return l.cssClass ? `<g class="${escapeXML(l.cssClass)}">${body}</g>` : body
         }).join('')
 
@@ -732,11 +771,16 @@ export function buildSVGDocument(o: BuildSVGDocumentOptions): string | null
                         .map(n => +n.toFixed(decimals)).join(' ')
 
     const inner = o.scoped ? `<g class="${escapeXML(o.scoped)}">${content}</g>` : content
+    // the hatches the rules fill with (see the Styler), as patterns at this drawing's scale
+    const hatches = (stroke.mode === 'device') ? ''
+                    : stylerHatchDefs(rules, scope, unitsPerMm, drawnClassLists(layers.flatMap(l => l.elements).join('')))
+    const defs = hatches ? `<defs>${hatches}</defs>` : ''
 
     return '<svg xmlns="http://www.w3.org/2000/svg"'
         + ` viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet" role="img"`
         + `${unitsAttr} data-extents="${extents}"${dataAttrs}>`
         + titleElem
+        + defs
         + style
         + inner
         + '</svg>'
@@ -1084,7 +1128,7 @@ export function renderDrawingFromLayer(
                 : { mode: 'fit', padding: options?.padding ?? 0, square: options?.square === true, margin },
         scoped: options?.scoped,
         css: options?.css,
-        rules: options?.rules ?? STYLER_EXPORT_RULES, // a document view says its own
+        rules: options?.rules ?? stylerExportRules(stylerOf(o)), // a document view says its own
         units: options?.units ?? o?._modeler?.units?.(),
         title: options?.title,
     })

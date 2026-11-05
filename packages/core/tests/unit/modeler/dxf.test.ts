@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
 
 import { Modeler } from '../../../src/modeler/Modeler'
 import { DXFDocument, writeCurveToDXF } from '../../../src/modeler/DXFExporter'
+import { Styler } from '../../../src/docs/styler/Styler'
 import { Annotator } from '../../../src/annotator/Annotator'
 import type { ArchiyouModules } from '../../../src/types'
 
@@ -52,6 +53,51 @@ describe('Modeler DXF export', () =>
         expect(countEntity(s, 'CIRCLE')).toBe(1)
         expect(countEntity(s, 'ARC')).toBe(1)
         expect(countEntity(s, 'LINE')).toBeGreaterThanOrEqual(1)
+    })
+
+    it('joins the lines of an outline into one polyline, so a part is selected whole', () =>
+    {
+        // a projection ends a line at every corner: the four sides of a box came out as four LINEs
+        modeler.line([0, 0, 0], [100, 0, 0]); modeler.line([100, 0, 0], [100, 50, 0])
+        modeler.line([100, 50, 0], [0, 50, 0]); modeler.line([0, 50, 0], [0, 0, 0])
+        // three lines meeting in one point: which two go together, the lines do not say
+        modeler.line([200, 0, 0], [250, 0, 0]); modeler.line([250, 0, 0], [300, 0, 0]); modeler.line([250, 0, 0], [250, 50, 0])
+
+        const dxf = modeler.toDXF() as string
+        expect(countEntity(dxf, 'LWPOLYLINE')).toBe(1)
+        expect(dxf).toMatch(/AcDbPolyline\n90\n4\n70\n1\n/) // 4 vertices, closed
+        expect(countEntity(dxf, 'LINE')).toBe(3)
+    })
+
+    it('draws by the styler, as a drawing on paper does: weights, colours and what is not drawn', () =>
+    {
+        const lineweights = (dxf: string) => [...dxf.slice(dxf.indexOf('ENTITIES')).matchAll(/\n370\n(-?\d+)\n/g)].map(m => Number(m[1]))
+        const section = () => (modeler.box(38, 184, 2400) as any).addClass('timber').section([0, 0, 1000])
+
+        // the defaults: a section's cut lines 0.5mm, in the colour of the part
+        section()
+        const plain = modeler.toDXF() as string
+        expect(lineweights(plain)).toContain(50)
+
+        // the script's rules: a cut timber 0.7mm red, no outline beyond the cut
+        modeler.reset()
+        const modules = (modeler as any).modules
+        modules.styler = new Styler().set('cut.timber', { weight: 0.7, color: 'red' }).set('outline', { visible: false })
+        try
+        {
+            section()
+            const styled = modeler.toDXF() as string
+            expect(lineweights(styled)).toEqual([70])            // only the cut, and at 0.7mm
+            expect(styled).toContain('\n420\n16711680\n')       // red
+        }
+        finally { delete modules.styler }
+    })
+
+    it('does not join lines of different parts', () =>
+    {
+        modeler.line([0, 0, 0], [100, 0, 0]).addClass('stud')
+        modeler.line([100, 0, 0], [100, 50, 0]).addClass('plate')
+        expect(countEntity(modeler.toDXF() as string, 'LINE')).toBe(2)
     })
 
     it('writes DIMENSION entities + baked *D block + DIMSTYLE', () =>

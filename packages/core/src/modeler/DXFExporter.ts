@@ -34,6 +34,8 @@ import type { SpanParams, SpanPoint } from '@archiyou/meshup'
 import type { ModelUnits } from './types'
 import type { AnyShape } from './types'
 import { MM_PER_UNIT } from '../units/UnitConverter'
+import { Color } from '@archiyou/meshup'
+import { resolveStylerRule, stylerExportRules, stylerOf, type StylerRuleEntry } from '../docs/styler/Styler'
 import { detectExportFrame, isOnPlane, planeTolerance, projectorFor, shapeBox, IDENTITY_PROJECTOR,
     PLANE_TOLERANCE, type Box, type ExportPlane, type Projector, type Vec3 } from './utils'
 
@@ -48,6 +50,7 @@ export interface toDXFOptions
     units?: ModelUnits     // model unit (for $INSUNITS)
     plane?: ExportPlane    // drawing plane (default 'auto' — detected from the geometry)
     scale?: number         // drawing scale for dimension text and arrows: 50 for 1:50 (default: from the drawing's size)
+    rules?: ReadonlyArray<StylerRuleEntry> // how classes are drawn (default: the run's styler, with model colours)
 }
 
 type RGB = [number, number, number]
@@ -105,8 +108,23 @@ function nearestACI(c: RGB): number
 
 //// DXF DOCUMENT ////
 
-/** Colour and linetype, the two things DXF lets a LAYER carry and an entity override. */
-export interface EntityStyle { colorRgb: RGB | null; dashed: boolean }
+/** Colour, linetype and lineweight (mm on paper), what DXF lets a LAYER carry and an entity override. */
+export interface EntityStyle
+{
+    colorRgb: RGB | null; dashed: boolean; lineweight?: number | null
+    /** Colour and linetype as the layer's: only the lineweight is the entity's own */
+    byLayer?: boolean
+}
+
+/** The lineweights DXF knows, in hundredths of a millimeter (group 370) */
+const DXF_LINEWEIGHTS = [0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200, 211]
+
+/** The DXF lineweight nearest to a weight in mm */
+function dxfLineweight(mm: number): number
+{
+    const want = mm * 100
+    return DXF_LINEWEIGHTS.reduce((best, w) => Math.abs(w - want) < Math.abs(best - want) ? w : best, DXF_LINEWEIGHTS[0])
+}
 
 interface LayerDef extends EntityStyle { name: string; handle: string }
 interface DimBlock { blockName: string; recordHandle: string; body: string }
@@ -251,10 +269,11 @@ export class DXFDocument
             + this._pair(330, this._modelSpaceRecord)
             + this._pair(100, 'AcDbEntity')
             + this._pair(8, layer)
-            + (style ? this._pair(6, style.dashed ? 'DASHED' : 'CONTINUOUS') : '')
-            + (style?.colorRgb
+            + (style && !style.byLayer ? this._pair(6, style.dashed ? 'DASHED' : 'CONTINUOUS') : '')
+            + (style?.colorRgb && !style.byLayer
                 ? this._pair(62, nearestACI(style.colorRgb)) + this._pair(420, packRGB(style.colorRgb))
                 : '')
+            + (typeof style?.lineweight === 'number' ? this._pair(370, dxfLineweight(style.lineweight)) : '')
             + this._pair(100, subclass)
     }
 
@@ -541,6 +560,7 @@ export class DXFDocument
             + this._pair(9, '$HANDSEED') + this._pair(5, (this._handleSeq + 0x1000).toString(16).toUpperCase())
             + this._pair(9, '$INSUNITS') + this._pair(70, UNITS_TO_INSUNITS[this._units] ?? 0)
             + this._pair(9, '$MEASUREMENT') + this._pair(70, 1) // 1 = metric
+            + this._pair(9, '$LWDISPLAY') + this._pair(290, 1)  // show the lineweights (see the styler)
             + this._pair(0, 'ENDSEC')
     }
 
@@ -903,6 +923,24 @@ function asCircle(spans: SpanParams[], closed: boolean): { center: SpanPoint, ra
 const sameStyle = (a: EntityStyle, b: EntityStyle): boolean =>
     a.dashed === b.dashed && String(a.colorRgb) === String(b.colorRgb)
 
+/** How a shape is drawn in the DXF: by the styler's rules for its classes (what it is in the
+ *  drawing, `cut`, `outline`, …, and what it is, `timber`, …), as a drawing on paper is. Its
+ *  colour and dashes in the model apply where a rule says `color: 'model'` (an export's rules do,
+ *  see stylerExportRules) or says nothing. Null: the rules say it is not drawn. */
+function styledEntityStyle(shape: any, rules: ReadonlyArray<StylerRuleEntry>): EntityStyle | null
+{
+    const model = entityStyleOf(cascadedStyleData(shape?.node?.(), shape))
+    const rule = resolveStylerRule(rules, ['line', ...(shape?.style?.classes ?? [])])
+    if (rule.visible === false || rule.color === 'none') return null
+
+    const toRgb = (c: string): RGB | null => { try { return hexToRgb(new Color(c as any).toHex()) } catch { return null } }
+    return {
+        colorRgb: (!rule.color || rule.color === 'model') ? model.colorRgb : toRgb(rule.color),
+        dashed: Array.isArray(rule.dash) ? rule.dash.length > 0 : rule.dash === 'none' ? false : model.dashed,
+        lineweight: typeof rule.weight === 'number' ? rule.weight : null,
+    }
+}
+
 /** The scene layer a shape belongs to: the nearest ancestor container holding no shape of its
  *  own. Null for a shape outside any scene — and for one the brep kernel converted on the way
  *  out, which is a fresh Shape that was never in the tree. */
@@ -981,6 +1019,86 @@ function toCurve(shape: any): meshup.Curve | null
  *  shapes are not moved, so a model standing on XZ exports without being rotated first.
  *  Returns null (with a warning) when nothing is flat enough to draw.
  */
+/** A drawing's straight lines joined into runs: one polyline per outline, where the drawing had
+ *  one line per edge.
+ *
+ *  A projection joins its edges only where one continues the other smoothly (see meshup's
+ *  Mesh._joinPolylines), so in an elevation every corner ends a line, and in CAD a part falls
+ *  apart into loose lines that are selected one by one. Here lines are joined at any angle,
+ *  wherever exactly two of them meet: two lines of the same layer, style and classes, so the
+ *  outline of one kind of part does not run into the next. A run that comes back to where it
+ *  started is closed. Where three or more lines meet, each run stops: which two belong together
+ *  is not something the lines say. */
+function joinedLineRuns<T extends { shape: any, curve: any, layerName: string, style: EntityStyle | null }>(placed: T[]):
+    { runs: Array<{ points: SpanPoint[], closed: boolean, layerName: string, style: EntityStyle | null }>, rest: T[] }
+{
+    // the open curves that are only straight spans, as their points
+    const pointsOf = (p: T): SpanPoint[] | null =>
+    {
+        const c = p.curve as any
+        if (c.isClosed?.()) return null
+        const spans: SpanParams[] = typeof c.exportSpans === 'function' ? c.exportSpans() : []
+        if (spans.length === 0 || !spans.every(sp => sp.kind === 'line')) return null
+        return [...spans.map(sp => sp.start), spans[spans.length - 1].end]
+    }
+    const groupOf = (p: T) => JSON.stringify([p.layerName, p.style, p.shape?.style?.classes ?? []])
+
+    const lines = placed.map(p => ({ p, points: pointsOf(p), group: groupOf(p) }))
+    const pointKey = (q: SpanPoint) => q.map(v => Math.round(v * 1e4)).join(',')
+    const ends = new Map<string, number[]>() // group + end point: the lines that end there
+    const endKey = (i: number, atStart: boolean) =>
+    {
+        const pts = lines[i].points!
+        return `${lines[i].group}|${pointKey(atStart ? pts[0] : pts[pts.length - 1])}`
+    }
+    lines.forEach((l, i) => { if (l.points) [true, false].forEach(atStart =>
+        ends.set(endKey(i, atStart), [...(ends.get(endKey(i, atStart)) ?? []), i])) })
+
+    const used = new Set<number>()
+    // the line that goes on from line `i` at its end `atStart`: there must be exactly one
+    const next = (i: number, atStart: boolean): number | null =>
+    {
+        const there = ends.get(endKey(i, atStart)) ?? []
+        if (there.length !== 2) return null
+        const other = there[0] === i ? there[1] : there[0]
+        return (other === i || used.has(other)) ? null : other
+    }
+    // walk on from line `i`, leaving it at its start or its end, appending the points passed
+    const walk = (i: number, leaveAtStart: boolean, points: SpanPoint[]): SpanPoint[] =>
+    {
+        let at = i, atStart = leaveAtStart
+        for (let n = next(at, atStart); n !== null; n = next(at, atStart))
+        {
+            used.add(n)
+            const from = atStart ? lines[at].points![0] : lines[at].points!.at(-1)!
+            const pts = lines[n].points!
+            const enteredAtStart = pointKey(pts[0]) === pointKey(from)
+            points.push(...(enteredAtStart ? pts : [...pts].reverse()).slice(1))
+            at = n
+            atStart = !enteredAtStart   // leave it at its other end
+        }
+        return points
+    }
+
+    const runs: Array<{ points: SpanPoint[], closed: boolean, layerName: string, style: EntityStyle | null }> = []
+    lines.forEach((l, i) =>
+    {
+        if (!l.points || used.has(i)) return
+        used.add(i)
+        const forward = walk(i, false, [...l.points])                 // on from its end
+        const back = walk(i, true, [l.points[0]]).slice(1).reverse()   // and back from its start
+        const points = [...back, ...forward]
+        const closed = points.length > 3 && pointKey(points[0]) === pointKey(points[points.length - 1])
+        if (points.length > l.points.length || closed)
+        {
+            runs.push({ points: closed ? points.slice(0, -1) : points, closed, layerName: l.p.layerName, style: l.p.style })
+        }
+        else { used.delete(i) } // alone: written as the curve it is
+    })
+
+    return { runs, rest: lines.filter((l, i) => !(l.points && used.has(i))).map(l => l.p) }
+}
+
 export function buildDXF(
     shapes: meshup.ShapeCollection | AnyShape[],
     annotations: Array<any>,
@@ -989,6 +1107,7 @@ export function buildDXF(
 {
     const options = { all: false, annotations: true, units: 'mm' as ModelUnits, plane: 'auto' as ExportPlane, ...opts }
     const shapeArr: any[] = Array.isArray(shapes) ? shapes : (shapes as any).all?.() ?? (shapes as any).toArray?.() ?? []
+    const rules = options.rules ?? stylerExportRules(stylerOf(shapeArr[0]))
 
     // `all` finally means something: a Shape has no visible() method — only hide()/show()
     // setting style.visible — so the old typeof-check filtered nothing, and a hidden shape
@@ -1030,10 +1149,11 @@ export function buildDXF(
         [b.min.x, b.max.x].forEach(x => [b.min.y, b.max.y].forEach(y => [b.min.z, b.max.z].forEach(z =>
             doc.includeExtent(to.point({ x, y, z }))))))
 
-    exportShapes.forEach(shape =>
+    // How each shape goes out: its layer, and its style where it differs from the layer's
+    const placed = exportShapes.map(shape =>
     {
         const curve = toCurve(shape)
-        if (!curve) return
+        if (!curve) return null
 
         const layerNode = layerNodeOf(shape)
         const layerName = layerNameOf(layerNode)
@@ -1041,11 +1161,17 @@ export function buildDXF(
         doc.ensureLayer(layerName, layerStyle)
 
         // ByLayer unless this shape actually differs from its layer — an override on every
-        // entity would say nothing and would make the layer's own colour unusable.
-        const style = entityStyleOf(cascadedStyleData(shape?.node?.(), shape))
-        doc.withEntityStyle(sameStyle(style, layerStyle) ? null : style,
-            () => writeCurveToDXF(doc, curve, layerName, to))
-    })
+        // entity would say nothing and would make the layer's own colour unusable. The
+        // lineweight is the styler's, on every entity.
+        const style = styledEntityStyle(shape, rules)
+        if (!style) return null // the styler draws no line here
+        return { shape, curve, layerName, style: { ...style, byLayer: sameStyle(style, layerStyle) } }
+    }).filter((p): p is NonNullable<typeof p> => p !== null)
+
+    const { runs, rest } = joinedLineRuns(placed)
+    runs.forEach(run => doc.withEntityStyle(run.style,
+        () => doc.addLWPolyline(run.points.map(p => to.point(p)), run.closed, run.layerName)))
+    rest.forEach(p => doc.withEntityStyle(p.style, () => writeCurveToDXF(doc, p.curve, p.layerName, to)))
 
     if (options.annotations && Array.isArray(annotations))
     {

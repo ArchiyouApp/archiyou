@@ -208,6 +208,27 @@ projection 0.18, white poché) as SVG and Node PDF. Phases B–D get their own p
 - The scene SVG writer (one `<g>` per layer, `--pipeline x:svg`) is unchanged.
 - `sections_test` in the production database is not updated: production does not have the styler yet.
 
+### After phase A, asked for while testing `sections_test` (1:20) in the dev editor
+- The outer lines of a view were drawn at half weight: the frame clipped half of every line on
+  its top and left edges. The frame now leaves room for half the heaviest line.
+- Outlines up to 0.5mm to test; the group and class `silhouette` renamed `outline` (the author
+  found the word too complex); `group('silhouette')` and `col.silhouette` still work.
+- Selectors without the dot of CSS: `styler.set('cut')` (the author's proposal).
+- A rule on a class no line has (the author's `styler.set('section', …)`) now warns, naming
+  the classes there are (the author chose the warning over a drawing-type class).
+- Paint order by line weight, lines before fills, so a heavier line is never half covered
+  (the author asked whether ordering by thickness would fix it and scale).
+- DXF: an outline was loose lines. Joined in the DXF export first; then, on the author's
+  question, in the projection itself (meshup `Mesh._joinPolylines`: joined at any angle where
+  exactly two lines meet), which changed the box-corner test, the curve counts in the
+  projection tests (now counted in segments) and the house fixture.
+- The DXF export draws by the styler (lineweight 370, colour, dashes, not drawn); a
+  projection's lines carry their group names as classes so every exporter knows them.
+- Phase B begun: `hatch` on a rule (named patterns, own lines, a material's texture or an
+  image), fill under the hatch, a part's cut rings as one even-odd path so holes stay open,
+  bitmaps in the Node PDF. Not yet: DXF HATCH, one copy of a bitmap per page, a texture fitted
+  per part, annotations as classes.
+
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|

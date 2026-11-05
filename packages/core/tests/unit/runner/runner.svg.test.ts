@@ -76,10 +76,20 @@ describe('Runner — model/svg projection + thumbnail', () =>
 
         // The HLR pass tessellates every edge at `samples` resolution, so a box's straight
         // edges arrive as 8-point polylines. Collinear simplification must collapse them
-        // back to 2 points — on rectilinear models that is most of the file size.
-        const longest = Math.max(...[...svg.matchAll(/\sd="([^"]*)"/g)]
-            .map((m) => (m[1].match(/L/g) ?? []).length))
-        expect(longest).toBeLessThanOrEqual(4)
+        // back to their corners — on rectilinear models that is most of the file size. (A
+        // path can have several corners: a projection joins the edges of an outline.)
+        const paths = [...svg.matchAll(/\sd="([^"]*)"/g)].map(m => (m[1].match(/-?[\d.]+/g) ?? []).map(Number))
+        const notACorner = paths.some(n =>
+        {
+            const pts = Array.from({ length: n.length / 2 }, (_, i) => [n[2 * i], n[2 * i + 1]])
+            return pts.slice(1, -1).some(([x, y], i) =>
+            {
+                const [ax, ay] = pts[i], [bx, by] = pts[i + 2]
+                const cross = (x - ax) * (by - y) - (y - ay) * (bx - x)
+                return Math.abs(cross) < 1e-3 * Math.hypot(x - ax, y - ay) * Math.hypot(bx - x, by - y)
+            })
+        })
+        expect(notACorner).toBe(false)
     }, 120000)
 
     /**

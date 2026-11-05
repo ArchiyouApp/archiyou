@@ -86,7 +86,7 @@ Of course we have elevations and sections too. Try these out:
 elev = all().elevation('front').move(2000);
 
 sect = all().section([0,0,300],[0,0,1]).move(2000);
-sect.silhouette.dashed();
+sect.outline.dashed();
 sect.cut.strokeWidth(2);
 ```
 ![Elevation and section](./simple-table-more-elev-sect.png)

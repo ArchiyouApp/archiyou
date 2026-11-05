@@ -26,6 +26,7 @@
  *
  */
 
+import { loadStylerHatchImages } from './styler/Styler'
 import type { StylerRule } from './styler/Styler'
 import { ArchiyouModules } from '../types';
 
@@ -437,6 +438,16 @@ export class Docs
         return docs;
     }
 
+    /** Load the bitmaps the hatches of these documents fill with (a material's texture, a file):
+     *  a drawing is written in one go and cannot wait for them. See the Styler. */
+    async _loadHatchImages(docs:Array<Document>):Promise<void>
+    {
+        const viewRules = docs.flatMap(doc => (doc._pages ?? []).flatMap((page:any) => (page._containers ?? [])
+                                .flatMap((c:any) => c._styleRules ?? [])));
+        const rules = [...(this._archiyou?.styler?.rules() ?? []), ...viewRules];
+        if(rules.some(r => r.hatch)){ await loadStylerHatchImages(rules, this._archiyou?.materials) }
+    }
+
     /** Export selected or all Documents to pdfs
      *  @param only string/Array of doc names to export. Default is all
      *  @returns Either single pdf ArrayBuffer or Record of ArrayBuffers if multiple docs are exported
@@ -448,6 +459,7 @@ export class Docs
 
         // PDF is a thin wrapper over SVG: render each page to a standalone SVG,
         // then let the exporter paint each into its own PDF page (see PDFExporter).
+        await this._loadHatchImages(docs);
         const pagesByDocName: Record<string, Array<DocSVGPage>> = {};
         for (const doc of docs)
         {
@@ -455,6 +467,7 @@ export class Docs
         }
 
         const pdfBuffersByDocName = await this._pdfExporter.export(pagesByDocName);
+        this._archiyou?.styler?._warnUnmatched(); // rules on classes the drawings do not have
 
         return (Object.keys(pdfBuffersByDocName).length === 1)
                 ? Object.values(pdfBuffersByDocName)[0] // single buffer
@@ -473,12 +486,14 @@ export class Docs
         const onlyDocs = (Array.isArray(only)) ? only : (typeof only === 'string') ? [only] : [];
         const docs = this.getDocs(onlyDocs);
 
+        await this._loadHatchImages(docs);
         const pagesByDocName: Record<string, Array<DocSVGPage>> = {};
         for (const doc of docs)
         {
             pagesByDocName[doc._name] = await doc.toSVGPages(this._assetsCache);
         }
 
+        this._archiyou?.styler?._warnUnmatched(); // rules on classes the drawings do not have
         return (Object.keys(pagesByDocName).length === 1)
                 ? Object.values(pagesByDocName)[0]   // single doc
                 : pagesByDocName;                      // multiple by doc name
@@ -493,12 +508,14 @@ export class Docs
         const onlyDocs = (Array.isArray(only)) ? only : (typeof only === 'string') ? [only] : [];
         const docs = this.getDocs(onlyDocs);
 
+        await this._loadHatchImages(docs);
         const svgStringsByDocName: Record<string, string> = {};
         for (const doc of docs)
         {
             svgStringsByDocName[doc._name] = await doc.toSVG(this._assetsCache);
         }
 
+        this._archiyou?.styler?._warnUnmatched(); // rules on classes the drawings do not have
         return (Object.keys(svgStringsByDocName).length === 1)
                 ? Object.values(svgStringsByDocName)[0]   // single SVG string
                 : svgStringsByDocName;                     // multiple strings by doc name

@@ -111,14 +111,14 @@ export interface ScriptGlobals
     /** Ready-made building parts: walls, floors, frames and part lists. */
     make: Make;
     /** How drawings look: line weights, colours, dashes and fills by class, in millimeters on
-     *  paper. A drawing writes what a line is (`cut`, `hidden`, `silhouette`) and what its shape
+     *  paper. A drawing writes what a line is (`cut`, `hidden`, `outline`) and what its shape
      *  is (`addClass('wall')`, a material) as classes; these rules draw them.
      *
      *  @example
      *  stud = box(38, 184, 2400).addClass('timber')
-     *  styler.set('.cut', { weight: 0.5 })
-     *  styler.set('.cut.timber', { fill: '#e8d9b5' })
-     *  styler.set('.hidden', { visible: false })
+     *  styler.set('cut', { weight: 0.5 })
+     *  styler.set('cut.timber', { fill: '#e8d9b5' })
+     *  styler.set('hidden', { visible: false })
      */
     styler: Styler;
     /** Materials to assign to shapes, with their colour, weight and carbon. */

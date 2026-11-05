@@ -58,15 +58,15 @@ A pipeline only runs when one of its outputs is asked for, or a document that us
 
 ## How drawings look
 
-A drawing writes what each line is as a class: `cut` for what a section cuts through, `visible`, `silhouette` for the outline, `hidden`, `dashed`. It also writes what the shape is: the classes you give it with `addClass()`, and the name and group of its material (`osb`, `wood`). The **styler** draws those classes, in millimeters on paper, so a line has the same weight at 1:20 as at 1:100:
+A drawing writes what each line is as a class: `cut` for what a section cuts through, `visible`, `outline` for the outer contour, `hidden`, `dashed`. It also writes what the shape is: the classes you give it with `addClass()`, and the name and group of its material (`osb`, `wood`). The **styler** draws those classes, in millimeters on paper, so a line has the same weight at 1:20 as at 1:100:
 
 ```js
 stud = box(38, 184, 2400).addClass('timber');
 insulation = box(500, 184, 2400).moveX(300).addClass('insulation');
 
-styler.set('.cut', { weight: 0.5 });                      // every cut line 0.5mm
-styler.set('.cut.insulation', { fill: '#eeeeee' });       // cut insulation filled grey
-styler.set('.hidden', { visible: false });                // no hidden lines
+styler.set('cut', { weight: 0.5 });                       // every cut line 0.5mm
+styler.set('cut.insulation', { fill: '#eeeeee' });        // cut insulation filled grey
+styler.set('hidden', { visible: false });                 // no hidden lines
 
 $pipeline('plan', function()
 {
@@ -75,10 +75,23 @@ $pipeline('plan', function()
 
 docs.create('plan').pipeline('plan')
     .page('main').view('plan', { scale: '1:20' }).shapes('plan')
-    .style({ '.cut.timber': { weight: 0.7 } });           // this view only
+    .style({ 'cut.timber': { weight: 0.7 } });            // this view only
 ```
 
-A rule has `weight`, `color`, `fill`, `dash` (mm on paper, like `[3, 2]`), `opacity` and `visible`. The rule with more classes wins (`.cut.timber` over `.cut`), and between rules with as many classes the later one. A document draws in the styler's ink, not in the colours of the model: say `color: 'model'` in a rule to draw a line in its model colour.
+A rule has `weight`, `color`, `fill`, `dash` (mm on paper, like `[3, 2]`), `opacity` and `visible`. A rule names one class (`cut`) or several that a line has together (`cut.timber`). The rule with more classes wins (`cut.timber` over `cut`), and between rules with as many classes the later one. A document draws in the styler's ink, not in the colours of the model: say `color: 'model'` in a rule to draw a line in its model colour.
+
+What a section cuts is filled white by default, so the lines beyond it do not show through. A rule can fill or hatch it instead:
+
+```js
+styler.set('cut.insulation', { hatch: 'insulation' });                 // a pattern by name
+styler.set('cut.steel', { hatch: { pattern: 'lines', angle: 45, spacing: 1 } });  // your own, mm on paper
+styler.set('cut.timber', { hatch: { image: 'douglas' } });             // the texture of a material
+styler.set('cut.concrete', { fill: '#dddddd', hatch: 'concrete' });   // a hatch over a grey fill
+```
+
+The patterns by name are `diagonal`, `diagonal-back`, `horizontal`, `vertical`, `cross`, `grid`, `dots`, `insulation`, `metal`, `masonry` and `concrete`. A hatch of lines keeps its spacing on paper at any scale; say `anchor: 'model'` to have it scale with the drawing. A bitmap is laid at the size its material says its texture covers, or at `size: [width, height]` in model units. The lines of one part that a section cuts are one shape, so a hole through it (the inside of a tube) stays open.
+
+The DXF export draws by the same rules: line weights, colours, dashes, and what is not drawn.
 
 ## Pipelines of a component
 
