@@ -93,14 +93,20 @@ export class PDFExporter
         }
 
         // In Node we need a jsdom DOM for svg2pdf; in the browser the native DOM is used.
-        if(!this.isBrowser() && !this.isWorker())
-        {
-            await this.loadDomForNode();
-        }
+        // Its globals are only there while rendering, so the rest of the process does not
+        // take itself for a browser afterwards.
+        const restoreGlobals = (!this.isBrowser() && !this.isWorker())
+            ? await this.loadDomForNode().then(() => this._setNodeGlobals())
+            : () => {};
 
-        for(const [docName, pages] of Object.entries(data))
-        {
-            this.blobs[docName] = await this._renderDoc(docName, pages);
+        try {
+            for(const [docName, pages] of Object.entries(data))
+            {
+                this.blobs[docName] = await this._renderDoc(docName, pages);
+            }
+        }
+        finally {
+            restoreGlobals();
         }
 
         // NOTE: callers handle saving/downloading (e.g. the document-viewer downloads
@@ -254,22 +260,62 @@ export class PDFExporter
         return el;
     }
 
-    /** Initialize a jsdom DOM and expose the globals svg2pdf relies on (Node only).
-     *  Must be called before export() when running in Node. */
+    /** Initialize a jsdom DOM (Node only). export() calls it, and sets the globals svg2pdf
+     *  relies on only while rendering (see _setNodeGlobals). */
     async loadDomForNode():Promise<void>
     {
         if(this.isBrowser() || this.isWorker() || this._jsdomWindow){ return; }
 
+        await this.loadJsPDF(); // its fonts measure the text, below
+
         const jsdomPkg = 'jsdom'; // indirection so browser bundlers don't try to resolve it
-        const { JSDOM } = await import(/* @vite-ignore */ jsdomPkg);
-        const dom = new JSDOM(`<!DOCTYPE html><html><body></body></html>`);
+        const { JSDOM, VirtualConsole } = await import(/* @vite-ignore */ jsdomPkg);
+        // a console of its own: svg2pdf tries a canvas first, and jsdom reports that as "not implemented"
+        const dom = new JSDOM(`<!DOCTYPE html><html><body></body></html>`, { virtualConsole: new VirtualConsole() });
         this._jsdomWindow = dom.window;
 
-        // svg2pdf reaches for these globals
+        // svg2pdf parses the <style>s of the SVG in a document of its own (createHTMLDocument), but
+        // jsdom only parses the style sheets of a document that has a window: give it ours. What it
+        // adds there goes when the export is done (see _setNodeGlobals).
+        dom.window.document.implementation.createHTMLDocument = () => dom.window.document;
+
+        // jsdom does no layout, so it has no getBBox(), and its canvas has no 2D context. svg2pdf
+        // measures text with one of them (for text-anchor middle/end): measure with jsPDF's own
+        // metrics of the font the PDF uses instead. Only the width is read.
+        const measurer = new this._jsPDFDoc({ unit: 'pt' });
+        const fontNames = Object.keys(measurer.getFontList());
+        dom.window.SVGElement.prototype.getBBox = function(this:Element)
+        {
+            const fontSize = parseFloat(this.getAttribute('font-size') ?? '16') || 16;
+            const family = (this.getAttribute('font-family') ?? '').split(',')
+                .map(f => f.trim().replace(/^['"]|['"]$/g, ''))
+                .find(f => fontNames.includes(f)) ?? 'helvetica';
+            const bold = /bold|[6-9]00/.test(this.getAttribute('font-weight') ?? '');
+            measurer.setFont(family, bold && family === 'Outfit' ? 'bold' : 'normal');
+            const width = measurer.getStringUnitWidth(this.textContent ?? '') * fontSize;
+            return { x: 0, y: 0, width, height: fontSize };
+        };
+    }
+
+    /** Put the jsdom globals that svg2pdf reaches for on globalThis; returns the function that
+     *  puts back what was there. `window` is left alone: other code tests it to detect a browser. */
+    _setNodeGlobals():() => void
+    {
         const g = globalThis as any;
-        g.window = g.window || dom.window;
-        g.document = g.document || dom.window.document;
-        g.DOMParser = g.DOMParser || dom.window.DOMParser;
+        const w = this._jsdomWindow;
+        const names = ['document', 'DOMParser', 'CSSStyleSheet', 'CSSStyleRule'];
+        const before = names.map(n => [n, Object.getOwnPropertyDescriptor(g, n)] as const);
+        names.forEach(n => { g[n] = w[n]; });
+
+        return () =>
+        {
+            w.document.body.replaceChildren(); // the pages and style sheets of this export
+            before.forEach(([n, d]) =>
+            {
+                if(d){ Object.defineProperty(g, n, d); }
+                else { delete g[n]; }
+            });
+        };
     }
 
     //// FILE SAVE (browser / node file handle) ////
