@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
 
 import { Modeler } from '../../../src/modeler/Modeler'
-import { DXFDocument, writeCurveToDXF } from '../../../src/modeler/DXFExporter'
-import { Styler } from '../../../src/docs/styler/Styler'
+import { DXFDocument, writeCurveToDXF, dxfHatchPattern } from '../../../src/modeler/DXFExporter'
+import { Styler, stylerHatch } from '../../../src/docs/styler/Styler'
 import { Annotator } from '../../../src/annotator/Annotator'
 import type { ArchiyouModules } from '../../../src/types'
 
@@ -91,6 +91,45 @@ describe('Modeler DXF export', () =>
             expect(styled).toContain('\n420\n16711680\n')       // red
         }
         finally { delete modules.styler }
+    })
+
+    it('fills and hatches as HATCH entities, under the lines; a white fill stays on paper', () =>
+    {
+        const modules = (modeler as any).modules
+        const hatches = (dxf: string) => [...dxf.matchAll(/\n0\nHATCH\n[\s\S]*?\n2\n([^\n]+)\n70\n(\d)\n71\n0\n91\n(\d+)\n/g)]
+            .map(m => ({ name: m[1], solid: m[2] === '1', loops: Number(m[3]) }))
+        const tube = () => (modeler.box(100, 100, 300) as any).subtract((modeler.box(80, 80, 400) as any).tmp())
+
+        // the default: a cut is filled white, which is for paper only
+        tube().addClass('steel').section([0, 0, 0])
+        expect(hatches(modeler.toDXF() as string)).toEqual([])
+
+        modeler.reset()
+        modules.styler = new Styler().set('cut.steel', { fill: '#cccccc', hatch: 'metal' })
+        try
+        {
+            tube().addClass('steel').section([0, 0, 0])
+            const dxf = modeler.toDXF() as string
+            // a solid fill and a hatch over it, each with the outside and the hole of the tube
+            expect(hatches(dxf)).toEqual([{ name: 'SOLID', solid: true, loops: 2 }, { name: 'ANSI31', solid: false, loops: 2 }])
+            expect(dxf.indexOf('\nHATCH\n')).toBeLessThan(dxf.indexOf('\nLWPOLYLINE\n')) // the lines go over
+            expect(dxf).toMatch(/\n78\n1\n53\n45\n/) // one family of lines, at 45 degrees
+        }
+        finally { delete modules.styler }
+    })
+
+    it('turns the hatch patterns into DXF pattern lines', () =>
+    {
+        const zigzag = dxfHatchPattern(stylerHatch('insulation'), 10)!
+        expect(zigzag.name).toBe('ZIGZAG')
+        expect(zigzag.lines).toHaveLength(2)                           // up and down
+        expect(zigzag.lines[0].offset).toEqual([0, 30])                // rows 3mm apart at 1:10
+        expect(zigzag.lines[0].dashes[0]).toBeCloseTo(15 * Math.sqrt(5), 6)
+
+        const lines = dxfHatchPattern(stylerHatch({ pattern: 'lines', angle: 30, spacing: 2 }), 10)!
+        expect(lines.lines[0].angle).toBe(30)
+        expect(Math.hypot(...lines.lines[0].offset)).toBeCloseTo(20, 6)   // 2mm at 1:10
+        expect(dxfHatchPattern(stylerHatch({ image: 'osb' }), 10)).toBeNull() // no bitmap in a HATCH
     })
 
     it('does not join lines of different parts', () =>

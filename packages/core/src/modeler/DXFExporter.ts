@@ -35,7 +35,7 @@ import type { ModelUnits } from './types'
 import type { AnyShape } from './types'
 import { MM_PER_UNIT } from '../units/UnitConverter'
 import { Color } from '@archiyou/meshup'
-import { resolveStylerRule, stylerExportRules, stylerOf, type StylerRuleEntry } from '../docs/styler/Styler'
+import { resolveStylerRule, stylerExportRules, stylerOf, stylerHatch, type StylerRuleEntry } from '../docs/styler/Styler'
 import { detectExportFrame, isOnPlane, planeTolerance, projectorFor, shapeBox, IDENTITY_PROJECTOR,
     PLANE_TOLERANCE, type Box, type ExportPlane, type Projector, type Vec3 } from './utils'
 
@@ -214,6 +214,11 @@ export class DXFDocument
     }
 
     /** Model units per millimeter on paper: DIMSCALE */
+    unitsPerMm(): number
+    {
+        return this._unitsPerMm()
+    }
+
     private _unitsPerMm(): number
     {
         return this.drawingScale() / (MM_PER_UNIT[this._units] ?? 1)
@@ -292,6 +297,48 @@ export class DXFDocument
      *  storing line and arc runs in one entity, and what a filleted outline should be
      *  written as. Group 42 is emitted only where a bulge is non-zero, and the spec's
      *  order within a vertex (10, 20, [40], [41], [42]) is what readers expect. */
+    /** A HATCH over closed loops (outer edges and holes alike: CAD fills by odd parity, so a loop
+     *  inside another is a hole). Solid, or with pattern lines in drawing coordinates. `name` is a
+     *  standard pattern name for readers that draw by name and not by the lines given (LibreCAD);
+     *  `angle` and `scale` say how that standard pattern is turned and scaled. */
+    addHatch(loops: Vec3[][], layer: string,
+        pattern: { solid: true } | { name: string, angle: number, scale: number, lines: DXFHatchLine[] }): void
+    {
+        const usable = loops.filter(l => l.length >= 3)
+        if (usable.length === 0) return
+        const solid = 'solid' in pattern
+        let s = this._entityHeader('HATCH', layer, 'AcDbHatch')
+            + this._pair(10, 0) + this._pair(20, 0) + this._pair(30, 0)
+            + this._pair(210, 0) + this._pair(220, 0) + this._pair(230, 1)
+            + this._pair(2, solid ? 'SOLID' : pattern.name)
+            + this._pair(70, solid ? 1 : 0)
+            + this._pair(71, 0)
+            + this._pair(91, usable.length)
+        usable.forEach((loop, i) =>
+        {
+            s += this._pair(92, i === 0 ? 3 : 2) // a polyline loop; the first one external
+                + this._pair(72, 0) + this._pair(73, 1) + this._pair(93, loop.length)
+            loop.forEach(p => { s += this._pair(10, fmt(p.x)) + this._pair(20, fmt(p.y)) })
+            s += this._pair(97, 0)
+        })
+        s += this._pair(75, 0) // odd parity: a loop inside a loop is a hole
+            + this._pair(76, 1)
+        if (!solid)
+        {
+            s += this._pair(52, fmt(pattern.angle)) + this._pair(41, fmt(pattern.scale))
+                + this._pair(77, 0) + this._pair(78, pattern.lines.length)
+            pattern.lines.forEach(l =>
+            {
+                s += this._pair(53, fmt(l.angle)) + this._pair(43, fmt(l.base[0])) + this._pair(44, fmt(l.base[1]))
+                    + this._pair(45, fmt(l.offset[0])) + this._pair(46, fmt(l.offset[1]))
+                    + this._pair(79, l.dashes.length)
+                l.dashes.forEach(d => { s += this._pair(49, fmt(d)) })
+            })
+        }
+        s += this._pair(98, 0)
+        this._entities.push(s)
+    }
+
     addLWPolyline(pts: Vec3[], closed: boolean, layer = '0', bulges?: number[]): void
     {
         if (pts.length < 2) return
@@ -923,6 +970,99 @@ function asCircle(spans: SpanParams[], closed: boolean): { center: SpanPoint, ra
 const sameStyle = (a: EntityStyle, b: EntityStyle): boolean =>
     a.dashed === b.dashed && String(a.colorRgb) === String(b.colorRgb)
 
+/** One family of parallel lines of a hatch: through `base`, at `angle` degrees, the next one
+ *  `offset` away (both in drawing coordinates), drawn as `dashes` (dash > 0, gap < 0, 0 a dot;
+ *  none: unbroken). As DXF's pattern definition lines. */
+export interface DXFHatchLine { angle: number, base: [number, number], offset: [number, number], dashes: number[] }
+
+/** A styler hatch as DXF pattern lines, `unitsPerMm` model units per paper millimeter. Null for
+ *  a bitmap, which a HATCH cannot carry. The SVG patterns (see the Styler) are drawn the same way. */
+export function dxfHatchPattern(hatch: ReturnType<typeof stylerHatch>, unitsPerMm: number):
+    { name: string, angle: number, scale: number, lines: DXFHatchLine[] } | null
+{
+    if (!hatch || hatch.image) return null
+    const s = (hatch.anchor === 'model') ? hatch.spacing : hatch.spacing * unitsPerMm
+    const a = hatch.angle ?? 0
+    const rad = (d: number) => d * Math.PI / 180
+    // turned by the hatch's angle, about the origin
+    const turn = ([x, y]: [number, number]): [number, number] =>
+        [x * Math.cos(rad(a)) - y * Math.sin(rad(a)), x * Math.sin(rad(a)) + y * Math.cos(rad(a))]
+    const family = (angle: number, base: [number, number], offset: [number, number], dashes: number[]): DXFHatchLine =>
+        ({ angle: angle + a, base: turn(base), offset: turn(offset), dashes })
+
+    // the standard patterns these come closest to, for readers that only read the name:
+    // ANSI31 and ANSI37 are 45 degrees at 3.175 apart, ZIGZAG and DOTS are 0.125 and 0.0625 apart
+    switch (hatch.pattern)
+    {
+        case 'cross':
+            return { name: 'ANSI37', angle: a - 45, scale: s / 3.175,
+                lines: [family(0, [0, 0], [0, s], []), family(90, [0, 0], [-s, 0], [])] }
+        case 'dots':
+            return { name: 'DOTS', angle: a, scale: s / 0.0625,
+                lines: [family(0, [s / 2, s / 2], [0, s], [0, -s])] }
+        case 'zigzag':
+        {
+            // up from (0,0) to (s/2,s), down to (s,0); each its own family of dashes, rows s apart
+            const up = Math.atan2(2, 1) * 180 / Math.PI
+            const len = s * Math.sqrt(5) / 2
+            return { name: 'ZIGZAG', angle: a, scale: s / 0.125,
+                lines: [family(up, [0, 0], [0, s], [len, -len]), family(-up, [s / 2, s], [0, s], [len, -len])] }
+        }
+        default:
+            return { name: 'ANSI31', angle: a - 45, scale: s / 3.175, lines: [family(0, [0, 0], [0, s], [])] }
+    }
+}
+
+/** The fills and hatches of the closed shapes, as HATCH entities: one per layer and kind of part,
+ *  its shapes as loops, so a hole in a part (rings of a cut inside each other) stays open. Written
+ *  before the lines, which then lie over them. A white fill is left out: on paper it covers what
+ *  lies beyond a cut, in CAD it would be a white blot on the screen. A bitmap hatch has no DXF
+ *  form: its fill is written, if it has one. */
+function writeFillsToDXF(doc: DXFDocument, shapes: any[], rules: ReadonlyArray<StylerRuleEntry>, to: Projector): void
+{
+    const toRgb = (c: string): RGB | null => { try { return hexToRgb(new Color(c as any).toHex()) } catch { return null } }
+    const groups = new Map<string, { layer: string, loops: Vec3[][], fill: RGB | null, hatch: ReturnType<typeof stylerHatch> }>()
+
+    shapes.forEach(shape =>
+    {
+        const curve = toCurve(shape) as any
+        if (!curve?.isClosed?.()) return
+        const classes = ['line', ...(shape?.style?.classes ?? [])]
+        const rule = resolveStylerRule(rules, classes)
+        if (rule.visible === false) return
+
+        const model = entityStyleOf(cascadedStyleData(shape?.node?.(), shape))
+        const fill = (typeof rule.fill !== 'string' || rule.fill === 'none') ? null
+                   : (rule.fill === 'model') ? model.colorRgb : toRgb(rule.fill)
+        const white = fill && fill.every(v => v >= 250)
+        const hatch = stylerHatch(rule.hatch)
+        const lines = hatch && !hatch.image ? hatch : null
+        if ((!fill || white) && !lines) return
+
+        const layer = layerNameOf(layerNodeOf(shape))
+        const key = JSON.stringify([layer, classes])
+        const pts = (curve.tessellate() as Vec3[]).map(p => to.point(p))
+        const loop = (pts.length > 1 && pts[0].x === pts.at(-1)!.x && pts[0].y === pts.at(-1)!.y) ? pts.slice(0, -1) : pts
+        const group = groups.get(key) ?? { layer, loops: [], fill: white ? null : fill, hatch: lines }
+        group.loops.push(loop)
+        groups.set(key, group)
+    })
+
+    groups.forEach(g =>
+    {
+        if (g.fill)
+        {
+            doc.withEntityStyle({ colorRgb: g.fill, dashed: false }, () => doc.addHatch(g.loops, g.layer, { solid: true }))
+        }
+        const pattern = dxfHatchPattern(g.hatch, doc.unitsPerMm())
+        if (pattern)
+        {
+            doc.withEntityStyle({ colorRgb: toRgb(g.hatch!.color ?? '#000000') ?? [0, 0, 0], dashed: false, lineweight: g.hatch!.weight },
+                () => doc.addHatch(g.loops, g.layer, pattern))
+        }
+    })
+}
+
 /** How a shape is drawn in the DXF: by the styler's rules for its classes (what it is in the
  *  drawing, `cut`, `outline`, …, and what it is, `timber`, …), as a drawing on paper is. Its
  *  colour and dashes in the model apply where a rule says `color: 'model'` (an export's rules do,
@@ -1167,6 +1307,9 @@ export function buildDXF(
         if (!style) return null // the styler draws no line here
         return { shape, curve, layerName, style: { ...style, byLayer: sameStyle(style, layerStyle) } }
     }).filter((p): p is NonNullable<typeof p> => p !== null)
+
+    // fills and hatches first: the lines go over them
+    writeFillsToDXF(doc, exportShapes, rules, to)
 
     const { runs, rest } = joinedLineRuns(placed)
     runs.forEach(run => doc.withEntityStyle(run.style,

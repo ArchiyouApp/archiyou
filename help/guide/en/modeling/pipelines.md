@@ -91,7 +91,7 @@ styler.set('cut.concrete', { fill: '#dddddd', hatch: 'concrete' });   // a hatch
 
 The patterns by name are `diagonal`, `diagonal-back`, `horizontal`, `vertical`, `cross`, `grid`, `dots`, `insulation`, `metal`, `masonry` and `concrete`. A hatch of lines keeps its spacing on paper at any scale; say `anchor: 'model'` to have it scale with the drawing. A bitmap is laid at the size its material says its texture covers, or at `size: [width, height]` in model units. The lines of one part that a section cuts are one shape, so a hole through it (the inside of a tube) stays open.
 
-The DXF export draws by the same rules: line weights, colours, dashes, and what is not drawn.
+The DXF export draws by the same rules: line weights, colours, dashes, and what is not drawn. Fills and hatches become HATCH entities under the lines, with a hole in a part kept open. Two things stay on paper: the white fill of a cut (in CAD it would only be a white patch) and a bitmap, which a HATCH cannot hold.
 
 ## Pipelines of a component
 

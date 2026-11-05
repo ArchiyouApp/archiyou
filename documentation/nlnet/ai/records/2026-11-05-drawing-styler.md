@@ -226,8 +226,11 @@ projection 0.18, white poché) as SVG and Node PDF. Phases B–D get their own p
   projection's lines carry their group names as classes so every exporter knows them.
 - Phase B begun: `hatch` on a rule (named patterns, own lines, a material's texture or an
   image), fill under the hatch, a part's cut rings as one even-odd path so holes stay open,
-  bitmaps in the Node PDF. Not yet: DXF HATCH, one copy of a bitmap per page, a texture fitted
-  per part, annotations as classes.
+  bitmaps in the Node PDF. Not yet: one copy of a bitmap per page, a texture fitted per part,
+  annotations as classes.
+- DXF fills and hatches as HATCH entities (the author asked to finish them): SOLID for a fill,
+  pattern lines for a hatch with the nearest standard name for readers that go by name; the
+  white cut fill and bitmaps stay on paper. Checked with ezdxf (audit clean, rendered).
 
 ## Commits
 | Commit | Subject | Prompt it answers |
