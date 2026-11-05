@@ -20,6 +20,7 @@ import type { ModuleRegistry } from "./modules/ModuleRegistry";
 import type { RecipeApi } from "./modeler/Recipe";
 import type { SceneNodeData } from "./modeler/types";
 import type { Animator } from "./animator/Animator";
+import type { Styler } from "./docs/styler/Styler";
 import type { AnimationInfo } from "./animator/types";
 
 
@@ -37,6 +38,8 @@ export interface ArchiyouModules
     /** Made on first use: a script that never names `animator` has none (see Runner
      *  _addModulesToScopeState and animator/Animator.ts). */
     animator?: Animator
+    /** How drawings are drawn. Made on first use, like the animator; none means the default rules. */
+    styler?: Styler
     /** Optional, separately-distributed script modules (see src/modules/). Lets
      *  one module reach another, and the built-ins reach modules. Undefined in
      *  contexts that build an ArchiyouModules without a Runner. */

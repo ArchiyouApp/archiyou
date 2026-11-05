@@ -448,6 +448,30 @@ export class Shape
     /** This Shape's style resolved against the scene graph: the node's cascaded style is the
      *  base, the Shape's own explicit properties win. Same rule the GLTF exporter applies, so
      *  what you query here is what actually gets exported. */
+    /** Say what this Shape is, for drawings: `stud.addClass('wood')`. See the styler. */
+    addClass(...names:Array<string>):this
+    {
+        this.style.addClass(...names);
+        return this;
+    }
+
+    removeClass(...names:Array<string>):this
+    {
+        this.style.removeClass(...names);
+        return this;
+    }
+
+    /** The classes of this Shape (see addClass) */
+    classes():Array<string>
+    {
+        return this.style.classes;
+    }
+
+    hasClass(name:string):boolean
+    {
+        return this.style.hasClass(name);
+    }
+
     _effectiveStyle():Style
     {
         if(!this._node){ return this.style }

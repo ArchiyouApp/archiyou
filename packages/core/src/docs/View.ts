@@ -6,6 +6,7 @@ import type { AnyShapeOrCollection } from '../modeler/types'
 import { stripOuterSVGTags, getPreserveAspectRatio, convertValueFromToUnit } from './utils'
 import { collectAnnotations, annotationMarginMm } from '../annotator/annotationLayer'
 import { drawableLayer, renderDrawingFromLayer, type SVGLayer } from '../modeler/SVGExporter'
+import { STYLER_DEFAULT_RULES, toStylerRuleEntries, type Styler, type StylerRule, type StylerRuleEntry } from './styler/Styler'
 import { resolveScale, scaleLabel, type ResolvedScale } from './scale'
 import { buildViewFurniture, type Furniture } from './viewFurniture'
 import type { ViewOptions, CaptionOptions, BarOptions } from './types'
@@ -34,8 +35,8 @@ export class View extends Container
     _lineWeightMm:number|undefined = undefined;
     /** Extra CSS rules for this view's drawing — see css(). */
     _css:Record<string,string>|null = null;
-    _style:any; // general style (TODO)
-    _styles:{[key:string]:any}; // style overrides (TODO)
+    /** How classes are drawn in this view, on top of the styler's — see style(). */
+    _styleRules:Array<StylerRuleEntry> = [];
     _dimension:any; // TODO
     _forceAll:boolean = false;
 
@@ -223,6 +224,7 @@ export class View extends Container
                         all: this._forceAll,
                         scoped: this._svgScope(),
                         css: this._scopedCss(),
+                        rules: this._rules(),
                         // the document's unit system, which may differ from the run's; metric
                         // documents write their bare numbers in mm, whatever the model unit
                         format: {
@@ -437,6 +439,35 @@ export class View extends Container
         return this;
     }
 
+    /** How classes are drawn in this view only, on top of the styler's rules (see Styler):
+     *  `view.style({ '.cut': { weight: 0.7 }, '.hidden': { visible: false } })`. Weights and
+     *  dashes in millimeters on paper. */
+    style(rules:Record<string,StylerRule>):this
+    {
+        toStylerRuleEntries(rules, 'View.style()').forEach(entry =>
+        {
+            const at = this._styleRules.findIndex(r => r.selector === entry.selector);
+            if(at >= 0){ this._styleRules[at] = { ...this._styleRules[at], ...entry } }
+            else { this._styleRules.push(entry) }
+        });
+        return this;
+    }
+
+    /** The rules this view is drawn by: the run's styler (or the defaults), then this view's own */
+    _rules():Array<StylerRuleEntry>
+    {
+        const styler = (this._page?._docs?._archiyou as any)?.styler as Styler|undefined;
+        const rules = (styler?.rules() ?? STYLER_DEFAULT_RULES).map(r => ({ ...r }));
+        // in place, as Styler.set(): a view's `.line` must not jump ahead of `.cut`
+        this._styleRules.forEach(entry =>
+        {
+            const at = rules.findIndex(r => r.selector === entry.selector);
+            if(at >= 0){ rules[at] = { ...rules[at], ...entry } }
+            else { rules.push({ ...entry }) }
+        });
+        return rules;
+    }
+
     /** This view's extra rules, scoped, as a stylesheet body. */
     _scopedCss():string|undefined
     {
@@ -460,6 +491,7 @@ export class View extends Container
         if(options.lineWeight !== undefined){ this._lineWeightMm = options.lineWeight }
         if(options.overflow !== undefined){ this._overflow = options.overflow }
         if(options.css !== undefined){ this.css(options.css) }
+        if(options.style !== undefined){ this.style(options.style) }
 
         return this;
     }

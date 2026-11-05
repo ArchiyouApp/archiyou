@@ -101,7 +101,7 @@ const OBJECT_PROTOTYPE_METHODS = new Set([
 /** Known internal/private names to exclude even without underscore prefix. */
 const INTERNAL_NAMES = new Set([
     'inner', 'type', 'subtype', 'isShape', 'isShapeCollection', 'dispose',
-    'id', 'csgrs', 'style', 'metadata',
+    'id', 'csgrs', 'metadata',
     // duck-type guards
     'isShapeClass',
     // low-level kernel bridges not useful in user scripts
@@ -442,6 +442,8 @@ const animationMethods = extractPublicMethods(
     new Set(['info']),
 )
 
+const stylerMethods = extractPublicMethods(getClass('src/docs/styler/Styler.ts', 'Styler'))
+
 /* ------------------------------------------------------------------ */
 /*  Assemble: shapeClasses                                              */
 /* ------------------------------------------------------------------ */
@@ -544,6 +546,11 @@ const shapeClasses: ShapeClassInfo[] = [
         label: 'Animation',
         detail: 'an animation: keys, layouts, visibility, colour, opacity and a camera over time',
         members: animationMethods,
+    },
+    {
+        label: 'Styler',
+        detail: 'the styler global: how drawings look, by class, in mm on paper',
+        members: stylerMethods,
     },
 ]
 

@@ -1216,22 +1216,23 @@ export class Make
         removedStuds.removeFromScene();
         primaryStuds.remove(removedStuds);
 
+        // the classes say what each part is to a drawing (see the styler): `.cut.timber`, `.cut.insulation`
         return wall
             .addGroup('diagram', wallDiagram.hide())
-            .addGroup('gridlines', gridLines.color('blue').dashed())
-            .addGroup('studs', primaryStuds.color('green'))
-            .addGroup('plates', plates.color('green'))
-            .addGroup('cripplesTop', crippleStudsTop.color('green'))
-            .addGroup('cripplesBottom', crippleStudsBottom.color('green'))
+            .addGroup('gridlines', gridLines.color('blue').dashed().addClass('gridline'))
+            .addGroup('studs', primaryStuds.color('green').addClass('timber', 'stud'))
+            .addGroup('plates', plates.color('green').addClass('timber', 'plate'))
+            .addGroup('cripplesTop', crippleStudsTop.color('green').addClass('timber', 'cripple'))
+            .addGroup('cripplesBottom', crippleStudsBottom.color('green').addClass('timber', 'cripple'))
             .addGroup(
                 'openingFramesHorizontals',
-                openingFramesHorizontals.color('red')
+                openingFramesHorizontals.color('red').addClass('timber', 'opening-frame')
             )
-            .addGroup('openingFramesVerticals', openingFramesVerticals.color('red'))
-            .addGroup('openingKingStuds', openingKingStuds.color('brown'))
-            .addGroup('openingJackStuds', openingJackStuds.color('brown'))
+            .addGroup('openingFramesVerticals', openingFramesVerticals.color('red').addClass('timber', 'opening-frame'))
+            .addGroup('openingKingStuds', openingKingStuds.color('brown').addClass('timber', 'king-stud'))
+            .addGroup('openingJackStuds', openingJackStuds.color('brown').addClass('timber', 'jack-stud'))
             .addGroup('openingDiagrams', checkedOpenings.color('grey').hide())
-            .addGroup('insulation', insulation.color('#222'));
+            .addGroup('insulation', insulation.color('#222').addClass('insulation'));
     }
 
     //// 2D LAYOUTS ////

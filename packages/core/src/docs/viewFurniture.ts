@@ -117,7 +117,9 @@ function normalizeCaption(input:FurnitureInput):ResolvedCaption|null
     // A fitted drawing is at no particular scale, so saying one would be noise — unless the
     // script asks for it outright.
     const withScale = options.scale ?? !!input.hasRequestedScale;
-    const label = withScale ? (input.scale?.label ?? '') : '';
+    // and not twice: a caption that already says it ('Section 1:50') gets no second one
+    const said = !!input.scale?.label && name.includes(input.scale.label) && options.scale === undefined;
+    const label = (withScale && !said) ? (input.scale?.label ?? '') : '';
 
     const format = options.format ?? '{name} — {scale}';
     let text = (name && label) ? format.replace('{name}', name).replace('{scale}', label)

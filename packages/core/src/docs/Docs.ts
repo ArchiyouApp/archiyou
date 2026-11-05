@@ -26,6 +26,7 @@
  *
  */
 
+import type { StylerRule } from './styler/Styler'
 import { ArchiyouModules } from '../types';
 
 import { ShapeCollection } from '@archiyou/meshup';
@@ -353,6 +354,7 @@ export class Docs
     shapes(shapes:ShapeCollection|string, all:boolean=false):Document { return this.checkAndMakeDefaultDoc().shapes(shapes, all); }
     zoom(level:number):Document { return this.checkAndMakeDefaultDoc().zoom(level); }
     scale(factor?:ScaleInput):Document { return this.checkAndMakeDefaultDoc().scale(factor); }
+    style(rules:Record<string,StylerRule>):Document { return this.checkAndMakeDefaultDoc().style(rules); }
     merge(d:Document|Array<Document>|Record<string, Document>, namePrefix:string=''):Document { return this.checkAndMakeDefaultDoc().merge(d, namePrefix); }
 
     //// OUTPUT ////

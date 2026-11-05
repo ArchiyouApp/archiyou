@@ -191,6 +191,22 @@ projection 0.18, white poché) as SVG and Node PDF. Phases B–D get their own p
 - Name of the central stylesheet: `Styler` / `styler` (the agent proposed `StyleSheet` / `styles`).
 - Drawings use the Styler's ink; 3D model colours only where a rule asks for them.
 - Scope of this round: Node PDF first (show the PDF), then phase A.
+- Approved the Node PDF result (sections_test through the Runner) and its commit.
+
+### Phase A as built, against the plan
+- Default weights: `.line` stays 0.25 (the old default, so existing drawings keep their weight),
+  `.silhouette` 0.35, `.hidden` 0.18 dashed 3/2, `.cut` 0.5 with a white fill, `.dashed` 2/1.
+- No implicit class from a layer's name: a projection draws into the layer that is active when
+  it runs, so that layer's name would land on line work it has nothing to do with. Layers carry
+  classes explicitly (`layer('frame').addClass('frame')`), which cascade.
+- Exports on their own (`shape.toSVG()`, svg outputs) keep the model colours (a laser cutter
+  reads them); documents draw in the styler's ink, as decided. A brep `lineWidth()` no longer
+  reaches the SVG: one channel, the stylesheet.
+- Annotations (dimension lines, labels) keep their inline styling; moved to phase B.
+- `make.wall()` gives its parts classes (`timber`, `stud`, `plate`, …, `insulation`); the house
+  fixture's iso line work changed with it (refreshed).
+- The scene SVG writer (one `<g>` per layer, `--pipeline x:svg`) is unchanged.
+- `sections_test` in the production database is not updated: production does not have the styler yet.
 
 ## Commits
 | Commit | Subject | Prompt it answers |

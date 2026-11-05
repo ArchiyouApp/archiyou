@@ -183,6 +183,7 @@ topLevelCompletions.push(
   { label: 'docs',    type: 'variable', detail: 'Documents: pages with views, text and images' },
   { label: 'make',    type: 'variable', detail: 'Make: frames, walls, boarding, packing and part lists' },
   { label: 'animator', type: 'variable', detail: 'Animator: animations of the model, baked into its GLB' },
+  { label: 'styler', type: 'variable', detail: 'Styler: how drawings look, by class, in mm on paper' },
   { label: '$handle', type: 'function', detail: '(): Handle',
     info: 'Make a handle: a point in the viewer that users drag to change a parameter' },
 );
@@ -460,7 +461,7 @@ const memberMap = new Map<string, Completion[]>();
 
 /** Classes that are not shapes: their members only show where the type is known (a Handle
  *  after `$handle()`, Make after `make.`), and they are not made with `new` */
-const NON_SHAPE_CLASSES = new Set(['Handle', 'Docs', 'Document', 'Make', 'Animator', 'Animation']);
+const NON_SHAPE_CLASSES = new Set(['Handle', 'Docs', 'Document', 'Make', 'Animator', 'Animation', 'Styler']);
 
 for (const cls of shapeClasses)
 {
@@ -686,6 +687,17 @@ export function archiyouCompletions(
       return {
         from: memberMatch.from + 1,
         options: memberMap.get('Make') ?? [],
+        validFor: /^\w*$/,
+      };
+    }
+
+    // `styler.` and a chain of set() on it → Styler
+    const stylerChain = chainBackwards(textBefore);
+    if (stylerChain?.root === 'styler' && stylerChain.calls.every(c => c === 'set' || c === 'remove' || c === 'reset'))
+    {
+      return {
+        from: memberMatch.from + 1,
+        options: memberMap.get('Styler') ?? [],
         validFor: /^\w*$/,
       };
     }

@@ -49,6 +49,8 @@ import { detectExportFrame, drawnInPlane, isPlanFrame, planeTolerance, projector
 import { annotationLayer, annotationMarginMm, collectAnnotations } from '../annotator/annotationLayer'
 import type { AnnotationFormat } from '../annotator/annotationLayer'
 import { isKernelShapeCollection } from './typeguards'
+import { STYLER_DEFAULT_RULES, STYLER_EXPORT_RULES, compileStylerRules, modelColorClass, modelColorsIn, withLineWeight } from '../docs/styler/Styler'
+import type { StylerRuleEntry } from '../docs/styler/Styler'
 
 //// TYPES ////
 
@@ -271,22 +273,6 @@ function stylesheet(strokeWidth: number, scope: string = ''): string
         + '</style>'
 }
 
-/** Paper ink: a real width, in model units, that lands at the intended millimeters once the
- *  drawing is placed at its scale. Black rather than theme-aware — this is print. */
-function stylesheetMm(strokeWidth: number, scope: string = ''): string
-{
-    // Dashes tied to the line weight, so hidden lines keep the same rhythm at any scale.
-    const dash = `${+(strokeWidth * 12).toFixed(6)} ${+(strokeWidth * 8).toFixed(6)}`
-    return '<style>'
-        + `${scope}.line{fill:none;stroke:black;stroke-width:${strokeWidth};`
-        + 'stroke-linecap:round;stroke-linejoin:round}'
-        + `${scope}.hidden{stroke:#888;stroke-dasharray:${dash}}`
-        // Opaque face fills, emitted only by the 'painter' HLR strategy: they exist to cover
-        // the shapes drawn before them, which is that strategy's entire occlusion mechanism.
-        + `${scope}.fill{fill:#fff;stroke:none}`
-        + '</style>'
-}
-
 /** Frame a box: pad it, optionally square it, and render the viewBox attribute value. */
 function viewBoxFor(box: Box2D, padding: number, square: boolean, decimals: number): string
 {
@@ -425,22 +411,54 @@ function prepareCurves(collection: any): Array<PreparedCurve>
 
 //// KERNEL LINE-WORK ////
 
-/** Which drawing group each curve belongs to, as meshup's own exporter decides it: a curve
- *  can be in several, later ones win, and the per-shape provenance tags (`shape-0`, …) only
- *  fill a gap — they say where a curve came from, not how to draw it. */
-function meshGroupClasses(collection: any): Map<any, string>
+/** A class name as CSS reads it (see meshup Style.CLASS_NAME_RE) */
+const CLASS_NAME_RE = /^-?[_a-zA-Z][_a-zA-Z0-9-]*$/
+
+/** The drawing groups each curve belongs to: what it is in the drawing (`cut`, `visible`,
+ *  `silhouette`, `hidden`, …), every one of them. The per-shape provenance tags (`shape-0`, …)
+ *  are left out: they say where a curve came from, not what it is. */
+function meshGroupClasses(collection: any): Map<any, Array<string>>
 {
-    const curveToGroup = new Map<any, string>()
+    const curveToGroups = new Map<any, Array<string>>()
     collection?._groups?.forEach?.((groupCol: any, groupName: string) =>
     {
-        const isProvenance = /^shape-\d+$/.test(groupName)
+        if (/^shape-\d+$/.test(groupName) || !CLASS_NAME_RE.test(groupName)) return
         groupCol?.toArray?.().forEach((shape: any) =>
         {
-            if (isProvenance && curveToGroup.has(shape)) return
-            curveToGroup.set(shape, groupName)
+            const groups = curveToGroups.get(shape) ?? []
+            if (!groups.includes(groupName)) groups.push(groupName)
+            curveToGroups.set(shape, groups)
         })
     })
-    return curveToGroup
+    return curveToGroups
+}
+
+/** The classes a shape adds to its line work from its style: its own (and its layers') classes,
+ *  `dashed` for a dashed line, and the class of its colour (see Styler modelColorClass). Only what
+ *  was set explicitly: the kernel default colour is nobody's choice. */
+function styleClasses(style: any): Array<string>
+{
+    const explicit = style?.explicitData?.() ?? {}
+    const color = explicit.stroke?.color ?? explicit.color
+    return [
+        ...(explicit.classes ?? []),
+        ...((explicit.stroke?.dash?.length ?? 0) > 0 ? ['dashed'] : []),
+        ...(typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? [modelColorClass(color)] : []),
+    ]
+}
+
+/** The class attribute of a drawn element: `line` first, then the rest, once each */
+function classAttr(classes: Array<string>): string
+{
+    return [...new Set(['line', ...classes])].join(' ')
+}
+
+/** Cut line work last: what a section cuts through covers what lies beyond it (see the
+ *  Styler's `.cut` fill). Otherwise in the order drawn. */
+function cutLast(elements: Array<string>): Array<string>
+{
+    const isCut = (e: string) => /\sclass="[^"]*\bcut\b/.test(e)
+    return [...elements.filter(e => !isCut(e)), ...elements.filter(isCut)]
 }
 
 /** The 2D line-work of a mesh-kernel Shape or ShapeCollection: its curves, and the faces
@@ -461,22 +479,22 @@ function meshDrawableLayer(collection: any, plane: ExportPlane): SVGLayer
     const elements: Array<string> = []
     let box: Box2D | null = null
 
-    // Drawn in the cascaded style: this layer already writes a shape's own colour inline, so
-    // dropping the colour its LAYER gave it was the odd one out.
+    /*  Drawn in the cascaded style, so the classes and colour a LAYER gave a shape are its own
+        too. Only as classes: how a line looks is the stylesheet's to say (see the Styler), and
+        the presentation attributes meshup writes lost to it anyway, a CSS rule beats them. */
     withCascadedStyles(drawn, () =>
     {
         drawables.forEach((shape: any, i: number) =>
         {
-            const groupName = groups.get(shape)
-            const cssClass = 'line' + (groupName ? ` ${groupName}` : '')
+            const cssClass = classAttr([...(groups.get(shape) ?? []), ...styleClasses(drawn[i]?.style)])
             const elem = drawn[i]?.toSVGElem?.(cssClass, { omitDefaults: true, nonScalingStroke: false })
             if (typeof elem !== 'string' || !elem) return
-            elements.push(elem)
+            elements.push(elem.replace(STYLE_ATTR_RE, ''))
             box = unionBox(box, boxSVG(drawn[i]))
         })
     })
 
-    return { elements, box, frame }
+    return { elements: cutLast(elements), box, frame }
 }
 
 /** The 2D line-work of a brep Shape or ShapeCollection.
@@ -489,17 +507,36 @@ function brepDrawableLayer(collection: any, all: boolean): SVGLayer
 {
     const edges = collection?._get2DXYShapeEdges?.(all)
 
+    // the groups of the collection (`cut`, …) by the shape in it
+    const groupsOf = new Map<any, Array<string>>()
+    Object.entries(collection?._groups ?? {}).forEach(([name, shapes]) =>
+    {
+        if (!CLASS_NAME_RE.test(name)) return
+        ;(shapes as Array<any>).forEach(shape => groupsOf.set(shape, [...(groupsOf.get(shape) ?? []), name]))
+    })
+
     const elements: Array<string> = []
     let box: Box2D | null = null
 
     edges?.forEach?.((edge: any) =>
     {
         const flipped = edge._mirroredY(0)
-        flipped._parent = edge._parent ?? edge
+        const parent = edge._parent ?? edge
+        flipped._parent = parent
 
         const elem = flipped?.toSVG?.()
         if (typeof elem !== 'string' || !elem) return
-        elements.push(elem)
+
+        /*  As the mesh kernel: what the edge is goes in its classes, and how it looks is the
+            stylesheet's. brep writes the author's styling inline, which beats any stylesheet,
+            so it is taken off again and said with classes (dashed, a model colour). */
+        const own = (elem.match(/\sclass="([^"]*)"/)?.[1] ?? '').split(/\s+/).filter(Boolean)
+        const classes = classAttr([...own, ...(groupsOf.get(parent) ?? groupsOf.get(edge) ?? []),
+                                    ...styleClasses(parent?._effectiveStyle?.()), ...styleClasses(edge?._effectiveStyle?.())])
+        elements.push(elem
+            .replace(/\sstyle="[^"]*"/, '')
+            .replace(STYLE_ATTR_RE, '')
+            .replace(/\sclass="[^"]*"/, ` class="${escapeXML(classes)}"`))
 
         // already mirrored, so this box is in SVG space as it stands
         const bb = flipped?.bbox?.()
@@ -510,7 +547,7 @@ function brepDrawableLayer(collection: any, all: boolean): SVGLayer
         }
     })
 
-    return { elements, box }
+    return { elements: cutLast(elements), box }
 }
 
 /** True for a brep Shape/ShapeCollection — it is the kernel that mirrors before drawing. */
@@ -581,7 +618,8 @@ export interface SVGLayer
  *     (`unitsPerMm` = model units per page millimeter), so a 0.25mm line is 0.25mm. */
 export type SVGStroke =
     | { mode: 'device', width?: number }
-    | { mode: 'mm', widthMm: number, unitsPerMm: number }
+    /** `widthMm`, when given, is the weight of every line (the Styler's `.line`) */
+    | { mode: 'mm', widthMm?: number, unitsPerMm: number }
     /** A width in MODEL units. For a drawing with no known scale, where the only sensible
      *  weight is one derived from the drawing's own size. */
     | { mode: 'units', width: number }
@@ -617,6 +655,9 @@ export interface BuildSVGDocumentOptions
      *  Already-scoped text: the caller prefixes its own selectors, because only it knows
      *  which scope they belong to (see View.css). */
     css?: string
+    /** How the classes of a drawing on paper are drawn (`mm` and `units` strokes): the Styler's
+     *  rules. Default STYLER_DEFAULT_RULES. */
+    rules?: ReadonlyArray<StylerRuleEntry>
 }
 
 /** Frame a set of layers into one SVG document — the single writer of an Archiyou drawing.
@@ -656,11 +697,16 @@ export function buildSVGDocument(o: BuildSVGDocumentOptions): string | null
 
     const stroke: SVGStroke = o.stroke ?? { mode: 'device' }
     const scope = o.scoped ? `.${o.scoped} ` : ''
+    /*  On paper the Styler's rules draw the drawing, in model units at its scale. A width in
+        model units (no scale known) stands for the default weight, which gives the scale. */
+    const unitsPerMm = (stroke.mode === 'mm') ? stroke.unitsPerMm
+                        : (stroke.mode === 'units') ? stroke.width / DRAWING_LINE_WIDTH_MM
+                        : 0
     const base = (stroke.mode === 'device')
                     ? stylesheet(stroke.width ?? DEFAULT_STROKE_WIDTH, scope)
-                    : stylesheetMm(
-                        +(stroke.mode === 'mm' ? stroke.widthMm * stroke.unitsPerMm : stroke.width).toFixed(4),
-                        scope)
+                    : '<style>' + compileStylerRules(
+                        withLineWeight(o.rules ?? STYLER_DEFAULT_RULES, (stroke.mode === 'mm') ? stroke.widthMm : undefined),
+                        scope, unitsPerMm, modelColorsIn(layers.flatMap(l => l.elements))) + '</style>'
 
     /*  Extra rules go in their own <style>, AFTER the base one. Same specificity, later
         source, so they win — which is what lets a caller draw one group of a drawing
@@ -929,6 +975,9 @@ export interface RenderDrawingOptions
     unitsPerMm?: number
     /** Line weight on paper. Default DRAWING_LINE_WIDTH_MM. Only used with `unitsPerMm`. */
     lineWidthMm?: number
+    /** How the classes of the drawing are drawn (see the Styler). Default STYLER_EXPORT_RULES:
+     *  the styler's defaults, with the colours of the model. */
+    rules?: ReadonlyArray<StylerRuleEntry>
     /** Framing. Default: the drawing's own extents plus room for its dimension text. */
     frame?: SVGFrame
     /** Blank margin on every side, as a fraction of the drawing's largest side. Default none:
@@ -1020,11 +1069,10 @@ export function renderDrawingFromLayer(
                     : (options?.unitsPerMm) ? options.unitsPerMm * annotationMarginMm(o?._modeler?.modules?.annotator, drawn)
                     : Math.max(10, size / 30)
 
-    const stroke: SVGStroke = (options?.unitsPerMm)
-        ? { mode: 'mm', widthMm: options?.lineWidthMm ?? DRAWING_LINE_WIDTH_MM, unitsPerMm: options.unitsPerMm }
-        // No scale known: a weight relative to the drawing, which is the same thing once the
-        // drawing is fitted to a view — the fit is (view/drawing) and this is (drawing/N).
-        : { mode: 'units', width: size / (IMPLIED_VIEW_WIDTH_MM / (options?.lineWidthMm ?? DRAWING_LINE_WIDTH_MM)) }
+    // No scale known: as if the drawing were IMPLIED_VIEW_WIDTH_MM wide on paper, which is the
+    // same thing once the drawing is fitted to a view — the fit is (view/drawing) and this is (drawing/N).
+    const stroke: SVGStroke = { mode: 'mm', widthMm: options?.lineWidthMm,
+                                unitsPerMm: options?.unitsPerMm || size / IMPLIED_VIEW_WIDTH_MM }
 
     return buildSVGDocument({
         layers,
@@ -1036,6 +1084,7 @@ export function renderDrawingFromLayer(
                 : { mode: 'fit', padding: options?.padding ?? 0, square: options?.square === true, margin },
         scoped: options?.scoped,
         css: options?.css,
+        rules: options?.rules ?? STYLER_EXPORT_RULES, // a document view says its own
         units: options?.units ?? o?._modeler?.units?.(),
         title: options?.title,
     })

@@ -71,7 +71,7 @@ describe('doc pipeline + SVG export on both kernels', () =>
             // drawings whose stylesheets all land in one document (each view's outer <svg> is
             // stripped when it is placed), so a page-wide `.line{stroke-width:…}` from one
             // view restyled every other drawing on the page — last one winning.
-            expect(svg).toMatch(/\.ay-[a-z0-9-]+ \.line\{fill:none;stroke:black;stroke-width:[\d.]+;/)
+            expect(svg).toMatch(/\.ay-[a-z0-9-]+ \.line\{stroke:#000000;fill:none;stroke-width:[\d.]+;/)
         }, 180_000)
     }
 })

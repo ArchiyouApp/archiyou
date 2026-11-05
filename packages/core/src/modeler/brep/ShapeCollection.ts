@@ -2251,6 +2251,25 @@ import { getOc } from './index' // OC global getter
          this.forEach( shape => shape.lineWidth(lw));
          return this;
       }
+
+      /** Give every Shape in this Collection these classes, for drawings. See Shape.addClass() */
+      addClass(...names:Array<string>):this
+      {
+         this.forEach( shape => shape.addClass(...names));
+         return this;
+      }
+
+      removeClass(...names:Array<string>):this
+      {
+         this.forEach( shape => shape.removeClass(...names));
+         return this;
+      }
+
+      /** Every class a Shape in this Collection has, once each */
+      classes():Array<string>
+      {
+         return [...new Set(this.toArray().flatMap(shape => shape.classes()))];
+      }
       
       /** Shape API - Style all Shapes in Collection */
       setStyle(newStyle:Partial<StyleData>):ShapeCollection

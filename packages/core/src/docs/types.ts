@@ -1,4 +1,5 @@
 
+import type { StylerRule } from './styler/Styler'
 import type { ModelUnits } from '../modeler/types';
 import type { PublishLicense } from '../execution/types';
 
@@ -281,6 +282,8 @@ export interface ViewOptions
     overflow?:'clip'|'fit'
     /** Extra CSS for the drawing, selector → declarations — see View.css(). */
     css?:Record<string,string>
+    /** How classes are drawn in this view, on top of the styler's rules — see View.style(). */
+    style?:Record<string,StylerRule>
 }
 
 export interface CaptionOptions

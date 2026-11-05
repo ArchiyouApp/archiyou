@@ -159,14 +159,31 @@ ShapeProto.material = function (this: any, name?: string) {
     if (name === undefined) {
         return manager?.resolve(this._material, this) ?? null
     }
+    const before = materialClasses(manager, this._material)
     this._material = name
     // mirror onto the render style (best-effort — used by GLTF export)
     const style = this.style
     if (style) {
         const spec = manager?.get(name) ? manager.renderSpec(manager.get(name)) : name
         style.material = spec ?? name
+        // and say what it is to drawings: `.osb`, `.wood` (see Styler)
+        style.removeClass?.(...before)
+        style.addClass?.(...materialClasses(manager, name))
     }
     return this
+}
+
+/** The classes a material gives a shape for drawings: its name and its group (`osb`, `wood`) */
+function materialClasses(manager: any, name?: string): Array<string>
+{
+    if (!name) return []
+    const material = manager?.get?.(name)
+    const asClass = (s?: string) =>
+    {
+        const c = String(s ?? '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
+        return /^[a-z_]/.test(c) ? c : (c ? `m-${c}` : '')
+    }
+    return [...new Set([asClass(material?.name ?? name), asClass(material?.group)])].filter(Boolean)
 }
 
 /** Mass/weight of this shape in the active unit system (kg / lb). */

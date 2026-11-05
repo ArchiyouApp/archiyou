@@ -56,6 +56,30 @@ docs.create('spec')
 
 A pipeline only runs when one of its outputs is asked for, or a document that uses it is made, and then only once.
 
+## How drawings look
+
+A drawing writes what each line is as a class: `cut` for what a section cuts through, `visible`, `silhouette` for the outline, `hidden`, `dashed`. It also writes what the shape is: the classes you give it with `addClass()`, and the name and group of its material (`osb`, `wood`). The **styler** draws those classes, in millimeters on paper, so a line has the same weight at 1:20 as at 1:100:
+
+```js
+stud = box(38, 184, 2400).addClass('timber');
+insulation = box(500, 184, 2400).moveX(300).addClass('insulation');
+
+styler.set('.cut', { weight: 0.5 });                      // every cut line 0.5mm
+styler.set('.cut.insulation', { fill: '#eeeeee' });       // cut insulation filled grey
+styler.set('.hidden', { visible: false });                // no hidden lines
+
+$pipeline('plan', function()
+{
+    return { plan: all().section([0, 0, 1000]) };
+});
+
+docs.create('plan').pipeline('plan')
+    .page('main').view('plan', { scale: '1:20' }).shapes('plan')
+    .style({ '.cut.timber': { weight: 0.7 } });           // this view only
+```
+
+A rule has `weight`, `color`, `fill`, `dash` (mm on paper, like `[3, 2]`), `opacity` and `visible`. The rule with more classes wins (`.cut.timber` over `.cut`), and between rules with as many classes the later one. A document draws in the styler's ink, not in the colours of the model: say `color: 'model'` in a rule to draw a line in its model colour.
+
 ## Pipelines of a component
 
 A component's pipelines are yours to use too: pick one before you take its model or documents.

@@ -233,9 +233,9 @@ describe('Modeler SVG export', () =>
             modeler.layer('diagram').color('blue').dashed()
             modeler.rect(100, 50)
 
+            // as classes: the stylesheet draws them (see the Styler)
             const [rect] = drawn((modeler.all() as any).toSVG() as string)
-            expect(rect.stroke).toBe('#0000ff')
-            expect(rect['stroke-dasharray']).toBe('5 5')
+            expect(rect.class.split(' ')).toEqual(expect.arrayContaining(['ay-c-0000ff', 'dashed']))
         })
     })
 

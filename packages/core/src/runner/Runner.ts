@@ -69,6 +69,7 @@ import { contentNeedsOf } from '../modules/sdkTypes';
 // Settings
 import { MODELER_METHODS_INTO_GLOBAL, SCRIPT_OUTPUT_GLTF_OPTIONS_DEFAULT, outputsNeedRecipes } from '../constants'; 
 import { Animator } from '../animator/Animator';
+import { Styler } from '../docs/styler/Styler';
 import { ParamManager } from '../execution/ParamManager';
 import { loadBinPackerModule, loadPack3dModule, type Make } from '../modeler/Make';
 import type { Handle } from '../interaction/Handle';
@@ -109,6 +110,17 @@ export interface ScriptGlobals
     calc: Calc;
     /** Ready-made building parts: walls, floors, frames and part lists. */
     make: Make;
+    /** How drawings look: line weights, colours, dashes and fills by class, in millimeters on
+     *  paper. A drawing writes what a line is (`cut`, `hidden`, `silhouette`) and what its shape
+     *  is (`addClass('wall')`, a material) as classes; these rules draw them.
+     *
+     *  @example
+     *  stud = box(38, 184, 2400).addClass('timber')
+     *  styler.set('.cut', { weight: 0.5 })
+     *  styler.set('.cut.timber', { fill: '#e8d9b5' })
+     *  styler.set('.hidden', { visible: false })
+     */
+    styler: Styler;
     /** Materials to assign to shapes, with their colour, weight and carbon. */
     materials: MaterialManager;
     /** The parameters of the script. `$PARAMS.define()` adds one; every parameter is
@@ -530,6 +542,15 @@ export class Runner
             enumerable: false,
             get: () => (state._archiyou.animator ??= new Animator(state._archiyou)),
             set: (value) => Object.defineProperty(state, 'animator', { value, writable: true, configurable: true, enumerable: true }),
+        });
+
+        // The rules drawings are drawn by, made on first use like the animator: a script that never
+        // names `styler` draws by the default rules (see docs/styler/Styler.ts)
+        Object.defineProperty(state, 'styler', {
+            configurable: true,
+            enumerable: false,
+            get: () => (state._archiyou.styler ??= new Styler()),
+            set: (value) => Object.defineProperty(state, 'styler', { value, writable: true, configurable: true, enumerable: true }),
         });
 
         // Optional, separately-distributed script modules (see src/modules/).
@@ -1542,6 +1563,7 @@ ${contextLines.join('\n')}
         if (request.modelUnits) { scope._archiyou.modeler.units(request.modelUnits); }
         scope._archiyou.docs.reset(); // TODO: check after rename doc => docs
         scope._archiyou.animator = undefined; // made again on first use (see _addModulesToScopeState)
+        scope._archiyou.styler = undefined; // the same
         // Documents can show in another system than the run (set after reset(), which clears it)
         if (request.docUnitSystem) { scope._archiyou.docs._runUnitSystem = request.docUnitSystem; }
         scope._archiyou.calc.reset();

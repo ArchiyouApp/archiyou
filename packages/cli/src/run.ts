@@ -604,7 +604,8 @@ function restyle(svg: string, unit: number, color: string, hidden: boolean): str
         .replace(/stroke-dasharray:\s*[\d.]+[ ,]+[\d.]+/g, `stroke-dasharray:${5 * unit} ${3.5 * unit}`)
         .replace(/svg\{color:#[0-9a-fA-F]+\}/, `svg{color:${color}}`)
         .replace(/@media \(prefers-color-scheme:dark\)\{[^}]*\}\}/, '');
-    return hidden ? styled : styled.replace(/<path[^>]*class="line hidden"[^>]*\/>/g, '');
+    // a hidden line can carry more classes than `line hidden` (its shape's, see core's Styler)
+    return hidden ? styled : styled.replace(/<path[^>]*class="[^"]*\bhidden\b[^"]*"[^>]*\/>/g, '');
 }
 
 type Tile = { label: string; href: string; w?: number; h?: number };

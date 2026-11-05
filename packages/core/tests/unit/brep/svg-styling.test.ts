@@ -1,10 +1,10 @@
 /**
- *  SVG styling: only DELIBERATE styling is written inline.
+ *  SVG styling: nothing inline, everything a class the stylesheet draws.
  *
- *  Anything the author did not set is left to the document's CSS classes (`line`, `dashed`, …),
- *  which is what the mesh kernel does — it emits bare `<path class="line silhouette"/>`. brep
- *  used to bake the kernel defaults into every path, so the same drawing came out thick and red
- *  on brep and thin and black on mesh, and a projection looked like the object it came from.
+ *  What the author set says itself as a class (`dashed`, the class of a colour), which is what
+ *  the mesh kernel does too. brep used to bake the kernel defaults into every path, so the same
+ *  drawing came out thick and red on brep and thin and black on mesh; and inline styling beats
+ *  any stylesheet, so a drawing could not be restyled (see the Styler).
  */
 import { describe, test, beforeAll, expect } from 'vitest'
 import * as brep from '../../../src/modeler/brep/index'
@@ -20,7 +20,7 @@ describe('brep SVG styling', () =>
         // SVG's default stroke is `none` — without this block a drawing with no inline
         // styling renders as nothing at all. Matches the mesh kernel's block exactly.
         const svg = new brep.Wire().makeRect(100, 50).toSVG()
-        expect(svg).toMatch(/<style>\.line\{fill:none;stroke:black;stroke-width:[\d.]+;/)
+        expect(svg).toMatch(/<style>\.line\{stroke:#000000;fill:none;stroke-width:[\d.]+;/)
     })
 
     test('an unstyled Shape writes NO inline styling — the stylesheet decides', () =>
@@ -30,21 +30,21 @@ describe('brep SVG styling', () =>
         expect(path).toContain('class="line"')
     })
 
-    test('deliberate styling IS written inline', () =>
+    test('a colour is a class, which an export draws in that colour', () =>
     {
-        // as an inline STYLE, not a presentation attribute: CSS rules beat presentation
-        // attributes, so `stroke="blue"` would lose to the .line rule above
-        const path = firstPath(new brep.Wire().makeRect(100, 50).color('blue').lineWidth(3).toSVG())
-        expect(path).toContain('style="')
-        expect(path).toContain('stroke:#0000ff')
-        expect(path).toContain('stroke-width:3')
+        const svg = new brep.Wire().makeRect(100, 50).color('blue').toSVG()
+        const path = firstPath(svg)
+        expect(path).not.toMatch(/style="/)
+        expect(path).toContain('ay-c-0000ff')
+        expect(svg).toContain('.line.ay-c-0000ff{stroke:#0000ff}')
     })
 
     test('dashed() writes the pattern only — not the default colour and width', () =>
     {
-        const path = firstPath(new brep.Wire().makeRect(100, 50).dashed([4, 4]).toSVG())
-        expect(path).toContain('stroke-dasharray:4 4')
+        const svg = new brep.Wire().makeRect(100, 50).dashed([4, 4]).toSVG()
+        const path = firstPath(svg)
         expect(path).toContain('dashed')
+        expect(svg).toMatch(/\.dashed\{stroke-dasharray:[\d.]+ [\d.]+\}/)
         // meshup's Style marks the whole `stroke` object explicit when any part is set; those
         // still-default values must not leak out as if the author chose them
         expect(path).not.toMatch(/stroke:#/)
@@ -55,7 +55,7 @@ describe('brep SVG styling', () =>
     {
         // the author styles the Wire; toSVG() draws its Edges, which carry no style of their own
         const path = firstPath(new brep.Wire().makeRect(100, 50).color('blue').toSVG())
-        expect(path).toContain('stroke:#0000ff')
+        expect(path).toContain('ay-c-0000ff')
     })
 
     test('a projection does not inherit the styling of the shape it came from', () =>

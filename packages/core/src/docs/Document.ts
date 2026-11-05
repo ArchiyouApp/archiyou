@@ -24,6 +24,7 @@
  *          .var('title');
  */
 
+import type { StylerRule } from './styler/Styler'
 import { Docs } from './Docs'
 import { Page, PAGE_SIZES_TEXT } from './Page'
 import { Container } from './Container'
@@ -1524,6 +1525,17 @@ export class Document
         if(this._activeContainer._type !== 'view'){ { throw new Error(`Document::shapes(): Cannot add Shapes because no active container is a not a View. Check the order of your statements!`)};}
         (this._activeContainer as View).shapes(shapes, all);
 
+        return this;
+    }
+
+    /** How classes are drawn in the active view, on top of the styler's rules:
+     *  `.view('plan').style({ '.cut': { weight: 0.7 } })`. Weights and dashes in mm on paper.
+     *  @param rules  Selector (classes, like '.cut' or '.cut.wood') to how it is drawn.
+     */
+    style(rules:Record<string,StylerRule>):this
+    {
+        if(!this._activeContainer || this._activeContainer._type !== 'view'){ throw new Error(`Document::style(): No active view to style. Make a view first with view("myView")!`)};
+        (this._activeContainer as View).style(rules);
         return this;
     }
 
