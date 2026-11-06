@@ -187,6 +187,8 @@ export const STYLER_DEFAULT_RULES:ReadonlyArray<StylerRuleEntry> = Object.freeze
     { selector: '.outline', weight: 0.35 },
     { selector: '.hidden', weight: 0.18, color: '#888888', dash: [3, 2] },
     { selector: '.dashed', dash: [2, 1] },
+    // the thin lines that join the views of a fold-out view (make.foldoutView)
+    { selector: '.projection', weight: 0.13, color: '#888888' },
     // what a section cuts through: heavy, and filled so nothing beyond shows through it
     { selector: '.cut', weight: 0.5, fill: '#ffffff' },
     // the opaque faces of the 'painter' projection: they cover what is behind, they draw nothing

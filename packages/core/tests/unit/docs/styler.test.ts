@@ -243,6 +243,6 @@ describe('a drawing in a document', () =>
 
     it('is drawn by the default rules without a styler', () =>
     {
-        expect(STYLER_DEFAULT_RULES.map(r => r.selector)).toEqual(['.line', '.outline', '.hidden', '.dashed', '.cut', '.fill'])
+        expect(STYLER_DEFAULT_RULES.map(r => r.selector)).toEqual(['.line', '.outline', '.hidden', '.dashed', '.projection', '.cut', '.fill'])
     })
 })

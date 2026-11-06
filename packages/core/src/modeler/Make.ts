@@ -23,7 +23,9 @@ import type { BinPacker, CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-w
 import type { Packer3D } from '@archiyou/pack3d-wasm';
 
 import { Static } from 'typebox';
-import { PackOptionsSchema, Pack3DOptionsSchema } from './schemas';
+import { PackOptionsSchema, Pack3DOptionsSchema, FoldoutViewOptionsSchema } from './schemas';
+import { FOLDOUT_SIDES, convexHull, foldoutPlacement, outermostAt, projectableCoordinates, projectionLine, rotateSheetPoint } from './foldoutView';
+import type { FoldoutPlacement, FoldoutProjection, FoldoutSide, SheetPoint, SheetSegment } from './foldoutView';
 import { MM_PER_UNIT } from '../units/UnitConverter';
 import { isClosedSolid, vote } from './packChoice';
 import { measure, group as groupShapes, toInstance, toOptions, put, fromGrams } from './pack3d';
@@ -115,6 +117,7 @@ const FIRST_CUT_DIRECTION = { horizontal: 'H', vertical: 'V' } as const;
 
 export type PackOptions = Static<typeof PackOptionsSchema>;
 export type Pack3DOptions = Static<typeof Pack3DOptionsSchema>;
+export type FoldoutViewOptions = Static<typeof FoldoutViewOptionsSchema>;
 
 /** An opening (window/door) in a wall built by wall() */
 export interface WallOpening
@@ -238,6 +241,28 @@ const onBbox = (shape: any, p: Vec3): boolean =>
     const tol = 1e-6 * Math.max(1, len(sub(max, min)));
     return p.every((v, i) => v >= min[i] - tol && v <= max[i] + tol);
 };
+
+/** The angle (degrees) at which world x lies in a drawing: 0 when it runs to the right */
+function frameAngle(drawing: any): number
+{
+    const o = drawing.toScreen?.([0, 0, 0]);
+    const x = drawing.toScreen?.([1, 0, 0]);
+    if (!o || !x) return 0;
+    const degrees = Math.atan2(x.y - o.y, x.x - o.x) * 180 / Math.PI;
+    return (Math.abs(degrees) < 1e-9) ? 0 : degrees;
+}
+
+/** Every straight piece of the lines of a drawing, on the sheet */
+function sheetSegments(drawing: any): Array<SheetSegment>
+{
+    return drawing.toArray().flatMap((curve: any) =>
+    {
+        const points: Array<SheetPoint> = (typeof curve?.points === 'function')
+            ? curve.points().map((p: any) => ({ x: p.x, y: p.y }))
+            : [];
+        return points.slice(1).map((p, i) => [points[i], p] as SheetSegment);
+    });
+}
 
 export class Make
 {
@@ -2156,6 +2181,237 @@ export class Make
         const miter = Math.atan2(Math.abs(dot(end, across)), Math.abs(dot(end, axis)));
 
         return { miter: roundTo(miter * 180 / Math.PI, 6), bevel: roundTo(bevel * 180 / Math.PI, 6) };
+    }
+
+    //// DRAWINGS ////
+
+    /** The plan with its elevations folded out around it, in a cross: the classic sheet of a
+     *  spec or a building permit, a multiview orthographic projection (the "glass box",
+     *  unfolded; an épure in stereotomy). Each elevation is turned so it shares an axis with
+     *  the plan, and a feature lies on one line across both. Thin projection lines (extension
+     *  lines, "lignes de rappel") join the corners of the plan to the views, and dimension lines
+     *  give the overall sizes in the gaps.
+     *
+     *  Third angle by default: each view on the side it looks at, its top toward the plan (the
+     *  front elevation below the plan). `projection: 'first'` puts each one on the opposite
+     *  side, its base toward the plan (the ISO layout).
+     *
+     *  The drawings lie flat on z = 0, centred on `at`. They go in the scene as one group, with
+     *  groups `plan`, `front`, `back`, `left`, `right` and `projectionLines`; the shapes drawn
+     *  are not changed. Lines get the classes of what they are (`cut`, `visible`, `outline`,
+     *  `projection`), for the styler: `styler.set('projection', { dash: [3, 2] })`.
+     *
+     *  Only on the mesh kernel (the default).
+     *
+     *  @param shapes  What to draw (default: every visible solid, `all().onlyVisible().solids()`)
+     *  @param options How to draw it:
+     *   - cutHeight: height (z) of a horizontal section for the plan, like 1500 for a floor
+     *     plan. Left out: the plan is the top view
+     *   - views: the elevations around the plan (default all four: front, back, left, right)
+     *   - projection: 'third' (default) or 'first' angle
+     *   - gap: between the plan and each view (default a fifth of the largest side of the plan)
+     *   - projectionLines: true or 'outline' (default) from the outer corners of the plan,
+     *     'features' from every corner seen from that side, false for none
+     *   - dims: true or 'overall' (default) for the width and depth of the plan and the height,
+     *     'views' also the width and height of every view, false for none
+     *   - at: where the centre of the plan goes (default [0, 0]). Use it rather than moving the
+     *     result afterwards: dimension lines do not follow a move
+     *   - hiddenLines, method, featureAngle: as for elevation()
+     *  @returns The drawings, as one group in the scene
+     *
+     *  @example
+     *  house = box(4000, 5000, 3000).moveZ(1500)
+     *  sheet = make.foldoutView(all(), { cutHeight: 1500, at: [0, -12000] })
+     *
+     *  @example
+     *  // only the front and the right side, first angle, every corner projected
+     *  boxBetween([0, 0, 0], [2000, 1000, 500])
+     *  boxBetween([0, 0, 0], [400, 300, 1500])
+     *  make.foldoutView(all(), { views: ['front', 'right'], projection: 'first', projectionLines: 'features' })
+     */
+    public foldoutView(shapes?: ShapeCollection, options: FoldoutViewOptions = {}): ShapeCollection
+    {
+        const modeler = this.modeler;
+        const source = (shapes ?? modeler.all().onlyVisible().solids()) as any;
+        if (!source?.toArray?.().length)
+        {
+            throw new Error('Make::foldoutView(shapes, options): nothing to draw. Give the shapes, like all().onlyVisible().solids().');
+        }
+
+        const views = (options.views ?? FOLDOUT_SIDES) as Array<FoldoutSide>;
+        const unknown = views.filter(v => !FOLDOUT_SIDES.includes(v));
+        if (unknown.length)
+        {
+            throw new Error(`Make::foldoutView(): unknown view(s) ${unknown.join(', ')}. Use ${FOLDOUT_SIDES.join(', ')}.`);
+        }
+        const projection: FoldoutProjection = (options.projection === 'first') ? 'first' : 'third';
+        const projectionOptions = Object.fromEntries(
+            Object.entries({ hiddenLines: options.hiddenLines, method: options.method, featureAngle: options.featureAngle })
+                .filter(([, v]) => v !== undefined));
+        const at = Array.isArray(options.at)
+            ? { x: options.at[0] ?? 0, y: options.at[1] ?? 0 }
+            : { x: (options.at as any)?.x ?? 0, y: (options.at as any)?.y ?? 0 };
+
+        // One world point, to line the views up with the plan: where it lands in each drawing
+        const probe = source.bbox().center();
+
+        //// THE PLAN ////
+
+        const plan = (options.cutHeight != null)
+            ? source._section([0, 0, options.cutHeight], [0, 0, 1], projectionOptions)
+            : source._elevation('top', projectionOptions);
+        if (!plan?.toArray().length)
+        {
+            throw new Error((options.cutHeight != null)
+                ? `Make::foldoutView(): nothing is cut or seen below the cut at ${options.cutHeight}. Give a lower cutHeight.`
+                : 'Make::foldoutView(): the plan is empty: are the shapes solids?');
+        }
+        // world x to the right on the sheet, as the views are lined up against it
+        const planTurn = -frameAngle(plan);
+        const planProbe = rotateSheetPoint(plan.toScreen(probe), planTurn);
+        if (planTurn !== 0) plan.rotateZ(planTurn, [0, 0, 0]);
+        const planCentre = plan.bbox().center();
+        const planShift = { x: at.x - planCentre.x, y: at.y - planCentre.y };
+        plan.move(planShift.x, planShift.y, 0);
+        const planAt = { x: planProbe.x + planShift.x, y: planProbe.y + planShift.y };
+        const planBox = plan.bbox();
+        const gap = options.gap ?? Math.max(planBox.width(), planBox.depth()) / 5;
+
+        //// THE VIEWS ////
+
+        const placed = views
+            .map(side =>
+            {
+                const placement = foldoutPlacement(side, projection);
+                const drawing = source._elevation(side, projectionOptions);
+                if (!drawing?.toArray().length) return null;
+                const probeAt = rotateSheetPoint(drawing.toScreen(probe), placement.rotation);
+                if (placement.rotation !== 0) drawing.rotateZ(placement.rotation, [0, 0, 0]);
+                const box = drawing.bbox();
+                const along = planAt[placement.axis] - probeAt[placement.axis];
+                const across = (placement.side < 0)
+                    ? planBox.min()[placement.across] - gap - box.max()[placement.across]
+                    : planBox.max()[placement.across] + gap - box.min()[placement.across];
+                drawing.move(...((placement.axis === 'x') ? [along, across, 0] : [across, along, 0]) as [number, number, number]);
+                return { side, placement, drawing };
+            })
+            .filter(Boolean) as Array<{ side: FoldoutSide, placement: FoldoutPlacement, drawing: any }>;
+
+        //// PROJECTION LINES ////
+
+        const size = Math.max(planBox.width(), planBox.depth(), gap);
+        const tolerance = size * 1e-6;
+        const planSegments = sheetSegments(plan);
+        const lineMode = options.projectionLines ?? true;
+        const lines = (lineMode === false) ? [] : placed.flatMap(({ placement, drawing }) =>
+        {
+            const vertices = planSegments.flat();
+            const corners = (lineMode === 'features') ? vertices : convexHull(vertices);
+            const viewSegments = sheetSegments(drawing);
+            return projectableCoordinates(corners, planSegments, placement, tolerance)
+                .map(c =>
+                {
+                    const planEdge = outermostAt(planSegments, placement.axis, c, placement.side, tolerance);
+                    const viewEdge = outermostAt(viewSegments, placement.axis, c, -placement.side as -1 | 1, tolerance);
+                    return (planEdge === null || viewEdge === null)
+                        ? null
+                        : projectionLine(c, planEdge, viewEdge, placement, gap * 0.06);
+                })
+                .filter(Boolean)
+                .map(([a, b]: SheetSegment) => (modeler.line([a.x, a.y, 0], [b.x, b.y, 0]) as any).addClass('projection'));
+        });
+
+        //// DIMENSIONS ////
+
+        const dimMode = options.dims ?? true;
+        if (dimMode !== false)
+        {
+            this._foldoutDims(plan, placed, options.cutHeight != null, gap, dimMode === 'views');
+        }
+
+        //// ONE GROUP ////
+
+        const result = modeler.group().name('foldoutView');
+        result.addGroup('plan', plan);
+        placed.forEach(({ side, drawing }) => result.addGroup(side, drawing));
+        if (lines.length) result.addGroup('projectionLines', modeler.collection(...lines));
+        return result;
+    }
+
+    /** The dimension lines of a fold-out view: the width and depth of the plan in the gaps
+     *  next to it, the height beside the first view, and with `perView` the width and height of
+     *  every view. Measured on what a section cuts (the walls, not the eaves) when it cuts. */
+    private _foldoutDims(
+        plan: any,
+        placed: Array<{ side: FoldoutSide, placement: FoldoutPlacement, drawing: any }>,
+        cut: boolean,
+        gap: number,
+        perView: boolean,
+    ): void
+    {
+        const annotator = this.archiyou.annotator as any;
+        if (!annotator) return;
+        const units = this.modeler.units();
+        const offset = gap * 0.4;
+
+        const dimension = (start: SheetPoint, end: SheetPoint, toward: SheetPoint, length: number, linkTo: any) =>
+        {
+            const dim = annotator.dimensionLine([start.x, start.y, 0], [end.x, end.y, 0],
+                                { offset: length, offsetVec: [toward.x, toward.y, 0], units });
+            dim._planeNormalFixed = [0, 0, 1]; // drawn on XY, like a projected dimension
+            dim.link(linkTo);
+            dim.setOffsetVec(new dim.classes.Vector(toward.x, toward.y, 0)); // link() recalculates it
+            return dim;
+        };
+
+        const planBox = plan.bbox();
+        const cutGroup = (cut && plan.groupNames().includes('cut')) ? plan.group('cut') : null;
+        const measured = cutGroup?.toArray().length ? cutGroup.bbox() : planBox;
+        const [min, max] = [measured.min(), measured.max()];
+        const planLink = plan.first();
+
+        // width in the gap of a view along x (the front one first), depth in one along y
+        const sideOf = (axis: 'x' | 'y', prefer: Array<FoldoutSide>) =>
+            prefer.map(s => placed.find(p => p.side === s && p.placement.axis === axis)).find(Boolean)?.placement.side ?? -1;
+        const ySide = sideOf('x', ['front', 'back']);
+        const yEdge = (ySide < 0) ? min.y : max.y;
+        const yOut = ((ySide < 0) ? yEdge - planBox.min().y : planBox.max().y - yEdge) + offset;
+        dimension({ x: min.x, y: yEdge }, { x: max.x, y: yEdge }, { x: 0, y: ySide }, yOut, planLink);
+
+        const xSide = sideOf('y', ['left', 'right']);
+        const xEdge = (xSide < 0) ? min.x : max.x;
+        const xOut = ((xSide < 0) ? xEdge - planBox.min().x : planBox.max().x - xEdge) + offset;
+        dimension({ x: xEdge, y: min.y }, { x: xEdge, y: max.y }, { x: xSide, y: 0 }, xOut, planLink);
+
+        // the height: beside the first view, on its low side along the axis it shares with the plan
+        const heightOf = ({ placement, drawing }: { placement: FoldoutPlacement, drawing: any }) =>
+        {
+            const b = drawing.bbox();
+            const [lo, hi] = [b.min(), b.max()];
+            return (placement.axis === 'x')
+                ? dimension({ x: lo.x, y: lo.y }, { x: lo.x, y: hi.y }, { x: -1, y: 0 }, offset, drawing.first())
+                : dimension({ x: lo.x, y: lo.y }, { x: hi.x, y: lo.y }, { x: 0, y: -1 }, offset, drawing.first());
+        };
+        // and the width: on the side away from the plan
+        const widthOf = ({ placement, drawing }: { placement: FoldoutPlacement, drawing: any }) =>
+        {
+            const b = drawing.bbox();
+            const [lo, hi] = [b.min(), b.max()];
+            const edge = (placement.side < 0) ? lo[placement.across] : hi[placement.across];
+            const toward = (placement.across === 'y') ? { x: 0, y: placement.side } : { x: placement.side, y: 0 };
+            return (placement.axis === 'x')
+                ? dimension({ x: lo.x, y: edge }, { x: hi.x, y: edge }, toward, offset, drawing.first())
+                : dimension({ x: edge, y: lo.y }, { x: edge, y: hi.y }, toward, offset, drawing.first());
+        };
+
+        if (perView)
+        {
+            placed.forEach(view => { heightOf(view); widthOf(view); });
+        }
+        else if (placed.length)
+        {
+            heightOf(placed[0]);
+        }
     }
 
     //// DATA GATHERING /////

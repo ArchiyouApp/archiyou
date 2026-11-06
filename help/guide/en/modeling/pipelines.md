@@ -93,6 +93,32 @@ The patterns by name are `diagonal`, `diagonal-back`, `horizontal`, `vertical`, 
 
 The DXF export draws by the same rules: line weights, colours, dashes, and what is not drawn. Fills and hatches become HATCH entities under the lines, with a hole in a part kept open. Two things stay on paper: the white fill of a cut (in CAD it would only be a white patch) and a bitmap, which a HATCH cannot hold.
 
+## Fold-out views
+
+A spec sheet or a building permit often shows the plan with the four elevations folded out around it, in a cross. `make.foldoutView()` draws that in one go:
+
+```js
+$pipeline('sheet', function()
+{
+    return { sheet: make.foldoutView(all().onlyVisible().solids(), { cutHeight: 1500 }) };
+});
+
+docs.create('spec').pipeline('sheet')
+    .page('main').view('sheet').shapes('sheet');
+```
+
+Each elevation is turned so it shares an axis with the plan, and a corner of the plan lies on one line with the same corner in the view. Thin **projection lines** (class `projection`) join them, and **dimension lines** give the width and depth of the plan in the gaps and the height beside the first view.
+
+* `cutHeight`: the plan is a horizontal section at that height, like a floor plan at 1500. Without it, the plan is the top view. A section draws what lies below the cut, never what is above it (the roof).
+* `views`: which elevations, like `['front', 'right']`.
+* `projection`: `'third'` angle (the default) puts each view on the side it looks at, its top toward the plan; `'first'` angle (ISO) on the other side, its base toward the plan.
+* `gap`: between the plan and the views, in model units.
+* `projectionLines`: `'outline'` (the default) from the outer corners of the plan, `'features'` from every corner seen from that side, `false` for none.
+* `dims`: `'overall'` (the default), `'views'` for the width and height of every view as well, `false` for none.
+* `at`: where the centre of the plan goes. Use it rather than moving the result: dimension lines do not follow a move.
+
+The result is one group in the scene with the groups `plan`, `front`, `back`, `left`, `right` and `projectionLines`, so you can style or hide one of them: `styler.set('projection', { dash: [3, 2] })`.
+
 ## Pipelines of a component
 
 A component's pipelines are yours to use too: pick one before you take its model or documents.

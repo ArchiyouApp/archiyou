@@ -112,3 +112,19 @@ export const Pack3DOptionsSchema = Type.Object(
         maxEvaluations: Type.Optional(Type.Number({ default: 40000000, description: 'A limit on the work, in placements tried (not on the time): a big job ends with a valid plan that is less tight rather than late, and the same plan on every machine' })),
     }
 )
+
+/** Options of make.foldoutView(): the plan with its elevations folded out around it */
+export const FoldoutViewOptionsSchema = Type.Object(
+    {
+        cutHeight:       Type.Optional(Type.Number({ description: 'Height (z) of a horizontal section for the plan, like 1500 for a floor plan. Left out: the plan is the plain top view' })),
+        views:           Type.Optional(Type.Array(Type.Union([Type.Literal('front'), Type.Literal('back'), Type.Literal('left'), Type.Literal('right')]), { default: ['front', 'back', 'left', 'right'], description: 'The elevations around the plan' })),
+        projection:      Type.Optional(Type.Union([Type.Literal('third'), Type.Literal('first')], { default: 'third', description: "'third' angle: each view on the side it looks at, its top toward the plan. 'first' angle (ISO): on the opposite side, its base toward the plan" })),
+        gap:             Type.Optional(Type.Number({ description: 'Distance between the plan and each view, in model units. Default: a fifth of the largest side of the plan' })),
+        projectionLines: Type.Optional(Type.Union([Type.Boolean(), Type.Literal('outline'), Type.Literal('features')], { default: true, description: "Thin lines from the plan to each view: true or 'outline' from the outer corners, 'features' from every corner seen from that side, false for none" })),
+        dims:            Type.Optional(Type.Union([Type.Boolean(), Type.Literal('overall'), Type.Literal('views')], { default: true, description: "Dimension lines: true or 'overall' for the width and depth of the plan and the height, 'views' also the width and height of every view, false for none" })),
+        at:              Type.Optional(Type.Union([Type.Array(Type.Number()), Type.Object({ x: Type.Number(), y: Type.Number() })], { default: [0, 0], description: 'Where the centre of the plan goes. Use this rather than moving the result afterwards: dimension lines do not follow a move' })),
+        hiddenLines:     Type.Optional(Type.Boolean({ default: false, description: 'Draw hidden lines too (dashed)' })),
+        method:          Type.Optional(Type.String({ description: "Hidden-line method of the projections, like 'exact' or 'raycast'" })),
+        featureAngle:    Type.Optional(Type.Number({ description: 'Draw an edge between two faces when they meet at more than this angle (degrees)' })),
+    }
+)

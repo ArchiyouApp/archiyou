@@ -51,6 +51,9 @@ print('seat area', seat.area());               // shows in the run summary
   model, its views and the checks: `$pipeline('drawings', function(){ return { iso: all().iso(),
   front: all().elevation('front') } })`. What it returns is its output, one layer per key; a
   document shows it with `docs.create('spec').pipeline('drawings').page('p').view('iso').shapes('iso')`.
+  For a plan with its four elevations folded out around it (a spec sheet), use
+  `make.foldoutView(all().onlyVisible().solids(), { cutHeight: 1500 })`: aligned views, projection
+  lines and overall dimensions in one call.
   Don't move or hide model shapes inside a pipeline: copy them first.
 - **Animations** never move the model: they say where parts are over time and are baked into the
   GLB only when an output asks (`default/model/glb?animations=flyin`). A standard one is a line,
