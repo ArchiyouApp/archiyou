@@ -4,17 +4,27 @@
  *  From the parts of a model to the products of a product sheet, and from there to costs.
  *
  *  The sheet is the core: it holds the products with their sizes and prices, the operations
- *  with their norms, the recipes that turn a product's quantities into labour, and the
- *  margins. Partners can read and check all of it. This class only does what a sheet cannot:
- *  measure the parts of a model, match them to products, add up the quantities, and send
- *  them to the sheet's `project` tab to be priced.
+ *  with their norms, the recipes that turn a product's quantities into labour (the rows under
+ *  a product in its componenten tab, see recipes.ts), and the margins. Partners can read and
+ *  check all of it. This class only does what a sheet cannot: measure the parts of a model,
+ *  match them to products, add up the quantities, and price them by the sheet's rows.
  *
- *      $module('cloudcalc')                         // the sheet is opened with the cloudcalc module
- *      products = make.products().fromSheet('https://docs.google.com/spreadsheets/d/…')
- *      products.assign('SLS', wall)                 // every part that fits a size of the group
- *      products.assign('houtvezel-flex-140', wall.insulation)  // or one product, by id
- *      products.add('montagewand', { st: 1 })       // what the model does not show
+ *      products = make.products().fromSheet('https://docs.google.com/spreadsheets/d/…')  // opened with cloudcalc
+ *      products.assign('SLS', wall, { component: 'hsbwand' })  // every part that fits a size of the group
+ *      products.assign('houtvezel-flex-140', wall.insulation, { component: 'hsbwand' })  // or one product, by id
+ *      products.elementWork('hsbwand', { oppervlak: 8.1 })     // the work on the element as a whole
+ *      products.add('tape-universeel-60', { lengte: 12 })      // what the model does not show
  *      overview = products.compute()                // costs per category and per line
+ *
+ *  A component maps its own parts, without a sheet: there assign(), add() and complete() only
+ *  note on each shape what it is, so the component loads nothing. The model that uses it opens
+ *  the sheet once and collects them, see collect():
+ *
+ *      products = make.products()                                    // in the wall component
+ *      products.assign(['SLS', 'SLS-GEVINGERLAST'], wall.studs, { component: 'hsbwand' })
+ *      products.complete('hsbwand', { oppervlak: 8.1 })              // what it does not model
+ *
+ *      products = make.products().fromSheet(url).collect(all())      // in the house
  *
  *  How a part is measured follows the product's vorm, not how the part looks: a wall's
  *  insulation is long for its section (a beam to partList()), but it is filled with mats.
@@ -22,7 +32,11 @@
  *   - sheet (plaat, mat, rol, baan, laag, pan): the thickness picks the size; stuks
  *     (pieces of stock needed), oppervlak (m2) and, for sawn sheets, zaaglengte (m1)
  *   - anything else is a piece (stuk, raam, deur, ...): stuks
- *  Volume (m3) is always given. Quantities are net: the sheet adds the waste.
+ *  Volume (m3) is always given. Quantities are net: the costs add the waste.
+ *
+ *  The labour of a product follows its recipe in the sheet. `component` says which: the product
+ *  in that component's block, else one like it there (same group, same vorm), else the same
+ *  product, group or vorm anywhere in the sheet. The overview says which one it took.
  *
  *  A shape that is only a mass (a box for a wall, a block for a bathroom) is not measured for
  *  products at all: assign it to a component of the sheet ('hsbwand', 'badkamer_klein') and its
@@ -40,6 +54,8 @@ import { collectParts, type PartMeasure } from '../modeler/parts';
 import type { ArchiyouModules } from '../types';
 import type { Table } from '../calc/Table';
 import { ModuleUnavailableError } from '../modules/unavailableStub';
+import { offerPageData, renderOfferHtml, type OfferPageOptions, type OfferSource } from './offer-html';
+import { combineRows, materialPrice, mergeRecipes, quantityOfUnit, readBlocks, type Block, type BlockProduct, type RecipeStep } from './recipes';
 
 //// TYPES ////
 
@@ -128,8 +144,10 @@ export interface ProductOptions
 {
     /** Material waste as a fraction (0.1 is 10 %). Default: the sheet's waste for the vorm. */
     waste?: number;
-    /** Describes the line, for the table and the sheet. Default: the parts' group names. */
+    /** Describes the line, for the table. Default: the parts' group names. */
     label?: string;
+    /** The component of the sheet this is part of ('hsbwand'): its block has the recipe. */
+    component?: string;
 }
 
 export interface AssignOptions extends ProductOptions
@@ -170,6 +188,8 @@ export interface ProductLine extends Required<ProductQuantities>
     shapes: number;
     /** Costs excluding margins, after compute(). */
     costs: ProductCosts | null;
+    /** Whose recipe gave the labour, after compute(): 'hsbwand/sls-38x235', 'hsbwand/balk', 'SLS'. */
+    labour: string | null;
 }
 
 export type LineKind = 'product' | 'component' | 'operation';
@@ -215,19 +235,47 @@ export interface OfferOptions
 export interface ProductOverview extends ProductCosts
 {
     lines: Array<ProductLine>;
+    /** Products the sheet has no recipe for, nor for anything like them: no labour in the costs. */
+    noRecipe: Array<string>;
+    /** Lines the sheet has no price for: not in the costs. */
+    noPrice: Array<string>;
 }
 
-/** What fromSheet() reads and writes, by name. The defaults are those of the URHOUSE sheet. */
+/** A line of the order list: a product to buy for one component, in the stock it is sold in. */
+export interface OrderLine
+{
+    /** The component of the sheet it is for ('hsbwand'), with `byComponent`; else, and when the
+     *  model did not say, ''. */
+    component: string;
+    product: string;
+    /** The product as a specification names it: 'SLS-regel 38x235'. */
+    description: string;
+    /** The stock it is bought in (mm): [length] of a beam, [width, length] of a sheet; empty
+     *  for what is sold per m1, per m2 or per piece. */
+    stock: Array<number>;
+    /** How many to buy, in `unit`. */
+    quantity: number;
+    /** st (pieces of stock, or pieces), m1 or m2 */
+    unit: 'st' | 'm1' | 'm2';
+    /** What the model needs, net, in `netUnit`. */
+    net: number;
+    /** m1 for a beam, m2 for a sheet, st for anything else */
+    netUnit: 'st' | 'm1' | 'm2';
+    /** The price of one `unit`, excluding the sheet's margins and BTW. */
+    price: number;
+    /** quantity x price */
+    total: number;
+}
+
+/** What fromSheet() reads, by name. The defaults are those of the URHOUSE sheet. */
 export interface ProductSheetOptions
 {
     /** The products table. Default 'producten'. */
     products?: string;
     /** The operations table. Default 'bewerkingen'. */
     operations?: string;
-    /** The inputs and outputs of the lines: `inputs.<project>.regels` (id, description),
-     *  `inputs.<project>.hoeveelheden` (st, lengte, oppervlak, volume, zaaglengte, verlies),
-     *  `outputs.<project>.regels` and `outputs.<project>.<category>`. Default 'project'. */
-    project?: string;
+    /** The recipes and representative components, see recipes.ts. Default 'componenten'. */
+    components?: string;
     /** For a private sheet opened by its URL: the name of the Google key in Keys to read it
      *  with, as `cloudcalc.open(url, { key })` takes it. Default: the user's default key. */
     key?: string;
@@ -236,7 +284,8 @@ export interface ProductSheetOptions
 /** A workbook of the cloudcalc module, as far as this class uses it. */
 interface SheetWorkbook
 {
-    table(name: string): Array<Record<string, unknown>>;
+    /** A table's rows, computed with `input` (cloudcalc: else with the last compute()'s). */
+    table(name: string, input?: Record<string, unknown>): Array<Record<string, unknown>>;
     tables(): Array<{ name: string }>;
     compute(input: Record<string, unknown>): Record<string, unknown>;
     namedRanges(): Array<{ name: string, range: string }>;
@@ -244,8 +293,30 @@ interface SheetWorkbook
 
 /** One shape: matched to a product, or standing for a component by its volume (mm3). */
 type Assignment =
-    | { kind: 'product', product: Product, measure: PartMeasure, label: string }
-    | { kind: 'component', component: Component, volume: number, label: string };
+    | { kind: 'product', product: Product, measure: PartMeasure, label: string, block?: string }
+    | { kind: 'component', component: Component, volume: number, label: string, block?: string };
+
+/** The quantities of one shape or one add(), before they are added up to lines. */
+interface Entry
+{
+    id: string;
+    kind: LineKind;
+    vorm: string;
+    quantities: ProductQuantities;
+    label?: string;
+    /** The component whose recipe it follows. */
+    block?: string;
+}
+
+/** What compute() reads from the sheet. */
+interface CostData
+{
+    blocks: Map<string, Block>;
+    /** Percentages. */
+    margins: { materiaal: number, arbeid: number, algemeen: number };
+    /** Waste as a fraction, by vorm. */
+    waste: Map<string, number>;
+}
 
 interface Addition extends ProductOptions
 {
@@ -253,6 +324,31 @@ interface Addition extends ProductOptions
     kind: LineKind;
     quantities: ProductQuantities;
 }
+
+/** What add() and complete() said in a script without products (a component), shared by the
+ *  shapes its assign() mapped. Each of them brings an equal share of it to collect(): a copy
+ *  of the whole (three cached bents, a wall copied) brings all of it again. */
+interface TakeOff
+{
+    /** How many shapes share it. */
+    shapes: number;
+    adds: Array<{ id: string, quantities: ProductQuantities, options: ProductOptions }>;
+    completes: Array<{ component: string, quantities: ProductQuantities, options: Pick<ProductOptions, 'label'> & { except?: Array<string> } }>;
+}
+
+/** What a shape is as a part, as assign() maps it without products: kept on the shape
+ *  (`_product`), resolved by collect() against the sheet. */
+interface ProductMapping
+{
+    kind: 'product-mapping';
+    /** The product id, product group or component assign() was given, or the candidates. */
+    of: string | Array<string>;
+    /** Its options, with the label of the part's group. */
+    options: AssignOptions;
+    takeOff: TakeOff;
+}
+
+const isMapping = (value: unknown): value is ProductMapping => (value as ProductMapping | undefined)?.kind === 'product-mapping';
 
 //// SETTINGS ////
 
@@ -267,6 +363,8 @@ const COST_KEYS = ['material', 'onsite', 'voorbewerking', 'assemblage', 'montage
 const CATEGORIES = COST_KEYS.slice(0, 6) as ReadonlyArray<Exclude<typeof COST_KEYS[number], 'total'>>;
 
 const DEFAULT_TOLERANCE = 1;
+/** The width of a saw cut (mm), between two parts cut from one length. */
+const DEFAULT_KERF = 4;
 const KIND_ORDER: Array<LineKind> = ['product', 'component', 'operation'];
 
 //// PRODUCTS ////
@@ -389,6 +487,58 @@ const sizeText = (m: PartMeasure): string =>
 
 const round = (v: number): number => Math.round(v * 1e6) / 1e6;
 
+/** How many lengths of stock (mm) the parts (mm) are cut from: longest first, each into the
+ *  first length it still fits in, with a saw cut of `kerf` between two parts. */
+export function cutLengths(parts: Array<number>, stock: number, kerf: number = DEFAULT_KERF): number
+{
+    const left: Array<number> = [];
+    [...parts].sort((a, b) => b - a).forEach(length =>
+    {
+        const i = left.findIndex(rest => rest >= length + kerf);
+        if (i >= 0) { left[i] -= length + kerf; }
+        else { left.push(stock - length); }
+    });
+    return left.length;
+}
+
+/** The price of a quantity of a product, excluding margins: see materialPrice(). */
+const priceOf = (product: Product, q: ProductQuantities): number =>
+    materialPrice(product.row, { st: 0, lengte: 0, oppervlak: 0, volume: 0, zaaglengte: 0, ...q });
+
+/** What to buy of a product for the parts (lengths in mm, beams only) and the quantities
+ *  added by size: beams in lengths of stock, cut from them; sheets in pieces of stock by
+ *  their area with its waste; what is sold per m1 or m2 in those, with its waste. */
+function orderOf(product: Product, parts: Array<number>, added: Required<ProductQuantities>, waste: number, kerf: number)
+    : Pick<OrderLine, 'stock' | 'quantity' | 'unit' | 'net' | 'netUnit' | 'price'>
+{
+    const up = (v: number, step: number) => Math.ceil(Math.round(v / step * 1e6) / 1e6) * step;
+    if (product.measure === 'linear')
+    {
+        const [stock] = product.stock as [number];
+        const net = (parts.reduce((sum, l) => sum + l, 0) + added.lengte * 1000) / 1000;
+        if (stock === Infinity)
+        {
+            return { stock: [], quantity: up(net * (1 + waste), 0.1), unit: 'm1', net, netUnit: 'm1', price: priceOf(product, { lengte: 1 }) };
+        }
+        // added by size: lengths of stock with the waste; added in pieces: those
+        const extra = added.lengte ? up(added.lengte * 1000 * (1 + waste) / stock, 1) : up(added.st, 1);
+        return { stock: [stock], quantity: cutLengths(parts, stock, kerf) + extra, unit: 'st', net, netUnit: 'm1', price: priceOf(product, { lengte: stock / 1000 }) };
+    }
+    if (product.measure === 'sheet')
+    {
+        const [a, b] = product.stock as [number, number];
+        const net = added.oppervlak;
+        if (b === Infinity)
+        {
+            return { stock: [], quantity: up(net * (1 + waste), 0.1), unit: 'm2', net, netUnit: 'm2', price: priceOf(product, { oppervlak: 1 }) };
+        }
+        const area = a * b / 1e6;
+        const quantity = net ? up(net * (1 + waste) / area, 1) : up(added.st, 1);
+        return { stock: [a, b], quantity, unit: 'st', net, netUnit: 'm2', price: priceOf(product, { oppervlak: area }) || priceOf(product, { st: 1 }) };
+    }
+    return { stock: [], quantity: up(added.st, 1), unit: 'st', net: added.st, netUnit: 'st', price: priceOf(product, { st: 1 }) };
+}
+
 /** A product as a specification names it: its type and the size that tells it apart
  *  ('SLS-regel 38x235', 'Houtvezel buitenplaat 16 mm'). */
 function productLabel(p: Product): string
@@ -432,18 +582,26 @@ export class ProductManager
     private _operations: Array<OperationRow> = [];
     private _components: Array<Component> = [];
     private _workbook: SheetWorkbook | null = null;
-    private _sheet: Required<Omit<ProductSheetOptions, 'key'>> = { products: 'producten', operations: 'bewerkingen', project: 'project' };
+    private _sheet: Required<Omit<ProductSheetOptions, 'key'>> = { products: 'producten', operations: 'bewerkingen', components: 'componenten' };
     /** Per shape, the product it was matched to. A later assign() replaces it. */
     private _assigned = new Map<any, Assignment>();
     /** Shapes a group assign() saw but found no product for, until something else takes them. */
     private _unmatched = new Set<any>();
     private _added: Array<Addition> = [];
+    /** Without products: what add() and complete() said, for the shapes assign() mapped to bring along. */
+    private _mappedTakeOff: TakeOff | null = null;
     private _waste = new Map<string, number>();
     private _costs: Array<ProductCosts> | null = null;
-    /** The sheet's outputs of the last compute, for the components' prices. */
+    /** Per line of the last compute(), whose recipe gave its labour. */
+    private _labour: Array<string | null> | null = null;
+    /** The sheet's outputs, for the components' prices and the margins. */
     private _outputs: Record<string, any> | null = null;
+    private _costData: CostData | null = null;
+    private _recipes = new Map<string, { steps: Array<RecipeStep>, source: string } | null>();
     /** The offer template fromOffer() read. */
     private _offer: SheetWorkbook | null = null;
+    /** The template and inputs of the last offer(), for its page. */
+    private _offered: { wb: SheetWorkbook, input: Record<string, unknown> } | null = null;
 
     /** @param modules - the run's modules, asked for only when a table is made. */
     constructor(modules: (() => ArchiyouModules) | null = null)
@@ -454,14 +612,13 @@ export class ProductManager
     //// LOADING ////
 
     /**
-     *  Read the products and operations from a product sheet, and price the lines in its
-     *  `project` tab on compute(). The sheet is opened with the cloudcalc module, which the
-     *  script declares: `$module('cloudcalc')`.
+     *  Read the products and operations from a product sheet, to price the lines by its rows on
+     *  compute(). The sheet is opened with the cloudcalc module, a standard module the run loads
+     *  for this call; no `$module()` needed.
      *
      *  @param sheet - The sheet's URL (or id), or a workbook the script opened itself with
      *  `cloudcalc.open(url)`, to use it for more than the products.
-     *  @param options - Other names for the tables or the project inputs than the defaults, and
-     *  `key` for a private sheet.
+     *  @param options - Other names for the tables than the defaults, and `key` for a private sheet.
      */
     fromSheet(sheet: SheetWorkbook | string, options: ProductSheetOptions = {}): this
     {
@@ -490,7 +647,7 @@ export class ProductManager
 
     /**
      *  Read the components from an offer template instead of a product sheet: what its builders
-     *  published (the template's PRIJZEN tab). Enough to make an offer, without access to any
+     *  published (the template's BOUWERSPRIJZEN tab). Enough to make an offer, without access to any
      *  builder's own sheet: `make.products().fromOffer(OFFER_TEMPLATE).add('hsbwand', { oppervlak: 48 }).offer()`.
      *
      *  @param template - The offer template's URL, or its workbook opened with cloudcalc.
@@ -534,6 +691,9 @@ export class ProductManager
             throw new Error('ProductManager: no products: the rows need a product_id column');
         }
         this._workbook = null;
+        this._outputs = null;
+        this._costData = null;
+        this._recipes.clear();
         this._costs = null;
         return this;
     }
@@ -567,7 +727,11 @@ export class ProductManager
      *  With a component ('hsbwand'), each shape is only a mass: its volume is priced at the
      *  component's cost per m3. For an abstract model, roughly.
      *
-     *  @param idOrGroup - A product id ('sls-38x140'), a product group ('SLS') or a component ('hsbwand').
+     *  With `component` the parts follow that component's recipe in the sheet: see the top of this file.
+     *
+     *  @param idOrGroup - A product id ('sls-38x140'), a product group ('SLS') or a component ('hsbwand'),
+     *  or several, tried in order: each part gets the first that fits it. `['SLS', 'SLS-GEVINGERLAST']`
+     *  takes finger-jointed SLS only for what is longer than SLS comes.
      *  @param shapes - A shape, a collection (with its groups, like a wall) or an array.
      *  @example
      *  products = make.products().fromRows([
@@ -577,8 +741,11 @@ export class ProductManager
      *  products.assign('SLS', make.wall(3000, 2700, 140))
      *  products.list()
      */
-    assign(idOrGroup: string, shapes: any, options: AssignOptions = {}): this
+    assign(idOrGroup: string | Array<string>, shapes: any, options: AssignOptions = {}): this
     {
+        if (this._mapsOnly()) { return this._map(idOrGroup, shapes, options); }
+        if (Array.isArray(idOrGroup)) { return this._assignFirstFit(idOrGroup, shapes, options); }
+        this._checkComponent('assign', options.component);
         const component = this._products.some(p => p.id === idOrGroup) ? undefined : this._components.find(c => c.id === idOrGroup);
         if (component) { return this._assignComponent(component, shapes, options); }
 
@@ -604,7 +771,7 @@ export class ProductManager
             part.shapes.forEach(shape =>
             {
                 if (!found) { if (!this._assigned.has(shape)) { this._unmatched.add(shape); } return; }
-                this._assigned.set(shape, { kind: 'product', product: found.product, measure: found.measure, label });
+                this._assigned.set(shape, { kind: 'product', product: found.product, measure: found.measure, label, block: options.component });
                 this._unmatched.delete(shape);
             });
             return found?.product ?? null;
@@ -641,6 +808,12 @@ export class ProductManager
      */
     add(id: string, quantities: ProductQuantities, options: ProductOptions = {}): this
     {
+        if (this._mapsOnly())
+        {
+            this._takeOff().adds.push({ id, quantities, options });
+            return this;
+        }
+        this._checkComponent('add', options.component);
         const kind = this._kindOf(id);
         if (!kind)
         {
@@ -672,6 +845,166 @@ export class ProductManager
     }
 
     /**
+     *  The work on an element as a whole, which is on no product: its mounting, squaring and
+     *  handling, as the `element` rows of the component's block say. Scaled by size from the
+     *  representative component, so this agrees with the component's price per m2 or per piece.
+     *  Adds them as operation lines. Needs the sheet: fromSheet().
+     *
+     *  @param component - A component of the sheet: 'hsbwand'.
+     *  @param quantities - How much of it the model has, in its unit: `{ oppervlak: 21.6 }` or `{ st: 2 }`.
+     */
+    elementWork(component: string, quantities: ProductQuantities, options: Pick<ProductOptions, 'label'> = {}): this
+    {
+        this._checkComponent('elementWork', component);
+        const block = this._loadCostData('elementWork').blocks.get(component);
+        if (!block)
+        {
+            throw new Error(`ProductManager.elementWork('${component}'): the sheet has no block for this component`);
+        }
+        const key = quantityOfUnit(block.unit);
+        const amount = key ? quantities[key] : undefined;
+        if (!key || !amount || !(block.size > 0))
+        {
+            throw new Error(`ProductManager.elementWork('${component}'): it is sized in ${block.unit}: give ${key ?? 'its size'}`);
+        }
+        block.element.forEach(work => this.add(work.operation, { [work.quantity]: work.amount * amount / block.size },
+            { label: options.label ?? component, component }));
+        return this;
+    }
+
+    /**
+     *  Complete a component with what the model does not show: the products of its block in the
+     *  sheet that nothing assigned or added with this component stands for, scaled by size, and
+     *  the work on the element as a whole (elementWork()). A product of the block is shown when
+     *  the model has it, or a product of the same line (its first productgroep): rafters of
+     *  sls-38x170 stand for the block's sls-38x285. Call it after the assign()s of the component.
+     *
+     *  @param component - A component of the sheet: 'hsbwand'.
+     *  @param quantities - How much of it the model has, in its unit: `{ oppervlak: 21.6 }` or `{ st: 2 }`.
+     *  @param options.except - Products of the block to leave out (the model has another build-up).
+     *  @example
+     *  products.assign('SLS', wall, { component: 'hsbwand' })
+     *  products.assign('houtvezel-flex-240', wall.insulation, { component: 'hsbwand' })
+     *  products.complete('hsbwand', { oppervlak: 8.1 })  // sheathing, gypsum, screws, tape and the element work
+     */
+    complete(component: string, quantities: ProductQuantities, options: Pick<ProductOptions, 'label'> & { except?: Array<string> } = {}): this
+    {
+        if (this._mapsOnly())
+        {
+            this._takeOff().completes.push({ component, quantities, options });
+            return this;
+        }
+        this._checkComponent('complete', component);
+        const block = this._loadCostData('complete').blocks.get(component);
+        if (!block)
+        {
+            throw new Error(`ProductManager.complete('${component}'): the sheet has no block for this component`);
+        }
+        const key = quantityOfUnit(block.unit);
+        const amount = key ? quantities[key] : undefined;
+        if (!key || !amount || !(block.size > 0))
+        {
+            throw new Error(`ProductManager.complete('${component}'): it is sized in ${block.unit}: give ${key ?? 'its size'}`);
+        }
+        const line = (id: string) => this._products.find(p => p.id === id)?.groups[0] ?? id;
+        const shown = [
+            ...[...this._assigned.values()].filter(a => a.kind === 'product' && a.block === component).map(a => (a as { product: Product }).product.id),
+            ...this._added.filter(a => a.kind === 'product' && a.component === component).map(a => a.id),
+        ];
+        const shownLines = new Set(shown.map(line));
+        const scale = amount / block.size;
+        block.products
+            .filter(p => !shownLines.has(line(p.id)) && !(options.except ?? []).includes(p.id))
+            .map(p => ({ id: p.id, scaled: Object.fromEntries(Object.entries(p.quantities)
+                .filter(([, v]) => v > 0)
+                .map(([k, v]) => [k, v * scale])) }))
+            .filter(p => Object.keys(p.scaled).length > 0)
+            .forEach(p => this.add(p.id, p.scaled, { label: options.label ?? component, component }));
+        return this.elementWork(component, quantities, options);
+    }
+
+    /**
+     *  Take the parts that components mapped, and price them by this sheet. A component maps
+     *  its parts without a sheet: make.products() with assign(), add() and complete() there
+     *  only note on each shape what it is ('SLS' for hsbwand), so the component loads nothing.
+     *  Here each mapping is resolved as if assign() was called with the sheet, then the add()s
+     *  and complete()s, each shape bringing its share: a component used three times brings
+     *  them three times. What does not fit is left out with a warning, not an error: see
+     *  unassigned(). An assign() after collect() replaces a mapping.
+     *
+     *  @param shapes - The model, or a part of it: all(), a component's model.
+     *  @example
+     *  // in the wall component, without a sheet
+     *  products = make.products()
+     *  products.assign('SLS', wall.studs, { component: 'hsbwand' })
+     *  products.complete('hsbwand', { oppervlak: 8.1 })
+     *  // in the house
+     *  products = make.products().fromSheet(CORE).collect(all())
+     *  products.compute()
+     */
+    collect(shapes: any, options: { hidden?: boolean } = {}): this
+    {
+        if (this._mapsOnly())
+        {
+            throw new Error('ProductManager.collect(): needs products to resolve the mappings with: make.products().fromSheet(url).collect(shapes)');
+        }
+        const mapped = [...new Set(collectParts(this._source(shapes), { labels: false, order: 'scene', includeHidden: options.hidden === true })
+            .flatMap(part => part.shapes)
+            .filter(shape => isMapping(shape?._product)))];
+
+        // the parts, by what they were mapped to
+        const groups = new Map<string, { mapping: ProductMapping, shapes: Array<any> }>();
+        mapped.forEach(shape =>
+        {
+            const mapping = shape._product as ProductMapping;
+            const key = JSON.stringify([mapping.of, mapping.options]);
+            if (!groups.has(key)) { groups.set(key, { mapping, shapes: [] }); }
+            groups.get(key)!.shapes.push(shape);
+        });
+        // a group that fails as a whole (one offcut fits two products) is tried part by part
+        groups.forEach(({ mapping, shapes: list }) =>
+        {
+            try { this.assign(mapping.of, list, mapping.options); }
+            catch
+            {
+                list.forEach(shape => this._collectStep(`assign('${mapping.of}')`,
+                    () => this.assign(mapping.of, shape, mapping.options),
+                    () => { if (!this._assigned.has(shape)) { this._unmatched.add(shape); } }));
+            }
+        });
+
+        // what the components added, each shape bringing its share
+        const shares = new Map<TakeOff, number>();
+        mapped.forEach(shape =>
+        {
+            const takeOff = (shape._product as ProductMapping).takeOff;
+            shares.set(takeOff, (shares.get(takeOff) ?? 0) + 1 / takeOff.shapes);
+        });
+        const scaled = (quantities: ProductQuantities, share: number): ProductQuantities =>
+            Object.fromEntries(Object.entries(quantities).map(([key, value]) => [key, Number(value) * share]));
+        shares.forEach((share, takeOff) => takeOff.adds.forEach(a => this._collectStep(`add('${a.id}')`,
+            () => this.add(a.id, scaled(a.quantities, share), a.options))));
+
+        // complete() once per component, for all of it
+        const completes = new Map<string, { quantities: ProductQuantities, except: Set<string> }>();
+        shares.forEach((share, takeOff) => takeOff.completes.forEach(c =>
+        {
+            const sum = completes.get(c.component) ?? { quantities: {}, except: new Set<string>() };
+            Object.entries(scaled(c.quantities, share)).forEach(([key, value]) =>
+            {
+                sum.quantities[key as keyof ProductQuantities] = (sum.quantities[key as keyof ProductQuantities] ?? 0) + Number(value);
+            });
+            (c.options.except ?? []).forEach(id => sum.except.add(id));
+            completes.set(c.component, sum);
+        }));
+        completes.forEach((c, component) => this._collectStep(`complete('${component}')`,
+            () => this.complete(component, c.quantities, { except: [...c.except] })));
+
+        this._costs = null;
+        return this;
+    }
+
+    /**
      *  The shapes that have no product. Of `shapes` when given (say the whole model);
      *  otherwise of what assign() was given.
      */
@@ -693,92 +1026,133 @@ export class ProductManager
     list(): Array<ProductLine>
     {
         const lines = new Map<string, ProductLine>();
-        const line = (id: string, kind: LineKind, vorm: string): ProductLine =>
+        this._entries().forEach(entry =>
         {
-            if (!lines.has(id))
+            if (!lines.has(entry.id))
             {
-                lines.set(id, { id, kind, vorm, description: '', waste: this._waste.get(id) ?? null, shapes: 0,
-                    st: 0, lengte: 0, oppervlak: 0, volume: 0, zaaglengte: 0, costs: null });
+                lines.set(entry.id, { id: entry.id, kind: entry.kind, vorm: entry.vorm, description: '', waste: this._waste.get(entry.id) ?? null, shapes: 0,
+                    st: 0, lengte: 0, oppervlak: 0, volume: 0, zaaglengte: 0, costs: null, labour: null });
             }
-            return lines.get(id)!;
-        };
-        const describe = (l: ProductLine, label?: string) =>
-        {
-            if (label && !l.description.split(', ').includes(label)) { l.description = l.description ? `${l.description}, ${label}` : label; }
-        };
-        const addUp = (l: ProductLine, q: ProductQuantities) =>
-            QUANTITY_KEYS.forEach(k => { l[k] = round(l[k] + (q[k] ?? 0)); });
-
-        this._assigned.forEach(a =>
-        {
-            const l = a.kind === 'product' ? line(a.product.id, 'product', a.product.vorm) : line(a.component.id, 'component', 'component');
-            addUp(l, a.kind === 'product'
-                ? partQuantities(a.product, a.measure, DEFAULT_TOLERANCE)
-                : { st: 1, volume: a.volume / 1e9 });
-            l.shapes++;
-            describe(l, a.label);
-        });
-        this._added.forEach(a =>
-        {
-            const vorm = a.kind === 'product'
-                ? this._products.find(p => p.id === a.id)!.vorm
-                : a.kind === 'component' ? 'component' : String(this._operations.find(o => o.naam === a.id)?.werkeenheid ?? '');
-            const l = line(a.id, a.kind, vorm);
-            addUp(l, a.quantities);
-            describe(l, a.label);
+            const line = lines.get(entry.id)!;
+            QUANTITY_KEYS.forEach(k => { line[k] = round(line[k] + (entry.quantities[k] ?? 0)); });
+            if (entry.isShape) { line.shapes++; }
+            if (entry.label && !line.description.split(', ').includes(entry.label))
+            {
+                line.description = line.description ? `${line.description}, ${entry.label}` : entry.label;
+            }
         });
 
         const all = [...lines.values()];
         const ordered = KIND_ORDER.flatMap(kind => all.filter(l => l.kind === kind));
-        if (this._costs) { ordered.forEach((l, i) => { l.costs = this._costs![i] ?? null; }); }
+        if (this._costs)
+        {
+            ordered.forEach((l, i) =>
+            {
+                l.costs = this._costs![i] ?? null;
+                l.labour = this._labour?.[i] ?? null;
+            });
+        }
         return ordered;
     }
 
     /**
-     *  Send the lines to the sheet's project tab and read back the costs: per category,
-     *  including the sheet's margins, and per line (excluding margins). Needs fromSheet().
+     *  The costs, from the rows of the sheet: per category including the sheet's margins, and per
+     *  line excluding them. Material is the product's price with its waste, labour its recipe in
+     *  the sheet at the operations' costs per unit. A component line is priced as a whole: do not
+     *  also list its products. Needs fromSheet().
      *
-     *  @returns `{ material, onsite, voorbewerking, assemblage, montage, afbouw, total, lines }`
+     *  @returns `{ material, onsite, voorbewerking, assemblage, montage, afbouw, total, lines, noRecipe, noPrice }`
      */
     compute(): ProductOverview
     {
-        const wb = this._workbook;
-        if (!wb)
-        {
-            throw new Error('ProductManager.compute(): needs the sheet: make.products().fromSheet(url)');
-        }
-        const { project } = this._sheet;
+        const data = this._loadCostData('compute');
         const lines = this.list();
-        const capacity = this._capacity(wb, `inputs.${project}.regels`);
-        if (lines.length > capacity)
+        const noRecipe = new Set<string>();
+        const noPrice = new Set<string>();
+
+        // the quantities per line and per component: one line can follow several recipes
+        const contexts = new Map<string, Map<string, Required<ProductQuantities>>>();
+        this._entries().forEach(entry =>
         {
-            throw new Error(`ProductManager.compute(): ${lines.length} lines, but the sheet's ${project} tab has room for ${capacity}`);
-        }
+            const own = contexts.get(entry.id) ?? new Map<string, Required<ProductQuantities>>();
+            contexts.set(entry.id, own);
+            const q = own.get(entry.block ?? '') ?? { st: 0, lengte: 0, oppervlak: 0, volume: 0, zaaglengte: 0 };
+            own.set(entry.block ?? '', q);
+            QUANTITY_KEYS.forEach(k => { q[k] += entry.quantities[k] ?? 0; });
+        });
 
-        const orNull = (v: number) => (v ? v : null);
-        const regels = Array.from({ length: capacity }, (_, i) =>
-            lines[i] ? [lines[i]!.id, lines[i]!.description || null] : [null, null]);
-        const hoeveelheden = Array.from({ length: capacity }, (_, i) =>
-            lines[i] ? [...QUANTITY_KEYS.map(k => orNull(lines[i]![k])), lines[i]!.waste] : Array(QUANTITY_KEYS.length + 1).fill(null));
-
-        this._outputs = wb.compute({ [project]: { regels, hoeveelheden } }) as Record<string, any>;
-        const out = this._outputs?.[project];
-        if (!out || !Array.isArray(out.regels))
+        const priced = lines.map(line =>
         {
-            throw new Error(`ProductManager.compute(): the sheet has no outputs.${project}.regels`);
-        }
-        const costsOf = (values: Array<unknown>): ProductCosts =>
-            Object.fromEntries(COST_KEYS.map((k, i) => [k, Number(values?.[i]) || 0])) as unknown as ProductCosts;
+            const costs: ProductCosts = { material: 0, onsite: 0, voorbewerking: 0, assemblage: 0, montage: 0, afbouw: 0, total: 0 };
+            const sources = new Set<string>();
+            const addWork = (fase: string, amount: number) =>
+            {
+                if ((CATEGORIES as ReadonlyArray<string>).includes(fase)) { costs[fase as typeof CATEGORIES[number]] += amount; }
+            };
 
-        this._costs = lines.map((_, i) => costsOf(out.regels[i]));
-        const totals = Object.fromEntries(COST_KEYS.map(k => [k, Number(out[k]) || 0])) as unknown as ProductCosts;
+            if (line.kind === 'product')
+            {
+                const product = this._products.find(p => p.id === line.id)!;
+                const waste = line.waste ?? data.waste.get(product.vorm) ?? 0;
+                costs.material = materialPrice(product.row, line) * (1 + waste);
+                if (!costs.material) { noPrice.add(line.id); }
+                contexts.get(line.id)!.forEach((q, block) =>
+                {
+                    const recipe = this._recipe(product, block, data);
+                    if (!recipe) { noRecipe.add(line.id); return; }
+                    sources.add(recipe.source);
+                    recipe.steps.forEach(step => addWork(step.fase, step.factor * q[step.per] * this._rate(step.operation)));
+                });
+            }
+            else if (line.kind === 'operation')
+            {
+                const operation = this._operations.find(o => o.naam === line.id)!;
+                const key = quantityOfUnit(operation.werkeenheid);
+                const amount = key ? line[key] + (key === 'lengte' ? line.zaaglengte : 0) : 0;
+                const rate = this._rate(line.id);
+                if (!rate) { noPrice.add(line.id); }
+                addWork(String(operation.fase ?? '').trim(), amount * rate);
+            }
+            else
+            {
+                const block = data.blocks.get(line.id);
+                const key = block ? quantityOfUnit(block.unit) : null;
+                // priced per m3 when it has a volume, else per its own unit
+                const scale = !block ? 0 : line.volume ? line.volume / block.volume : (key ? line[key] : 0) / block.size;
+                if (!block || !Number.isFinite(scale)) { noPrice.add(line.id); }
+                else { CATEGORIES.forEach(k => { costs[k] = block.costs[k] * scale; }); }
+            }
+            costs.total = CATEGORIES.reduce((sum, k) => sum + costs[k], 0);
+            return { costs, source: [...sources].join(', ') || null };
+        });
+
+        this._costs = priced.map(p => p.costs);
+        this._labour = priced.map(p => p.source);
+
+        const { materiaal, arbeid, algemeen } = data.margins;
+        const onMaterial = (1 + materiaal / 100) * (1 + algemeen / 100);
+        const onLabour = (1 + arbeid / 100) * (1 + algemeen / 100);
+        const totals: ProductCosts = { material: 0, onsite: 0, voorbewerking: 0, assemblage: 0, montage: 0, afbouw: 0, total: 0 };
+        CATEGORIES.forEach(k =>
+        {
+            totals[k] = priced.reduce((sum, p) => sum + p.costs[k], 0) * (k === 'material' ? onMaterial : onLabour);
+        });
+        totals.total = CATEGORIES.reduce((sum, k) => sum + totals[k], 0);
 
         const loose = this._unmatched.size;
         if (loose)
         {
             console.warn(`ProductManager.compute(): ${loose} shape(s) have no product and are not in the costs: see products.unassigned()`);
         }
-        return { ...totals, lines: this.list() };
+        if (noRecipe.size)
+        {
+            console.warn(`ProductManager.compute(): no recipe in the sheet, so no labour, for: ${[...noRecipe].join(', ')}`);
+        }
+        if (noPrice.size)
+        {
+            console.warn(`ProductManager.compute(): no price in the sheet for: ${[...noPrice].join(', ')}`);
+        }
+        return { ...totals, lines: this.list(), noRecipe: [...noRecipe], noPrice: [...noPrice] };
     }
 
     /**
@@ -794,14 +1168,133 @@ export class ProductManager
         }
         const lines = this.list();
         const withCosts = lines.some(l => l.costs);
-        const columns = ['product', 'description', 'vorm', ...QUANTITY_KEYS, 'waste', ...(withCosts ? COST_KEYS : [])];
+        const columns = ['product', 'description', 'vorm', ...QUANTITY_KEYS, 'waste', ...(withCosts ? [...COST_KEYS, 'labour'] : [])];
         const rows = lines.map(l => [
             l.id, l.description, l.vorm,
             ...QUANTITY_KEYS.map(k => Math.round(l[k] * 1000) / 1000),
             l.waste ?? '',
-            ...(withCosts ? COST_KEYS.map(k => Math.round((l.costs?.[k] ?? 0) * 100) / 100) : []),
+            ...(withCosts ? [...COST_KEYS.map(k => Math.round((l.costs?.[k] ?? 0) * 100) / 100), l.labour ?? ''] : []),
         ]);
         return calc.table(name, rows, columns) as Table;
+    }
+
+    /**
+     *  The order list: the products to buy for the whole project, a line each, in the stock they
+     *  are sold in: what a supplier is asked for. Beams in lengths of stock, the parts cut from
+     *  them longest first (with a saw cut between two parts); sheets in pieces of stock by their
+     *  area, with the waste of the sheet; what is sold per m1 or m2 in those, with the waste. A
+     *  component the model has as a whole (add('beganegrondvloer', ...), or a mass) brings the
+     *  products of its block in the sheet, scaled by size. Priced by the sheet's product rows,
+     *  excluding its margins and BTW: the purchase, not the client's price. Beams first, then
+     *  sheets, then the rest. Needs fromSheet().
+     *
+     *  @param options.byComponent - A list per component of the sheet instead, in the order the
+     *    model first has them: what each costs. Its beams are cut from lengths of their own.
+     *  @param options.kerf - The width of a saw cut (mm). Default 4.
+     */
+    orderList(options: { byComponent?: boolean, kerf?: number } = {}): Array<OrderLine>
+    {
+        const data = this._loadCostData('orderList');
+        const kerf = options.kerf ?? DEFAULT_KERF;
+        const empty = (): Required<ProductQuantities> => ({ st: 0, lengte: 0, oppervlak: 0, volume: 0, zaaglengte: 0 });
+        const needs = new Map<string, { component: string, product: Product, parts: Array<number>, added: Required<ProductQuantities> }>();
+        const need = (of: string, product: Product) =>
+        {
+            const component = options.byComponent ? of : '';
+            const key = `${component}|${product.id}`;
+            if (!needs.has(key)) { needs.set(key, { component, product, parts: [], added: empty() }); }
+            return needs.get(key)!;
+        };
+        const add = (component: string, id: string, quantities: ProductQuantities, scale = 1) =>
+        {
+            const product = this._products.find(p => p.id === id);
+            if (!product) { return; }
+            const n = need(component, product);
+            QUANTITY_KEYS.forEach(k => { n.added[k] += (quantities[k] ?? 0) * scale; });
+        };
+
+        this._entries().forEach(entry =>
+        {
+            if (entry.kind === 'product' && entry.isShape && this._products.find(p => p.id === entry.id)?.measure === 'linear')
+            {
+                need(entry.block ?? '', this._products.find(p => p.id === entry.id)!).parts.push((entry.quantities.lengte ?? 0) * 1000);
+            }
+            else if (entry.kind === 'product')
+            {
+                add(entry.block ?? '', entry.id, entry.quantities);
+            }
+            else if (entry.kind === 'component')
+            {
+                // its block's products, scaled as compute() scales the component's cost
+                const block = data.blocks.get(entry.id);
+                const key = block ? quantityOfUnit(block.unit) : null;
+                const scale = !block ? 0 : entry.quantities.volume ? entry.quantities.volume / block.volume : (key ? (entry.quantities[key] ?? 0) : 0) / block.size;
+                if (!block || !Number.isFinite(scale)) { return; }
+                block.products.forEach(p => add(entry.id, p.id, p.quantities, scale));
+            }
+        });
+
+        // per component in the order the model first has it; beams, sheets, the rest; by name
+        const components = [...new Set([...needs.values()].map(n => n.component))];
+        const measures: Array<ProductMeasure> = ['linear', 'sheet', 'piece'];
+        return [...needs.values()]
+            .map(n => ({ n, label: productLabel(n.product) }))
+            .sort((a, b) => components.indexOf(a.n.component) - components.indexOf(b.n.component)
+                || measures.indexOf(a.n.product.measure) - measures.indexOf(b.n.product.measure)
+                || a.label.localeCompare(b.label) || a.n.product.id.localeCompare(b.n.product.id))
+            .map(({ n, label }) =>
+            {
+                const waste = this._waste.get(n.product.id) ?? data.waste.get(n.product.vorm) ?? 0;
+                const order = orderOf(n.product, n.parts, n.added, waste, kerf);
+                // a piece by its sizes too: 'Houtschroef 4.5x50'
+                const description = n.product.measure === 'piece' && n.product.dims.length ? `${label} ${n.product.dims.join('x')}` : label;
+                return { component: n.component, product: n.product.id, description, ...order, total: order.quantity * order.price };
+            })
+            .filter(l => l.quantity > 0);
+    }
+
+    /**
+     *  The order list as a table of the script (see orderList()), with its total. Per component,
+     *  with a total per component: a component is named as the sheet names it ('HSB wand').
+     *
+     *      products.orderTable('order')                              // to order, for the whole project
+     *      products.orderTable('order', { byComponent: true })       // what each component costs
+     *      products.orderTable('order_wall', { component: 'hsbwand' })
+     *
+     *  @param name - Name of the table. Default 'order'.
+     *  @param options.byComponent - Per component, see orderList().
+     *  @param options.component - Only this component ('hsbwand'): its lines and its total.
+     *  @param options.kerf - The width of a saw cut (mm). Default 4.
+     */
+    orderTable(name = 'order', options: { byComponent?: boolean, component?: string, kerf?: number } = {}): Table
+    {
+        const calc = this._modules?.()?.calc;
+        if (!calc)
+        {
+            throw new Error('ProductManager.orderTable(): tables are only available inside a run');
+        }
+        const outputs = this._sheetOutputs('orderTable');
+        const named = (component: string) => String(outputs[component]?.naam ?? '').trim() || component || 'other';
+        const r2 = (v: number) => Math.round(v * 100) / 100;
+        // the component column only for a list of several
+        const one = options.component !== undefined;
+        const split = !one && options.byComponent === true;
+        const rows = this.orderList({ ...options, byComponent: one || split })
+            .filter(l => !one || l.component === options.component)
+            .map(l => [
+                ...(split ? [named(l.component)] : []), l.product, l.description, l.stock.map(Math.round).join(' x '),
+                r2(l.quantity), l.unit, `${r2(l.net)} ${l.netUnit}`, r2(l.price), r2(l.total),
+            ]);
+        const columns = [...(split ? ['component'] : []), 'product', 'description', 'stock (mm)', 'quantity', 'unit', 'net', 'price per unit', 'price'];
+        const table = calc.table(name, rows, columns) as Table;
+        const sum = (values: Array<unknown>) => r2(values.reduce<number>((total, v) => total + (Number(v) || 0), 0));
+        if (!split)
+        {
+            return table.footer({ product: 'Total', description: 'excl. margins and BTW', price: sum });
+        }
+        return table
+            .footer({ product: 'subtotal', price: sum }, { groupBy: 'component' })
+            .footer({ component: 'Total', product: 'excl. margins and BTW', price: sum });
     }
 
     //// OFFER ////
@@ -834,16 +1327,15 @@ export class ProductManager
     }
 
     /**
-     *  An offer: the template's rows filled in with the components of this model, at the prices
-     *  one builder published to the template. Every component group of the template is a row; a
-     *  group the model has is ticked, with the builder's component and its quantity in the
-     *  component's unit (a mass assigned by its volume is converted at the builder's own price).
-     *  In the client's copy the client can switch the builder, the scenario and a row's component.
+     *  An offer: the template computed with the quantities of this model, at the prices one builder
+     *  published to the template. Every component group of the template is a row with its quantity
+     *  in inputs.<groep>; a group the model has gets the model's quantity in the component's unit (a
+     *  mass assigned by its volume is converted at the builder's own price), the others 0. Which rows are on and their type stay the template's choice: in
+     *  the client's copy the client can switch them, the builder and the scenario.
      *
-     *      $module('cloudcalc')
      *      products = make.products().fromOffer(OFFER_TEMPLATE)
      *      products.add('hsbwand', { oppervlak: 48 }).add('dak', { oppervlak: 40 })
-     *      offer = products.offer({ bouwer: 'Bouwer A', scenario: 'DIY Bouwpakket' })
+     *      offer = products.offer({ bouwer: 'URBUILD', scenario: 'DIY Bouwpakket' })
      *      offer.sheet('BOUWKOSTEN').toTable()     // the offer, here
      *      offer.cloudcopy({ title: 'Offerte Jansen', share: 'writer' })   // the client's copy
      *
@@ -875,7 +1367,7 @@ export class ProductManager
         const prices = this._offerPrices(wb).filter(r => r.bouwer === bouwer);
 
         // the model's components, by group, in the unit of the component
-        const used = new Map<string, { naam: string, component: string, quantity: number }>();
+        const used = new Map<string, { component: string, quantity: number }>();
         this.list().filter(l => l.kind === 'component').forEach(l =>
         {
             const price = prices.find(p => p.component === l.id);
@@ -894,7 +1386,7 @@ export class ProductManager
                     + `which is one row of the offer; it shows '${earlier.component}'`);
                 return;
             }
-            used.set(price.groep, { naam: price.naam, component: l.id, quantity: (earlier?.quantity ?? 0) + quantity });
+            used.set(price.groep, { component: l.id, quantity: (earlier?.quantity ?? 0) + quantity });
         });
         const lost = this.list().filter(l => l.kind !== 'component').length;
         if (lost)
@@ -902,30 +1394,177 @@ export class ProductManager
             console.warn(`ProductManager.offer(): ${lost} product and operation line(s) are not in the offer, which has a row per component group`);
         }
 
-        // the template's rows: a group is a row when it has inputs.<groep>.type
-        const rows = [...new Set(wb.namedRanges()
-            .map(r => r.name.match(/^inputs\.([^.]+)\.type$/)?.[1])
-            .filter((g): g is string => g !== undefined))];
+        // the template's rows: a group of the price list with inputs.<groep>, its quantity; 0 when the model has none
+        const named = new Set(wb.namedRanges().map(r => r.name));
+        const rows = [...new Set(this._offerPrices(wb).map(p => p.groep))].filter(g => named.has(`inputs.${g}`));
         [...used.keys()].filter(g => !rows.includes(g)).forEach(g =>
-            console.warn(`ProductManager.offer(): the template has no row for group '${g}' (inputs.${g}.type)`));
-        const groups = Object.fromEntries(rows.map(g =>
-        {
-            const u = used.get(g);
-            return [g, u
-                ? { aan: true, type: u.naam, hoeveelheid: Math.round(u.quantity * 100) / 100 }
-                : { aan: false, type: prices.find(p => p.groep === g)?.naam ?? '', hoeveelheid: 0 }];
-        }));
+            console.warn(`ProductManager.offer(): the template has no row for group '${g}' (inputs.${g})`));
+        const groups = Object.fromEntries(rows.map(g => [g, Math.round((used.get(g)?.quantity ?? 0) * 100) / 100]));
 
-        wb.compute({
+        const input = {
             ...groups,
             bouwer,
             ...(options.scenario ? { scenario: options.scenario } : {}),
             ...(options.inputs ?? {}),
-        });
+        };
+        wb.compute(input);
+        this._offered = { wb, input };
         return wb;
     }
 
+    /**
+     *  The outputs of the last offer(): its totals (`bouwkosten.totaal` incl. BTW, `.excl_btw`,
+     *  `.incl_proces`) and specifications (`specificaties.gwp_a1c4_m2`, `.rc_wanden`, `.uren`,
+     *  `.uren_diy`, ...), computed with the offer's inputs. `inputs` changes some of them for this
+     *  call only, so one offer gives the totals of every scenario:
+     *
+     *      products.offer({ bouwer: 'URBUILD', scenario: 'Full Service' })
+     *      full = products.offerOutputs().bouwkosten.totaal
+     *      diy = products.offerOutputs({ scenario: 'DIY Full' }).bouwkosten.totaal   // materials only
+     *
+     *  @param inputs - Inputs of the template to change for this call, over those of offer().
+     */
+    offerOutputs(inputs: Record<string, unknown> = {}): Record<string, any>
+    {
+        if (!this._offered)
+        {
+            throw new Error('ProductManager.offerOutputs(): needs an offer first: products.offer({ bouwer, scenario })');
+        }
+        const { wb, input } = this._offered;
+        return wb.compute({ ...input, ...inputs }) as Record<string, any>;
+    }
+
+    /**
+     *  The last offer() as one flat HTML page for the client: the ticked rows per section with
+     *  their costs by category ('zelf' where the scenario leaves it to the client), the totals,
+     *  who does what per scenario and the chosen design and process steps. No scripts, no
+     *  external files: to mail, to keep with a project, to open on a phone or print.
+     *
+     *      offer = products.offer({ bouwer: 'URBUILD', scenario: 'Full Service' })
+     *      html = products.offerHtml({ klant: 'Fam. Jansen' })
+     *
+     *  Reads the template's tables bouwkosten (and proces, scenarios, bouwers when it has them)
+     *  and outputs.bouwkosten.*, as computed by offer(). See offer-html.ts.
+     */
+    offerHtml(options: OfferPageOptions = {}): string
+    {
+        return renderOfferHtml(offerPageData(this._offerSource('offerHtml'), options));
+    }
+
+    /**
+     *  The last offer() as a table of the script, a row per offer line, that carries the page of
+     *  offerHtml(): the output `<pipeline>/tables/<name>/html` is that page, `.../xlsx` the lines.
+     *
+     *      products.offerPage('offerte', { klant: 'Fam. Jansen' })   // → default/tables/offerte/html
+     *
+     *  @param name - Name of the table. Default 'offer'.
+     */
+    offerPage(name: string = 'offer', options: OfferPageOptions = {}): Table
+    {
+        const calc = this._modules?.()?.calc;
+        if (!calc)
+        {
+            throw new Error('ProductManager.offerPage(): tables are only available inside a run');
+        }
+        const data = offerPageData(this._offerSource('offerPage'), options);
+        const columns = ['onderdeel', 'type', 'specificatie', 'hoeveelheid', 'eenheid', 'prijs per eenheid', ...data.categories, 'totaal'];
+        const rows = data.sections.flatMap(s => s.lines.map(l =>
+            [l.onderdeel, l.type, l.specificatie, l.hoeveelheid ?? '', l.eenheid, l.prijs ?? '', ...l.costs.map(c => c ?? ''), l.totaal ?? '']));
+        return (calc.table(name, rows, columns) as Table).html(renderOfferHtml(data));
+    }
+
+    /** What the offer page reads from the last offer(). */
+    private _offerSource(method: string): OfferSource
+    {
+        if (!this._offered)
+        {
+            throw new Error(`ProductManager.${method}(): needs an offer first: products.offer({ bouwer, scenario })`);
+        }
+        const { wb, input } = this._offered;
+        const names = new Set(wb.tables().map(t => t.name));
+        if (!names.has('bouwkosten'))
+        {
+            throw new Error(`ProductManager.${method}(): the offer template has no table bouwkosten (a named range tables.bouwkosten over its BOUWKOSTEN rows)`);
+        }
+        // with the offer's inputs: a compute() of the script in between does not change the page
+        const table = (name: string) => (names.has(name) ? wb.table(name, input) : []);
+        return {
+            bouwkosten: table('bouwkosten'),
+            proces: table('proces'),
+            scenarios: table('scenarios'),
+            bouwers: table('bouwers'),
+            outputs: wb.compute(input) as Record<string, any>,
+            input,
+        };
+    }
+
     //// INTERNAL ////
+
+    /** Without products, as in a component: assign(), add() and complete() only map, for collect(). */
+    private _mapsOnly(): boolean
+    {
+        return this._products.length === 0 && this._components.length === 0 && !this._workbook;
+    }
+
+    private _takeOff(): TakeOff
+    {
+        return this._mappedTakeOff ??= { shapes: 0, adds: [], completes: [] };
+    }
+
+    /** assign() without products: note on each shape what it is, with the label of its group. */
+    private _map(idOrGroup: string | Array<string>, shapes: any, options: AssignOptions): this
+    {
+        const parts = collectParts(this._source(shapes), { labels: false, order: 'scene', includeHidden: options.hidden === true });
+        if (parts.length === 0)
+        {
+            throw new Error(`ProductManager.assign('${idOrGroup}'): no solid shapes to assign`);
+        }
+        const named = typeof shapes?._name === 'string' && shapes._name !== 'collection' ? shapes._name : '';
+        const takeOff = this._takeOff();
+        parts.forEach(part =>
+        {
+            const label = options.label ?? (part.group && part.group !== 'main' ? part.group : named || baseNames(part.shapes));
+            part.shapes.forEach(shape =>
+            {
+                if (!isMapping(shape._product) || shape._product.takeOff !== takeOff) { takeOff.shapes++; }
+                shape._product = { kind: 'product-mapping', of: idOrGroup, options: { ...options, label }, takeOff } satisfies ProductMapping;
+            });
+        });
+        return this;
+    }
+
+    /** assign() with candidates: each part gets the first of them that fits it. An error only
+     *  when none of them fits any part. */
+    private _assignFirstFit(candidates: Array<string>, shapes: any, options: AssignOptions): this
+    {
+        const all = collectParts(this._source(shapes), { labels: false, order: 'scene', includeHidden: options.hidden === true }).flatMap(p => p.shapes);
+        const errors: Array<string> = [];
+        candidates.reduce((rest: any, candidate, i) =>
+        {
+            const list = i === 0 ? all : rest as Array<any>;
+            if (list.length === 0) { return list; }
+            const before = new Map(list.map(shape => [shape, this._assigned.get(shape)]));
+            try { this.assign(candidate, i === 0 ? shapes : list, options); }
+            catch (e) { errors.push((e as Error).message); }
+            return list.filter(shape => !this._assigned.has(shape) || this._assigned.get(shape) === before.get(shape));
+        }, all);
+        if (errors.length === candidates.length)
+        {
+            throw new Error(errors[0]);
+        }
+        return this;
+    }
+
+    /** One step of collect(): what does not fit is a warning, so one part does not stop the model. */
+    private _collectStep(what: string, step: () => void, failed?: () => void): void
+    {
+        try { step(); }
+        catch (e)
+        {
+            failed?.();
+            console.warn(`ProductManager.collect(): ${what} left out: ${(e as Error).message}`);
+        }
+    }
 
     /** Shapes standing for a component: each one's own volume, not its bounding box, so an
      *  L-shaped mass is not priced as the block around it. */
@@ -944,12 +1583,114 @@ export class ProductManager
             {
                 const own = typeof shape?.volume === 'function' ? Math.abs(Number(shape.volume())) : NaN;
                 const volume = Number.isFinite(own) && own > 0 ? own : part.measure.volume;
-                this._assigned.set(shape, { kind: 'component', component, volume, label });
+                this._assigned.set(shape, { kind: 'component', component, volume, label, block: options.component });
                 this._unmatched.delete(shape);
             });
         });
         this._costs = null;
         return this;
+    }
+
+    /** The quantities of every shape and every add(), in the order they make the lines. */
+    private _entries(): Array<Entry & { isShape: boolean }>
+    {
+        const shapes = [...this._assigned.values()].map(a => ({
+            id: a.kind === 'product' ? a.product.id : a.component.id,
+            kind: a.kind as LineKind,
+            vorm: a.kind === 'product' ? a.product.vorm : 'component',
+            quantities: a.kind === 'product' ? partQuantities(a.product, a.measure, DEFAULT_TOLERANCE) : { st: 1, volume: a.volume / 1e9 },
+            label: a.label,
+            block: a.block,
+            isShape: true,
+        }));
+        const added = this._added.map(a => ({
+            id: a.id,
+            kind: a.kind,
+            vorm: a.kind === 'product' ? this._products.find(p => p.id === a.id)!.vorm
+                : a.kind === 'component' ? 'component' : String(this._operations.find(o => o.naam === a.id)?.werkeenheid ?? ''),
+            quantities: a.quantities,
+            label: a.label,
+            block: a.component,
+            isShape: false,
+        }));
+        return [...shapes, ...added];
+    }
+
+    /** A component that is not in the sheet is a typo: it would silently give another recipe. */
+    private _checkComponent(method: string, component?: string): void
+    {
+        if (component !== undefined && !this._components.some(c => c.id === component))
+        {
+            throw new Error(`ProductManager.${method}(): no component '${component}' in the sheet. It has: ${this._components.map(c => c.id).join(', ') || 'none'}`);
+        }
+    }
+
+    /** What the costs read from the sheet, once. */
+    private _loadCostData(method: string): CostData
+    {
+        if (this._costData) { return this._costData; }
+        const wb = this._workbook;
+        if (!wb)
+        {
+            throw new Error(`ProductManager.${method}(): needs the sheet: make.products().fromSheet(url)`);
+        }
+        const name = this._sheet.components;
+        const blocks = wb.tables().some(t => t.name === name) ? readBlocks(wb.table(name)) : null;
+        if (!blocks)
+        {
+            throw new Error(`ProductManager.${method}(): the sheet has no recipes: a named range tables.${name} with the columns bewerking, fase, product, per, factor`);
+        }
+        const outputs = this._sheetOutputs(method);
+        const margins = outputs['marges'];
+        if (!margins)
+        {
+            throw new Error(`ProductManager.${method}(): the sheet has no margins: named ranges outputs.marges.materiaal, .arbeid and .algemeen`);
+        }
+        const waste = new Map<string, number>((Array.isArray(outputs['verlies']) ? outputs['verlies'] : [])
+            .filter((row: Array<unknown>) => row?.[0])
+            .map((row: Array<unknown>) => [String(row[0]).trim().toLowerCase(), Number(row[1]) || 0] as [string, number]));
+        this._costData = {
+            blocks,
+            waste,
+            margins: { materiaal: Number(margins.materiaal) || 0, arbeid: Number(margins.arbeid) || 0, algemeen: Number(margins.algemeen) || 0 },
+        };
+        return this._costData;
+    }
+
+    /** The cost of one unit of an operation. */
+    private _rate(operation: string): number
+    {
+        return Number(this._operations.find(o => o.naam === operation)?.['kosten (EUR per werkeenheid)']) || 0;
+    }
+
+    /** The recipe a product follows, nearest first: its own row in the component's block, one like
+     *  it in that block, then the same product, group or vorm anywhere. Its own row counts even
+     *  without operations: the sheet then says there is no work on it. */
+    private _recipe(product: Product, block: string, data: CostData): { steps: Array<RecipeStep>, source: string } | null
+    {
+        const key = `${block}|${product.id}`;
+        if (this._recipes.has(key)) { return this._recipes.get(key)!; }
+
+        const inGroup = (id: string, group: string) => this._products.find(p => p.id === id)?.groups.includes(group) === true;
+        const scope = (rows: Array<BlockProduct>, prefix: string) => [
+            { source: `${prefix}${product.id}`, rows: rows.filter(r => r.id === product.id), exact: true },
+            ...product.groups.map(group => ({ source: `${prefix}${group}`, rows: rows.filter(r => inGroup(r.id, group)), exact: false })),
+            { source: `${prefix}${product.vorm}`, rows: rows.filter(r => r.vorm === product.vorm), exact: false },
+        ];
+        const everywhere = [...data.blocks.values()].flatMap(b => b.products);
+        const own = data.blocks.get(block)?.products;
+        const found = [...(own ? scope(own, `${block}/`) : []), ...scope(everywhere, '')]
+            .filter(c => c.rows.length > 0)
+            .map(c =>
+            {
+                const exact = c.exact && block !== '' && c.source.startsWith(`${block}/`);
+                return { steps: exact ? combineRows(c.rows) : mergeRecipes(c.rows.map(r => r.steps)), source: c.source, exact };
+            })
+            .find(c => c.exact || c.steps.length > 0);
+
+        const recipe = found ? { steps: found.steps, source: found.source } : null;
+        this._recipes.set(key, recipe);
+        return recipe;
     }
 
     private _kindOf(id: string): LineKind | null
@@ -1023,11 +1764,12 @@ export class ProductManager
         return { forEachGroup: (fn: (group: string, shapes: Array<any>) => void) => fn('main', list) };
     }
 
-    /** How many lines a sheet input takes: the rows of its named range. */
     /** Open a sheet by its URL with the run's cloudcalc module. A sheet the run does not have yet
-     *  ends the run with cloudcalc's own error, which the editor answers by fetching it. The module
-     *  is missing here only when the script did not declare it: one that is declared but cannot be
-     *  loaded stops the script at its $module() line. */
+     *  ends the run with cloudcalc's own error, which the editor answers by fetching it. cloudcalc is
+     *  a standard module: the run loads it when the code calls fromSheet()/fromOffer() or names a
+     *  sheet (STANDARD_MODULE_USES). It is missing here when the pre-scan could not see the use (a
+     *  URL in a variable from elsewhere, a call built dynamically) — then `$module('cloudcalc')`
+     *  declares it — or when it is not installed on this server. */
     private _openSheet(url: string, key?: string): SheetWorkbook
     {
         let cloudcalc: { open(ref: string, opts?: { key?: string }): SheetWorkbook } | null = null;
@@ -1042,8 +1784,8 @@ export class ProductManager
         }
         if (!cloudcalc)
         {
-            throw new ModuleUnavailableError('cloudcalc', 'ProductManager.fromSheet(url): the sheet is opened with the cloudcalc module; '
-                + 'declare it at the top of the script: $module(\'cloudcalc\')');
+            throw new ModuleUnavailableError('cloudcalc', 'ProductManager.fromSheet(url): the sheet is opened with the cloudcalc module, '
+                + 'which this run did not load; add $module(\'cloudcalc\') at the top of the script, or check that the module is installed');
         }
         return cloudcalc.open(url, key ? { key } : {});
     }
@@ -1051,17 +1793,24 @@ export class ProductManager
     private _openTemplate(method: string, template: SheetWorkbook | string, key?: string): SheetWorkbook
     {
         const wb = (typeof template === 'string') ? this._openSheet(template, key) : template;
-        if (typeof wb?.compute !== 'function' || typeof wb?.table !== 'function' || !wb.tables().some(t => t.name === 'prijzen'))
+        if (typeof wb?.compute !== 'function' || typeof wb?.table !== 'function' || !this._priceList(wb))
         {
-            throw new Error(`ProductManager.${method}(): expected the URL of an offer template (with a price list, tables.prijzen), or its workbook of the cloudcalc module`);
+            throw new Error(`ProductManager.${method}(): expected the URL of an offer template (with a price list, tables.bouwersprijzen), or its workbook of the cloudcalc module`);
         }
         return wb;
+    }
+
+    /** The name of the template's price list: tables.bouwersprijzen, in copies made before 2026-11-03 tables.prijzen. */
+    private _priceList(wb: SheetWorkbook): string | null
+    {
+        const names = wb.tables().map(t => t.name);
+        return ['bouwersprijzen', 'prijzen'].find(name => names.includes(name)) ?? null;
     }
 
     /** The template's price list: a row per builder and component. */
     private _offerPrices(wb: SheetWorkbook): Array<{ bouwer: string, gebouwdeel: string, groep: string, component: string, naam: string, eenheid: string, perUnit: number, perM3: number }>
     {
-        return wb.table('prijzen')
+        return wb.table(this._priceList(wb)!)
             .filter(r => String(r['bouwer'] ?? '').trim() && String(r['component'] ?? '').trim())
             .map(r => ({
                 bouwer: String(r['bouwer']).trim(),
@@ -1084,16 +1833,5 @@ export class ProductManager
         }
         this._outputs ??= this._workbook.compute({}) as Record<string, any>;
         return this._outputs;
-    }
-
-    private _capacity(wb: SheetWorkbook, name: string): number
-    {
-        const range = wb.namedRanges().find(r => r.name === name)?.range;
-        const rows = range?.match(/^[A-Z]+(\d+):[A-Z]+(\d+)$/i);
-        if (!rows)
-        {
-            throw new Error(`ProductManager.compute(): the sheet has no ${name} (the lines of its ${this._sheet.project} tab)`);
-        }
-        return Number(rows[2]) - Number(rows[1]) + 1;
     }
 }

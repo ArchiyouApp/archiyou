@@ -15,9 +15,16 @@ export class Db
     shapes:Table; // all Shapes in the current model (see _archiyou)
     objects:Table; // all Obj containing Shapes in the Scene ( through _archiyou)
 
-    constructor(archiyou:ArchiyouModules)
+    /** @param tables - Tables of another Db to hold (see only()), instead of making the standard ones */
+    constructor(archiyou:ArchiyouModules, tables?:Record<string, Table>)
     {
         this._archiyou = archiyou;
+
+        if(tables)
+        {
+            this._tables = tables;
+            return;
+        }
 
         this.init(); // try to init immediately. Maybe there are not Shapes in Archiyou instance. When there are use init()
     }
@@ -91,6 +98,15 @@ export class Db
         return this._tables[name];
     }
 
+    /** A Db with only these of its tables (the same Table instances): what a component's
+     *  pipeline made, handed to the script that uses the component */
+    only(names:Array<string>):Db
+    {
+        return new Db(this._archiyou, Object.fromEntries(this.tables()
+            .filter(name => names.includes(name))
+            .map(name => [name, (this._tables as Record<string, Table>)[name]])));
+    }
+
     generateShapesData():Array<Object> // TODO: make output Object an Interface?
     {
         if(!this._archiyou.modeler)
@@ -153,6 +169,15 @@ export class Db
         }
 
         return tableBufferByName;
+    }
+
+    /** The tables (all, or `only` these) as flat HTML pages, by name. See Table.toHtml(). */
+    toTableHtml(only?:string|Array<string>):Record<string, string>
+    {
+        const names = Array.isArray(only) ? only : typeof only === 'string' ? [only] : null;
+        return Object.fromEntries(this.tables()
+            .filter(name => !names || names.includes(name))
+            .map(name => [name, (this._tables as Record<string, Table>)[name]!.toHtml(name)]));
     }
 
     //// DEBUG OUTPUT METHODS ////

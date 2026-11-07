@@ -328,6 +328,31 @@ describe('Runner.linkComponentScripts (local component lookup)', () =>
         }
     })
 
+    it('Gets the tables of a component with get(): all of its own, or the ones a pipeline made', async () =>
+    {
+        const runner = await new Runner().load()
+        runner.linkComponentScripts([
+            Script.fromData({ name: 'withTables', code: `box(10);
+                calc.table('parts', [['stud', 3]], ['part', 'count']);
+                $pipeline('cnc', function(){ calc.table('cuts', [['stud', 2400]], ['part', 'length']); return box(5); });` }),
+        ])
+
+        const run = async (code:string) => runner.execute({ kernel: 'mesh', script: { code } });
+        const check = (cond:string, msg:string) => `if(!(${cond})){ throw new Error(${JSON.stringify(msg)}); }`;
+
+        const ok = await run(`
+            tables = $component('./withTables').get('default/tables');
+            ${check("tables.tables().includes('parts') && tables.table('parts').toData()[0].count === 3", 'default/tables should give its tables')}
+            both = $component('./withTables').get('default/model', 'default/tables');
+            ${check("both.model && both.tables.table('parts')", 'model and tables')}
+            cnc = $component('./withTables').get('cnc/tables');
+            ${check("JSON.stringify(cnc.tables()) === JSON.stringify(['cuts']) && cnc.table('cuts').toData()[0].length === 2400", 'cnc/tables should give only the tables of the pipeline')}
+            ${check("!calc.tables()?.includes('parts')", 'the tables of the component stay out of this script')}
+        `);
+        if(ok.status !== 'success'){ console.error('Execution failed:', ok.errors) }
+        expect(ok.status).toBe('success');
+    })
+
     /** Advanced wall component */
     it('Runs a script with a more complex component', async () =>
     {

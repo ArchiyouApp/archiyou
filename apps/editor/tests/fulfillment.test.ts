@@ -78,7 +78,7 @@ describe('fulfillmentExports', () =>
   it('expands a table wildcard to every table format — all of them are files', () =>
   {
     const formats = fulfillmentExports(fulfillment(['default/tables/*/*'])).map(e => e.format);
-    expect(formats).toEqual(['json', 'xlsx']);
+    expect(formats).toEqual(['json', 'xlsx', 'html']);
   });
 
   it('keeps the entity wildcard: only the runner knows which docs exist', () =>

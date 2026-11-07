@@ -69,6 +69,8 @@ const FORMAT_META: Record<string, { ext: string, mime: string }> = {
   // tables / metrics
   xlsx:  { ext: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
   json:  { ext: 'json', mime: 'application/json' },
+  // tables: a flat page (an offer, or the table's rows)
+  html:  { ext: 'html', mime: 'text/html' },
 };
 
 /** Formats a category's `*` expands to. */

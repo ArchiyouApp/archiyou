@@ -99,6 +99,9 @@ export class Shape
     _nameInherited?:boolean;
     /** Assigned material name — see the host's materials module. */
     _material?:string;
+    /** What this shape is as a part of a build, set by the products module (ProductManager).
+     *  Carried to a copy, like the material. */
+    _product?:unknown;
     /** Visual style. A MESHUP Style instance: one style model for both kernels, which is what
      *  lets the shared SceneNode cascade and the shared GLTF exporter work unchanged. */
     style:Style = new Style();
@@ -445,9 +448,6 @@ export class Shape
         return this;
     }
 
-    /** This Shape's style resolved against the scene graph: the node's cascaded style is the
-     *  base, the Shape's own explicit properties win. Same rule the GLTF exporter applies, so
-     *  what you query here is what actually gets exported. */
     /** Say what this Shape is, for drawings: `stud.addClass('wood')`. See the styler. */
     addClass(...names:Array<string>):this
     {
@@ -472,6 +472,9 @@ export class Shape
         return this.style.hasClass(name);
     }
 
+    /** This Shape's style resolved against the scene graph: the node's cascaded style is the
+     *  base, the Shape's own explicit properties win. Same rule the GLTF exporter applies, so
+     *  what you query here is what actually gets exported. */
     _effectiveStyle():Style
     {
         if(!this._node){ return this.style }
@@ -1070,6 +1073,7 @@ export class Shape
         newShape._modeler = this._modeler;
         newShape._scene = this._node?.root() ?? this._scene;
         newShape._material = this._material;
+        newShape._product = this._product;
         newShape._name = this._name;
         newShape._nameInherited = true;
 

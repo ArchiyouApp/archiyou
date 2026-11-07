@@ -32,6 +32,7 @@ export class Table
     _component:string; // component name if this table came from a component
     _footers:Array<{ spec:FooterSpec, options:FooterOptions }> = []; // footer aggregation blocks, kept separate from row data
     _xlsx:ArrayBuffer = null; // a ready-made workbook that replaces the generated one in toExcel() — see xlsx()
+    _html:string = null; // a ready-made page that replaces the generated one in toHtml() — see html()
     _style:TableStyle = null; // the look of header, columns and cells, like a spreadsheet has it — see style()
 
     KNOWN_AGG_KEYWORDS:Array<FooterAggKeyword> = ['sum','average','avg','mean'];
@@ -604,7 +605,52 @@ export class Table
         return this;
     }
 
-    /** Export this Table to Excel format in ArrayBuffer 
+    /**
+     * Attach a ready-made HTML page to this table. toHtml() — and with it the
+     * `<pipeline>/tables/<name>/html` output — then delivers this page instead
+     * of one generated from the rows. An offer page, for instance
+     * (`make.products().offerPage()`), whose rows are the offer's lines.
+     */
+    html(page:string):this
+    {
+        if(typeof page !== 'string')
+        {
+            throw new Error(`Table::html(): expected the page as a string, got ${typeof page}`);
+        }
+        this._html = page;
+        return this;
+    }
+
+    /** This Table as a flat HTML page: one table of its rows, no scripts, readable on a phone
+     *  and in print. A page attached with html() is returned as-is.
+     *  @param title - The page's title. Default: the table's name. */
+    toHtml(title?:string):string
+    {
+        if(this._html !== null){ return this._html; }
+
+        const escape = (v:any) => String(v === null || v === undefined ? '' : v)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const cols = this.columns();
+        const head = cols.map(c => `<th>${escape(c)}</th>`).join('');
+        const body = this._dataRows.map(row =>
+            `<tr>${cols.map(c => `<td${typeof row[c] === 'number' ? ' class="n"' : ''}>${escape(row[c])}</td>`).join('')}</tr>`).join('\n');
+        return [
+            '<!doctype html>',
+            '<html lang="nl"><head><meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            `<title>${escape(title ?? this._name)}</title>`,
+            '<style>body{font-family:system-ui,sans-serif;margin:16px;color:#1d1d1f;background:#fff}',
+            'table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:6px 8px;border-bottom:1px solid #ddd;text-align:left}',
+            'th{background:#f3f3f3}td.n{text-align:right;font-variant-numeric:tabular-nums}',
+            '.wrap{overflow-x:auto}</style></head><body>',
+            `<h1>${escape(title ?? this._name)}</h1>`,
+            `<div class="wrap"><table><thead><tr>${head}</tr></thead><tbody>`,
+            body,
+            '</tbody></table></div></body></html>',
+        ].join('\n');
+    }
+
+    /** Export this Table to Excel format in ArrayBuffer
      * We use write-excel-file (https://www.npmjs.com/package/write-excel-file)
      *  And use automatic value type detection.
      *  A workbook attached with xlsx() is returned as-is.

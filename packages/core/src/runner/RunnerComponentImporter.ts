@@ -674,7 +674,7 @@ export class RunnerComponentImporter
     /** Clone one shape out of a cached component tree.
      *
      *  Not simply `_copy()`: that is each kernel's PURE clone and the two carry different
-     *  amounts of metadata with it - meshup drops name/material/modeler, brep keeps those but
+     *  amounts of metadata with it - meshup drops name/material/product/modeler, brep keeps those but
      *  does not carry `style`, which is where `.color()` on a shape lands. Restoring both
      *  halves here keeps a cached component visually and nominally identical to an uncached
      *  one, instead of leaking the difference into the scene. */
@@ -692,6 +692,7 @@ export class RunnerComponentImporter
         copy._name = shape._name;
         copy._nameInherited = shape._nameInherited;
         copy._material = shape._material;
+        copy._product = shape._product; // what it is as a part (ProductManager): a cached wall's studs stay studs
         copy._scene = shape._node?.root?.() ?? shape._scene;
 
         if (shape.style && typeof copy.style?.merge === 'function')

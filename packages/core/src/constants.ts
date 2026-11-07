@@ -109,7 +109,7 @@ export function outputsNeedRecipes(outputs: readonly string[] | null | undefined
 }
 export const SCRIPT_OUTPUT_METRIC_FORMATS = ['json','xlsx'] // see types: ScriptOutputMetricFormat
 export const METRIC_DEFAULT_ICON = 'gauge' // default icon for metrics without an explicit icon set (Lucide icon name)
-export const SCRIPT_OUTPUT_TABLE_FORMATS = ['json','xlsx'] // see types: ScriptOutputTableFormat
+export const SCRIPT_OUTPUT_TABLE_FORMATS = ['json','xlsx','html'] // see types: ScriptOutputTableFormat
 export const SCRIPT_OUTPUT_DOC_FORMATS = ['json','pdf','svg','svg-pages'] // see types: ScriptOutputDocFormat
 
 /** The output path for a script's thumbnail as an SVG line drawing (see

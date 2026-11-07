@@ -3098,6 +3098,13 @@ ${contextLines.join('\n')}
                         output: (typeof xlsxBuffer === 'object') ? Object.values(xlsxBuffer)[0] : null
                     } as ScriptOutputData);
                     break;
+                case 'html':
+                    const htmlPages = (scope.calc.db as Db).toTableHtml(outputPathTable.entityName ?? undefined);
+                    outputs.push({
+                        path: outputPathTable.toData(),
+                        output: Object.values(htmlPages)[0] ?? null
+                    } as ScriptOutputData);
+                    break;
                 default:
                     throw new Error(`Runner::_getScopeRunnerScriptExecutionResult(): Unknown table export format '${outputPathTable.format}'`);
             }
@@ -3223,14 +3230,14 @@ ${contextLines.join('\n')}
             
             // The default pipeline (the component's model) already ran. Another one runs now,
             // synchronously ($component() does not await), and its outputs are what it has:
-            // its own scene, the documents bound to it or made in it, the metrics it made
+            // its own scene, the documents bound to it or made in it, the metrics and tables it made
             if(pipeline !== 'default')
             {
                 const own = this._runPipelineInternal(scope, pipeline);
 
                 outputs.push(...this._exportPipelineModelsInternal(scope, request, pipeline, result, own.output));
                 outputs.push(...this._exportPipelineMetricsInternal(scope, request, pipeline, result, own.metrics));
-                outputs.push(...this._exportPipelineTablesInternal(scope,request, pipeline, result));
+                outputs.push(...this._exportPipelineTablesInternal(scope,request, pipeline, result, own.tables));
                 outputs.push(...this._exportPipelineDocsInternal(scope, request, pipeline, result, own.docs));
                 continue;
             }
@@ -3247,7 +3254,7 @@ ${contextLines.join('\n')}
 
     /** Run a pipeline of a component synchronously (see Pipeline.runSync()). Throws when
      *  there is no such pipeline or it failed, like any other error of a component */
-    _runPipelineInternal(scope:any, name:string):{ output:any, docs:Array<string>, metrics:Array<string> }
+    _runPipelineInternal(scope:any, name:string):{ output:any, docs:Array<string>, metrics:Array<string>, tables:Array<string> }
     {
         const pipeline = this.getPipelineByName(name, scope);
         if(!pipeline)
@@ -3262,7 +3269,7 @@ ${contextLines.join('\n')}
         }
 
         const meta = this._pipelineMeta(scope, pipeline);
-        return { output: run.output, docs: meta.docs, metrics: meta.metrics };
+        return { output: run.output, docs: meta.docs, metrics: meta.metrics, tables: meta.tables };
     }
 
     /** Get internal Obj/Shape model data from local execution scope
@@ -3317,26 +3324,25 @@ ${contextLines.join('\n')}
         return outputs;
     }
 
-    /** Get internal Table data from local execution scope and set in result tree */
-    _exportPipelineTablesInternal(scope:any, request:RunnerScriptExecutionRequest, pipeline:string, result:RunnerScriptExecutionResult):Array<ScriptOutputData>
+    /** Get internal Table data from local execution scope and set in result tree: the scope's
+     *  Db, so the script that uses the component reads its tables like its own:
+     *
+     *      tables = $component('./wall').get('default/tables');
+     *      tables.table('products').toArray();
+     *
+     *  @param only - the tables a pipeline made (none is none, not all) */
+    _exportPipelineTablesInternal(scope:any, request:RunnerScriptExecutionRequest, pipeline:string, result:RunnerScriptExecutionResult, only?:Array<string>):Array<ScriptOutputData>
     {
         const outputManager = new ScriptOutputManager().loadRequest(request,result, false);
-        // Get all table outputs for this pipeline in internal format
-        const outputPathsForTables = outputManager.getOutputsByPipelineCategory(pipeline, 'tables') as Array<ScriptOutputPath>;
+        const outputPathsForTables = outputManager.getOutputsByPipelineEntityFormats(pipeline, 'tables', ['internal']); // get the tables to export for current pipeline
+        const db = scope.calc?.db as Db | undefined;
+        if(!db){ return []; }
 
-        // Filter out doubles
-        const outputs = [] as Array<ScriptOutputData>;
-        
-        outputPathsForTables.forEach((path) => 
-        {   
-            outputs.push({
-                path: path.toData(),
-                output: null // TODO
-            });
-
-        });
-
-        return outputs;
+        const tables = only ? db.only(only) : db;
+        return outputPathsForTables.map((outputPath) => ({
+            path: outputPath.toData(),
+            output: tables,
+        }));
     }
 
  
