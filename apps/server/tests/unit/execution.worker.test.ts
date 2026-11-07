@@ -108,7 +108,7 @@ describe('Google Sheets a server-side run reads', () => {
 
     it('hands the run the sheets its code names', async () => {
         const { w, requests } = worker([() => ({ status: 'success' })], { '1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': true });
-        await w.executeWithContent({ script: { code: `wb = cloudcalc.open('${URL_A}')` } });
+        await w.executeWithContent({ script: { code: `wb = cloudcalc.open('${URL_A}')` } }, { timedOut: false });
         expect(Object.keys(requests[0].content)).toEqual(['google-sheet:1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']);
     });
 
@@ -117,7 +117,7 @@ describe('Google Sheets a server-side run reads', () => {
             () => ({ status: 'error', needs: { content: [need('imported')] }, errors: [] }),
             () => ({ status: 'success' }),
         ], { imported: true });
-        const result = await w.executeWithContent({ script: { code: 'run()' } });
+        const result = await w.executeWithContent({ script: { code: 'run()' } }, { timedOut: false });
         expect(result.status).toBe('success');
         expect(Object.keys(requests[1].content)).toEqual(['google-sheet:imported']);
     });
@@ -127,8 +127,17 @@ describe('Google Sheets a server-side run reads', () => {
         const { w, requests } = worker([
             () => ({ status: 'error', needs: { content: [need(id)] }, errors: [{ status: 'error', message: 'cloudcalc: the editor fetches it' }] }),
         ], {});
-        const result = await w.executeWithContent({ script: { code: `cloudcalc.open('${URL_A}')` } });
+        const result = await w.executeWithContent({ script: { code: `cloudcalc.open('${URL_A}')` } }, { timedOut: false });
         expect(requests).toHaveLength(1);
         expect(result.errors.map((e: any) => e.message)).toEqual([`The Google Sheet ${id} is not public.`, 'cloudcalc: the editor fetches it']);
+    });
+
+    it('does not run on the shared Runner when the job timed out while its sheets were fetched', async () => {
+        const { w, requests } = worker([() => ({ status: 'success' })], { '1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': true });
+        const job = { timedOut: false };
+        const slow = w.sheets.resolve;
+        w.sheets.resolve = vi.fn(async (needs: any[]) => { job.timedOut = true; return slow(needs); });
+        await expect(w.executeWithContent({ script: { code: `cloudcalc.open('${URL_A}')` } }, job)).rejects.toThrow(/timed out/);
+        expect(requests).toHaveLength(0);
     });
 });

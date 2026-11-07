@@ -632,8 +632,15 @@ export class Table
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         const cols = this.columns();
         const head = cols.map(c => `<th>${escape(c)}</th>`).join('');
-        const body = this._dataRows.map(row =>
-            `<tr>${cols.map(c => `<td${typeof row[c] === 'number' ? ' class="n"' : ''}>${escape(row[c])}</td>`).join('')}</tr>`).join('\n');
+        const row = (values:DataRowColumnValue, cls = '') =>
+            `<tr${cls}>${cols.map(c => `<td${typeof values[c] === 'number' ? ' class="n"' : ''}>${escape(values[c])}</td>`).join('')}</tr>`;
+        const body = this._dataRows.map(r => row(r)).join('\n');
+        // the footers (totals, subtotals) as in the other outputs
+        const foot = this.computeFooterRows().map(f =>
+        {
+            const cls = [f.line ? 'line' : '', f.bold ? 'b' : ''].filter(Boolean).join(' ');
+            return row(f.values, cls ? ` class="${cls}"` : '');
+        }).join('\n');
         return [
             '<!doctype html>',
             '<html lang="nl"><head><meta charset="utf-8">',
@@ -642,11 +649,12 @@ export class Table
             '<style>body{font-family:system-ui,sans-serif;margin:16px;color:#1d1d1f;background:#fff}',
             'table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:6px 8px;border-bottom:1px solid #ddd;text-align:left}',
             'th{background:#f3f3f3}td.n{text-align:right;font-variant-numeric:tabular-nums}',
+            'tfoot tr.b td{font-weight:600}tfoot tr.line td{border-top:2px solid #1d1d1f}',
             '.wrap{overflow-x:auto}</style></head><body>',
             `<h1>${escape(title ?? this._name)}</h1>`,
             `<div class="wrap"><table><thead><tr>${head}</tr></thead><tbody>`,
             body,
-            '</tbody></table></div></body></html>',
+            foot ? `</tbody><tfoot>\n${foot}\n</tfoot></table></div></body></html>` : '</tbody></table></div></body></html>',
         ].join('\n');
     }
 

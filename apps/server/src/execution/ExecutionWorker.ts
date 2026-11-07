@@ -96,7 +96,8 @@ export class ExecutionWorker
     private redis: Redis;
     private runner: Runner;
     /** The Google Sheets runs read, kept in memory as long as the Runner. */
-    private sheets = new SheetContent(config.execution.contentTtlMs);
+    private sheets = new SheetContent(config.execution.contentTtlMs,
+        { fetchTimeoutMs: Math.min(15_000, config.execution.timeoutMs / 2) });
 
     private healthCheckInterval: NodeJS.Timeout | null = null;
 
@@ -234,14 +235,21 @@ export class ExecutionWorker
             ...request,
             appBaseUrl: request.appBaseUrl ?? config.frontendUrl,
         };
+        // set when the job timed out: a run still waiting for a sheet must not start then, on the
+        // Runner the next job uses
+        const job = { timedOut: false };
         try
         {
             return await Promise.race([
-                this.executeWithContent(runRequest),
+                this.executeWithContent(runRequest, job),
                 new Promise<never>((_, reject) =>
                 {
                     timer = setTimeout(
-                        () => reject(new Error(`Script execution exceeded ${timeoutMs}ms`)),
+                        () =>
+                        {
+                            job.timedOut = true;
+                            reject(new Error(`Script execution exceeded ${timeoutMs}ms`));
+                        },
                         timeoutMs,
                     );
                 }),
@@ -258,14 +266,19 @@ export class ExecutionWorker
      * before the run. When the run still stops for a sheet (named some other way, or imported by
      * one), that one too, and the run once more.
      */
-    private async executeWithContent(request: RunnerScriptExecutionRequest): Promise<RunnerScriptExecutionResult>
+    private async executeWithContent(request: RunnerScriptExecutionRequest, job: { timedOut: boolean }): Promise<RunnerScriptExecutionResult>
     {
+        const execute = (content: RunnerScriptExecutionRequest['content']) =>
+        {
+            if (job.timedOut) throw new Error('Script execution timed out while fetching its Google Sheets');
+            return this.runner.execute({ ...request, content });
+        };
         const code = (request.script as { code?: unknown })?.code;
         const needs = typeof code === 'string' ? scanContentNeeds(code) : [];
         const named = await this.sheets.resolve(needs);
         let content = { ...(request.content ?? {}), ...named.content };
         let problems = named.problems;
-        let result = await this.runner.execute({ ...request, content });
+        let result = await execute(content);
 
         // what the run still stopped for, and was not tried before it
         const tried = new Set(needs.map(n => n.id));
@@ -277,7 +290,7 @@ export class ExecutionWorker
             if (Object.keys(more.content).length)
             {
                 content = { ...content, ...more.content };
-                result = await this.runner.execute({ ...request, content });
+                result = await execute(content);
             }
         }
         // stopped for a sheet the server cannot read: say why first, the module's message is the editor's

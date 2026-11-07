@@ -420,9 +420,11 @@ function fit(product: Product, m: PartMeasure, tolerance: number): Array<number>
         return sheetUse(product, m, tolerance).pieces === 1 ? [0, a * b, a, b] : [1, -a * b, -a, -b];
     }
 
-    // a piece: the sizes the sheet gives are the part's largest ones
-    const largest = part.slice(part.length - product.dims.length);
-    return product.dims.every((d, i) => near(largest[i]!, d)) ? [0] : null;
+    // a piece: the sizes the sheet gives are the part's largest ones (a part has three, a row
+    // with dikte, breedte, hoogte and lengte four: its largest three)
+    const dims = product.dims.slice(-part.length);
+    const largest = part.slice(part.length - dims.length);
+    return dims.every((d, i) => near(largest[i]!, d)) ? [0] : null;
 }
 
 /** A part of a sheet product turned so that its size equal to the product's thickness is its
@@ -636,7 +638,8 @@ export class ProductManager
         const costs = ranges
             .map(r => r.name.match(/^outputs\.([^.]+)\.cost(m2|st|m3)$/))
             .filter((m): m is RegExpMatchArray => m !== null);
-        const rowOf = (id: string) => Number(String(ranges.find(r => r.name === `outputs.${id}.costm3`)?.range ?? '').match(/\d+/)?.[0] ?? Infinity);
+        // the row of the cell after the tab: 'componenten2'!$AD$40 is 40
+        const rowOf = (id: string) => Number(String(ranges.find(r => r.name === `outputs.${id}.costm3`)?.range ?? '').split('!').pop()!.match(/[A-Z]+\$?(\d+)/i)?.[1] ?? Infinity);
         const components = [...new Set(costs.filter(m => m[2] === 'm3').map(m => m[1]!))]
             .sort((a, b) => rowOf(a) - rowOf(b))
             .map(id => ({ component: id, eenheid: costs.find(m => m[1] === id && m[2] !== 'm3')?.[2] ?? null }));
@@ -680,6 +683,11 @@ export class ProductManager
      */
     fromRows(products: Array<ProductRow>, operations: Array<OperationRow> = [], components: Array<ComponentRow> = []): this
     {
+        // what assign() and add() matched holds products of the set loaded before
+        if (this._assigned.size || this._unmatched.size || this._added.length)
+        {
+            throw new Error('ProductManager: products are loaded once, before assign() and add(). For another product set use another make.products()');
+        }
         this._products = products.filter(r => r?.product_id).map(toProduct);
         this._operations = operations.filter(r => r?.naam);
         this._components = components
@@ -694,6 +702,7 @@ export class ProductManager
         this._outputs = null;
         this._costData = null;
         this._recipes.clear();
+        this._matchCache.clear();
         this._costs = null;
         return this;
     }
@@ -1353,9 +1362,10 @@ export class ProductManager
             ? this._offer ?? (() => { throw new Error('ProductManager.offer(): needs the offer template: offer(OFFER_TEMPLATE), or make.products().fromOffer(OFFER_TEMPLATE)'); })()
             : this._openTemplate('offer', template as SheetWorkbook | string, options.key);
 
-        const builders = wb.table('bouwers').filter(b => String(b['bouwer'] ?? '').trim());
-        const bouwer = options.bouwer ?? String(builders[0]?.['bouwer'] ?? '');
-        const builder = builders.find(b => b['bouwer'] === bouwer);
+        const name = (v: unknown) => String(v ?? '').trim();
+        const builders = wb.table('bouwers').filter(b => name(b['bouwer']));
+        const bouwer = name(options.bouwer ?? builders[0]?.['bouwer']);
+        const builder = builders.find(b => name(b['bouwer']) === bouwer);
         if (!builder)
         {
             throw new Error(`ProductManager.offer(): no builder '${bouwer}' in the template; it has: ${builders.map(b => b['bouwer']).join(', ') || 'none yet'}`);

@@ -148,6 +148,21 @@ describe('ProductManager.assign()', () =>
         expect(() => products().assign(['SLS', 'SLS-FJ'], box(38, 999, 2700))).toThrow(/no product of 'SLS' fits/)
     })
 
+    it('fits a piece by its largest three sizes when its row has four', () =>
+    {
+        // a window: dikte, breedte, hoogte and a lengte (its sill depth)
+        const pm = new ProductManager().fromRows([{ product_id: 'raam-600x1200', productgroep: 'RAAM', vorm: 'raam', dikte: 20, breedte: 600, hoogte: 1200, lengte: 50, basiseenheid: 'st' }])
+            .assign('RAAM', box(600, 50, 1200))
+        expect(line(pm, 'raam-600x1200').st).toBe(1)
+    })
+
+    it('loads products once: what assign() matched belongs to them', () =>
+    {
+        expect(() => products().fromRows(PRODUCTS)).not.toThrow()
+        expect(() => products().assign('SLS', box(38, 140, 2600)).fromRows(PRODUCTS)).toThrow(/loaded once.*another make\.products\(\)/)
+        expect(() => products().add('screw-ss-6x100', { st: 1 }).fromRows(PRODUCTS)).toThrow(/loaded once/)
+    })
+
     it('says what it has for an unknown id or group', () =>
     {
         expect(() => products().assign('SLX', box(38, 140, 2000))).toThrow(/no product, product group or component 'SLX'\. Did you mean: SLS, SLS-T, SLS-FJ/)
@@ -543,6 +558,8 @@ describe('ProductManager.compute()', () =>
         expect(table.toData()[0]).toEqual({ product: 'sls-38x140', description: 'sls-38x140 38x140', 'stock (mm)': '5400',
             quantity: 1, unit: 'st', net: '2.6 m1', 'price per unit': 27, price: 27 })
         expect(table.computeFooterRows().map(f => [f.values.product, f.values.description, f.values.price])).toEqual([['Total', 'excl. margins and BTW', 32]])
+        // the html page has the total too
+        expect(table.toHtml()).toMatch(/<tfoot>\n<tr class="line b"><td>Total<\/td><td>excl\. margins and BTW<\/td>.*<td class="n">32<\/td><\/tr>\n<\/tfoot>/)
 
         const split = pm.orderTable('order_split', { byComponent: true })
         expect(split.columns()[0]).toBe('component')
@@ -613,6 +630,11 @@ describe('ProductManager.offer()', () =>
         expect(prices[0]).toMatchObject({ material: 60, onsite: 0, voorbewerking: 15, assemblage: 30, montage: 25, afbouw: 20 })
         // the products by their type up to a comma outside brackets, and their size; each once
         expect(prices[0]!.omschrijving).toBe('SLS-regel 38x140, Gipsplaat (A, verzonken) 12.5 mm')
+
+        // the row of the cell, not a digit in the tab's name
+        const wb = sheet()
+        const tab = { ...wb, namedRanges: () => wb.namedRanges().map(r => ({ ...r, range: `'componenten2'!$${r.range.replace(/(\d+)/, '$$$1')}` })) }
+        expect(new ProductManager().fromSheet(tab).prices().map(p => p.component)).toEqual(['wall', 'strawwall', 'kitchen'])
     })
 
     it('reads its components from what the builders published, without a builder\'s own sheet', () =>
@@ -656,6 +678,13 @@ describe('ProductManager.offer()', () =>
         warn.mockRestore()
 
         expect(() => pm.offer({ bouwer: 'Bouwer C' })).toThrow(/no builder 'Bouwer C' in the template; it has: Bouwer A, Bouwer B/)
+
+        // a space after the name in the BOUWERS tab
+        const spaced = template()
+        const typed = { ...spaced, table: (name: string) => name === 'bouwers'
+            ? spaced.table(name).map(b => ({ ...b, bouwer: `${b.bouwer} ` })) : spaced.table(name) }
+        new ProductManager().fromOffer(typed as any).add('wall', { oppervlak: 1 }).offer({ bouwer: 'Bouwer B' })
+        expect(spaced.sent[0]).toMatchObject({ bouwer: 'Bouwer B', wanden: 1 })
         expect(() => new ProductManager().fromRows(PRODUCTS).offer()).toThrow(/needs the offer template/)
     })
 

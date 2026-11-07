@@ -34,7 +34,7 @@ describe('SheetContent', () =>
     it('fetches a public sheet once and serves it from memory', async () =>
     {
         const fetch = google({ [ID]: 'v1' });
-        const sheets = new SheetContent(60_000, fetch as any);
+        const sheets = new SheetContent(60_000, { fetch: fetch as any });
         const first = await sheets.resolve([need(ID), need(ID)]);
         const item = first.content[`google-sheet:${ID}`]!;
         expect(item).toMatchObject({ kind: 'google-sheet', id: ID, via: 'public' });
@@ -50,7 +50,7 @@ describe('SheetContent', () =>
         vi.useFakeTimers();
         const sheets_ = { [ID]: 'v1' };
         const fetch = google(sheets_);
-        const sheets = new SheetContent(60_000, fetch as any);
+        const sheets = new SheetContent(60_000, { fetch: fetch as any });
         const v1 = (await sheets.resolve([need(ID)])).content[`google-sheet:${ID}`]!;
 
         vi.advanceTimersByTime(60_000);
@@ -72,7 +72,7 @@ describe('SheetContent', () =>
 
     it('says a private sheet is not public, and fetches nothing else', async () =>
     {
-        const sheets = new SheetContent(60_000, google({}) as any);
+        const sheets = new SheetContent(60_000, { fetch: google({}) as any });
         const { content, problems } = await sheets.resolve([need(ID), { kind: 'google-sheet-copy', id: 'x', reason: 'open' } as any]);
         expect(content).toEqual({});
         expect(problems).toEqual([expect.stringMatching(/1WC2p.* is not public.*Anyone with the link can view/)]);
@@ -80,7 +80,59 @@ describe('SheetContent', () =>
 
     it('says when Google cannot be reached', async () =>
     {
-        const sheets = new SheetContent(60_000, (async () => { throw new Error('offline'); }) as any);
+        const sheets = new SheetContent(60_000, { fetch: (async () => { throw new Error('offline'); }) as any });
         expect((await sheets.resolve([need(ID)])).problems).toEqual([expect.stringMatching(/Could not fetch .*: offline/)]);
+    });
+
+    it('a busy Google is not a private sheet: the first fetch says so, a refresh keeps the one in memory', async () =>
+    {
+        vi.useFakeTimers();
+        let status = 200;
+        const fetch = vi.fn(async () => status === 200
+            ? new Response(new TextEncoder().encode('v1'), { headers: { 'content-type': XLSX } })
+            : new Response('<html>slow down</html>', { status, headers: { 'content-type': 'text/html' } }));
+        const busy = new SheetContent(60_000, { fetch: (async () => new Response('', { status: 503 })) as any });
+        expect((await busy.resolve([need(ID)])).problems).toEqual([expect.stringMatching(/Could not fetch .*: Google answered 503/)]);
+
+        const sheets = new SheetContent(60_000, { fetch: fetch as any });
+        const v1 = (await sheets.resolve([need(ID)])).content[`google-sheet:${ID}`]!;
+        vi.advanceTimersByTime(60_000);
+        status = 429;
+        await sheets.resolve([need(ID)]); // starts the refresh
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+        await Promise.resolve();
+        const after = await sheets.resolve([need(ID)]);
+        expect(after.problems).toEqual([]);
+        expect(after.content[`google-sheet:${ID}`]).toBe(v1);
+    });
+
+    it('gives up a fetch that hangs, and refreshes again after the next TTL', async () =>
+    {
+        // a fetch that never answers, unless aborted
+        const hang = vi.fn((_url: unknown, init?: RequestInit) => new Promise<Response>((_, reject) =>
+            init?.signal?.addEventListener('abort', () => reject(new Error('timed out')))));
+        const sheets = new SheetContent(60_000, { fetch: hang as any, fetchTimeoutMs: 20 });
+        expect((await sheets.resolve([need(ID)])).problems).toEqual([expect.stringMatching(/Could not fetch .*: timed out/)]);
+        expect((await sheets.resolve([need(ID)])).problems).toHaveLength(1);
+        expect(hang).toHaveBeenCalledTimes(2); // not stuck on the first
+    });
+
+    it('keeps at most maxSheets, dropping the one used longest ago, and refuses a sheet over maxBytes', async () =>
+    {
+        const ids = ['a', 'b', 'c'].map(c => c.repeat(30));
+        const fetch = google(Object.fromEntries(ids.map(id => [id, id])));
+        const sheets = new SheetContent(60_000, { fetch: fetch as any, maxSheets: 2 });
+        await sheets.resolve([need(ids[0]!)]);
+        await sheets.resolve([need(ids[1]!)]);
+        await sheets.resolve([need(ids[0]!)]);  // a used last
+        await sheets.resolve([need(ids[2]!)]);  // b goes
+        expect(fetch).toHaveBeenCalledTimes(3);
+        await sheets.resolve([need(ids[0]!)]);
+        expect(fetch).toHaveBeenCalledTimes(3);
+        await sheets.resolve([need(ids[1]!)]);
+        expect(fetch).toHaveBeenCalledTimes(4);
+
+        const small = new SheetContent(60_000, { fetch: google({ [ID]: 'more than ten bytes' }) as any, maxBytes: 10 });
+        expect((await small.resolve([need(ID)])).problems).toEqual([expect.stringMatching(/larger than 10 bytes/)]);
     });
 });
