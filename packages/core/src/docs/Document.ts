@@ -444,6 +444,9 @@ export class Document
      *   - units: the unit of columns with lengths, like { length: 'mm' }, so they follow the
      *     document's metric or imperial system
      *
+     *  A table the document's pipeline makes is found when the document is made: by what the
+     *  pipeline returns (`return { order: products.orderTable() }`), else by its name in Calc.
+     *
      *  @example
      *  box(44, 44, 700).name('leg')
      *  make.partList()
@@ -453,6 +456,15 @@ export class Document
     {
         if(!isContainerTableInput){ throw new Error(`Document::table: Please enter a name of existing Calc Table or data rows in format [{ rows: [[x1,y1,z1],[x2,y2,z2]] columns: ['field1', 'field2', 'field3']}`); }
         if(typeof nameOrData === 'string' && !this._docs._archiyou.calc){ throw new Error(`Document::table: Cannot get table data from Calc module. Calc is not initialized. Use calc.init()`); }
+
+        // not made yet, by the document's pipeline: found when the document is made
+        if(typeof nameOrData === 'string' && !this._docs._archiyou.calc.tables().includes(nameOrData) && this._pipelines.length > 0)
+        {
+            const later = new Table(null, { ...options }).on(this._getOrMakeActivePage());
+            later._ref = nameOrData;
+            this._activeContainer = later;
+            return this;
+        }
         if(typeof nameOrData === 'string' && !this._docs._archiyou.calc.tables().includes(nameOrData as string)){ { throw new Error(`Document::table: Cannot get table data from Calc module. No such table: '${nameOrData}'. Available tables: ${this._docs._archiyou.calc.tables().join(',')}`); } }
 
         // either get data from Calc or use raw data input

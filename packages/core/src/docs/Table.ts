@@ -20,6 +20,8 @@ export class Table extends Container
     DEFAULT_TABLE_HEIGHT = '100mm';
 
     _data:DataRows; // DataRows: Array of column-values { [ {col1: val1, col2: val2 }, {...} ] }
+    /** The name of a table the document's pipeline makes: its rows are read when the document is made */
+    _ref:string|null = null;
     _options:TableContainerOptions = {}
 
     constructor(data:DataRows, options:TableContainerOptions)
@@ -62,8 +64,32 @@ export class Table extends Container
 
     //// OUTPUT: SVG ////
 
+    /** The rows of a table the document's pipeline made (see _ref), once: what the pipeline
+     *  returned by that name, else the Calc table by that name */
+    _resolve():void
+    {
+        if(this._data || !this._ref){ return; }
+        const doc = this._page?._doc;
+        const calc = doc?._docs?._archiyou?.calc;
+        const returned = doc?._pipelineVar?.(this._ref) ?? { found: false };
+        const table = returned.found ? returned.value
+                        : calc?.tables?.().includes(this._ref) ? calc.db.table(this._ref) : undefined;
+        if(table && typeof table.toDataRows === 'function')
+        {
+            this._data = table.toDataRows();
+            this._options.footer = table.computeFooterRows?.() ?? [];
+            return;
+        }
+        if(Array.isArray(table)){ this._data = table; return; }
+        const failed = doc?._pipelineError;
+        throw new Error(failed
+            ? `Table: no table '${this._ref}' for document "${doc?._name}": its pipeline failed: ${failed.name}: ${failed.message}`
+            : `Table: no table '${this._ref}' for document "${doc?._name}": not in Calc, and its pipeline does not return it. Return it, like \`return { ${this._ref}: products.orderTable() }\``);
+    }
+
     async _toSVGContent(_ctx: PageSVGContext, wMm: number, _hMm: number): Promise<string>
     {
+        this._resolve();
         const rows = this._data;
         if (!rows || !Array.isArray(rows) || rows.length === 0) { return ''; }
 
@@ -79,8 +105,18 @@ export class Table extends Container
         const rowHMm     = fontSizeMm * 1.6 + 2 * TABLE_CELL_PAD_MM;
 
         const cols    = Object.keys(rows[0]);
-        const numCols = cols.length;
-        const colW    = wMm / numCols;
+        const footer  = this._options.footer ?? [];
+
+        // each column as wide as its longest text (header, cells, footer), filling the table's width
+        const texts = [
+            cols.map(col => this._headerText(col)),
+            ...rows.map(row => cols.map(col => this._cellText(col, (row as Record<string, DataRowsColumnValue>)[col]))),
+            ...footer.map(fRow => cols.map(col => this._cellText(col, fRow.values?.[col]))),
+        ];
+        const longest = cols.map((_, ci) => Math.max(3, ...texts.map(t => t[ci].length)));
+        const sum     = longest.reduce((a, b) => a + b, 0);
+        const colWs   = longest.map(l => wMm * l / sum);
+        const colXs   = colWs.map((_, ci) => colWs.slice(0, ci).reduce((a, b) => a + b, 0));
 
         const lines: string[] = [];
 
@@ -88,7 +124,8 @@ export class Table extends Container
         {
             values.forEach((val, ci) =>
             {
-                const cx = ci * colW;
+                const cx = colXs[ci];
+                const colW = colWs[ci];
                 const bg = opts.fill ?? 'none';
                 lines.push(`<rect x="${fmt(cx)}" y="${fmt(rowY)}" width="${fmt(colW)}" height="${fmt(rowHMm)}" fill="${bg}" stroke="black" stroke-width="${TABLE_BORDER_MM}"/>`);
                 lines.push(`<text x="${fmt(cx + TABLE_CELL_PAD_MM)}" y="${fmt(rowY + rowHMm / 2)}" font-family="${SVG_TEXT_FONT_FAMILY}" font-size="${fmt(fontSizeMm)}" fill="${escapeXml(fill)}" dominant-baseline="middle"${opts.bold ? ' font-weight="bold"' : ''}>${escapeXml(String(val ?? ''))}</text>`);
@@ -104,7 +141,6 @@ export class Table extends Container
         });
 
         // Footer rows (aggregations) below the body, with optional separating line + bold styling
-        const footer = this._options.footer ?? [];
         footer.forEach((fRow, fi) =>
         {
             const rowY = (rows.length + 1 + fi) * rowHMm;
@@ -150,6 +186,7 @@ export class Table extends Container
 
     async toData():Promise<ContainerData> // TODO
     {
+        this._resolve();
         return {
             ...this._toContainerData(),
             content: {

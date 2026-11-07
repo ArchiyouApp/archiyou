@@ -242,6 +242,33 @@ describe('Runner pipelines', () =>
         expect(runner.getScope('default').iso).toBeUndefined()
     })
 
+    it('shows a table the document pipeline makes, found when the document is made', async () =>
+    {
+        const result = await run(`
+            docs.create('order').pipeline(function()
+            {
+                calc.table('kept', [['beam', 4]], ['part', 'qty']);
+                return { returned: calc.table('lines', [['sheet', 7]], ['part', 'qty']).footer({ part: 'Total', qty: 'sum' }) };
+            })
+            .page('p').table('returned').table('kept');
+        `, ['default/docs/*/svg'])
+
+        expect(result.status).toBe('success')
+        const svg = result.outputs!.find(o => o.path.category === 'docs')?.output as string
+        expect(svg).toContain('>sheet<')
+        expect(svg).toContain('>Total<')
+        expect(svg).toContain('>beam<')
+    })
+
+    it('says which table a document pipeline did not make', async () =>
+    {
+        const result = await run(`
+            docs.create('order').pipeline(function(){ return {} }).page('p').table('missing');
+        `, ['default/docs/*/svg'])
+
+        expect(JSON.stringify(result)).toMatch(/no table 'missing' for document \\"order\\": not in Calc, and its pipeline does not return it/)
+    })
+
     it("gives a component's pipeline with $component().pipeline()", async () =>
     {
         runner.linkComponentScripts([Script.fromData({
