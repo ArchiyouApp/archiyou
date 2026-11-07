@@ -48,9 +48,14 @@ export class ModuleLoadError extends Error
     }
 }
 
-/** Default import strategy: blob URL + dynamic import. Browser/Worker only. */
+/** Default import strategy: blob URL + dynamic import in a browser or worker. Node
+ *  cannot import a blob URL, so a server-side run imports the bundle as a data URL. */
 async function importFromSource(source: string, manifest: AyModuleManifest): Promise<any>
 {
+    if(typeof process !== 'undefined' && process.versions?.node)
+    {
+        return await import(/* @vite-ignore */ `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+    }
     if(typeof URL?.createObjectURL !== 'function')
     {
         throw new ModuleLoadError(manifest.id,

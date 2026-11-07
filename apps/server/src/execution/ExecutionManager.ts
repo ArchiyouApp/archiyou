@@ -154,8 +154,11 @@ export class ExecutionManager
             data: execResult
         } as ApiExecutionResponse
 
-        // Always cache the result (cache flag is only for reading cache)
-        if(!noExecutionNeeded && result.success)
+        // Always cache the result (cache flag is only for reading cache). Not a run that read a
+        // Google Sheet: the cache knows the script and its params, not the sheet's version, so it
+        // would keep answering with the old prices. The worker keeps the sheet itself (SheetContent).
+        const readSheets = (execResult as RunnerScriptExecutionResult)?.used?.some(u => u.kind === 'google-sheet');
+        if(!noExecutionNeeded && result.success && !readSheets)
         {
             await this.library.writeResultCache(execResult);
         }

@@ -6,6 +6,7 @@
  * service so the rules can be tested without a worker.
  */
 import type { AyContentNeed } from '@archiyou/core/src/modules/sdkTypes';
+import { scanContentNeeds } from '@archiyou/core/src/modules/contentNeeds';
 import type { ScriptData } from '@archiyou/core/src/ScriptSchema';
 import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
 
@@ -33,13 +34,7 @@ export function isOwnScript(d: Partial<ScriptData>): boolean
 const CONTENT_REFS = 'archiyou:content-refs';
 const CONTENT_REFS_MAX_SCRIPTS = 200;
 
-/** Google Sheets written into the code: a URL anywhere, or a bare id passed to open(). */
-export function scanContentNeeds(code: string): AyContentNeed[]
-{
-  const urls = [...code.matchAll(/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/g)].map((m) => m[1]!);
-  const ids = [...code.matchAll(/\.open\(\s*(['"`])([A-Za-z0-9_-]{25,80})\1/g)].map((m) => m[2]!);
-  return [...new Set([...urls, ...ids])].map((id) => ({ kind: 'google-sheet', id, reason: 'open' }));
-}
+export { scanContentNeeds };
 
 export function scriptKey(d: Partial<ScriptData>): string
 {

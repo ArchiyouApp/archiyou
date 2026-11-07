@@ -178,6 +178,7 @@ services:
       - SERVER_REDIS_PORT=6379
       - SERVER_REDIS_PASSWORD=${REDIS_PASW}
       - SERVER_EXECUTION_TIMEOUT_MS=${SERVER_EXECUTION_TIMEOUT_MS:-30000}
+      - SERVER_EXECUTION_CONTENT_TTL_MS=${SERVER_EXECUTION_CONTENT_TTL_MS:-60000}
       - WORKER_ID=worker
     volumes:
       # Same code mount as api. Read-only: the worker runs untrusted user scripts and

@@ -4,9 +4,9 @@
  * not by reading the code, and neither produced an error message that pointed at the
  * cause — hence these.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import { validateGlb, toBytes } from '../../src/execution/ExecutionWorker';
+import { validateGlb, toBytes, ExecutionWorker } from '../../src/execution/ExecutionWorker';
 import { isRunnerScriptExecutionRequest } from '@archiyou/core/src/runner/typeguards';
 import { Script } from '@archiyou/core/src/Script';
 
@@ -85,5 +85,50 @@ describe('execution request — surviving the queue', () => {
         expect(overTheWire.script.name).toBe('chair');
         expect(overTheWire.script.code).toBe('box(10,10,10);');
         expect(isRunnerScriptExecutionRequest(overTheWire)).toBe(true);
+    });
+});
+
+describe('Google Sheets a server-side run reads', () => {
+    const URL_A = 'https://docs.google.com/spreadsheets/d/1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/edit';
+    const item = (id: string) => ({ kind: 'google-sheet', id, bytes: new ArrayBuffer(0), version: 'v', via: 'public' });
+    const need = (id: string) => ({ kind: 'google-sheet', id, reason: 'open' });
+
+    /** A worker with a stand-in Runner and SheetContent: no Redis, no Google. */
+    function worker(runs: Array<(req: any) => any>, sheets: Record<string, boolean>)
+    {
+        const w: any = new ExecutionWorker();
+        const requests: any[] = [];
+        w.runner = { execute: vi.fn(async (req: any) => { requests.push(req); return runs[requests.length - 1]!(req); }) };
+        w.sheets = { resolve: vi.fn(async (needs: any[]) => ({
+            content: Object.fromEntries(needs.filter(n => sheets[n.id]).map(n => [`google-sheet:${n.id}`, item(n.id)])),
+            problems: needs.filter(n => !sheets[n.id]).map(n => `The Google Sheet ${n.id} is not public.`),
+        })) };
+        return { w, requests };
+    }
+
+    it('hands the run the sheets its code names', async () => {
+        const { w, requests } = worker([() => ({ status: 'success' })], { '1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': true });
+        await w.executeWithContent({ script: { code: `wb = cloudcalc.open('${URL_A}')` } });
+        expect(Object.keys(requests[0].content)).toEqual(['google-sheet:1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']);
+    });
+
+    it('fetches a sheet the run stopped for, and runs again', async () => {
+        const { w, requests } = worker([
+            () => ({ status: 'error', needs: { content: [need('imported')] }, errors: [] }),
+            () => ({ status: 'success' }),
+        ], { imported: true });
+        const result = await w.executeWithContent({ script: { code: 'run()' } });
+        expect(result.status).toBe('success');
+        expect(Object.keys(requests[1].content)).toEqual(['google-sheet:imported']);
+    });
+
+    it('says once why a sheet cannot be read, before the module\'s own message', async () => {
+        const id = '1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        const { w, requests } = worker([
+            () => ({ status: 'error', needs: { content: [need(id)] }, errors: [{ status: 'error', message: 'cloudcalc: the editor fetches it' }] }),
+        ], {});
+        const result = await w.executeWithContent({ script: { code: `cloudcalc.open('${URL_A}')` } });
+        expect(requests).toHaveLength(1);
+        expect(result.errors.map((e: any) => e.message)).toEqual([`The Google Sheet ${id} is not public.`, 'cloudcalc: the editor fetches it']);
     });
 });

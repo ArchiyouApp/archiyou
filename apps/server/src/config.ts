@@ -137,6 +137,10 @@ export const config = {
     internalApiUrl: process.env.SERVER_INTERNAL_API_URL ?? `http://localhost:${process.env.SERVER_PORT ?? 4100}`,
     /** Wall-clock cap on a single script run, so `while(true){}` can't pin the worker. */
     timeoutMs: Number(process.env.SERVER_EXECUTION_TIMEOUT_MS ?? 30_000),
+    /** How long the worker serves a Google Sheet a run reads from memory before it fetches
+     *  it again, in the background (execution/SheetContent.ts). A changed sheet shows in runs
+     *  after at most this, plus one fetch. */
+    contentTtlMs: Number(process.env.SERVER_EXECUTION_CONTENT_TTL_MS ?? 60_000),
     /**
      * Per-IP cap on the execute route. This is the only route that runs unsandboxed code
      * for an unauthenticated caller, so it is also the only one where a bare loop of

@@ -1,16 +1,19 @@
 import { Worker, Job } from 'bullmq';
 import { Redis } from 'ioredis';
 
-import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
+import type { RunnerScriptExecutionRequest, RunnerScriptExecutionResult } from '@archiyou/core/src/runner/types';
+import type { ScriptStatementResult } from '@archiyou/core/src/execution/types';
 
 import { Runner } from '@archiyou/core/src/runner/Runner';
 import { isRunnerScriptExecutionRequest } from '@archiyou/core/src/runner/typeguards';
 import { convertBinaryToBase64 } from '@archiyou/core/src/utils';
+import { scanContentNeeds } from '@archiyou/core/src/modules/contentNeeds';
 
 import { config } from '../config';
 import type { QueueTaskData, QueueTaskResult, QueueDebugTask, RedisConfig } from './types';
 import { isQueueDebugTask } from './types';
 import { connectToRedis } from './utils';
+import { SheetContent } from './SheetContent';
 
 
 //// MAIN CLASS ////
@@ -92,6 +95,8 @@ export class ExecutionWorker
     private worker: Worker;
     private redis: Redis;
     private runner: Runner;
+    /** The Google Sheets runs read, kept in memory as long as the Runner. */
+    private sheets = new SheetContent(config.execution.contentTtlMs);
 
     private healthCheckInterval: NodeJS.Timeout | null = null;
 
@@ -232,7 +237,7 @@ export class ExecutionWorker
         try
         {
             return await Promise.race([
-                this.runner.execute(runRequest),
+                this.executeWithContent(runRequest),
                 new Promise<never>((_, reject) =>
                 {
                     timer = setTimeout(
@@ -246,6 +251,42 @@ export class ExecutionWorker
         {
             if (timer) clearTimeout(timer);
         }
+    }
+
+    /**
+     * Run with the Google Sheets the script reads (SheetContent): those its code names, fetched
+     * before the run. When the run still stops for a sheet (named some other way, or imported by
+     * one), that one too, and the run once more.
+     */
+    private async executeWithContent(request: RunnerScriptExecutionRequest): Promise<RunnerScriptExecutionResult>
+    {
+        const code = (request.script as { code?: unknown })?.code;
+        const needs = typeof code === 'string' ? scanContentNeeds(code) : [];
+        const named = await this.sheets.resolve(needs);
+        let content = { ...(request.content ?? {}), ...named.content };
+        let problems = named.problems;
+        let result = await this.runner.execute({ ...request, content });
+
+        // what the run still stopped for, and was not tried before it
+        const tried = new Set(needs.map(n => n.id));
+        const missing = (result.needs?.content ?? []).filter(n => n.kind === 'google-sheet' && !tried.has(n.id) && !content[`google-sheet:${n.id}`]);
+        if (missing.length)
+        {
+            const more = await this.sheets.resolve(missing);
+            problems = [...problems, ...more.problems];
+            if (Object.keys(more.content).length)
+            {
+                content = { ...content, ...more.content };
+                result = await this.runner.execute({ ...request, content });
+            }
+        }
+        // stopped for a sheet the server cannot read: say why first, the module's message is the editor's
+        if (result.needs && problems.length)
+        {
+            const errors = problems.map(message => ({ status: 'error', code: '', message }) as ScriptStatementResult);
+            result.errors = [...errors, ...(result.errors ?? [])];
+        }
+        return result;
     }
 
     /**
