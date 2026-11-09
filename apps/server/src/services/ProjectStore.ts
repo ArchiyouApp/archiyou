@@ -183,6 +183,7 @@ function rowToClient(row: ClientRow): ClientData
     phone: row.phone,
     address: row.address,
     note: row.note,
+    listed: row.listed,
     created: row.created.toISOString(),
     updated: row.updated.toISOString(),
   };
@@ -335,9 +336,11 @@ export class ProjectStore
 {
   //// CLIENTS ////
 
-  async listClients(professional: string, q?: string): Promise<ClientData[]>
+  /** The client list; `all` also has the clients kept for one project only (`listed` false). */
+  async listClients(professional: string, q?: string, all = false): Promise<ClientData[]>
   {
     const filters = [eq(clients.professional, professional)];
+    if (!all) filters.push(eq(clients.listed, true));
     if (q)
     {
       const like = `%${q.toLowerCase()}%`;
@@ -371,6 +374,7 @@ export class ProjectStore
         id: uuid4(),
         professional,
         ...this.clientFields(input),
+        listed: input.listed ?? true,
         created: now,
         updated: now,
       }).returning();
@@ -388,7 +392,8 @@ export class ProjectStore
     await this.clientRow(professional, id);
     try
     {
-      const [row] = await db.update(clients).set({ ...this.clientFields(input), updated: new Date() })
+      const listed = input.listed === undefined ? {} : { listed: input.listed };
+      const [row] = await db.update(clients).set({ ...this.clientFields(input), ...listed, updated: new Date() })
         .where(and(eq(clients.professional, professional), eq(clients.id, id))).returning();
       return rowToClient(row);
     }

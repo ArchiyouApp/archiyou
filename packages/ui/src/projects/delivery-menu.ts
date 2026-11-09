@@ -3,8 +3,10 @@
  *
  * One form: the configuration, what goes in (the 3D model always; documents and
  * spreadsheets when the script makes them), an optional offer and a message. It goes to
- * the project's client: without one, or without their email address, it cannot be sent. Sending makes the files here in the browser, uploads them to a draft and
- * sends it: the server freezes it, gives it a link and emails the client.
+ * the project's client, or, marked Internal, to the professional's own address: for their
+ * own use, and the only choice while the project has no client with an email address.
+ * Sending makes the files here in the browser, uploads them to a draft and sends it: the
+ * server freezes it, gives it a link and emails it.
  *
  * Of another author's configurator only the 3D model and what it offers for download can
  * go in (the server checks the same).
@@ -28,6 +30,7 @@ import '@awesome.me/webawesome/dist/components/checkbox/checkbox.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
+import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 import type { ConfigurationData, DeliveryData, ProjectData, ProjectFileData } from '@archiyou/types';
@@ -83,10 +86,12 @@ export class DeliveryMenu extends LitElement
     const configuration = project.configurations.find(c => c.id === this._configurationId);
     return html`
       <form class="form" @submit=${this._submit}>
+        ${this._renderAudience(project)}
+
         <!-- \`selected\` on the option, not .value on the select: a value set before the
              options are slotted is cleared again (as in share-script-menu). -->
         <wa-select size="small" label=${msg('Design')}
-          @change=${(e: Event) => this._chooseConfiguration((e.target as HTMLSelectElement).value)}>
+          @change=${this._onDesignChange}>
           ${project.configurations.map(c => html`
             <wa-option value=${c.id} ?selected=${c.id === this._configurationId}
               label=${`v${c.rev} · ${c.label || c.scriptName || ''}`}><span class="rev">v${c.rev}</span>${c.label || c.scriptName || ''}</wa-option>`)}
@@ -144,7 +149,7 @@ export class DeliveryMenu extends LitElement
 
         ${this._renderRecipient(project)}
 
-        ${configuration?.configurator
+        ${configuration?.configurator && !this._internal
           ? html`
             <wa-checkbox size="small" ?checked=${this._allowAdjust}
               @change=${(e: Event) => { this._allowAdjust = (e.target as HTMLInputElement).checked; }}>
@@ -182,25 +187,48 @@ export class DeliveryMenu extends LitElement
       </fieldset>`;
   }
 
-  /** Who it goes to: the project's client, never typed here. Without one (or without their
-   *  email address) there is no one to send it to. */
+  /** Client or Internal. Client is greyed out, with the reason on hover, while the project
+   *  has no client with an email address. */
+  private _renderAudience(project: ProjectData)
+  {
+    const blocked = this._clientBlocked(project);
+    return html`
+      <div class="audience" role="radiogroup" aria-label=${msg('Send to')}>
+        <span id="audience-client" class=${blocked ? 'pill blocked' : 'pill'}>
+          <wa-button size="small" pill role="radio" aria-checked=${String(!this._internal)} ?disabled=${!!blocked}
+            variant=${this._internal ? 'neutral' : 'brand'} appearance=${this._internal ? 'outlined' : 'accent'}
+            @click=${() => { this._internal = false; }}>
+            <wa-icon slot="start" library="lucide" name="user"></wa-icon>${msg('Client')}
+          </wa-button>
+        </span>
+        <span class="pill">
+          <wa-button size="small" pill role="radio" aria-checked=${String(this._internal)}
+            variant=${this._internal ? 'brand' : 'neutral'} appearance=${this._internal ? 'accent' : 'outlined'}
+            @click=${() => { this._internal = true; }}>
+            <wa-icon slot="start" library="lucide" name="lock"></wa-icon>${msg('Internal')}
+          </wa-button>
+        </span>
+        ${blocked ? html`<wa-tooltip for="audience-client" placement="top">${blocked}</wa-tooltip>` : nothing}
+      </div>`;
+  }
+
+  /** Who it goes to: the project's client or, internal, the professional; never typed here. */
   private _renderRecipient(project: ProjectData)
   {
-    const client = project.client;
-    if (!client)
+    const to = this._recipient(project);
+    if (!to)
     {
-      return html`<p class="recipient missing" role="alert">${msg('No client for this project yet. Please make one before you can send things!')}</p>`;
+      return html`<p class="recipient missing" role="alert">${msg('Your account has no email address to send it to.')}</p>`;
     }
-    if (!client.email)
-    {
-      return html`<p class="recipient missing" role="alert">${msg('The client has no email address yet. Please add one before you can send things!')}</p>`;
-    }
-    const name = client.name ?? client.company;
+    const blocked = this._internal ? this._clientBlocked(project) : null;
     return html`
       <p class="recipient">
         <wa-icon library="lucide" name="mail"></wa-icon>
-        ${name ? msg(str`Sent to ${name} (${client.email})`) : msg(str`Sent to ${client.email}`)}
-      </p>`;
+        ${this._internal
+          ? msg(str`Sent to you (${to.email}), for internal use`)
+          : to.name ? msg(str`Sent to ${to.name} (${to.email})`) : msg(str`Sent to ${to.email}`)}
+      </p>
+      ${blocked ? html`<p class="hint">${blocked}</p>` : nothing}`;
   }
 
   private _renderFooter()
@@ -216,7 +244,7 @@ export class DeliveryMenu extends LitElement
     const busy = this._step !== 'form';
     return html`
       <wa-button slot="footer" appearance="outlined" ?disabled=${busy} @click=${this._close}>${msg('Cancel')}</wa-button>
-      <wa-button slot="footer" variant="brand" ?loading=${busy} ?disabled=${!this.project?.client?.email}
+      <wa-button slot="footer" variant="brand" ?loading=${busy} ?disabled=${!this.project || !this._recipient(this.project)}
         @click=${() => this.renderRoot.querySelector<HTMLFormElement>('form')?.requestSubmit()}>
         <wa-icon slot="start" library="lucide" name="send"></wa-icon>${msg('Send')}
       </wa-button>`;
@@ -229,10 +257,15 @@ export class DeliveryMenu extends LitElement
   @property({ attribute: false }) configuration: ConfigurationData | null = null;
   /** The signed-in professional's handle. */
   @property({ type: String }) me = '';
+  /** Their email address and name: where an internal delivery goes. */
+  @property({ type: String }) myEmail = '';
+  @property({ type: String }) myName = '';
 
   @state() private _step: Step = 'form';
   @state() private _error = '';
   @state() private _sent: DeliveryData | null = null;
+  /** For the professional's own use: sent to their own address instead of the client's. */
+  @state() private _internal = false;
   @state() private _configurationId = '';
   @state() private _allowed = { documents: true, sheets: true };
   @state() private _foreign = false;
@@ -272,6 +305,7 @@ export class DeliveryMenu extends LitElement
     this._step = 'form';
     this._error = '';
     this._sent = null;
+    this._internal = !!this._clientBlocked(project);
     // Offers are off for now: back on with `Offer ${project.title}` and _withOffer = true
     // this._title = msg(str`Offer ${project.title}`);
     // this._withOffer = true;
@@ -285,6 +319,32 @@ export class DeliveryMenu extends LitElement
     this._files = project.files ?? [];
     this._attach = [];
     void this._chooseConfiguration(this.configuration?.id ?? project.configurations[0]?.id ?? '');
+  }
+
+  /** Why the client cannot get it (no client, or one without an email address); null when
+   *  they can. */
+  private _clientBlocked(project: ProjectData): string | null
+  {
+    if (!project.client) return msg('No client for this project yet. Add one to send things to them.');
+    if (!project.client.email) return msg('The client has no email address yet. Add one to send things to them.');
+    return null;
+  }
+
+  /** The address it goes to, by the Client / Internal choice; null when there is none. */
+  private _recipient(project: ProjectData): { email: string; name: string | null } | null
+  {
+    if (this._internal) return this.myEmail ? { email: this.myEmail, name: this.myName || null } : null;
+    const client = project.client;
+    return client?.email ? { email: client.email, name: client.name ?? client.company ?? null } : null;
+  }
+
+  /** Web Awesome's select can report a change before its value is set, so the value is
+   *  read once it has updated. */
+  private async _onDesignChange(e: Event)
+  {
+    const select = e.target as HTMLSelectElement & { updateComplete: Promise<boolean> };
+    await select.updateComplete;
+    if (select.value) void this._chooseConfiguration(String(select.value));
   }
 
   /** A configuration was chosen: what can go in depends on its script (and its author). */
@@ -362,7 +422,8 @@ export class DeliveryMenu extends LitElement
     e.preventDefault();
     const project = this.project;
     const configuration = project?.configurations.find(c => c.id === this._configurationId);
-    if (!project?.client?.email || !configuration || this._step !== 'form') return;
+    const to = project ? this._recipient(project) : null;
+    if (!project || !to || !configuration || this._step !== 'form') return;
     if (this._withOffer && !(Number(this._total) >= 0 && this._total !== ''))
     {
       this._error = msg('What is the total of the offer?');
@@ -384,9 +445,9 @@ export class DeliveryMenu extends LitElement
         offer: this._withOffer
           ? { total: Number(this._total), currency: this._currency, validUntil: this._validUntil || null, note: this._offerNote.trim() || null }
           : null,
-        recipientEmail: project.client.email,
-        recipientName: project.client.name ?? null,
-        allowAdjust: this._allowAdjust,
+        recipientEmail: to.email,
+        recipientName: to.name,
+        allowAdjust: this._allowAdjust && !this._internal,
       });
       draftId = draft.id;
       for (const file of files) await uploadDeliveryFile(project.id, draft.id, file);
@@ -503,6 +564,24 @@ export class DeliveryMenu extends LitElement
       gap: var(--space-xs);
       margin: 0;
       font-size: var(--text-sm);
+    }
+
+    .audience {
+      display: flex;
+      gap: var(--space-xs);
+    }
+
+    .audience wa-button {
+      font-size: var(--text-xs);
+    }
+
+    /* Client without a client: greyed out, and the cursor says why not (the tooltip says why) */
+    .pill.blocked {
+      cursor: not-allowed;
+    }
+
+    .pill.blocked wa-button {
+      pointer-events: none;
     }
 
     .recipient.missing {

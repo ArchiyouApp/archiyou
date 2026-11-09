@@ -422,9 +422,11 @@ function toBase64(buffer: ArrayBuffer): string
 
 //// CLIENTS ////
 
-export async function listClients(q?: string): Promise<ClientData[]>
+/** The client list; `all` also has the clients kept for one project only. */
+export async function listClients(q?: string, all = false): Promise<ClientData[]>
 {
-  const query = q ? `?q=${encodeURIComponent(q)}` : '';
+  const params = new URLSearchParams({ ...(q ? { q } : {}), ...(all ? { all: '1' } : {}) });
+  const query = params.size ? `?${params}` : '';
   return (await api.get<Envelope<ClientData[]>>(`/clients${query}`)).data;
 }
 

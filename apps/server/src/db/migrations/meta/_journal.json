@@ -29,6 +29,13 @@
       "when": 1793388029074,
       "tag": "0003_project_files",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793976837655,
+      "tag": "0004_client_listed",
+      "breakpoints": true
     }
   ]
 }

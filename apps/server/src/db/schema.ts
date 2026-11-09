@@ -195,6 +195,8 @@ export const clients = pgTable('clients', {
   phone: text('phone'),
   address: text('address'),
   note: text('note'),
+  // false: kept for its project only, left out of the client list to choose from
+  listed: boolean('listed').notNull().default(true),
   created: at('created').notNull().defaultNow(),
   updated: at('updated').notNull().defaultNow(),
 }, (t) => [

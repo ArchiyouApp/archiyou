@@ -30,6 +30,14 @@ function fmtDate(ms: number | undefined): string
   return new Date(ms).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+/** fmtDate() with the time, e.g. "02-10-2020 14:05" (nl) or "10/02/2020, 2:05 PM" (en-US). */
+function fmtDateTime(ms: number | undefined): string
+{
+  if (!ms) return '';
+  return new Date(ms).toLocaleString(undefined,
+    { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 @customElement('browser-asset-card')
 export class BrowserAssetCard extends LitElement
 {
@@ -39,7 +47,7 @@ export class BrowserAssetCard extends LitElement
     const a = this.asset;
     if (!a) return nothing;
     const created = fmtDate(a.created);
-    const updated = fmtDate(a.updated);
+    const updated = fmtDateTime(a.updated);
     const thumbnail = a.thumbnail && a.thumbnail !== this._failedThumbnail ? a.thumbnail : null;
 
     return html`
@@ -151,8 +159,28 @@ export class BrowserAssetCard extends LitElement
       width: 100%;
       height: 100%;
       object-fit: contain;
-      padding: var(--space-sm);
       box-sizing: border-box;
+      /* The renders leave room around the model: scaled up, it fills more of the 16:10
+         box, and only that empty margin is cut off */
+      transform: scale(1.15);
+      transition: transform 900ms cubic-bezier(0.2, 0.7, 0.2, 1);
+    }
+
+    /* Pointed at, the model comes a little closer */
+    :host(:hover) .preview img,
+    :host(:focus-visible) .preview img {
+      transform: scale(1.35);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .preview img {
+        transition: none;
+      }
+
+      :host(:hover) .preview img,
+      :host(:focus-visible) .preview img {
+        transform: scale(1.15);
+      }
     }
 
     .preview wa-icon {
@@ -220,8 +248,9 @@ export class BrowserAssetCard extends LitElement
     .dates {
       display: flex;
       flex-wrap: wrap;
-      gap: var(--space-xs) var(--space-md);
-      font-size: var(--text-xs);
+      gap: var(--space-xs) var(--space-sm);
+      /* a step under xs: both dates, the last one with its time, fit on one line */
+      font-size: calc(var(--text-xs) * 0.875);
       color: var(--color-text-muted);
     }
 

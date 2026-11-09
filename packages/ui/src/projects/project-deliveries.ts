@@ -15,9 +15,20 @@ import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
 
-import type { ConfigurationData, DeliveryData } from '@archiyou/types';
+import type { ConfigurationData, DeliveryData, DeliveryFile } from '@archiyou/types';
 
+import { deliveryFileUrl } from '@archiyou/editor/src/services/projects';
 import { formatDay } from './project-configurations.js';
+import { fileIcon } from './project-files.js';
+
+/** A lucide icon per kind of file in a delivery; an attachment's by its type. */
+function deliveryFileIcon(f: DeliveryFile): string
+{
+  if (f.kind === 'model') return 'box';
+  if (f.kind === 'document') return 'file-text';
+  if (f.kind === 'sheet') return 'sheet';
+  return fileIcon(f.mime);
+}
 
 /** "€1,200.00" in the browser's locale. */
 export function formatMoney(amount: number, currency: string): string
@@ -66,8 +77,9 @@ export class ProjectDeliveries extends LitElement
             ? msg(str`opened ${d.openCount}×`)
             : msg('not opened yet')}</span>
           ${d.downloadCount ? html`<span>${msg(str`${d.downloadCount} downloaded`)}</span>` : nothing}
-          <span class="files">${d.files.filter(f => f.kind !== 'preview').map(f => f.name).join(', ')}</span>
         </div>
+
+        ${this._renderFiles(d)}
 
         ${d.responseNote ? html`<blockquote class="note">${d.responseNote}</blockquote>` : nothing}
 
@@ -87,6 +99,25 @@ export class ProjectDeliveries extends LitElement
           : nothing}
       </article>
     `;
+  }
+
+  /** The files as the client got them, each opening from the client's link (not counted as
+   *  the client's: only `?download=1` is). Once revoked, names only. */
+  private _renderFiles(d: DeliveryData)
+  {
+    const files = d.files.filter(f => f.kind !== 'preview');
+    if (!files.length) return nothing;
+    const token = d.status === 'sent' ? d.link?.split('/d/')[1] : undefined;
+    return html`
+      <ul class="files">
+        ${files.map(f => html`
+          <li>
+            <wa-icon library="lucide" name=${deliveryFileIcon(f)}></wa-icon>
+            ${token
+              ? html`<a href=${deliveryFileUrl(token, f.name)} target="_blank" rel="noopener" title=${f.name}>${f.name}</a>`
+              : html`<span title=${f.name}>${f.name}</span>`}
+          </li>`)}
+      </ul>`;
   }
 
   private _renderStatus(d: DeliveryData)
@@ -174,7 +205,40 @@ export class ProjectDeliveries extends LitElement
     }
 
     .files {
-      flex-basis: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-xs) var(--space-md);
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      font-size: var(--text-xs);
+    }
+
+    .files li {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-xs);
+      min-width: 0;
+    }
+
+    .files wa-icon {
+      flex-shrink: 0;
+      color: var(--color-text-muted);
+    }
+
+    .files a {
+      color: var(--color-text);
+      text-decoration: none;
+      overflow-wrap: anywhere;
+    }
+
+    .files a:hover {
+      color: var(--color-primary);
+      text-decoration: underline;
+    }
+
+    .files span {
+      color: var(--color-text-muted);
       overflow-wrap: anywhere;
     }
 

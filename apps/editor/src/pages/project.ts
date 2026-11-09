@@ -27,6 +27,7 @@ import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
 import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '@awesome.me/webawesome/dist/components/select/select.js';
+import '@awesome.me/webawesome/dist/components/checkbox/checkbox.js';
 import '@awesome.me/webawesome/dist/components/option/option.js';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import '@awesome.me/webawesome/dist/components/details/details.js';
@@ -62,6 +63,12 @@ const NEXT_STATUS: Record<ProjectStatus, ProjectStatus[]> = {
 };
 
 const CLIENT_FIELDS: Array<keyof ClientInput> = ['name', 'email', 'company', 'phone', 'address'];
+
+/** A client in the list to choose from: name, else email, else company. */
+function clientLabel(c: ClientData): string
+{
+  return c.name ?? c.email ?? c.company ?? msg('(no name)');
+}
 
 /** Server error text from an ApiError body, else the error's own message. */
 function errorText(err: unknown, fallback: string): string
@@ -150,6 +157,8 @@ export class PageProject extends SignalWatcher(LitElement)
         .project=${p}
         .configuration=${this._deliverFrom}
         me=${userState.get().id ?? ''}
+        myEmail=${userState.get().email ?? ''}
+        myName=${userState.get().name ?? ''}
         @delivery-menu-sent=${() => void this._load()}
         @delivery-menu-file-added=${() => void this._load()}
         @delivery-menu-close=${() => { this._delivering = false; }}
@@ -298,24 +307,34 @@ export class PageProject extends SignalWatcher(LitElement)
     const labels: Record<string, string> = {
       name: msg('Name'), email: msg('Email'), company: msg('Company'), phone: msg('Phone'), address: msg('Address'),
     };
+    const adding = !p.client;
+    // An existing client chosen: Add links that one, the form for a new one steps aside
+    const picked = adding && this._pickedClientId !== '';
     return html`
-      ${!p.client && this._clients.length
-        ? html`
-          <wa-select size="small" label=${msg('Existing client')} placeholder=${msg('Choose…')}
-            @change=${this._pickClient}>
-            ${this._clients.map(c => html`<wa-option value=${c.id}>${c.name ?? c.email ?? c.company}</wa-option>`)}
-          </wa-select>
-          <p class="muted or">${msg('or a new one:')}</p>`
-        : nothing}
       <form class="client-form" @submit=${this._saveClient}>
-        ${CLIENT_FIELDS.map(f => html`
+      ${adding && this._clients.length
+        ? html`
+          <wa-select class="existing-client" size="small" label=${msg('Existing client')} placeholder=${msg('Choose…')} with-clear
+            @input=${this._onPickClient} @change=${this._onPickClient}>
+            ${this._clients.map(c => html`<wa-option value=${c.id}>${clientLabel(c)}</wa-option>`)}
+          </wa-select>
+          ${picked ? nothing : html`<p class="or">${msg('or a new one:')}</p>`}`
+        : nothing}
+        ${adding && !picked
+          ? html`
+            <wa-checkbox size="small" ?checked=${this._listClient}
+              @change=${(e: Event) => { this._listClient = (e.target as HTMLInputElement).checked; }}>
+              ${msg('Add to client list')}
+            </wa-checkbox>`
+          : nothing}
+        ${picked ? nothing : CLIENT_FIELDS.map(f => html`
           <wa-input size="small" name=${f} label=${labels[f]} type=${f === 'email' ? 'email' : 'text'}
             .value=${(this._clientDraft[f] as string | null) ?? ''}
             @input=${(e: Event) => { this._clientDraft = { ...this._clientDraft, [f]: (e.target as HTMLInputElement).value }; }}
           ></wa-input>`)}
         <div class="form-actions">
           <wa-button size="small" appearance="outlined" @click=${() => { this._editingClient = false; }}>${msg('Cancel')}</wa-button>
-          <wa-button size="small" variant="brand" type="submit" ?loading=${this._saving}>${msg('Save')}</wa-button>
+          <wa-button size="small" variant="brand" type="submit" ?loading=${this._saving}>${adding ? msg('Add') : msg('Save')}</wa-button>
         </div>
       </form>`;
   }
@@ -361,6 +380,10 @@ export class PageProject extends SignalWatcher(LitElement)
   @state() private _clientDraft: ClientInput = {};
   /** The professional's other clients, for "Existing client". */
   @state() private _clients: ClientData[] = [];
+  /** The existing client chosen to add; '' for a new one from the form. */
+  @state() private _pickedClientId = '';
+  /** A new client goes in the client list too (else it is kept for this project only). */
+  @state() private _listClient = true;
   /** The question the confirm dialog asks, and what happens on yes. */
   @state() private _confirm: { title: string; text: string; button: string; action: () => Promise<void> } | null = null;
   @state() private _delivering = false;
@@ -619,36 +642,47 @@ export class PageProject extends SignalWatcher(LitElement)
     const client = this._project?.client;
     this._clientDraft = client ? Object.fromEntries(CLIENT_FIELDS.map(f => [f, client[f as keyof ClientData]])) : {};
     this._editingClient = true;
+    this._pickedClientId = '';
+    this._listClient = true;
     if (!client)
     {
       this._clients = await listClients().catch(() => []);
     }
   }
 
-  private _pickClient(e: Event)
+  /** Web Awesome's select reports a first pick before its value is set (still null), so the
+   *  value is read once it has updated. */
+  private async _onPickClient(e: Event)
   {
-    const clientId = (e.target as HTMLSelectElement).value;
-    if (!clientId) return;
-    this._editingClient = false;
-    void this._apply(() => updateProject(this._id, { clientId }));
+    const select = e.target as HTMLSelectElement & { updateComplete: Promise<boolean> };
+    await select.updateComplete;
+    this._pickedClientId = String(select.value ?? '');
   }
 
+  /** Add: the existing client chosen, or a new one from the form. Save: the client's changes. */
   private async _saveClient(e: Event)
   {
     e.preventDefault();
+    const existing = this._project?.client;
+    const draft = this._clientDraft;
+    if (!existing && !this._pickedClientId && !CLIENT_FIELDS.some(f => ((draft[f] as string | null) ?? '').trim()))
+    {
+      this._error = msg('Choose a client, or fill in at least a name or an email address.');
+      return;
+    }
+    this._error = '';
     this._saving = true;
     try
     {
-      const existing = this._project?.client;
       if (existing)
       {
-        await updateClient(existing.id, this._clientDraft);
+        await updateClient(existing.id, draft);
         await this._load();
       }
       else
       {
-        const client = await this._createOrFindClient(this._clientDraft);
-        this._project = await updateProject(this._id, { clientId: client.id });
+        const clientId = this._pickedClientId || (await this._createOrFindClient({ ...draft, listed: this._listClient })).id;
+        this._project = await updateProject(this._id, { clientId });
       }
       this._editingClient = false;
     }
@@ -662,7 +696,8 @@ export class PageProject extends SignalWatcher(LitElement)
     }
   }
 
-  /** A new client — or, when the email is one of the professional's clients already, that one. */
+  /** A new client — or, when the email is one of the professional's clients already, that
+   *  one (into the client list when this one was to go there). */
   private async _createOrFindClient(input: ClientInput): Promise<ClientData>
   {
     try
@@ -673,9 +708,9 @@ export class PageProject extends SignalWatcher(LitElement)
     {
       const email = input.email?.trim().toLowerCase();
       if ((err as ApiError)?.status !== 409 || !email) throw err;
-      const found = (await listClients(email)).find(c => c.email === email);
+      const found = (await listClients(email, true)).find(c => c.email === email);
       if (!found) throw err;
-      return found;
+      return input.listed && !found.listed ? updateClient(found.id, { ...found, listed: true }) : found;
     }
   }
 
@@ -875,6 +910,7 @@ export class PageProject extends SignalWatcher(LitElement)
     /* The strips' content is small: the client, its form, the notes */
     .strips wa-details > .muted,
     .client-form wa-input,
+    .client-form wa-checkbox,
     .strips wa-select,
     .strips wa-textarea,
     .strips wa-button {
@@ -978,8 +1014,12 @@ export class PageProject extends SignalWatcher(LitElement)
       color: var(--color-text-muted);
     }
 
+    /* Reads as the label of "Existing client" above it */
     .or {
-      margin-top: var(--space-sm);
+      margin: var(--space-xs) 0 0;
+      font-size: var(--text-xs);
+      font-weight: var(--wa-form-control-label-font-weight);
+      color: var(--wa-form-control-label-color);
     }
 
     .error {

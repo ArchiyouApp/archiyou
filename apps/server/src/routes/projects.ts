@@ -20,7 +20,7 @@
  *   POST   /projects/:id/files/:name                   application/octet-stream: a file for the dossier
  *   GET    /projects/:id/files/:fid                    the file, to save
  *   DELETE /projects/:id/files/:fid
- *   GET    /clients?q · GET /clients/:id · POST /clients · PUT /clients/:id · DELETE /clients/:id
+ *   GET    /clients?q&all=1 (all: also those kept for one project) · GET /clients/:id · POST /clients · PUT /clients/:id · DELETE /clients/:id
  *
  * Every route needs a signed-in user with a verified email (the professional is
  * `request.user.sub`); every store call is scoped to them, so another professional's id
@@ -50,6 +50,7 @@ const ClientSchema = Type.Object({
   phone: optionalText(50),
   address: optionalText(500),
   note: optionalText(TEXT_MAX),
+  listed: Type.Optional(Type.Boolean()),
 });
 
 const ConfigurationSchema = Type.Object({
@@ -338,9 +339,10 @@ export async function registerProjectRoutes(fastify: FastifyInstance): Promise<v
 
   //// CLIENTS ////
 
-  fastify.get<{ Querystring: { q?: string } }>('/clients', verified, async (request) =>
+  fastify.get<{ Querystring: { q?: string; all?: string } }>('/clients', verified, async (request) =>
   {
-    return { success: true, data: await projectStore.listClients(request.user.sub, request.query.q?.trim() || undefined) };
+    const { q, all } = request.query;
+    return { success: true, data: await projectStore.listClients(request.user.sub, q?.trim() || undefined, all === '1') };
   });
 
   fastify.get<IdParams>('/clients/:id', verified, async (request) =>

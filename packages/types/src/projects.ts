@@ -33,6 +33,8 @@ export interface ClientData
   phone: string | null;
   address: string | null;
   note: string | null;
+  /** In the client list to choose from; false for a client kept for one project only. */
+  listed: boolean;
   created: string;
   updated: string;
 }
@@ -46,6 +48,8 @@ export interface ClientInput
   phone?: string | null;
   address?: string | null;
   note?: string | null;
+  /** Default true; left out on an update, it stays as it was. */
+  listed?: boolean;
 }
 
 /** The published configurator a configuration came from, when it was one. */
