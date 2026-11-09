@@ -607,7 +607,7 @@ export function applyManagedParamsAndPresets(
   if (changed)
   {
     bumpScript();
-    saveCore();
+    saveCore({ sync: false });   // set by the script's run, not an edit: kept in this browser
   }
 }
 
@@ -641,7 +641,7 @@ export function applyManagedValues(managedValues?: ManagedValuesData): void
   {
     changes.forEach(({ name, value }) => { s.params[name]._value = value; });
     bumpScript();
-    saveCore();
+    saveCore({ sync: false });   // set by the script's run, not an edit: kept in this browser
   }
 
   if (!rerun) return;

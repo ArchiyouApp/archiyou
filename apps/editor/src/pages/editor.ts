@@ -43,6 +43,7 @@ import type { ToolDef } from '@archiyou/ui/editor/toolbar.js';
 import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystemOverride, docUnitSystemOverride, perStatement, kernel, autoRun, wasActiveScriptRestored, activePipeline, pipelineModelPath, forActivePipeline, bakeAnimations } from '../state/workspace';
 import { currentValues, type ConfigurationInput } from '../services/projects';
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
+import { refreshFromServer, resolveConflict, saveConflict } from '../services/scripts-sync';
 import { registerScheduleExecution, registerParamFrameRunner, triggerResetCamera } from '../state/viewer';
 import { registerHelpRunner, openHelpDoc, claimOnboarding, setHelpCursor, lookupHelpAtCursor, ONBOARDING_PATH } from '../state/help';
 import { compactLayout } from '../state/editor';
@@ -234,6 +235,23 @@ export class PageEditor extends SignalWatcher(LitElement)
         </wa-button>
         <wa-button slot="footer" variant="danger" @click=${this._handleDeleteConfirm}>
           Delete
+        </wa-button>
+      </wa-dialog>
+      <wa-dialog
+        class="conflict-dialog"
+        label="Newer version on the server"
+        ?open=${saveConflict.get() !== null}
+        @wa-hide=${(e: Event) => e.preventDefault()}
+      >
+        <p class="delete-message">
+          <strong>${saveConflict.get()?.name || 'This script'}</strong> was saved elsewhere (another tab,
+          browser or a script) after you opened it here. Your changes here are not saved yet.
+        </p>
+        <wa-button slot="footer" appearance="outlined" @click=${() => this._handleConflict('theirs')}>
+          Load the saved version
+        </wa-button>
+        <wa-button slot="footer" variant="brand" @click=${() => this._handleConflict('mine')}>
+          Keep mine
         </wa-button>
       </wa-dialog>
     `;
@@ -832,6 +850,22 @@ export class PageEditor extends SignalWatcher(LitElement)
     this._showKeys = true;
   };
 
+  /** A save the server refused (see scripts-sync): load its version, or save this one on top
+   *  as a new version (the other stays in the history). */
+  private async _handleConflict(choice: 'theirs' | 'mine')
+  {
+    await resolveConflict(choice);
+    if (choice === 'theirs')
+    {
+      this._handleExecute();
+      this._showNotice('Loaded the saved version.');
+    }
+    else
+    {
+      this._showNotice('Saved your version as the latest; the other one is in the history (Versions).');
+    }
+  }
+
   private _showNotice(text: string, durationMs = 6000)
   {
     this._notice = text;
@@ -943,8 +977,9 @@ export class PageEditor extends SignalWatcher(LitElement)
   }
 
 
-  private _handleScriptManagerOpen(e: CustomEvent<string>)
+  private async _handleScriptManagerOpen(e: CustomEvent<string>)
   {
+    await refreshFromServer(e.detail);   // the server may have a newer version than this browser
     openScript(e.detail);
     this._showScriptManager = false;
     triggerResetCamera();
@@ -1314,6 +1349,11 @@ export class PageEditor extends SignalWatcher(LitElement)
     /* Main menu ▸ Delete script confirmation */
     .delete-dialog {
       --width: 28rem;
+    }
+
+    /* A save refused because the server has a newer version */
+    .conflict-dialog {
+      --width: 30rem;
     }
 
     .delete-message {

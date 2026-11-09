@@ -139,14 +139,18 @@ function _loadPersistedScripts(): Script[]
   catch { return []; }
 }
 
-/** Persist the active script. Cheap — runs on every keystroke. */
-export function saveActive(): void
+/** Persist the active script. Cheap — runs on every keystroke.
+ *  `sync: false` keeps it in this browser: for what is not an edit of the user (opening a
+ *  script, the values a run of the script sets itself), so a copy that was not edited here
+ *  never goes back to the server over a newer version. */
+export function saveActive(opts: { sync?: boolean } = {}): void
 {
   try
   {
     const script = editorScript.get();
     if (!script) return;
     localStorage.setItem(SCRIPT_STORAGE_KEY, JSON.stringify(script.toData()));
+    if (opts.sync === false) return;
     // Never mirror a foreign (read-only) script back to our own account.
     if (_scriptIsForeign(script)) return;
     // Mirror to the server (debounced + no-op when anonymous).
@@ -168,10 +172,10 @@ export function saveCollection(): void
   catch { /* storage unavailable – silently ignore */ }
 }
 
-/** Persist active + collection. */
-export function saveCore(): void
+/** Persist active + collection (`sync: false`: in this browser only, see saveActive). */
+export function saveCore(opts: { sync?: boolean } = {}): void
 {
-  saveActive();
+  saveActive(opts);
   saveCollection();
 }
 
@@ -418,7 +422,7 @@ export function openScript(fileId: string): Script | null
 
   _archiveScript(editorScript.get());   // ensure current is in the list
   editorScript.set(target);
-  saveActive();
+  saveActive({ sync: false });          // opening is not an edit: nothing to send to the server
   saveCollection();
   return target;
 }

@@ -3,9 +3,10 @@
  * server's scripts are reconciled, with the real state/core.ts and services/scripts-sync.ts
  * against an in-memory server.
  *
- * The server keeps every save as a version stamped with ITS clock, like ScriptStore does;
- * the editor compares the list's `updated` with the server's latest on load (last write
- * wins) and pushes the open script on every save.
+ * The server keeps every save as a version stamped with ITS clock, like ScriptStore does,
+ * and refuses a save made from an older version than its latest (`?base=`, a 409 conflict).
+ * The editor reconciles on load and pushes the open script when the user edits it; opening a
+ * script and the values a run sets stay in the browser.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -14,7 +15,7 @@ const USER = 'mark';
 
 //// FAKE SERVER ////
 
-interface Row { data: Record<string, any>; updated: number }
+interface Row { data: Record<string, any>; updated: number; id: string }
 const server = {
   versions: new Map<string, Row[]>(),
   clock: 0,
@@ -23,7 +24,7 @@ const server = {
   save(data: Record<string, any>): Record<string, any>
   {
     const updated = this.now();
-    const row = { data: { ...data, author: USER }, updated };
+    const row = { data: { ...data, author: USER }, updated, id: `row-${updated}` };
     this.versions.set(data.fileId, [...(this.versions.get(data.fileId) ?? []), row]);
     return this.toData(row);
   },
@@ -32,7 +33,7 @@ const server = {
     const rows = this.versions.get(fileId);
     return rows ? this.toData(rows[rows.length - 1]) : undefined;
   },
-  toData(row: Row): Record<string, any> { return { ...row.data, updated: new Date(row.updated).toISOString() }; },
+  toData(row: Row): Record<string, any> { return { ...row.data, id: row.id, updated: new Date(row.updated).toISOString() }; },
   reset() { this.versions.clear(); this.clock = 0; this.listFails = false; },
 };
 
@@ -47,11 +48,23 @@ vi.mock('../src/services/api.js', () =>
       calls.push(`GET ${path}`);
       if (path === `/scripts/${USER}` && server.listFails) throw new ApiError(503, 'unavailable');
       if (path === `/scripts/${USER}`) return [...server.versions.keys()].map(id => server.latest(id));
+      const one = path.match(new RegExp(`^/scripts/${USER}/([^/?]+)$`));
+      if (one && server.latest(one[1])) return server.latest(one[1]);
       throw new ApiError(404);
     },
     async put(path: string, data: any)
     {
       calls.push(`PUT ${data.code}`);
+      // Like ScriptStore.saveVersion(): a save made from another version than the latest is refused
+      const query = new URLSearchParams(path.split('?')[1] ?? '');
+      const latest = server.latest(data.fileId);
+      const base = query.get('base');
+      if (latest && base && (base !== latest.id || Date.parse(query.get('baseUpdated') ?? '') !== Date.parse(latest.updated))
+        && latest.code !== data.code)
+      {
+        calls.push('409');
+        throw new ApiError(409, 'newer version');
+      }
       return server.save(data);
     },
     async post(path: string, data: any)
@@ -162,35 +175,52 @@ describe('scripts: local copies vs the server', () =>
     expect(core.editorScript.get()?.code).toBe('v1'); // only a reload pulls
   });
 
-  it('4. (known) a save in that stale tab (a run, no edit) puts its old copy back on top', async () =>
+  it('4. in that stale tab, a run (no edit) sends nothing; an edit is refused, not put on top', async () =>
   {
     server.save(stored('v1', 0));
     storage.set(LIST_KEY, JSON.stringify([stored('v1', 0)]));
     storage.set(ACTIVE_KEY, JSON.stringify(stored('v1', 0)));
-    const { core } = await loadEditor();
+    const { core, sync } = await loadEditor();
 
     server.save(stored('v2 from elsewhere', 0));
-    core.saveCore();                          // what a run that changed a param value does
+    core.saveCore({ sync: false });           // what a run that changed a param value does
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(serverCode()).toBe('v2 from elsewhere');
+
+    core.updateScriptCode('v1 edited');       // an edit of the old copy
     await vi.advanceTimersByTimeAsync(1000);  // the debounced push
-    expect(serverCode()).toBe('v1');          // the newer server version is buried
-    expect(server.versions.get('F1')!.map(r => r.data.code)).toEqual(['v1', 'v2 from elsewhere', 'v1']);
+    expect(serverCode()).toBe('v2 from elsewhere');
+    expect(sync.saveConflict.get()?.fileId).toBe('F1');
+    expect(server.versions.get('F1')!.map(r => r.data.code)).toEqual(['v1', 'v2 from elsewhere']);
   });
 
-  it('5. (known) ...and the next load then keeps the old copy, as it is now the newest', async () =>
+  it('5. a conflict is resolved by loading the saved version, or by keeping mine on top', async () =>
   {
     server.save(stored('v1', 0));
     storage.set(LIST_KEY, JSON.stringify([stored('v1', 0)]));
     storage.set(ACTIVE_KEY, JSON.stringify(stored('v1', 0)));
-    const first = await loadEditor();
+    const { core, sync } = await loadEditor();
     server.save(stored('v2 from elsewhere', 0));
-    first.core.saveCore();
+    core.updateScriptCode('v1 edited');
     await vi.advanceTimersByTimeAsync(1000);
 
-    const { core } = await loadEditor(); // reload
-    expect(core.editorScript.get()?.code).toBe('v1');
+    await sync.resolveConflict('theirs');
+    expect(core.editorScript.get()?.code).toBe('v2 from elsewhere');
+    expect(sync.saveConflict.get()).toBeNull();
+
+    server.save(stored('v3 from elsewhere', 0));
+    core.updateScriptCode('v2 edited');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sync.saveConflict.get()).not.toBeNull();
+    await sync.resolveConflict('mine');
+    expect(serverCode()).toBe('v2 edited');
+    expect(server.versions.get('F1')!.map(r => r.data.code)).toEqual(['v1', 'v2 from elsewhere', 'v3 from elsewhere', 'v2 edited']);
+
+    const { core: reloaded } = await loadEditor(); // and a reload keeps it
+    expect(reloaded.editorScript.get()?.code).toBe('v2 edited');
   });
 
-  it('6. a save queued before the load-time pull still pushes the old copy after it', async () =>
+  it('6. a run before the load-time pull sends nothing, and the pull takes the server version', async () =>
   {
     storage.set(ACTIVE_KEY, JSON.stringify(stored('local', Date.now() - 60_000)));
     storage.set(LIST_KEY, JSON.stringify([stored('local', Date.now() - 60_000)]));
@@ -199,15 +229,14 @@ describe('scripts: local copies vs the server', () =>
     vi.resetModules();
     const core = await import('../src/state/core.js');
     await import('../src/services/scripts-sync.js');
-    core.saveCore();                        // e.g. the first autorun, before the pull lands
+    core.saveCore({ sync: false });         // e.g. the first autorun, before the pull lands
     await vi.advanceTimersByTimeAsync(100); // /auth/me, then the pull adopts 'server'
     expect(core.editorScript.get()?.code).toBe('server');
     await vi.advanceTimersByTimeAsync(1000);
-    expect(serverCode()).toBe('server');    // what should hold
+    expect(serverCode()).toBe('server');
   });
 
-  // Known: every save sends the whole script, changed or not
-  it.fails('7. a run that changes nothing makes no server version', async () =>
+  it('7. a run that changes nothing, or only values the script sets, makes no server version', async () =>
   {
     server.save(stored('v1', 0));
     storage.set(LIST_KEY, JSON.stringify([stored('v1', 0)]));
@@ -215,18 +244,32 @@ describe('scripts: local copies vs the server', () =>
     const { core } = await loadEditor();
     const before = server.versions.get('F1')!.length;
 
-    core.saveCore();
+    core.saveCore({ sync: false });
+    core.openScript('F1');
     await vi.advanceTimersByTimeAsync(1000);
-    expect(server.versions.get('F1')!.length).toBe(before); // what should hold
+    expect(server.versions.get('F1')!.length).toBe(before);
   });
 
-  it('8. a save of a file the server has, sent as a create, becomes a new version', async () =>
+  it('8. opening a script takes a newer server version first', async () =>
   {
-    // The case that silently lost saves: the editor did not know the file was on the server
-    // (its load-time pull had not run), so it sent a create, which the server refused
+    server.save(stored('v1', 0));
+    storage.set(LIST_KEY, JSON.stringify([stored('v1', 0)]));
+    storage.set(ACTIVE_KEY, JSON.stringify(stored('v1', 0)));
+    const { core, sync } = await loadEditor();
+    server.save(stored('v2 from elsewhere', 0));
+
+    await sync.refreshFromServer('F1');
+    expect(core.openScript('F1')?.code).toBe('v2 from elsewhere');
+  });
+
+  it('9. a save of a file the server has, sent as a create: a version when the base is known, else a conflict', async () =>
+  {
+    // The editor did not know the file was on the server (its load-time pull failed), so it
+    // sent a create, which the server refused
     server.save(stored('v1', 0));
     storage.set(ACTIVE_KEY, JSON.stringify(stored('v1', 0)));
     storage.set(LIST_KEY, JSON.stringify([stored('v1', 0)]));
+    storage.set('archiyou:editor:sync-bases', JSON.stringify({ F1: { id: server.latest('F1')!.id, updated: server.latest('F1')!.updated } }));
     server.listFails = true;                   // the load-time pull fails: F1 stays unknown
     const { core, sync } = await loadEditor();
 
@@ -234,5 +277,14 @@ describe('scripts: local copies vs the server', () =>
     await sync.syncSaveNow(core.editorScript.get()!);
     expect(calls.slice(-2)).toEqual(['POST v2 edited', 'PUT v2 edited']);
     expect(serverCode()).toBe('v2 edited');
+
+    // without a stored base, nothing says the copy is current: a conflict, nothing overwritten
+    storage.delete('archiyou:editor:sync-bases');
+    storage.delete('archiyou:editor:sync-dirty');
+    const second = await loadEditor();
+    second.core.updateScriptCode('v3 edited');
+    await second.sync.syncSaveNow(second.core.editorScript.get()!);
+    expect(serverCode()).toBe('v2 edited');
+    expect(second.sync.saveConflict.get()?.fileId).toBe('F1');
   });
 });
