@@ -22,7 +22,7 @@ import { Script } from '@archiyou/core/src/Script';
 import { ScriptOutputPath } from '@archiyou/core/src/execution/ScriptOutputPath';
 
 import type { RunnerScriptExecutionResult,
-    RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
+    RunnerScriptExecutionRequest, RunnerContentUse } from '@archiyou/core/src/runner/types';
 import type { ScriptPublished } from '@archiyou/core/src/modeler/brep/types';
 import type { ModelFormat,
     ScriptData,
@@ -38,6 +38,17 @@ import { convertBinaryToBase64, restoreBinaryFromBase64,
 
 import type  { CacheResult } from './types';
 import { isJsonString } from './utils';
+import { config } from '../config';
+
+/** Next to the cached results of a run that read content (a Google Sheet): the versions it
+ *  read and when they were last current. See Library.writeResultCache(). */
+const CONTENT_FILE = 'content.json';
+
+interface CachedContent
+{
+    versions: Record<string, string | null>;
+    checked: number;
+}
 
 
 export class Library
@@ -45,6 +56,10 @@ export class Library
     //// ATTRIBUTES ////
     private scriptsRoot: string;
     public url: string;
+    /** How long the cached results of a run that read content are served: as long as the
+     *  worker serves that content from memory (SheetContent), so a changed sheet shows in
+     *  cached results at most that long after it shows in runs. */
+    public contentTtlMs: number = config.execution.contentTtlMs;
 
     /** Create Library instance
      *  @param libPath Optional path to scripts root folder. 
@@ -316,6 +331,11 @@ export class Library
                     ↳ .outputs:Array<ScriptOutputData>
 
         to output to cache, because everything is organized by output result        
+
+        A run that read content (result.used: a Google Sheet) also writes
+        .../cache/{variantId}/content.json: the versions it read, and when. Its results are
+        served while that is younger than contentTtlMs; then the script runs again, and when the
+        versions changed the results of the old ones are removed.
     
     */
 
@@ -358,6 +378,8 @@ export class Library
         const scriptVariantId = await this._getScriptVariantId(r.request);
 
         if(!scriptVariantId){ console.error(`Library::writeResultCache: Could not get variant id!`);return false; }
+
+        this._writeCachedContent(path.join(cacheDir, scriptVariantId), r.used);
 
         // Save per pipeline
         r.outputs.forEach((o) => 
@@ -436,9 +458,18 @@ export class Library
 
         console.info(`Library::checkRequestInCache(): Checking cache directory: "${cacheDir}"`);
 
+        // results of content (a sheet) that may have changed since: run again
+        const content = this._readCachedContent(cacheDir);
+        if (content && Date.now() - content.checked >= this.contentTtlMs)
+        {
+            console.info(`Library::checkRequestInCache(): The cached results read ${Object.keys(content.versions).join(', ')}, last current ${Math.round((Date.now() - content.checked) / 1000)}s ago: running again`);
+            return null;
+        }
+
         if (!fs.existsSync(cacheDir)) { fs.mkdirSync(cacheDir, { recursive: true });}
         const filePathsInCache = this.getAllFiles(cacheDir)
                                     .map(fp => fp.replace(cacheDir + '/', '')) // Remove scriptDir from path
+                                    .filter(fp => fp !== CONTENT_FILE)
 
         const scriptOutputPathsInCache = filePathsInCache.map((fp) => new ScriptOutputPath().fromCacheFilePath(fp));
 
@@ -484,6 +515,38 @@ export class Library
         }
     }
 
+
+    /** Note what content a run read, in the cache directory of its variant, with the time it
+     *  was current. When its versions differ from those of the results there, those go: they
+     *  were made from other content. A run that read none leaves the directory as it is. */
+    _writeCachedContent(variantDir:string, used?:Array<RunnerContentUse>):void
+    {
+        if (!used?.length) { return; }
+        const versions = Object.fromEntries(used
+            .map(u => [`${u.kind}:${u.id}`, u.version ?? null] as const)
+            .sort(([a], [b]) => a.localeCompare(b)));
+        const before = this._readCachedContent(variantDir);
+        if (before && JSON.stringify(before.versions) !== JSON.stringify(versions))
+        {
+            console.info(`Library::writeResultCache(): The content changed: removing the cached results in "${variantDir}"`);
+            fs.rmSync(variantDir, { recursive: true, force: true });
+        }
+        fs.mkdirSync(variantDir, { recursive: true });
+        fs.writeFileSync(path.join(variantDir, CONTENT_FILE), JSON.stringify({ versions, checked: Date.now() } satisfies CachedContent));
+    }
+
+    _readCachedContent(variantDir:string):CachedContent | null
+    {
+        try
+        {
+            const content = JSON.parse(fs.readFileSync(path.join(variantDir, CONTENT_FILE), 'utf8'));
+            return (content && typeof content.checked === 'number' && typeof content.versions === 'object') ? content : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     ///// MIGRATION FROM OTHER LIBRARIES ////
     /*

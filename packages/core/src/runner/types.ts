@@ -68,6 +68,9 @@ export interface RunnerContentUse
     title?: string
     via: 'public' | 'key'
     keyName?: string
+    /** The version of the content it read (AyContentItem.version): a cached result of the run
+     *  holds for that version only. */
+    version?: string
 }
 
 /** Basic structure and state of scope */

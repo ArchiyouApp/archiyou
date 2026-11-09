@@ -2638,6 +2638,7 @@ ${contextLines.join('\n')}
             const use:RunnerContentUse = { kind: item.kind, id: item.id, via: item.via };
             if(item.title) use.title = item.title;
             if(item.keyName) use.keyName = item.keyName;
+            if(item.version) use.version = item.version;
             return [use];
         });
         if(described.length) result.used = described;
