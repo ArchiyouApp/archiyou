@@ -126,3 +126,4 @@ Visible labels only; tables, API and types keep `configuration`, so no migration
 |---|---|---|
 | 6498455 | Projects: dossier files, configurator designs, a compact project page | 2026-10-30 14:56 and the tweaks after it; committed on 2026-11-03 10:12 |
 | b66371c | Projects: internal deliveries, clickable files, one-project clients | 2026-11-03 11:47 to 2026-11-06 15:51; committed on 2026-11-09 13:55 |
+| (the commit after a58829e) | Projects test: listed clients as a verified user | 2026-11-09 14:16: the test of b66371c, run once vitest was back, used an unverified user |

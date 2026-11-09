@@ -260,15 +260,16 @@ describe('clients', () =>
 
   it('keeps a client for one project out of the client list, until listed', async () =>
   {
-    const once = (await call('POST', '/clients', 'carol', { email: 'kees@example.com', name: 'Kees', listed: false })).json().data;
+    const ids = async (url: string) => (await call('GET', url, 'bob')).json().data.map((c: { id: string }) => c.id);
+    const once = (await call('POST', '/clients', 'bob', { email: 'kees@example.com', name: 'Kees', listed: false })).json().data;
     expect(once.listed).toBe(false);
-    expect((await call('GET', '/clients', 'carol')).json().data).toEqual([]);
-    expect((await call('GET', '/clients?all=1', 'carol')).json().data.map((c: { id: string }) => c.id)).toEqual([once.id]);
+    expect(await ids('/clients')).not.toContain(once.id);
+    expect(await ids('/clients?all=1')).toContain(once.id);
 
     // An update without `listed` leaves it as it was
-    expect((await call('PUT', `/clients/${once.id}`, 'carol', { email: 'kees@example.com', name: 'Kees B' })).json().data.listed).toBe(false);
-    await call('PUT', `/clients/${once.id}`, 'carol', { email: 'kees@example.com', name: 'Kees B', listed: true });
-    expect((await call('GET', '/clients', 'carol')).json().data.map((c: { name: string }) => c.name)).toEqual(['Kees B']);
+    expect((await call('PUT', `/clients/${once.id}`, 'bob', { email: 'kees@example.com', name: 'Kees B' })).json().data.listed).toBe(false);
+    await call('PUT', `/clients/${once.id}`, 'bob', { email: 'kees@example.com', name: 'Kees B', listed: true });
+    expect(await ids('/clients')).toContain(once.id);
   });
 });
 
