@@ -289,6 +289,19 @@ describe('Modeler — brep mode', () =>
             expect(fused.volume()).toBeCloseTo(1036000, 0)
         })
 
+        it('a collection\'s union() puts the fused Shape in the scene in place of its Shapes, as the mesh kernel', () =>
+        {
+            const a = m.box(100) as any
+            const b = (m.box(60) as any).move(30, 0, 0)
+            const inScene = (s: any) => m.scene().descendants().some((n: any) => n.shape() === s)
+            const fused = (m.collection(a, b) as any).union()
+            expect([inScene(fused), inScene(a), inScene(b)]).toEqual([true, false, false])
+            expect(a.volume()).toBeCloseTo(1000000, 0) // the Shapes themselves are left as they were
+            // hidden parts, as `.hide().union()` in a script: the fused Shape still shows up
+            const parts = (m.collection(m.box(10), (m.box(10) as any).move(5, 0, 0)) as any).hide()
+            expect(inScene(parts.union())).toBe(true)
+        })
+
         it('scale() keeps the shape its specific type', () =>
         {
             const line = m.line([0, 0, 0], [100, 0, 0]) as any

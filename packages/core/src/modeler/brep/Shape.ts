@@ -2791,7 +2791,7 @@ export class Shape
         if(ShapeCollection.isShapeCollection(other))
         {
             // union with every Shape in the collection (ShapeCollection has no `added`)
-            return (other as ShapeCollection).copy().add(this).union()
+            return (other as ShapeCollection)._copy().add(this)._fused()
         }
      
         // Don't try to union if operants don't touch

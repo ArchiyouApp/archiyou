@@ -63,7 +63,7 @@ import { gridCounts, moveUntilTouching } from '@archiyou/meshup'
 // Import decorators directly (not via the barrel) — the barrel is a cycle and decorators
 // run at class-definition time, before it has finished initialising.
 import { checkInput } from './decorators'
-import { hostUnits, hostAnnotator, nextName } from './host'
+import { hostModeler, hostUnits, hostAnnotator, nextName } from './host'
 import { getOc } from './index' // OC global getter
 
  export class ShapeCollection
@@ -2167,7 +2167,7 @@ import { getOc } from './index' // OC global getter
             // To increase chances of succesful union order by volume
             // TODO: introduce a smarter approach
             results.sort((a,b) => b.volume() - a.volume())
-            results = new ShapeCollection(results.copy().union());
+            results = new ShapeCollection(results._copy()._fused());
          }
 
          return results.checkSingle();
@@ -2186,19 +2186,35 @@ import { getOc } from './index' // OC global getter
       {
          if(this.shapes.length === 0){ return this }
 
+         const fused = this._fused() as AnyShape;
+         // A Shape made by a boolean has no host yet: take the one the collection's Shapes have
+         // before they leave the scene, or _addToScene() below has no scene to go to
+         (fused as any)._modeler ??= hostModeler(this);
+
+         this.removeFromScene(); // Remove current Shapes
+         this.empty();
+         this.add(fused); // Add the fused Shape to current collection
+         // ...and to the scene in their place, as meshup's ShapeCollection.union() does. It never
+         // got there, so a union of hidden parts (`.hide().union()`) left nothing to see.
+         fused._addToScene();
+
+         // The fused Shape itself, as meshup's ShapeCollection.union() answers — a script chains
+         // `.union().cutoff(...)` on it. The collection now holds that one Shape.
+         return fused;
+      }
+
+      /** The Shapes in this collection fused into one, leaving them and the scene alone
+       *  (private: union() without its scene changes). Null for an empty collection. */
+      _fused():AnyShape|null
+      {
+         if(this.shapes.length === 0){ return null }
+
          let fused:AnyShape = this.shapes[0];
          for(let i = 1; i < this.shapes.length; i++)
          {
             const next = fused._unioned(this.shapes[i]);
             if(next){ fused = ShapeCollection.isShapeCollection(next) ? (next as any).first() : next as AnyShape }
          }
-
-         this.removeFromScene(); // Remove current Shapes
-         this.empty();
-         this.add(fused); // Add the fused Shape to current collection
-
-         // The fused Shape itself, as meshup's ShapeCollection.union() answers — a script chains
-         // `.union().cutoff(...)` on it. The collection now holds that one Shape.
          return fused;
       }
       
