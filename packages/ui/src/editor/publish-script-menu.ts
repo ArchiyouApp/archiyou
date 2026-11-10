@@ -30,9 +30,12 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/select/select.js';
 import '@awesome.me/webawesome/dist/components/option/option.js';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
+import './user-picker.js';
 
 import { CC_LICENCES, FULFILLMENT_DELIVERIES } from '@archiyou/core/src/ScriptSchema';
-import type { CCLicence, FulfillmentDelivery, ScriptPublishedFulfillmentData } from '@archiyou/core/src/ScriptSchema';
+import type { CCLicence, FulfillmentAccess, FulfillmentDelivery, ScriptPublishedFulfillmentData } from '@archiyou/core/src/ScriptSchema';
+import { accessOf } from '@archiyou/core/src/execution/fulfillment';
+import type { PublicUser } from '@archiyou/types';
 import type { ScriptData, ScriptMeta } from '@archiyou/core/src/execution/types';
 import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
 
@@ -44,8 +47,11 @@ import { fetchFileVersions } from '@archiyou/editor/src/services/scripts-sync';
 import { shareReferencedComponents, type ComponentShareResult } from '@archiyou/editor/src/services/component-sharing';
 import { OVERLAY_MENU_WIDTH } from '@archiyou/editor/src/settings';
 
+import { userStub } from './user-picker.js';
 import {
   publicConfiguratorUrl,
+  accessOptions,
+  ACCESS_SHORT_LABELS,
   DEFAULT_FULFILLMENTS,
   DEFAULT_LICENCE,
   ENTITY_GROUP_LABELS,
@@ -152,6 +158,14 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
   /** A download (files from the Download menu) or a product (an "Order product" button). */
   @state() private _fCategory: 'download' | 'product' = 'download';
   @state() private _fDelivery: FulfillmentDelivery = 'anonymous download';
+  /** Who can get it, see FULFILLMENT_ACCESS. */
+  @state() private _fAccess: FulfillmentAccess = 'anyone';
+  /** Access 'users': who. */
+  @state() private _fUsers: PublicUser[] = [];
+  /** Access 'code': a new code typed here (sent once, stored by the server as a hash). */
+  @state() private _fCode        = '';
+  /** The stored code's hash, when the fulfillment already has a code: kept unless a new one is typed. */
+  @state() private _fCodeHash: string | null = null;
   @state() private _fPrice       = 0;
   @state() private _fRows: OutputRow[] = [];
   @state() private _fError       = '';
@@ -340,7 +354,9 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
     const product = f.category === 'product';
     const priceLabel = (f.delivery === 'pay' || product) && f.price ? ` ${f.price}` : '';
     const formats = this._fulfillmentFormats(f);
-    const how = product ? 'product order' : (f.delivery ?? 'anonymous download');
+    const access = accessOf(f);
+    const how = (product ? 'product order' : (f.delivery === 'pay' ? 'pay' : 'download'))
+      + (access === 'anyone' ? '' : ` · ${ACCESS_SHORT_LABELS[access]}`);
     return html`
       <div class="fulfillment-item">
         <div class="fulfillment-line">
@@ -449,7 +465,7 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
               .value=${this._fDelivery}
               @change=${(e: Event) => (this._fDelivery = (e.target as HTMLSelectElement).value as FulfillmentDelivery)}
             >
-              ${FULFILLMENT_DELIVERIES.map(d => html`<option value=${d} ?selected=${d === this._fDelivery}>${d}</option>`)}
+              ${FULFILLMENT_DELIVERIES.filter(d => d !== 'email').map(d => html`<option value=${d} ?selected=${d === this._fDelivery}>${d}</option>`)}
             </select>
           </div>
           ${this._fDelivery === 'pay'
@@ -468,6 +484,8 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
             : nothing}
         </div>`}
 
+      ${this._renderAccessField(product)}
+
       <div class="field">
         <label class="field-label">Outputs</label>
         <span class="hint">${product
@@ -482,6 +500,49 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
       </div>
 
       ${this._fError ? html`<div class="error">${this._fError}</div>` : nothing}
+    `;
+  }
+
+  /** "Who can get it": the fulfillment's access, with the users or the code it needs. */
+  private _renderAccessField(product: boolean)
+  {
+    const options = accessOptions(product);
+    const access = options.some(o => o.value === this._fAccess) ? this._fAccess : 'anyone';
+    const emailed = !product && (access === 'email' || access === 'clients');
+    return html`
+      <div class="field">
+        <label class="field-label">Who can get it</label>
+        <select
+          class="mini-select"
+          @change=${(e: Event) => { this._fAccess = (e.target as HTMLSelectElement).value as FulfillmentAccess; this._fError = ''; }}
+        >
+          ${options.map(o => html`<option value=${o.value} ?selected=${o.value === access}>${o.label}</option>`)}
+        </select>
+        ${emailed
+          ? html`<span class="hint">The files are made on the Archiyou server and emailed to the visitor. That needs this version to be validated by an admin first; until then visitors are told it cannot be sent yet. You see every address in the configurator's events.</span>`
+          : nothing}
+        ${access === 'signed-in' || access === 'users' || access === 'code'
+          ? html`<span class="hint">Checked before the download starts. This keeps it out of casual reach, but the configurator's code itself is public.</span>`
+          : nothing}
+        ${access === 'users'
+          ? html`
+            <user-picker
+              .users=${this._fUsers}
+              @user-picker-change=${(e: CustomEvent<{ users: PublicUser[] }>) => { this._fUsers = e.detail.users; this._fError = ''; }}
+            ></user-picker>`
+          : nothing}
+        ${access === 'code'
+          ? html`
+            <input
+              class="text-input"
+              type="text"
+              autocomplete="off"
+              placeholder=${this._fCodeHash ? 'Code set · type a new one to change it' : 'The code you hand out'}
+              .value=${this._fCode}
+              @input=${(e: InputEvent) => { this._fCode = (e.target as HTMLInputElement).value; this._fError = ''; }}
+            />`
+          : nothing}
+      </div>
     `;
   }
 
@@ -765,6 +826,10 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
     this._fName = '';
     this._fDescription = '';
     this._fDelivery = 'anonymous download';
+    this._fAccess = 'anyone';
+    this._fUsers = [];
+    this._fCode = '';
+    this._fCodeHash = null;
     this._fPrice = 0;
     this._fRows = [this._defaultRow()];
     this._fError = '';
@@ -779,7 +844,12 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
     this._fCategory = f.category === 'product' ? 'product' : 'download';
     this._fName = f.name ?? '';
     this._fDescription = f.description ?? '';
-    this._fDelivery = f.delivery ?? 'anonymous download';
+    // A delivery 'email' published before access existed is access 'email' now
+    this._fDelivery = f.delivery === 'pay' ? 'pay' : 'anonymous download';
+    this._fAccess = accessOf(f);
+    this._fUsers = (f.users ?? []).map(userStub);
+    this._fCode = f.code ?? '';
+    this._fCodeHash = f.codeHash ?? null;
     this._fPrice = f.price ?? 0;
     // Expand a stored '*' wildcard into every concrete format so all tags show selected.
     const rows = exportsToRows(f.exports ?? []).map(r => ({
@@ -810,8 +880,12 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
     const exports = rowsToExports(this._fRows);
     if (exports.length === 0 && !product) { this._fError = 'Add at least one output.'; return; }
 
+    const access = accessOptions(product).some(o => o.value === this._fAccess) ? this._fAccess : 'anyone';
+    if (access === 'users' && this._fUsers.length === 0) { this._fError = 'Add the users who can get it.'; return; }
+    if (access === 'code' && !this._fCode.trim() && !this._fCodeHash) { this._fError = 'Type the access code.'; return; }
+
     // A download keeps the old shape (no category); a product has no delivery method
-    const fulfillment: ScriptPublishedFulfillmentData = product
+    const base: ScriptPublishedFulfillmentData = product
       ? { name, description: this._fDescription.trim() || undefined, category: 'product', exports, price: this._fPrice || 0 }
       : {
         name,
@@ -820,6 +894,14 @@ export class PublishScriptMenu extends SignalWatcher(LitElement)
         delivery: this._fDelivery,
         price: this._fDelivery === 'pay' ? this._fPrice : 0,
       };
+    // The code goes to the server once and comes back only as its hash
+    const fulfillment: ScriptPublishedFulfillmentData = {
+      ...base,
+      ...(access === 'anyone' ? {} : { access }),
+      ...(access === 'users' ? { users: this._fUsers.map(u => u.id) } : {}),
+      ...(access === 'code' && this._fCode.trim() ? { code: this._fCode.trim() } : {}),
+      ...(access === 'code' && !this._fCode.trim() && this._fCodeHash ? { codeHash: this._fCodeHash } : {}),
+    };
 
     if (this._editIndex === null)
     {

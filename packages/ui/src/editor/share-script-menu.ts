@@ -35,11 +35,11 @@ import {
   shareScript,
   fetchSharedScript,
   fetchSharedVersions,
-  searchUsers,
 } from '@archiyou/editor/src/services/sharing';
 import { fetchFileVersions } from '@archiyou/editor/src/services/scripts-sync';
 import { uploadVersionThumbnail, renderThumbnailPng, glbOf, scenegraphOf } from '@archiyou/editor/src/services/thumbnails';
 import { OVERLAY_MENU_WIDTH } from '@archiyou/editor/src/settings';
+import { userStub } from './user-picker.js';
 
 /** Friendly labels for the SPDX licence ids. */
 const LICENCE_LABELS: Record<string, string> = {
@@ -102,9 +102,6 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
   @state() private _selectedUsers: PublicUser[] = [];
 
   // ── People picker ──
-  @state() private _userQuery   = '';
-  @state() private _userResults: PublicUser[] = [];
-  @state() private _searching   = false;
 
   // ── Prefill / submit ──
   @state() private _lastVersion: string | null = null;
@@ -121,7 +118,6 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
    *  AFTERWARDS and attach the drawing out of band (see _attachThumbnailLate). */
   private _thumbnailRun: Promise<void> | null = null;
 
-  private _searchTimer: number | null = null;
 
   // ── Render ──
 
@@ -206,39 +202,10 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
           <div class="field">
             <label class="field-label">Share only with</label>
             <span class="hint">Leave empty to share with the whole community.</span>
-            <div class="user-picker">
-              <div class="chips">
-                ${this._selectedUsers.map(u => html`
-                  <span class="chip">
-                    ${u.name ?? u.id}
-                    <button class="chip-remove" title="Remove"
-                      @click=${() => this._removeUser(u)}>
-                      <wa-icon library="lucide" name="x"></wa-icon>
-                    </button>
-                  </span>`)}
-              </div>
-              <div class="search-wrap">
-                <wa-icon library="lucide" name="search" class="search-icon"></wa-icon>
-                <input
-                  class="search-input"
-                  type="text"
-                  placeholder="Search users by name or email…"
-                  .value=${this._userQuery}
-                  @input=${(e: InputEvent) => this._onUserQueryInput((e.target as HTMLInputElement).value)}
-                />
-                ${this._searching ? html`<wa-spinner class="search-spinner"></wa-spinner>` : nothing}
-              </div>
-              ${this._userResults.length > 0
-                ? html`
-                    <div class="results">
-                      ${this._userResults.map(u => html`
-                        <button class="result-item" @click=${() => this._addUser(u)}>
-                          <span class="result-name">${u.name ?? u.id}</span>
-                          ${u.email ? html`<span class="result-email">${u.email}</span>` : nothing}
-                        </button>`)}
-                    </div>`
-                : nothing}
-            </div>
+            <user-picker
+              .users=${this._selectedUsers}
+              @user-picker-change=${(e: CustomEvent<{ users: PublicUser[] }>) => { this._selectedUsers = e.detail.users; }}
+            ></user-picker>
           </div>
 
           ${this._error ? html`<div class="error">${this._error}</div>` : nothing}
@@ -340,8 +307,7 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
   {
     // Reset to defaults first.
     this._error = '';
-    this._userQuery = '';
-    this._userResults = [];
+    this.renderRoot.querySelector('user-picker')?.reset();
     this._selectedUsers = [];
     this._licence = DEFAULT_LICENCE;
     this._dev = false;
@@ -375,9 +341,7 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
         // Display-only stubs: only `id` is known here, the rest are placeholders
         // to satisfy PublicUser (module entitlements and operator rights are
         // irrelevant to a chip).
-        this._selectedUsers = (prev.shared.onlyUsers ?? []).map(
-          id => ({ id, email: null, name: null, avatarUrl: null, emailVerified: true, modules: [], isAdmin: false }),
-        );
+        this._selectedUsers = (prev.shared.onlyUsers ?? []).map(userStub);
       }
 
       this._lastVersion = highestVersion(sharedVersions) ?? prev?.version ?? null;
@@ -399,41 +363,6 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
     const known = [...this._usedVersions];
     if (this._lastVersion) known.push(this._lastVersion);
     return bumpVersion(highestVersion(known));
-  }
-
-  private _onUserQueryInput(value: string)
-  {
-    this._userQuery = value;
-    if (this._searchTimer !== null) clearTimeout(this._searchTimer);
-    const q = value.trim();
-    if (!q) { this._userResults = []; this._searching = false; return; }
-    this._searching = true;
-    this._searchTimer = window.setTimeout(async () => {
-      try {
-        const results = await searchUsers(q);
-        const selectedIds = new Set(this._selectedUsers.map(u => u.id));
-        this._userResults = results.filter(u => !selectedIds.has(u.id));
-      } catch (err) {
-        console.error('User search failed:', err);
-        this._userResults = [];
-      } finally {
-        this._searching = false;
-      }
-    }, 250);
-  }
-
-  private _addUser(u: PublicUser)
-  {
-    if (!this._selectedUsers.some(s => s.id === u.id)) {
-      this._selectedUsers = [...this._selectedUsers, u];
-    }
-    this._userQuery = '';
-    this._userResults = [];
-  }
-
-  private _removeUser(u: PublicUser)
-  {
-    this._selectedUsers = this._selectedUsers.filter(s => s.id !== u.id);
   }
 
   private async _share()
@@ -660,64 +589,6 @@ export class ShareScriptMenu extends SignalWatcher(LitElement)
       border-radius: 3px;
       font-size: var(--text-xs);
     }
-
-    /* People picker */
-    .user-picker { display: flex; flex-direction: column; gap: 6px; }
-    .chips { display: flex; flex-wrap: wrap; gap: 4px; }
-    .chip {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 2px 6px 2px 10px;
-      border-radius: 999px;
-      background: var(--color-gray-dark, #666);
-      color: #fff;
-      font-size: var(--text-sm);
-    }
-    .chip-remove {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 14px; height: 14px;
-      border: none; border-radius: 50%;
-      background: none; color: inherit; cursor: pointer;
-      opacity: 0.85; font-size: 11px;
-    }
-    .chip-remove:hover { opacity: 1; background: rgba(255,255,255,0.25); }
-
-    .search-wrap {
-      display: flex; align-items: center; gap: 5px;
-      padding: 4px 8px;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-sm, 4px);
-      background: var(--color-bg);
-      color: var(--color-text-muted);
-    }
-    .search-wrap:focus-within { border-color: var(--color-primary); }
-    .search-icon { flex-shrink: 0; font-size: 13px; opacity: 0.55; }
-    .search-input {
-      flex: 1; min-width: 0;
-      border: none; outline: none; background: transparent;
-      font-family: var(--font-sans);
-      font-size: var(--text-sm);
-      color: var(--color-text);
-    }
-    .search-spinner { font-size: 13px; }
-
-    .results {
-      display: flex; flex-direction: column;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-sm, 4px);
-      background: var(--color-bg-elevated);
-      max-height: 180px;
-      overflow-y: auto;
-    }
-    .result-item {
-      display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
-      padding: 6px 10px;
-      border: none; background: transparent; cursor: pointer;
-      text-align: left; width: 100%;
-      font-family: var(--font-sans);
-    }
-    .result-item:hover { background: color-mix(in srgb, var(--color-primary) 10%, transparent); }
-    .result-name { font-size: var(--text-sm); color: var(--color-text); }
-    .result-email { font-size: var(--text-xs); color: var(--color-text-muted); }
 
     .error {
       font-size: var(--text-sm);

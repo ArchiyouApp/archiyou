@@ -14,7 +14,7 @@ import {
   SCRIPT_OUTPUT_TABLE_FORMATS,
   SCRIPT_OUTPUT_DOC_FORMATS,
 } from '@archiyou/core/src/constants';
-import type { ScriptPublishedFulfillmentData } from '@archiyou/core/src/ScriptSchema';
+import type { FulfillmentAccess, ScriptPublishedFulfillmentData } from '@archiyou/core/src/ScriptSchema';
 
 /** Build the public configurator URL on the current frontend origin. Used as a
  *  fallback when the server did not stamp `published.url` (it normally does, from
@@ -98,6 +98,30 @@ export const LICENCE_LABELS: Record<string, string> = {
 };
 
 export const DEFAULT_LICENCE = 'CC0-1.0';
+
+/** Who can get a fulfillment, as offered in the fulfillment editor ("Who can get it"). A
+ *  product is never emailed: its order form asks for an address anyway. */
+export function accessOptions(product: boolean): Array<{ value: FulfillmentAccess, label: string }>
+{
+  return [
+    { value: 'anyone',    label: 'Anyone' },
+    ...(product ? [] : [{ value: 'email' as const, label: 'Anyone who leaves an email address (files sent by email)' }]),
+    { value: 'clients',   label: product ? 'My clients (addresses in your Clients)' : 'My clients (files sent by email to addresses in your Clients)' },
+    { value: 'signed-in', label: 'Signed-in Archiyou users' },
+    { value: 'users',     label: 'Specific users' },
+    { value: 'code',      label: 'Anyone with an access code' },
+  ];
+}
+
+/** The short form of an access rule, for a fulfillment's summary line. */
+export const ACCESS_SHORT_LABELS: Record<FulfillmentAccess, string> = {
+  'anyone':    'anyone',
+  'email':     'by email',
+  'clients':   'my clients',
+  'signed-in': 'signed-in users',
+  'users':     'specific users',
+  'code':      'access code',
+};
 
 /** The auto-filled fulfillments shown when publishing a script for the first time. */
 export const DEFAULT_FULFILLMENTS: ScriptPublishedFulfillmentData[] = [

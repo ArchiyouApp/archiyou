@@ -6,6 +6,10 @@
  * request in their Projects. Lives in the metric bar's popover, like the download menu.
  * Configurator chrome is plain English, as elsewhere in the configurator.
  *
+ * A product can be for some visitors only (its `access`, core's FULFILLMENT_ACCESS): signed
+ * out, a signed-in-only product asks to sign in first; signed in, the account's name and
+ * address fill the form; a product with an access code asks for it. The server checks.
+ *
  * In the editor's preview nothing is sent: orders work once the script is published.
  */
 
@@ -18,9 +22,9 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import type { ScriptPublishedFulfillmentData } from '@archiyou/core/src/ScriptSchema';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 
-import { editorScript, buildConfiguratorRequest } from '@archiyou/editor/src/state/workspace';
+import { editorScript, buildConfiguratorRequest, userState } from '@archiyou/editor/src/state/workspace';
 import { configuratorLocale } from '@archiyou/editor/src/state/locale';
-import { isProduct } from '@archiyou/editor/src/services/fulfillment';
+import { accessOf, isProduct } from '@archiyou/editor/src/services/fulfillment';
 import { sendOrder } from '@archiyou/editor/src/services/projects';
 
 @customElement('configurator-order-form')
@@ -41,6 +45,8 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
 
     const products = this.products();
     const chosen = products.find(p => p.name === this._product) ?? products[0];
+    const access = accessOf(chosen);
+    const signIn = !this.changes && !this.preview && userState.get().anonymous && (access === 'signed-in' || access === 'users');
     return html`
       <form @submit=${this._submit}>
         <div class="header">${this.changes ? 'Send your changes' : 'Order this design'}</div>
@@ -68,7 +74,7 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
 
         ${this.changes
           ? html`<p class="about">The design as it is on screen now goes back to whoever sent it to you.</p>`
-          : html`
+          : signIn ? nothing : html`
             <label class="field">
               <span>Name</span>
               <input type="text" autocomplete="name" maxlength="200" .value=${this._name}
@@ -84,6 +90,14 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
               <input type="tel" autocomplete="tel" maxlength="50" .value=${this._phone}
                 @input=${(e: Event) => { this._phone = (e.target as HTMLInputElement).value; }}>
             </label>`}
+        ${!this.changes && accessOf(chosen) === 'code'
+          ? html`
+            <label class="field">
+              <span>Access code <span class="required">*</span></span>
+              <input type="text" autocomplete="off" required maxlength="200" .value=${this._code}
+                @input=${(e: Event) => { this._code = (e.target as HTMLInputElement).value; this._error = ''; }}>
+            </label>`
+          : nothing}
         <label class="field">
           <span>Message</span>
           <textarea rows="3" maxlength="2000" placeholder=${this.changes ? 'What did you change, and why?' : `Anything ${author} should know?`}
@@ -97,9 +111,14 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
         ${this._error ? html`<p class="error" role="alert">${this._error}</p>` : nothing}
         ${this.preview ? html`<p class="note">Preview: orders arrive once this configurator is published.</p>` : nothing}
 
-        <button class="send" type="submit" ?disabled=${this._sending || this.preview || (!this.changes && !this._email.trim())}>
-          ${this._sending ? 'Sending…' : this.changes ? 'Send changes' : 'Send order'}
-        </button>
+        ${signIn
+          ? html`
+            <p class="note">${author} takes orders for this from signed-in Archiyou users.</p>
+            <button class="send" type="button" @click=${this._signIn}>Sign in to order</button>`
+          : html`
+            <button class="send" type="submit" ?disabled=${this._sending || this.preview || (!this.changes && !this._email.trim())}>
+              ${this._sending ? 'Sending…' : this.changes ? 'Send changes' : 'Send order'}
+            </button>`}
         ${this.changes ? nothing : html`<p class="privacy">${author} receives your details and this design to answer you.</p>`}
       </form>
     `;
@@ -118,9 +137,20 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
   @state() private _phone = '';
   @state() private _message = '';
   @state() private _website = '';
+  @state() private _code = '';
   @state() private _sending = false;
   @state() private _sent = false;
   @state() private _error = '';
+
+  // ── 3. Lifecycle ──
+  /** A signed-in visitor's name and address stand in for typing them. */
+  override willUpdate()
+  {
+    const user = userState.get();
+    if (user.anonymous || this.changes) return;
+    if (!this._email && user.email) this._email = user.email;
+    if (!this._name && user.name) this._name = user.name;
+  }
 
   // ── 4. Behaviour & Methods ──
   /** The product fulfillments of this configurator. */
@@ -141,6 +171,17 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
     if (!this._sent) return;
     this._sent = false;
     this._message = '';
+  }
+
+  /** Sign in and come back here; from another site's page in a new tab, where the
+   *  visitor's Archiyou session lives. */
+  private _signIn()
+  {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('embed');
+    const login = `/login?next=${encodeURIComponent(url.pathname + url.search)}`;
+    if (window.self !== window.top) window.open(login, '_blank', 'noopener');
+    else window.location.assign(login);
   }
 
   private _price(price: number): string
@@ -173,6 +214,7 @@ export class ConfiguratorOrderForm extends SignalWatcher(LitElement)
           : {
             fulfillment: product?.name ?? '',
             contact: { email: this._email.trim(), name: this._name.trim() || null, phone: this._phone.trim() || null },
+            code: accessOf(product) === 'code' ? this._code.trim() : null,
           }),
       });
       this._sent = true;

@@ -7,6 +7,15 @@
  * end-user's current parameter values and saves the result — a single file directly,
  * several as a .zip (see services/fulfillment.ts).
  *
+ * Who can get a row is its `access` (core's FULFILLMENT_ACCESS):
+ *   • anyone                 — clicked, downloaded (and reported, for the author's events)
+ *   • email, clients         — an address field opens under the row; the server makes the
+ *     files and emails them (services/fulfillment-access)
+ *   • signed-in, users       — downloaded after the server said yes; signed out, the row
+ *     is a way to sign in
+ *   • code                   — a code field opens under the row, then the same
+ * In the editor's preview the author gets every row directly, except the emailed ones.
+ *
  * The same component serves both places a configurator appears:
  *   • published (/configurators/…)          — the script's own `published.fulfillments`
  *   • the editor's Configurator Preview     — those too, or, for a script that has
@@ -17,17 +26,18 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
-import { localized, msg } from '@lit/localize';
+import { localized, msg, str } from '@lit/localize';
 
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 
-import { editorScript } from '@archiyou/editor/src/state/workspace';
+import { editorScript, userState } from '@archiyou/editor/src/state/workspace';
 import { translate } from '@archiyou/editor/src/state/locale';
 import { currentConfiguration, postToHost } from '@archiyou/editor/src/services/host-events';
 import {
-  downloadFulfillment, fulfillmentCategories, fulfillmentFormats, isFreeDownload, isDownload,
+  accessOf, downloadFulfillment, fulfillmentCategories, fulfillmentFormats, isDownload, isEmailed,
 } from '@archiyou/editor/src/services/fulfillment';
+import { reportDownload, requestFulfillment } from '@archiyou/editor/src/services/fulfillment-access';
 
 import { fulfillmentNameKey, fulfillmentDescriptionKey } from '@archiyou/core/src/i18n/keys';
 import type { ScriptPublishedFulfillmentData } from '@archiyou/core/src/ScriptSchema';
@@ -48,6 +58,9 @@ const CATEGORY_ICONS: Record<string, string> = {
 };
 
 const MIXED_ICON = 'package';
+
+/** How a row hands its fulfillment over to this visitor (see _how). */
+type RowHow = 'download' | 'email' | 'code' | 'sign-in' | 'blocked';
 
 /** Accent colour per category, the way a file manager tints documents and sheets.
  *  The model and mixed bundles stay neutral: they are the main event, and colouring
@@ -99,21 +112,26 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
     const about    = t(fulfillmentDescriptionKey(index), fulfillment.description ?? '');
     const formats    = fulfillmentFormats(fulfillment);
     const categories = fulfillmentCategories(fulfillment);
-    const free       = isFreeDownload(fulfillment);
     const busy     = this._busy === index;
     const done     = this._done === index;
+    const how      = this._how(fulfillment);
+    const sentTo   = this._sent?.index === index ? this._sent.email : null;
 
-    // Paid/email deliveries are shown (the author is advertising them) but cannot be
-    // handed over here: there is no payment or address flow behind them yet.
-    const blocked  = !free;
+    // Paid deliveries are shown (the author is advertising them) but cannot be handed
+    // over here: there is no payment flow behind them yet.
+    const blocked  = how === 'blocked';
+    const note = sentTo
+      ? msg(str`On its way to ${sentTo}`)
+      : { blocked: msg('Not available yet'), 'sign-in': msg('Sign in to download'), email: msg('Sent to you by email'), code: msg('Needs an access code'), download: '' }[how];
 
     return html`
       <button
         class="row ${blocked ? 'blocked' : ''}"
-        title=${this._rowTitle(about, formats, blocked)}
+        title=${this._rowTitle(about, formats, note)}
         aria-disabled=${blocked ? 'true' : 'false'}
+        aria-expanded=${how === 'email' || how === 'code' ? String(this._open === index) : nothing}
         ?disabled=${this._busy !== null}
-        @click=${() => this._download(fulfillment, index)}
+        @click=${() => this._activate(fulfillment, index)}
       >
         <wa-icon
           class="row-icon tint-${this._tintFor(categories)}"
@@ -127,8 +145,8 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
             ? html`<span class="row-formats">(${this._formatList(formats)})</span>`
             : nothing}
           <!-- On the row, not only in its tooltip: touch screens have no hover. -->
-          ${about || blocked
-            ? html`<span class="row-about">${[about, blocked ? msg('Not available yet') : ''].filter(Boolean).join(' · ')}</span>`
+          ${about || note
+            ? html`<span class="row-about">${[about, note].filter(Boolean).join(' · ')}</span>`
             : nothing}
         </span>
 
@@ -136,18 +154,60 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
           ? html`<wa-spinner class="row-state"></wa-spinner>`
           : done
             ? html`<wa-icon class="row-state done" library="lucide" name="check"></wa-icon>`
-            : this._renderTag(fulfillment)}
+            : this._renderTag(fulfillment, how)}
       </button>
+      ${this._open === index ? this._renderAsk(fulfillment, index, how) : nothing}
+    `;
+  }
+
+  /** The field under an emailed or a code row: an address or the code, and its button. */
+  private _renderAsk(fulfillment: ScriptPublishedFulfillmentData, index: number, how: RowHow)
+  {
+    const email = how === 'email';
+    const author = editorScript.get()?.author ?? '';
+    const value = email ? this._email : this._code;
+    return html`
+      <form class="ask" @submit=${(e: Event) => { e.preventDefault(); void this._submit(fulfillment, index); }}>
+        <div class="ask-line">
+          <input
+            class="ask-input"
+            type=${email ? 'email' : 'text'}
+            autocomplete=${email ? 'email' : 'off'}
+            required
+            maxlength=${email ? 254 : 200}
+            placeholder=${email ? msg('Your email address') : msg('Access code')}
+            .value=${value}
+            @input=${(e: Event) =>
+            {
+              const v = (e.target as HTMLInputElement).value;
+              if (email) this._email = v; else this._code = v;
+              this._error = '';
+            }}
+          >
+          <button class="ask-send" type="submit" ?disabled=${this._busy !== null || !value.trim()}>
+            ${email ? msg('Send') : msg('Unlock')}
+          </button>
+        </div>
+        <!-- Honeypot: people never see it, bots fill it in -->
+        <input class="hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true"
+          .value=${this._website} @input=${(e: Event) => { this._website = (e.target as HTMLInputElement).value; }}>
+        ${email
+          ? html`<p class="ask-hint">${author
+            ? msg(str`The files are emailed to you. ${author} sees that you asked, with your address.`)
+            : msg('The files are emailed to you. The author sees that you asked, with your address.')}</p>`
+          : nothing}
+      </form>
     `;
   }
 
   /** Right-hand tag: the price for a paid fulfillment, "email" for one delivered by
    *  mail. Free downloads carry nothing — the row itself is the offer. */
-  private _renderTag(fulfillment: ScriptPublishedFulfillmentData)
+  private _renderTag(fulfillment: ScriptPublishedFulfillmentData, how: RowHow)
   {
     const price = fulfillment.price ?? 0;
     if (price > 0) return html`<span class="row-tag">${this._formatPrice(price)}</span>`;
-    if (fulfillment.delivery === 'email') return html`<span class="row-tag">${msg('email', { desc: 'Tag on a download that is delivered by email' })}</span>`;
+    if (how === 'email') return html`<span class="row-tag">${msg('email', { desc: 'Tag on a download that is delivered by email' })}</span>`;
+    if (how === 'sign-in' || how === 'code') return html`<wa-icon class="row-state" library="lucide" name="lock"></wa-icon>`;
     return nothing;
   }
 
@@ -164,6 +224,13 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
   @state() private _busy: number | null = null;
   @state() private _done: number | null = null;
   @state() private _error = '';
+  /** The emailed or code row whose field is open, or null. */
+  @state() private _open: number | null = null;
+  @state() private _email = '';
+  @state() private _code = '';
+  @state() private _website = '';
+  /** The last emailed row and where it went. */
+  @state() private _sent: { index: number, email: string } | null = null;
 
   private _doneTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -182,6 +249,7 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
   {
     this._error = '';
     this._done = null;
+    this._open = null;
   }
 
   /** What this configurator offers, and whether those are the author's own choices. The
@@ -198,9 +266,76 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
     return { list: DEFAULT_FULFILLMENTS, defaults: true };
   }
 
-  private async _download(fulfillment: ScriptPublishedFulfillmentData, index: number)
+  /** How a row hands its fulfillment over to this visitor, here and now. */
+  private _how(fulfillment: ScriptPublishedFulfillmentData): RowHow
   {
-    if (this._busy !== null || !isFreeDownload(fulfillment)) return;
+    if (fulfillment.delivery === 'pay' || (fulfillment.price ?? 0) > 0) return 'blocked';
+    const access = accessOf(fulfillment);
+    if (isEmailed(fulfillment)) return this.preview ? 'blocked' : 'email';
+    // The author tries their own configurator out in the preview: no questions
+    if (this.preview || access === 'anyone') return 'download';
+    if (access === 'code') return 'code';
+    return userState.get().anonymous ? 'sign-in' : 'download';
+  }
+
+  private _activate(fulfillment: ScriptPublishedFulfillmentData, index: number)
+  {
+    if (this._busy !== null) return;
+    const how = this._how(fulfillment);
+    this._error = '';
+    if (how === 'blocked') return;
+    if (how === 'email' || how === 'code')
+    {
+      this._open = this._open === index ? null : index;
+      return;
+    }
+    if (how === 'sign-in') return this._signIn();
+    void this._download(fulfillment, index);
+  }
+
+  /** Signed out: sign in and come back here. Inside another site's page the session does
+   *  not reach this frame, so that happens on the configurator's own page, in a new tab. */
+  private _signIn()
+  {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('embed');
+    const login = `/login?next=${encodeURIComponent(url.pathname + url.search)}`;
+    if (window.self !== window.top) window.open(login, '_blank', 'noopener');
+    else window.location.assign(login);
+  }
+
+  /** The emailed or code row's field was sent. */
+  private async _submit(fulfillment: ScriptPublishedFulfillmentData, index: number)
+  {
+    const versionId = editorScript.get()?.id;
+    if (this._busy !== null || !versionId) return;
+    const how = this._how(fulfillment);
+    if (how === 'code') return this._download(fulfillment, index, { code: this._code.trim() });
+
+    this._busy = index;
+    try
+    {
+      const email = this._email.trim();
+      await requestFulfillment(versionId, fulfillment.name, { email, website: this._website });
+      this._sent = { index, email };
+      this._open = null;
+    }
+    catch (err)
+    {
+      this._error = (err as Error).message;
+    }
+    finally
+    {
+      this._busy = null;
+    }
+  }
+
+  /** Make the files here and save them; a gated row asks the server first. */
+  private async _download(fulfillment: ScriptPublishedFulfillmentData, index: number, ask: { code?: string } = {})
+  {
+    if (this._busy !== null) return;
+    const versionId = editorScript.get()?.id;
+    const gated = !this.preview && accessOf(fulfillment) !== 'anyone';
 
     this._busy = index;
     this._done = null;
@@ -208,10 +343,18 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
 
     try
     {
+      if (gated)
+      {
+        if (!versionId) throw new Error(msg('This configurator is not published.'));
+        await requestFulfillment(versionId, fulfillment.name, ask);
+        this._open = null;
+      }
       await downloadFulfillment(fulfillment);
-      // The page around an embedded configurator counts downloads (services/host-events).
       if (!this.preview)
       {
+        // Counted for the author (gated ones were counted when unlocked)
+        if (!gated && versionId) reportDownload(versionId, fulfillment.name);
+        // The page around an embedded configurator counts downloads (services/host-events).
         postToHost({ type: 'download', fulfillment: fulfillment.name, formats: fulfillmentFormats(fulfillment), ...currentConfiguration() });
       }
       this._done = index;
@@ -238,12 +381,12 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
     return formats.length > MAX ? `${shown} +${formats.length - MAX}` : shown;
   }
 
-  private _rowTitle(about: string, formats: string[], blocked: boolean): string
+  private _rowTitle(about: string, formats: string[], note: string): string
   {
     return [
       about,
       formats.length ? formats.map(f => `.${f}`).join(', ') : '',
-      blocked ? msg('Not available yet') : '',
+      note,
     ].filter(Boolean).join('\n');
   }
 
@@ -322,7 +465,7 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
       background: color-mix(in srgb, var(--color-border) 25%, transparent);
     }
 
-    /* A run in progress greys every row. A paid/email row is greyed permanently but
+    /* A run in progress greys every row. A paid row is greyed permanently but
        stays hoverable (aria-disabled, not disabled) so its tooltip still explains
        itself — it is telling the visitor what is on offer, not offering it. */
     .row:disabled { cursor: default; opacity: 0.5; }
@@ -387,6 +530,62 @@ export class ConfiguratorDownloadMenu extends SignalWatcher(LitElement)
       line-height: 1.4;
       white-space: nowrap;
     }
+
+    .ask
+    {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+      padding: 0 var(--space-lg) var(--space-md) calc(var(--space-lg) + var(--text-lg) + var(--space-md));
+      border-bottom: 1px solid var(--color-divider, #e0e0e0);
+    }
+
+    .ask-line
+    {
+      display: flex;
+      gap: var(--space-xs);
+    }
+
+    .ask-input
+    {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 8px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm, 4px);
+      background: var(--color-bg, #fff);
+      color: var(--color-text);
+      font-family: inherit;
+      font-size: var(--text-sm);
+    }
+
+    .ask-input:focus { outline: none; border-color: var(--color-primary); }
+
+    .ask-send
+    {
+      flex-shrink: 0;
+      padding: 6px 14px;
+      border: none;
+      border-radius: var(--radius-sm, 4px);
+      background: var(--color-primary);
+      color: var(--color-on-primary, #fff);
+      font-family: inherit;
+      font-size: var(--text-xs);
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .ask-send:disabled { opacity: 0.5; cursor: default; }
+
+    .ask-hint
+    {
+      margin: 0;
+      font-size: var(--text-xs);
+      line-height: 1.4;
+      color: var(--color-text-muted, #888);
+    }
+
+    .hp { position: absolute; left: -10000px; width: 1px; height: 1px; opacity: 0; }
 
     .empty,
     .note,

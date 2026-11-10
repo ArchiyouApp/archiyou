@@ -401,6 +401,8 @@ export interface OrderInput
   website?: string;
   /** Changes to a delivered design ("Adjust this design"): they go to that delivery's project. */
   deliveryToken?: string;
+  /** The product's access code, when it has one. */
+  code?: string | null;
 }
 
 /** Send an order, with a picture of the configured model when there is one. */
