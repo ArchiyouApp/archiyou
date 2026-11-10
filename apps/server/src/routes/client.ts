@@ -38,11 +38,10 @@ import { projectStore, rowToDelivery, visitorOf, TEXT_MAX } from '../services/Pr
 import { scriptStore } from '../services/ScriptStore';
 import { thumbnailStore } from '../services/ThumbnailStore';
 import { userService } from '../services/UserService';
+import { checkFulfillmentAccess, EMAIL, REFUSAL_MESSAGES } from '../services/fulfillmentAccess';
 import { parse } from '../validate';
 
 const optionalText = (maxLength: number) => Type.Optional(Type.Union([Type.String({ maxLength }), Type.Null()]));
-
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const OrderSchema = Type.Object({
   versionId: Type.String({ minLength: 1, maxLength: 100 }),
@@ -63,6 +62,8 @@ const OrderSchema = Type.Object({
   website: optionalText(500),
   /** Changes to a delivered design: the delivery's link token. */
   deliveryToken: optionalText(100),
+  /** The product's access code, when it has one (access 'code'). */
+  code: optionalText(200),
 });
 
 const EventSchema = Type.Object({ type: Type.Literal('adjust.opened') });
@@ -158,11 +159,6 @@ export async function registerClientRoutes(fastify: FastifyInstance): Promise<vo
       return accepted;
     }
     if (body.deliveryToken) return receiveAdjustment(body, reply);
-    if (!body.contact || !EMAIL.test(body.contact.email.trim()))
-    {
-      reply.code(422);
-      return { success: false, error: 'Please give a valid email address' };
-    }
 
     // Only a published version that offers this product, whose author has a confirmed
     // address. Anything else is the same 404, so nothing can be learned from probing.
@@ -175,7 +171,27 @@ export async function registerClientRoutes(fastify: FastifyInstance): Promise<vo
       return { success: false, error: 'This configurator does not take orders' };
     }
 
-    const contact = body.contact!;
+    // Who may order it (the product's access). A signed-in visitor's own details stand in
+    // for the ones they did not type.
+    const caller = await optionalUser(request);
+    const account = caller ? await userService.findByUsername(caller) : undefined;
+    const typed = body.contact ?? null;
+    const contact = typed?.email?.trim()
+      ? typed
+      : account ? { email: account.email, name: typed?.name ?? account.name ?? null, phone: typed?.phone ?? null, company: typed?.company ?? null } : null;
+    if (!contact || !EMAIL.test(contact.email.trim()))
+    {
+      reply.code(422);
+      return { success: false, error: 'Please give a valid email address' };
+    }
+    const checked = await checkFulfillmentAccess(author.username, product, { caller, email: contact.email, code: body.code });
+    if ('refusal' in checked)
+    {
+      const { status, error } = REFUSAL_MESSAGES[checked.refusal];
+      reply.code(status);
+      return { success: false, error };
+    }
+
     const { project, configuration, duplicate } = await projectStore.receiveOrder({
       script,
       fulfillment: product.name,

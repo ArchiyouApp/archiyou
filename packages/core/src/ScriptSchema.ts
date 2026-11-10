@@ -79,6 +79,22 @@ export const FulfillmentDeliverySchema = Type.Union(
     FULFILLMENT_DELIVERIES.map((d) => Type.Literal(d)) as LiteralTuple<typeof FULFILLMENT_DELIVERIES>,
 )
 
+/** Who can get a fulfillment (plans: fulfillment access).
+ *    anyone     everybody, as before
+ *    email      a visitor leaves an address; the server makes the files and emails them
+ *    clients    as email, but only addresses in the author's Clients (Projects)
+ *    signed-in  any signed-in Archiyou user
+ *    users      the signed-in users listed in `users`
+ *    code       whoever types the author's access code
+ *  Downloads the browser makes (anyone, signed-in, users, code) can only be gated as a
+ *  convenience: a published configurator's code is public. Emailed files and orders are
+ *  checked by the server. */
+export const FULFILLMENT_ACCESS = ['anyone', 'email', 'clients', 'signed-in', 'users', 'code'] as const
+export type FulfillmentAccess = typeof FULFILLMENT_ACCESS[number]
+export const FulfillmentAccessSchema = Type.Union(
+    FULFILLMENT_ACCESS.map((a) => Type.Literal(a)) as LiteralTuple<typeof FULFILLMENT_ACCESS>,
+)
+
 /** What a fulfillment is. A `download`: files from the configurator's Download menu. A
  *  `product`: an "Order product" button that sends the configuration to the author, as a
  *  request in their Projects (plans/PROJECTS.md). */
@@ -100,6 +116,10 @@ export const ScriptPublishedFulfillmentSchema = Type.Object({
     exports:     Type.Array(Type.String()),   // resolved output-path strings
     delivery:    Type.Optional(FulfillmentDeliverySchema), // downloads only; absent ⇒ 'anonymous download'
     price:       Type.Optional(Type.Number()), // defaults to 0 (applied in UI/normalize)
+    access:      Type.Optional(FulfillmentAccessSchema), // absent ⇒ 'anyone' (an old delivery 'email' ⇒ 'email'), see accessOf()
+    users:       Type.Optional(Type.Array(Type.String())), // handles, for access 'users'
+    code:        Type.Optional(Type.String()), // write-only: the server hashes it into codeHash and drops it
+    codeHash:    Type.Optional(Type.String()), // server-owned, never sent to visitors
 })
 
 //// TRANSLATIONS ////

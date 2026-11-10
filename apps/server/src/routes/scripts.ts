@@ -10,6 +10,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
 import type { ScriptData, ScriptShared } from '@archiyou/core/src/execution/types';
 
+import { eventStore } from '../services/EventStore';
 import { scriptStore } from '../services/ScriptStore';
 import { thumbnailStore } from '../services/ThumbnailStore';
 import { translationQueue } from '../translation/TranslationQueue';
@@ -62,6 +63,28 @@ export async function registerScriptRoutes(fastify: FastifyInstance): Promise<vo
   fastify.get('/scripts/configurators', authedOnly, async (request) => {
     return await scriptStore.listPublishedVersionsForAuthor(request.user.sub);
   });
+
+  // What happened around one of the caller's configurators: orders, adjustments and the
+  // fulfillments handed over (services/EventStore). `scope=file` lists every version of it,
+  // `filter` is one of the view's chips, `before` the `next` of the previous page. Someone
+  // else's configurator is the same 404 as one that does not exist.
+  fastify.get<{ Params: { versionId: string }; Querystring: { scope?: string; filter?: string; before?: string; limit?: string } }>(
+    '/scripts/configurators/:versionId/events',
+    authedOnly,
+    async (request, reply) => {
+      const { scope, filter, before, limit } = request.query;
+      const versions = await eventStore.versionsOf(request.user.sub, request.params.versionId, scope === 'file' ? 'file' : 'version');
+      if (!versions) {
+        reply.code(404);
+        return { success: false, error: 'Configurator not found' };
+      }
+      const chip = (['all', 'orders', 'fulfillments', 'failed'] as const).find((f) => f === filter) ?? 'all';
+      return {
+        success: true,
+        data: await eventStore.list(request.user.sub, versions, { filter: chip, before: before ?? null, limit: Number(limit) || undefined }),
+      };
+    },
+  );
 
   // Edit a published configurator in place: update just this version's `published`
   // metadata (version + code snapshot unchanged). Body is the ScriptData whose

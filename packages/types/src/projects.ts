@@ -19,7 +19,8 @@ export type DeliveryResponse = 'accepted' | 'declined' | 'changes';
 /** `attachment`: a file of the project's dossier that the professional added to it. */
 export type DeliveryFileKind = 'model' | 'document' | 'sheet' | 'preview' | 'attachment';
 
-export type ProjectEventActor = 'professional' | 'client';
+/** `visitor`: someone on a published configurator, not (yet) a client. */
+export type ProjectEventActor = 'professional' | 'client' | 'visitor';
 
 /** A script snapshot (core ScriptData). Kept loose here so this package does not depend on core. */
 export type ScriptSnapshot = Record<string, unknown>;

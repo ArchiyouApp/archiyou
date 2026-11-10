@@ -11,11 +11,14 @@
  * semver is assigned only when publishing/sharing, and is unique per file).
  */
 
+import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+
 import { eq, and, desc, inArray, isNotNull, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import semver from 'semver';
 
 import { Script } from '@archiyou/core/src/Script';
 import type { ScriptData, ScriptShared } from '@archiyou/core/src/execution/types';
+import type { ScriptPublishedFulfillmentData } from '@archiyou/core/src/ScriptSchema';
 import { uuid4 } from '@archiyou/core/src/utils';
 
 import { configuratorUrl } from '../routes/scriptUrl';
@@ -71,11 +74,69 @@ export function uniqueViolation(e: unknown): string | null {
  *  `validated` forced off, and no `translations`. Translations are made by the server's
  *  translation job and belong to the published version they were made for; a copy sent
  *  back with a save is out of date the moment the job runs again. */
-function withoutServerState(published: ScriptData['published']): ScriptData['published']
+function withoutServerState(published: ScriptData['published'], stored?: ScriptData['published']): ScriptData['published']
 {
   if (!published) return null;
   const { translations: _translations, ...rest } = published;
-  return { ...rest, validated: false };
+  return { ...rest, validated: false, fulfillments: withAccessSecrets(published.fulfillments, stored?.fulfillments) };
+}
+
+type Fulfillment = ScriptPublishedFulfillmentData;
+
+/** A fulfillment's access code as stored: `scrypt$<salt>$<hash>`. Codes are compared
+ *  trimmed and case-insensitive, so "Tafel-24" and "tafel-24 " both open it. */
+export function hashAccessCode(code: string): string
+{
+  const salt = randomBytes(16).toString('hex');
+  return `scrypt$${salt}$${scryptSync(normalizeCode(code), salt, 32).toString('hex')}`;
+}
+
+export function accessCodeMatches(code: string, stored: string | null | undefined): boolean
+{
+  const [scheme, salt, hash] = (stored ?? '').split('$');
+  if (scheme !== 'scrypt' || !salt || !hash) return false;
+  const expected = Buffer.from(hash, 'hex');
+  const given = scryptSync(normalizeCode(code), salt, expected.length);
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}
+
+function normalizeCode(code: string): string
+{
+  return code.trim().toLowerCase();
+}
+
+/**
+ * Fulfillments as stored: a new access `code` hashed into `codeHash` and never kept as
+ * typed; no new code keeps the hash the caller sent back or, failing that, the stored one
+ * of the fulfillment with the same name (an in-place edit from a page that never saw it).
+ * A hash or a user list is only kept while the access asks for it.
+ */
+function withAccessSecrets(fulfillments: Fulfillment[] | undefined, stored: Fulfillment[] | undefined): Fulfillment[] | undefined
+{
+  return fulfillments?.map(({ code, codeHash, users, ...f }) =>
+  {
+    const kept = codeHash ?? stored?.find((s) => s.name === f.name)?.codeHash;
+    const hash = code?.trim() ? hashAccessCode(code) : kept;
+    return {
+      ...f,
+      ...(f.access === 'code' && hash ? { codeHash: hash } : {}),
+      ...(f.access === 'users' ? { users: (users ?? []).map((u) => u.trim().toLowerCase()).filter(Boolean) } : {}),
+    };
+  });
+}
+
+/** A script as anyone but its author may see it: the fulfillments' access secrets (the
+ *  code's hash, who the listed users are) left out. Every library route answers with this. */
+export function publicScript(script: ScriptData): ScriptData
+{
+  if (!script.published?.fulfillments) return script;
+  return {
+    ...script,
+    published: {
+      ...script.published,
+      fulfillments: script.published.fulfillments.map(({ codeHash: _hash, users: _users, code: _code, ...f }) => f),
+    },
+  };
 }
 
 type ParamRecord = NonNullable<ScriptData['params']>;
@@ -502,7 +563,7 @@ export class ScriptStore {
     if (!row) throw new ScriptStoreError('not_found', `Version ${versionId} not found`);
     const stored = (row.published ?? null) as ScriptData['published'];
     const next = published
-      ? { ...withoutServerState(published), validated: stored?.validated === true, ...(stored?.translations ? { translations: stored.translations } : {}) }
+      ? { ...withoutServerState(published, stored), validated: stored?.validated === true, ...(stored?.translations ? { translations: stored.translations } : {}) }
       : null;
     const now = new Date();
     await db.update(scriptVersions)

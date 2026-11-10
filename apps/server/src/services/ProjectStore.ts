@@ -159,6 +159,8 @@ export interface NewEvent
   actor: ProjectEventActor;
   deliveryId?: string | null;
   configurationId?: string | null;
+  /** The configurator version it came from, so the configurator's events list it. */
+  scriptVersionId?: string | null;
   meta?: Record<string, unknown> | null;
   visitor?: string | null;
 }
@@ -335,6 +337,18 @@ export function snapshotOf(scriptPayload: unknown, values: Record<string, unknow
 export class ProjectStore
 {
   //// CLIENTS ////
+
+  /** The professional's listed client with this address, or null. Gates a fulfillment
+   *  that only the author's clients may get (access 'clients'). */
+  async listedClient(professional: string, email: string): Promise<{ name: string | null } | null>
+  {
+    const [row] = await db.select({ name: clients.name }).from(clients).where(and(
+      eq(clients.professional, professional),
+      eq(clients.email, email.trim().toLowerCase()),
+      eq(clients.listed, true),
+    )).limit(1);
+    return row ?? null;
+  }
 
   /** The client list; `all` also has the clients kept for one project only (`listed` false). */
   async listClients(professional: string, q?: string, all = false): Promise<ClientData[]>
@@ -1114,6 +1128,7 @@ export class ProjectStore
       actor: 'client',
       deliveryId: row.id,
       configurationId: configuration.id,
+      scriptVersionId: input.script.id ?? null,
       meta: { number: row.number, rev: configuration.rev, changed },
     });
     return { configuration, changed, duplicate: false };
@@ -1196,6 +1211,7 @@ export class ProjectStore
       type: 'order.received',
       actor: 'client',
       configurationId: configuration.id,
+      scriptVersionId: versionId,
       meta: { fulfillment: order.fulfillment, rev: configuration.rev },
     });
     return { project, configuration, duplicate: false };
@@ -1213,6 +1229,7 @@ export class ProjectStore
       projectId,
       deliveryId: event.deliveryId ?? null,
       configurationId: event.configurationId ?? null,
+      scriptVersionId: event.scriptVersionId ?? null,
       type: event.type,
       actor: event.actor,
       meta: event.meta ?? null,

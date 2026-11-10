@@ -34,6 +34,7 @@ import { registerFeedbackRoutes } from './routes/feedback';
 import { registerLinkRoutes } from './routes/links';
 import { registerProjectRoutes } from './routes/projects';
 import { registerClientRoutes } from './routes/client';
+import { registerFulfillmentRoutes } from './routes/fulfillments';
 import { moduleHost } from './modules/ModuleHost';
 import { ValidationError } from './validate';
 import { UserError, userService } from './services/UserService';
@@ -230,6 +231,7 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   await fastify.register(registerLinkRoutes);     // /links (authed), /go/:key (public redirect)
   await fastify.register(registerProjectRoutes);  // /projects/*, /clients/* (verified)
   await fastify.register(registerClientRoutes);   // POST /orders, /d/:token (public, rate limited)
+  await fastify.register(registerFulfillmentRoutes); // POST /fulfillments (public, rate limited)
   await fastify.register(registerAdminRoutes);    // /admin/* (operator only — users.is_admin)
 }
 

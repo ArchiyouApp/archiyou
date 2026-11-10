@@ -28,7 +28,7 @@ vi.mock('@archiyou/core/src/docs/PDFExporter', () => ({
 
 import {
   fulfillmentExports, fulfillmentFormats, fulfillmentCategories, formatExtension,
-  isFreeDownload, outputsToFiles,
+  isFreeDownload, outputsToFiles, accessOf, isEmailed,
 } from '../src/services/fulfillment.js';
 import type { ScriptPublishedFulfillmentData } from '@archiyou/core/src/ScriptSchema';
 import type { ScriptOutputData } from '@archiyou/core/src/execution/types';
@@ -279,5 +279,35 @@ describe('outputsToFiles', () =>
 
     expect(files.map(f => f.name)).toEqual(['chair_1.2.0_manual.pdf']);
     expect(new TextDecoder().decode(files[0].data as Uint8Array)).toBe('%PDF manual 2');
+  });
+});
+
+describe('accessOf', () =>
+{
+  it('is anyone unless the author chose otherwise', () =>
+  {
+    expect(accessOf(fulfillment(['default/model/stl']))).toBe('anyone');
+    expect(accessOf(fulfillment(['default/model/stl'], { access: 'signed-in' }))).toBe('signed-in');
+  });
+
+  it('reads a delivery by email published before access existed as access email', () =>
+  {
+    const old = fulfillment(['default/model/stl'], { delivery: 'email' });
+    expect(accessOf(old)).toBe('email');
+    expect(isEmailed(old)).toBe(true);
+    expect(isFreeDownload(old)).toBe(false);
+  });
+
+  it('never emails a product: its order form asks for an address anyway', () =>
+  {
+    const product = fulfillment([], { category: 'product', access: 'email' });
+    expect(accessOf(product)).toBe('anyone');
+    expect(isEmailed(product)).toBe(false);
+  });
+
+  it('only counts an ungated download as free', () =>
+  {
+    expect(isFreeDownload(fulfillment(['default/model/stl'], { access: 'code' }))).toBe(false);
+    expect(isEmailed(fulfillment(['default/model/stl'], { access: 'clients' }))).toBe(true);
   });
 });

@@ -30,14 +30,12 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import semver from 'semver';
 
 import { Script } from '@archiyou/core/src/Script';
-import type { RunnerScriptExecutionRequest } from '@archiyou/core/src/runner/types';
 import { isLengthUnit } from '@archiyou/core/src/units/UnitConverter';
 
 import { config } from '../config';
-import { moduleHost } from '../modules/ModuleHost';
 import { scriptStore } from '../services/ScriptStore';
-import { userService } from '../services/UserService';
 import { isApiExecutionFileResponse } from '../execution/types';
+import { serverRunRequest } from '../execution/serverRun';
 import { parseScriptAndVersion } from './scriptUrl';
 
 interface ExecuteBody {
@@ -182,38 +180,17 @@ export async function registerExecuteRoutes(fastify: FastifyInstance): Promise<v
         return { success: false, error: 'Invalid request parameter values. See data array for details.', data: checked.errors };
       }
 
-      // Execution context the browser client fills in for itself (see
-      // apps/editor/src/services/execution-service.ts) and which a server-side run has to be
-      // handed explicitly, or `$import()`, `$component('./name')` and gated modules all fail.
-      // Module entitlement is the SCRIPT AUTHOR's, not the caller's — the caller may be
-      // anonymous, and it is the author's script that declares the dependency.
-      const { internalApiUrl } = config.execution;
-      const authorModules = scriptData.author ? await userService.getModules(scriptData.author) : [];
-
-      const executionRequest: RunnerScriptExecutionRequest = {
-        kernel: (body.kernel as any) || 'mesh', // geometry kernel for the whole run: 'mesh' | 'brep'
-        // toData(), NOT the Script instance. This request is JSON-serialized onto the
-        // BullMQ queue, and Script keeps its fields private behind getters (`name` reads
-        // `_name`) — so a serialized instance arrives at the worker with no `name`, fails
-        // isRunnerScriptExecutionRequest(), and comes back as "Unknown task type".
-        script: script.toData(),
+      const executionRequest = await serverRunRequest(script.toData(), `${user}/${scriptAndVersion}`, {
         params: checked.checkedParamValues,
         preset: body.preset,
         outputs: body.outputs,
-        cache: body.cache !== false, // default true
-        forceFileResponse: body.forceFileResponse === true,
-        // Presentation only, but it silently changes every dimension and doc string if
-        // dropped — so it must ride along rather than defaulting to metric.
-        unitSystem: body.unitSystem ?? scriptData.units,
+        cache: body.cache,
+        forceFileResponse: body.forceFileResponse,
+        kernel: body.kernel,
+        unitSystem: body.unitSystem,
         docUnitSystem: body.docUnitSystem,
-        modelUnits: isLengthUnit(body.modelUnits) ? body.modelUnits : undefined,
-        assetProxyUrl: internalApiUrl,
-        componentLibraryUrl: internalApiUrl,
-        moduleApiUrl: internalApiUrl,
-        modules: moduleHost.catalogFor(authorModules),
-        // Client-module bundles are fetched on the author's entitlement, like the catalog above.
-        publishedScript: `${user}/${scriptAndVersion}`,
-      };
+        modelUnits: body.modelUnits,
+      });
 
       try {
         const response = await fastify.executionManager.execute(executionRequest);

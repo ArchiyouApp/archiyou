@@ -312,21 +312,26 @@ export const projectFiles = pgTable('project_files', {
 
 export type ProjectFileRow = typeof projectFiles.$inferSelect;
 
-/** A project's activity. Client events carry `visitor`, a daily-salted hash for counting
- *  unique opens — never an IP. Purged after config.events.retentionDays. */
+/** Activity: a project's, and a configurator's (`scriptVersionId`: orders, adjustments,
+ *  fulfillments handed over). `professional` is whose it is, the author for a configurator.
+ *  A configurator event without a project (an emailed or unlocked fulfillment, a download)
+ *  has no `projectId`. Client and visitor events carry `visitor`, a daily-salted hash for
+ *  counting unique ones — never an IP. Purged after config.events.retentionDays. */
 export const events = pgTable('events', {
   id: text('id').primaryKey(),
   professional: text('professional').notNull(),
-  projectId: text('project_id').notNull(),
+  projectId: text('project_id'),
+  scriptVersionId: text('script_version_id'),
   deliveryId: text('delivery_id'),
   configurationId: text('configuration_id'),
   type: text('type').notNull(),
-  actor: text('actor').notNull(),               // professional | client
+  actor: text('actor').notNull(),               // professional | client | visitor
   meta: jsonb('meta').$type<Record<string, unknown>>(),
   visitor: text('visitor'),
   created: at('created').notNull().defaultNow(),
 }, (t) => [
   index('events_by_project').on(t.projectId, t.created),
+  index('events_by_script_version').on(t.scriptVersionId, t.created),
   index('events_by_created').on(t.created),
 ]);
 

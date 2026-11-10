@@ -36,6 +36,13 @@
       "when": 1793976837655,
       "tag": "0004_client_listed",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794339817151,
+      "tag": "0005_events_general",
+      "breakpoints": true
     }
   ]
 }

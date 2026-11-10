@@ -276,6 +276,27 @@ export const config = {
   ordersPerConfiguratorPerDay: Number(process.env.SERVER_ORDERS_PER_CONFIGURATOR_PER_DAY ?? 200),
 
   /**
+   * Gated fulfillments (routes/fulfillments.ts): a configurator visitor asks for files by
+   * email, or to unlock a download (signed-in, listed users, access code). Public, so rate
+   * limited per IP; emailed ones also cost a server run, so they are capped per
+   * configurator per day, and an email larger than `maxEmailBytes` is not sent (Mailgun
+   * takes 25 MB per message).
+   */
+  fulfillments: {
+    rateLimit: {
+      max: Number(process.env.SERVER_FULFILLMENT_RATE_LIMIT ?? 10),
+      timeWindow: process.env.SERVER_FULFILLMENT_RATE_WINDOW ?? '10 minutes',
+    },
+    /** The download ping of free downloads: cheap, counted once per visitor and day. */
+    downloadRateLimit: {
+      max: Number(process.env.SERVER_FULFILLMENT_DOWNLOAD_RATE_LIMIT ?? 60),
+      timeWindow: process.env.SERVER_FULFILLMENT_DOWNLOAD_RATE_WINDOW ?? '10 minutes',
+    },
+    emailsPerConfiguratorPerDay: Number(process.env.SERVER_FULFILLMENT_EMAILS_PER_CONFIGURATOR_PER_DAY ?? 100),
+    maxEmailBytes: Number(process.env.SERVER_FULFILLMENT_MAX_EMAIL_BYTES ?? 20 * 1024 * 1024),
+  },
+
+  /**
    * Deliveries (plans/PROJECTS.md): what a professional sends a client — the frozen files
    * of one configuration behind a link. The files are made in the professional's browser
    * and stored here; they are only ever served through the delivery's link, so revoking it

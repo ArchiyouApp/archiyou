@@ -22,6 +22,14 @@ interface Message {
   replyTo?: string;
   /** Extra context logged in the dev (no-key) fallback, e.g. the reset link. */
   devNote?: string;
+  /** Files sent along (a fulfillment's). */
+  attachments?: EmailAttachment[];
+}
+
+export interface EmailAttachment {
+  name: string;
+  data: Uint8Array | string;
+  mime: string;
 }
 
 export class EmailService {
@@ -171,13 +179,71 @@ export class EmailService {
     });
   }
 
+  /** A configurator visitor asked for a fulfillment by email: here are the files. From
+   *  Archiyou on behalf of the configurator's author; replies go to the author. */
+  async sendFulfillment(to: string, fulfillment: {
+    fulfillment: string;
+    configurator: string;
+    authorName: string;
+    authorEmail: string | null;
+    link: string;
+    files: EmailAttachment[];
+  }): Promise<void> {
+    const { authorName: from } = fulfillment;
+    await this.send({
+      to,
+      replyTo: fulfillment.authorEmail ?? undefined,
+      subject: `${fulfillment.fulfillment} from ${fulfillment.configurator}`,
+      html: renderEmail({
+        subject: fulfillment.fulfillment,
+        text: `Here is "${fulfillment.fulfillment}" from ${from}'s configurator ${fulfillment.configurator}, `
+          + 'made for the design you configured. The files are attached to this email.',
+        details: [['Files', fulfillment.files.map((f) => f.name).join(', ')]],
+        buttonText: 'Back to the configurator',
+        buttonLink: fulfillment.link,
+        footerNote: `You asked for this on ${from}'s configurator, made with Archiyou. ${from} sees that you did, with your address. `
+          + 'Not expecting this? Let us know at info@archiyou.com.',
+      }),
+      attachments: fulfillment.files,
+      devNote: `configurator: ${fulfillment.link}`,
+    });
+  }
+
+  /** A fulfillment asked for by email could not be made or sent. */
+  async sendFulfillmentFailed(to: string, failure: {
+    fulfillment: string;
+    configurator: string;
+    reason: 'not a client' | 'no server run' | 'too large' | 'failed';
+    link: string;
+  }): Promise<void> {
+    const why = {
+      'not a client': 'It is only sent to the clients of the configurator\'s author, and this address is not one of them. Ask them to add you.',
+      'no server run': 'It cannot be made by email yet.',
+      'too large': 'The files came out too large to send by email.',
+      'failed': 'Making the files failed.',
+    }[failure.reason];
+    await this.send({
+      to,
+      subject: `${failure.fulfillment} could not be sent`,
+      html: renderEmail({
+        subject: `${failure.fulfillment} could not be sent`,
+        text: `You asked for "${failure.fulfillment}" from the configurator ${failure.configurator}. ${why} `
+          + 'Sorry about that. The configurator\'s author can see that it went wrong.',
+        buttonText: 'Back to the configurator',
+        buttonLink: failure.link,
+      }),
+      devNote: `configurator: ${failure.link} (${failure.reason})`,
+    });
+  }
+
   /** Low-level send. Never throws to callers — a failed/absent send must not leak
    *  whether an account exists (forgot-password always answers 200). */
-  private async send({ to, subject, html, replyTo, devNote }: Message): Promise<void> {
+  private async send({ to, subject, html, replyTo, devNote, attachments }: Message): Promise<void> {
     if (!config.mailgun.key) {
+      const files = (attachments ?? []).map((a) => `${a.name} (${byteLength(a.data)} bytes)`).join(', ');
       console.log(
         `📧 [EmailService] MAILGUN_KEY not set — not sending. ` +
-          `to="${to}" subject="${subject}"${devNote ? `\n   ${devNote}` : ''}`,
+          `to="${to}" subject="${subject}"${devNote ? `\n   ${devNote}` : ''}${files ? `\n   attachments: ${files}` : ''}`,
       );
       return;
     }
@@ -189,6 +255,7 @@ export class EmailService {
       form.set('subject', subject);
       form.set('html', html);
       form.set('h:Reply-To', replyTo ?? REPLY_TO);
+      (attachments ?? []).forEach((a) => form.append('attachment', new Blob([a.data as BlobPart], { type: a.mime }), a.name));
 
       const auth = 'Basic ' + Buffer.from(`api:${config.mailgun.key}`).toString('base64');
       const url = `${config.mailgun.apiBase}/v3/${config.mailgun.domain}/messages`;
@@ -205,6 +272,11 @@ export class EmailService {
 }
 
 export const emailService = new EmailService();
+
+/** Size of an attachment's body in bytes. */
+export function byteLength(data: Uint8Array | string): number {
+  return typeof data === 'string' ? Buffer.byteLength(data) : data.byteLength;
+}
 
 //// TEMPLATE ////
 

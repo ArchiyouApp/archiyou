@@ -24,7 +24,7 @@ import semver from 'semver';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 
 import { config } from '../config';
-import { scriptStore } from '../services/ScriptStore';
+import { publicScript, scriptStore } from '../services/ScriptStore';
 import { cardContent, configuratorPage, readShell, renderCard, socialUrls } from '../services/SocialCard';
 import { parseScriptAndVersion } from './scriptUrl';
 
@@ -85,7 +85,7 @@ function registerKind(fastify: FastifyInstance, kind: LibraryKind): void {
       { preHandler: fastify.authenticate },
       async (request, reply): Promise<GetResponse> => {
         try {
-          return { success: true, data: await scriptStore.listSharedWithUser(request.user.sub) };
+          return { success: true, data: (await scriptStore.listSharedWithUser(request.user.sub)).map(publicScript) };
         } catch (error) {
           return fail(reply, 500, `Failed to load shared-with-me scripts: ${(error as Error).message}`);
         }
@@ -96,7 +96,7 @@ function registerKind(fastify: FastifyInstance, kind: LibraryKind): void {
   // All scripts in this library.
   fastify.get(base, async (_request, reply): Promise<GetResponse> => {
     try {
-      return { success: true, data: await a.list() };
+      return { success: true, data: (await a.list()).map(publicScript) };
     } catch (error) {
       return fail(reply, 500, `Failed to load ${kind} scripts: ${(error as Error).message}`);
     }
@@ -107,9 +107,9 @@ function registerKind(fastify: FastifyInstance, kind: LibraryKind): void {
   fastify.get<{ Params: { user: string } }>(`${base}/:user`, async (request, reply): Promise<GetResponse> => {
     try {
       const scripts = await a.byAuthor(request.params.user);
-      if (kind !== 'shared') return { success: true, data: scripts };
+      if (kind !== 'shared') return { success: true, data: scripts.map(publicScript) };
       const caller = await optionalUser(request);
-      return { success: true, data: scripts.filter((script) => scriptStore.canAccessShared(script, caller)) };
+      return { success: true, data: scripts.filter((script) => scriptStore.canAccessShared(script, caller)).map(publicScript) };
     } catch (error) {
       return fail(reply, 500, `Failed to load ${kind} scripts for ${request.params.user}: ${(error as Error).message}`);
     }
@@ -149,14 +149,14 @@ function registerKind(fastify: FastifyInstance, kind: LibraryKind): void {
           return fail(reply, 404, `Script "${user}/${scriptName}:${version ?? 'latest'}" not found in ${kind}`);
         }
 
-        if (kind === 'shared') {
-          const caller = await optionalUser(request);
-          if (!scriptStore.canAccessShared(script, caller)) {
-            return fail(reply, 403, `Not allowed to access "${user}/${scriptName}"`);
-          }
+        const caller = await optionalUser(request);
+        if (kind === 'shared' && !scriptStore.canAccessShared(script, caller)) {
+          return fail(reply, 403, `Not allowed to access "${user}/${scriptName}"`);
         }
 
-        return { success: true, data: script };
+        // Only the author sees the fulfillments' access secrets (who is listed, the code's hash)
+        const own = !!caller && caller.toLowerCase() === script.author?.toLowerCase();
+        return { success: true, data: own ? script : publicScript(script) };
       } catch (error) {
         return fail(reply, 500, `Failed to get script: ${(error as Error).message}`);
       }
