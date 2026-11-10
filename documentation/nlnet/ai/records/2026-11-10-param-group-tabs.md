@@ -30,3 +30,4 @@ confirmation, and is disabled on `main`. Tab labels are centred with equal paddi
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| 5ec93d1 | Param groups: one delete icon in the tab bar, centred tabs | I want to tune the param groups … (11:22) |

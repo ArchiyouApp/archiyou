@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-11-10 → (open) |
+| Dates | 2026-11-10 → 2026-11-10 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code in plan mode, then as agent |
 | Human | Mark van der Net: wrote the prompts, chose the access kinds (email, signed-in, users, clients, access code, gating orders too), chose files in the email over a verified link, asked for one general events table and an author-only events view on the configurator, reviewed the plan |
@@ -291,3 +291,6 @@ The author opens it from a new icon button in the configurator's top-right bar,
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| 4afcb04 | Server: fulfillment access, emailed files and configurator events | /plan When publishing a configurator … (14:11), plan steps 1-2 |
+| 9180347 | Configurator: email, sign-in and code fulfillments, set when publishing | /plan When publishing a configurator … (14:11), plan steps 3-4 |
+| 278e8b7 | Configurator: an events view for its author | While you are at it. Design a view on the events … (19:00) |

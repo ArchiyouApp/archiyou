@@ -151,3 +151,5 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-11-03 | [Standard modules: cloudcalc without a `$module()` declaration](./records/2026-11-03-standard-modules.md) | Claude Fable 5.1 | develop | 2 |
 | 2026-10-30 | [Shared geometry in the GLB, and layouts on both kernels](./records/2026-10-30-shared-geometry-and-layouts.md) | Claude Opus 5.5 | develop | 6 |
 | 2026-10-30 | [Projects: a fast project page, dossier files, designs from a configurator](./records/2026-10-30-projects-workspace-flow.md) | Claude Opus 5.5 | develop | 4 |
+| 2026-11-10 | [Param groups: one delete icon in the tab bar, centred tabs](./records/2026-11-10-param-group-tabs.md) | Claude Opus 5.5 | develop | 1 |
+| 2026-11-10 | [Fulfillment access and the configurator's events](./records/2026-11-10-fulfillment-access.md) | Claude Opus 5.5 | develop | 3 |
