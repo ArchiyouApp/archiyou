@@ -29,6 +29,7 @@ import { localized, msg, str } from '@lit/localize';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import './configurator-action-button.js';
 import '../projects/add-to-project-menu.js';
+import './configurator-events.js';
 
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 import { editorScript, userState, buildConfiguratorRequest } from '@archiyou/editor/src/state/workspace';
@@ -72,10 +73,12 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
     const embedUrl   = this.embedded ? null : this._embedUrl();
     const projectUrl = this._projectUrl();
     const project    = configuratorProject.get();
+    const eventsOf   = this.embedded ? null : this._ownVersionId();
 
     // Nothing to offer → stay out of the way entirely rather than show dead buttons.
-    this.toggleAttribute('hidden', !sourceUrl && !embedUrl && !projectUrl && !project);
-    if (!sourceUrl && !embedUrl && !projectUrl && !project) return nothing;
+    const none = !sourceUrl && !embedUrl && !projectUrl && !project && !eventsOf;
+    this.toggleAttribute('hidden', none);
+    if (none) return nothing;
 
     return html`
       <div class="actions">
@@ -108,10 +111,19 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
         ${embedUrl ? html`
           <configurator-action-button icon="code-xml" label=${msg('Embed')}
               hint=${msg('Embed this configurator on your site')} toggle ?active=${this._embedOpen}
-              @click=${() => { this._embedOpen = !this._embedOpen; }}></configurator-action-button>` : nothing}
+              @click=${() => { this._embedOpen = !this._embedOpen; this._eventsOpen = false; }}></configurator-action-button>` : nothing}
+
+        ${eventsOf ? html`
+          <configurator-action-button icon="activity" label=${msg('Events')}
+              hint=${msg('Orders and downloads of your configurator')} toggle ?active=${this._eventsOpen}
+              @click=${() => { this._eventsOpen = !this._eventsOpen; this._embedOpen = false; }}></configurator-action-button>` : nothing}
       </div>
 
       ${this._embedOpen && embedUrl ? this._renderEmbedPanel(embedUrl) : nothing}
+
+      ${this._eventsOpen && eventsOf ? html`
+        <configurator-events versionId=${eventsOf}
+          @configurator-events-close=${() => { this._eventsOpen = false; }}></configurator-events>` : nothing}
 
       ${projectUrl && !project && this._choosesProject() ? html`
         <add-to-project-menu
@@ -165,6 +177,8 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
   @property({ type: Boolean, reflect: true }) embedded = false;
 
   @state() private _embedOpen = false;
+  /** <configurator-events> is open. */
+  @state() private _eventsOpen = false;
   @state() private _copied = false;
   /** <add-to-project-menu> is open. */
   @state() private _choosingProject = false;
@@ -199,6 +213,16 @@ export class ConfiguratorViewerActions extends SignalWatcher(LitElement)
     if (!script?.shared || !script.author || !script.name || !script.version) return null;
     const base = (typeof window !== 'undefined' && window.location?.origin) || '';
     return `${base}/editor/${encodeURIComponent(script.author)}/${encodeURIComponent(script.name)}:${encodeURIComponent(script.version)}`;
+  }
+
+  /** The published version on screen when the signed-in visitor is its author: they get
+   *  its events. Null for everyone else. */
+  private _ownVersionId(): string | null
+  {
+    const script = editorScript.get();
+    const user = userState.get();
+    if (user.anonymous || !user.id || !script?.published || !script.version || !script.id || !script.author) return null;
+    return user.id.toLowerCase() === script.author.toLowerCase() ? script.id : null;
   }
 
   /** The public configurator URL, preferring the one the server stamped. */
