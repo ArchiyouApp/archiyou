@@ -118,7 +118,12 @@ export class ParamMenu extends SignalWatcher(LitElement)
                 @click=${() => this._scrollTabs('right')}>
               <wa-icon library="lucide" name="chevron-right"></wa-icon>
             </button>` : nothing}
-          <button class="add-tab-btn" title="Add group" @click=${this._addGroup}>
+          <button class="bar-btn delete-tab-btn" title="Delete group"
+              ?disabled=${this._activeTab === 'main'}
+              @click=${() => { this._deletingTab = this._activeTab; }}>
+            <wa-icon library="lucide" name="trash-2"></wa-icon>
+          </button>
+          <button class="bar-btn add-tab-btn" title="Add group" @click=${this._addGroup}>
             <wa-icon library="lucide" name="plus"></wa-icon>
           </button>
         </div>
@@ -215,7 +220,6 @@ export class ParamMenu extends SignalWatcher(LitElement)
     const isEditing   = group === this._editingTab;
     const isDragOver  = group === this._dragTabOver;
     const isDeleting  = group === this._deletingTab;
-    const isDeletable = group !== 'main';
 
     return html`
       <div
@@ -251,14 +255,6 @@ export class ParamMenu extends SignalWatcher(LitElement)
                         (this._tabDraft = (e.target as HTMLInputElement).value)}
                     />`
                 : html`<span class="tab-label">${group}</span>`
-              }
-              ${isDeletable && !isEditing
-                ? html`
-                    <button class="tab-action-btn tab-delete-btn" title="Delete group"
-                        @click=${(e: Event) => { e.stopPropagation(); this._deletingTab = group; }}>
-                      <wa-icon library="lucide" name="x"></wa-icon>
-                    </button>`
-                : nothing
               }`
         }
       </div>
@@ -766,6 +762,7 @@ export class ParamMenu extends SignalWatcher(LitElement)
     .tab {
       display: flex;
       align-items: center;
+      justify-content: center;
       gap: 4px;
       height: var(--space2xl);
       width: max-content;
@@ -835,17 +832,6 @@ export class ParamMenu extends SignalWatcher(LitElement)
       background: color-mix(in srgb, var(--color-border) 50%, transparent);
     }
 
-    .tab-delete-btn {
-      margin-left: var(--space-md); /* keep it clear of the label so it isn't hit by accident */
-      opacity: 0;
-      transition: opacity 0.1s;
-    }
-
-    .tab:hover .tab-delete-btn { opacity: 0.6; }
-    .tab:hover .tab-delete-btn:hover { opacity: 1; color: var(--color-alert); }
-    /* Touch has no hover: show the delete button on the active tab only. */
-    @media (hover: none) { .tab.active .tab-delete-btn { opacity: 0.6; } }
-
     /* ── Tab delete confirmation ── */
 
     .tab-confirm-label {
@@ -859,7 +845,9 @@ export class ParamMenu extends SignalWatcher(LitElement)
       background: color-mix(in srgb, var(--color-alert, #ef4444) 15%, transparent) !important;
     }
 
-    .add-tab-btn {
+    /* ── Tab bar buttons: delete the open group, add a group ── */
+
+    .bar-btn {
       display: flex;
       align-items: center;
       padding: 0 10px;
@@ -868,9 +856,18 @@ export class ParamMenu extends SignalWatcher(LitElement)
       cursor: pointer;
       color: var(--color-gray-dark, #666);
       font-size: 11px;
+      flex-shrink: 0;
     }
 
-    .add-tab-btn:hover { color: var(--color-gray-dark); }
+    .bar-btn:hover:not(:disabled) { color: var(--color-text); }
+    .delete-tab-btn { padding-right: var(--space-xs); }
+    .delete-tab-btn:hover:not(:disabled) { color: var(--color-alert, #ef4444); }
+
+    /* main cannot be deleted */
+    .bar-btn:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
 
     /* ── Param list ── */
 
