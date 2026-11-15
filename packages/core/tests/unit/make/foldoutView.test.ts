@@ -18,15 +18,16 @@ import type { FoldoutSide, SheetPoint, SheetSegment } from '../../../src/modeler
 let modeler: Modeler
 let annotator: Annotator
 
-beforeAll(async () =>
+/** A modeler on the given kernel, with an annotator for the dimension lines */
+async function setup(kernel: 'mesh' | 'brep'): Promise<void>
 {
-    modeler = new Modeler()
+    modeler = new Modeler(kernel)
     await modeler.load()
     annotator = new Annotator()
     const modules = { modeler, annotator, materials: new MaterialManager() } as unknown as ArchiyouModules
     modeler.setArchiyou(modules)
     annotator.setArchiyou(modules)
-}, 60_000)
+}
 
 /** A 2000 x 1000 x 500 base, with a 400 x 300 tower of 1500 high in its front left corner */
 const BASE = { x: 2000, y: 1000, z: 500 }
@@ -92,8 +93,10 @@ describe('foldoutView geometry', () =>
     })
 })
 
-describe('make.foldoutView()', () =>
+describe.each(['mesh', 'brep'] as const)('make.foldoutView() on %s', (kernel) =>
 {
+    beforeAll(() => setup(kernel), 60_000)
+
     /** Each view lines up with the plan, is a view and not a mirror image, has its top the right
      *  way and sits on the right side: the tower is where it is in the plan. */
     function expectFoldedOut(result: any, projection: 'third' | 'first', sides: ReadonlyArray<FoldoutSide> = FOLDOUT_SIDES)

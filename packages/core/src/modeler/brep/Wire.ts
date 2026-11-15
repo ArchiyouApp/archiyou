@@ -515,9 +515,19 @@ export class Wire extends Shape
     {
         if (this.planar() && !this.closed()){ return 'Planar' } // NOTE: for simplicity and consistency: output as Planar
         else if (!this.planar() && this.closed()){ return 'Closed'}
-        else if (this.planar() && this.closed()){ return 'PlanarClosed'}
+        else if (this.planar() && this.closed()){ return this._isRect() ? 'Rect' : 'PlanarClosed' }
 
         return 'OtherWire'; // the default
+    }
+
+    /** A closed Wire of four straight Edges, each at a right angle to the next: what rect()
+     *  makes. The mesh kernel calls such a Curve 'Rect' too */
+    _isRect():boolean
+    {
+        const edges = this.edges().toArray() as Array<Edge>;
+        if (edges.length !== 4 || !edges.every(e => e.edgeType() === 'Line')){ return false }
+        const directions = edges.map(e => e.direction(true));
+        return directions.every((d, i) => Math.abs(d.dot(directions[(i + 1) % 4])) < 1e-6);
     }
 
     /** Check if a Wire is closed */
@@ -1929,7 +1939,7 @@ export class Wire extends Shape
     @sceneAdd
     segment(fromIndex:number, toIndex?:number):AnyShape
     {
-        const edges = this.edges().toArray();
+        const edges = this.edges().toArray() as Array<Edge>;
         const norm = (i:number) => (i < 0) ? edges.length + i : i;
         const from = norm(fromIndex);
         const to = norm(toIndex ?? fromIndex);

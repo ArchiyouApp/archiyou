@@ -88,6 +88,11 @@ import { getOc } from './index' // OC global getter
       _packerModule:any; // caching of dynamically imported guillotine-packer
 
       annotations:Array<Annotation> = []; // array of annotations associated with this ShapeCollection
+
+      /** How a projection (elevation, isometry, section) put 3D onto this flat drawing: a point p
+       *  lands at (p·u + offset[0], p·v + offset[1]). Moves keep it up to date; null for anything
+       *  that is not a projection. See toScreen(), and meshup ShapeCollection._screen. */
+      _screen:{ u:[number,number,number], v:[number,number,number], offset:[number,number] }|null = null;
    
       constructor(entities?:MakeShapeCollectionInput, ...args)
       {
@@ -277,6 +282,12 @@ import { getOc } from './index' // OC global getter
       groups():Array<string>  
       {
          return Object.keys(this._groups);
+      }
+
+      /** Names of all groups in this collection. Same as groups(), as meshup names it */
+      groupNames():Array<string>
+      {
+         return this.groups();
       }
 
       /** Get shapes in group as ShapeCollection */
@@ -567,8 +578,66 @@ import { getOc } from './index' // OC global getter
       move(vector:PointLike, ...args):AnyShapeCollection
       {
          this.shapes.forEach( shape => shape.move(vector as Vector));
+         this._moveScreen(vector as Vector);
 
          return this;
+      }
+
+      /** Where a 3D point lands in this projection: the transform the isometry, elevation or
+       *  section applied to the model, followed by any move since. Null when this collection is
+       *  not a projection. Same as meshup ShapeCollection.toScreen().
+       *
+       *  ```ts
+       *  front = model.elevation('front');
+       *  front.toScreen(model.bbox().max()); // the top corner, as drawn
+       *  ```
+       */
+      toScreen(point:PointLike):Point|null
+      {
+         if(!this._screen){ return null }
+         const p = new Point(point);
+         const { u, v, offset } = this._screen;
+         return new Point(p.x*u[0] + p.y*u[1] + p.z*u[2] + offset[0], p.x*v[0] + p.y*v[1] + p.z*v[2] + offset[1], 0);
+      }
+
+      /** Set how a projection put 3D onto this drawing: a point p lands at (p·u, p·v) */
+      _setScreen(u:PointLike, v:PointLike):this
+      {
+         const [a, b] = [new Vector(u), new Vector(v)];
+         this._screen = { u: [a.x, a.y, a.z], v: [b.x, b.y, b.z], offset: [0, 0] };
+         return this;
+      }
+
+      /** Turn the projection transform with a rotation of the drawing around z, about `pivot`:
+       *  for a projection that turns what it drew */
+      _turnScreen(degrees:number, pivot:PointLike):this
+      {
+         if(!this._screen){ return this }
+         const r = degrees * Math.PI / 180;
+         const [c, s] = [Math.cos(r), Math.sin(r)];
+         const turn = (x:number, y:number):[number,number] => [c*x - s*y, s*x + c*y];
+         const { u, v, offset } = this._screen;
+         const p = new Point(pivot);
+         const [ox, oy] = turn(offset[0] - p.x, offset[1] - p.y);
+         const rows = [0, 1, 2].map(i => turn(u[i], v[i]));
+         this._screen = {
+            u: rows.map(r => r[0]) as [number,number,number],
+            v: rows.map(r => r[1]) as [number,number,number],
+            offset: [ox + p.x, oy + p.y],
+         };
+         return this;
+      }
+
+      /** What travels with a move of the drawing: its projection transform and the annotations
+       *  linked to it (like the dimension lines a projection carries over), which would otherwise
+       *  stay behind where the drawing was made. Same as meshup ShapeCollection.translate() */
+      _moveScreen(vector:Vector):void
+      {
+         if(this._screen)
+         {
+            this._screen.offset = [this._screen.offset[0] + vector.x, this._screen.offset[1] + vector.y];
+         }
+         this.annotations.forEach(a => (a as any)?.translate?.(vector.x, vector.y, vector.z));
       }
 
 
@@ -580,6 +649,7 @@ import { getOc } from './index' // OC global getter
       {
          let moveVec = (to as Vector).subtract(this.center().toVector());
          this.shapes.forEach( shape => shape.move(moveVec));
+         this._moveScreen(moveVec);
 
          return this;
       }

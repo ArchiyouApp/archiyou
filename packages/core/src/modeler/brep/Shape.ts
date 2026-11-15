@@ -4096,7 +4096,7 @@ export class Shape
     {
         const SHAPE_SUBTYPES = {
             'Edge' : { method: 'edgeType', values: ['Line', 'Circle', 'Ellipse', 'Hyperbola', 'Parabola', 'BezierCurve', 'BSplineCurve', 'OffsetCurve', 'OtherCurve'] },
-            'Wire' : { method: 'wireType', values: ['Planar', 'Closed', 'CoplanarClosed', 'OtherWire']},
+            'Wire' : { method: 'wireType', values: ['Planar', 'Closed', 'PlanarClosed', 'Rect', 'OtherWire']},
             'Face' : { method : 'faceType', values: ['Planar', 'Curved'] },
             // 'Shell' - TODO
             'Solid' : { method: 'solidType', values: ['Box','Sphere','Cone','Cylinder'] }
@@ -4126,7 +4126,9 @@ export class Shape
                 let curShapeSubType = shape.subtype();
                 if (curShapeSubType)
                 {
-                    return curShapeSubType.toLowerCase() == subType.toLowerCase(); // NOTE: case-insensitive
+                    // NOTE: case-insensitive. A Rect is a planar closed Wire too
+                    return curShapeSubType.toLowerCase() == subType.toLowerCase()
+                        || (curShapeSubType === 'Rect' && subType.toLowerCase() === 'planarclosed');
                 }
                 else {
                     console.warn(`Shape::_selectorOfSubType: No subType on Shape type "${shape.type}"`);
@@ -5036,7 +5038,11 @@ export class Shape
         
         let ocHiddenLineRemoval = new this._oc.HLRBRep_Algo_1();
         ocHiddenLineRemoval.Add_2(this._ocShape, 0); // Shape and number of isoparameters
-        let ocProjector = new this._oc.HLRAlgo_Projector_2(new this._oc.gp_Ax2_3(new Point()._toOcPoint(), (planeNormal as Vector)._toOcDir()));
+        const ocProjectorFrame = new this._oc.gp_Ax2_3(new Point()._toOcPoint(), (planeNormal as Vector)._toOcDir());
+        let ocProjector = new this._oc.HLRAlgo_Projector_2(ocProjectorFrame);
+        // The drawing is in the frame's own coordinates: a point p lands at (p·X, p·Y)
+        const [ocX, ocY] = [ocProjectorFrame.XDirection(), ocProjectorFrame.YDirection()];
+        const screen = { u: [ocX.X(), ocX.Y(), ocX.Z()], v: [ocY.X(), ocY.Y(), ocY.Z()] };
         ocHiddenLineRemoval.Projector_1(ocProjector); // NOTE: different between OC versions
         ocHiddenLineRemoval.Update(); // compute outlines
         ocHiddenLineRemoval.Hide_1(); // compute hidden lines
@@ -5090,6 +5096,8 @@ export class Shape
         ocHiddenLineRemoval.delete();
         ocProjector.delete();
         ocHiddenLinesToShape.delete();
+
+        groupedProjectedEdges._setScreen(screen.u, screen.v); // for toScreen()
         
         return groupedProjectedEdges;
     }
@@ -5120,7 +5128,10 @@ export class Shape
         const sidePlaneNormal = SIDE_NORMAL_ROTATION[side].planeNormal;
         const rotationZ = SIDE_NORMAL_ROTATION[side].rotateZ;
 
-        let resultCollection = this._project(sidePlaneNormal, all).rotateZ(rotationZ);
+        let resultCollection = this._project(sidePlaneNormal, all);
+        const turnedAround = resultCollection.center();
+        resultCollection.rotateZ(rotationZ, turnedAround);
+        resultCollection._turnScreen(rotationZ, turnedAround);
         let capitalizedSide = side.charAt(0).toUpperCase() + side.slice(1);
         resultCollection.setName(`Elevation${capitalizedSide}Collection`);
         resultCollection.moveToOrigin(); // for easy of handling make sure the result is centered on origin
@@ -5201,7 +5212,9 @@ export class Shape
             { 
                 newDimLines = this._addDimensionsToProj(viewpoint, projShapes); 
             }
-            projShapes.rotateZ(rotateProjShapes); // rotate 
+            const turnedAround = projShapes.center();
+            projShapes.rotateZ(rotateProjShapes, turnedAround); // rotate 
+            projShapes._turnScreen(rotateProjShapes, turnedAround);
             projShapes.moveToOrigin(); // center resulting isometry on origin
             newDimLines.forEach( dim => dim.updatePosition()); // after translate/rotate update position of dim line (but not value!)
 
@@ -5279,6 +5292,11 @@ export class Shape
         const cut = new Shape()._fromOcShape(ocCut.Shape());
         const cutEdges = cut ? new ShapeCollection(cut).toArray().filter(s => s.type === 'Edge') : [];
         if(cutEdges.length){ drawing.addGroup('cut', new ShapeCollection(cutEdges)) } // one collection: a group per entity would keep only the last
+
+        // In the drawing's frame a point p lies at ((p - pivot)·x, (p - pivot)·y): for toScreen()
+        const [frameX, frameY, origin] = [up.crossed(view), up, new Vector(pivot)];
+        drawing._setScreen(frameX, frameY);
+        drawing._screen.offset = [-origin.dot(frameX), -origin.dot(frameY)];
 
         return drawing.length ? drawing.moveToOrigin() as ShapeCollection : drawing;
     }

@@ -252,6 +252,31 @@ function frameAngle(drawing: any): number
     return (Math.abs(degrees) < 1e-9) ? 0 : degrees;
 }
 
+/** The groups of a projection (either kernel's names) and the class each gives its lines */
+const PROJECTION_CLASSES: Array<[string, string]> = [
+    ['cut', 'cut'], ['visible', 'visible'], ['outline', 'outline'], ['outlines', 'outline'], ['hidden', 'hidden'],
+];
+
+/** Say what each line of a drawing is in its classes (`cut`, `visible`, `outline`, `hidden`), as
+ *  its groups say: classes stay with a line in any collection, a group does not (a brep
+ *  drawing's groups are lost in the fold-out's group) */
+function classifyLines(drawing: any): void
+{
+    const names: Array<string> = drawing.groupNames?.() ?? [];
+    PROJECTION_CLASSES
+        .filter(([group]) => names.includes(group))
+        .forEach(([group, cls]) => drawing.group(group)?.addClass?.(cls));
+}
+
+/** Every visible solid of the model, on either kernel: brep shapes are in a meshup collection
+ *  too, whose solids() knows only meshes */
+function visibleSolids(modeler: any): any
+{
+    const visible = modeler.all().onlyVisible();
+    const solids = visible.solids();
+    return solids.length ? solids : modeler.collection(...visible.toArray().filter((s: any) => s.type === 'Solid'));
+}
+
 /** Every straight piece of the lines of a drawing, on the sheet */
 function sheetSegments(drawing: any): Array<SheetSegment>
 {
@@ -2201,7 +2226,7 @@ export class Make
      *  are not changed. Lines get the classes of what they are (`cut`, `visible`, `outline`,
      *  `projection`), for the styler: `styler.set('projection', { dash: [3, 2] })`.
      *
-     *  Only on the mesh kernel (the default).
+     *  On both kernels: mesh (the default) and brep.
      *
      *  @param shapes  What to draw (default: every visible solid, `all().onlyVisible().solids()`)
      *  @param options How to draw it:
@@ -2231,8 +2256,8 @@ export class Make
      */
     public foldoutView(shapes?: ShapeCollection, options: FoldoutViewOptions = {}): ShapeCollection
     {
-        const modeler = this.modeler;
-        const source = (shapes ?? modeler.all().onlyVisible().solids()) as any;
+        const modeler = this._anyKernelModeler as any; // only projections, lines and groups: both kernels
+        const source = (shapes ?? visibleSolids(modeler)) as any;
         if (!source?.toArray?.().length)
         {
             throw new Error('Make::foldoutView(shapes, options): nothing to draw. Give the shapes, like all().onlyVisible().solids().');
@@ -2270,6 +2295,7 @@ export class Make
         const planTurn = -frameAngle(plan);
         const planProbe = rotateSheetPoint(plan.toScreen(probe), planTurn);
         if (planTurn !== 0) plan.rotateZ(planTurn, [0, 0, 0]);
+        classifyLines(plan);
         const planCentre = plan.bbox().center();
         const planShift = { x: at.x - planCentre.x, y: at.y - planCentre.y };
         plan.move(planShift.x, planShift.y, 0);
@@ -2285,6 +2311,7 @@ export class Make
                 const placement = foldoutPlacement(side, projection);
                 const drawing = source._elevation(side, projectionOptions);
                 if (!drawing?.toArray().length) return null;
+                classifyLines(drawing);
                 const probeAt = rotateSheetPoint(drawing.toScreen(probe), placement.rotation);
                 if (placement.rotation !== 0) drawing.rotateZ(placement.rotation, [0, 0, 0]);
                 const box = drawing.bbox();
@@ -2351,7 +2378,7 @@ export class Make
     {
         const annotator = this.archiyou.annotator as any;
         if (!annotator) return;
-        const units = this.modeler.units();
+        const units = this._anyKernelModeler.units();
         const offset = gap * 0.4;
 
         const dimension = (start: SheetPoint, end: SheetPoint, toward: SheetPoint, length: number, linkTo: any) =>

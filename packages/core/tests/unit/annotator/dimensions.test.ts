@@ -557,3 +557,46 @@ describe('Dimensions', () =>
     })
 
 })
+
+describe('Dimensions of a projection on brep', () =>
+{
+    let modeler: Modeler
+    let annotator: Annotator
+
+    beforeAll(async () =>
+    {
+        modeler = new Modeler('brep')
+        await modeler.load()
+        annotator = new Annotator()
+        const modules = { modeler, annotator } as unknown as ArchiyouModules
+        modeler.setArchiyou(modules)
+        annotator.setArchiyou(modules)
+    }, 60_000)
+
+    beforeEach(() =>
+    {
+        modeler.reset()
+        annotator.reset()
+    })
+
+    it('move along with the drawing, from all().solids() as a script picks them', () =>
+    {
+        const box = modeler.box(100, 50, 20) as any
+        box.select('F||top').autoDim()
+        modeler.rect(30, 30).moveZ(200) // not a solid
+
+        const solids = (modeler.all() as any).onlyVisible().solids()
+        expect(solids.length).toBe(1)
+
+        const iso = solids.iso([-1, -1, 1]).move(1000) as any
+        const dims = annotator.getAnnotations().filter(a => (a as any).linkedTo === iso) as Array<DimensionLine>
+        expect(dims.length).toBeGreaterThan(0)
+        dims.forEach(d =>
+        {
+            const src = (d as any)._projectedFrom as DimensionLine
+            expect(d.targetStart.x).toBeCloseTo(iso.toScreen(src.targetStart).x, 6)
+            expect(d.targetStart.y).toBeCloseTo(iso.toScreen(src.targetStart).y, 6)
+        })
+        expect(dims[0].targetStart.x).toBeGreaterThan(500)
+    })
+})

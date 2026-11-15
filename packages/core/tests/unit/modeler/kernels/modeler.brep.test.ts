@@ -459,6 +459,46 @@ describe('Modeler — brep mode', () =>
             expect(() => (m.box(10, 10, 10) as any).iso([-1, -1, 1], 'exact')).toThrow(/\{ method: 'exact' \}/)
         })
 
+        it('toScreen(point) says where a point lands in a projection, also after a move', () =>
+        {
+            const block = () => m.collection(m.boxBetween([10, 20, 30], [50, 40, 90])) as any
+            const drawn = (d:any) => d.toArray().flatMap((e:any) => e.points().map((p:any) => [p.x, p.y]))
+            const lands = (d:any, point:Array<number>) =>
+            {
+                const at = d.toScreen(point)
+                // points() rounds to 3 decimals
+                return drawn(d).some(([x, y]:Array<number>) => Math.hypot(x - at.x, y - at.y) < 1e-2)
+            }
+            const drawings = [
+                block().elevation('front'), block().elevation('right'), block().elevation([1, -1, 0]),
+                block().iso([-1, -1, 1]), block().elevation('back').move(300, -200, 0),
+            ]
+            drawings.forEach((d, i) =>
+            {
+                expect(lands(d, [10, 20, 30]), `drawing ${i}`).toBe(true)
+                expect(lands(d, [50, 40, 90]), `drawing ${i}`).toBe(true)
+            })
+            // a section: the corners of the cut
+            const plan = block().section([0, 0, 60]).move(100, -50, 0)
+            expect(lands(plan, [10, 20, 60])).toBe(true)
+            expect(lands(plan, [50, 40, 60])).toBe(true)
+            expect(lands(block().section([0, 30, 0], 'front'), [10, 30, 90])).toBe(true)
+
+            expect(block().toScreen([0, 0, 0])).toBeNull() // not a projection
+            expect(plan.groupNames()).toEqual(expect.arrayContaining(['cut', 'visible']))
+        })
+
+        it('a rect() outline is a Rect, like on the mesh kernel, and still selects as PlanarClosed', () =>
+        {
+            const r = m.rect(200, 100) as any
+            expect(r.subtype()).toBe('Rect')
+            expect(m.rectBetween([0, 0, 0], [100, 0, 50]).subtype()).toBe('Rect')
+            expect((m.polyline([0, 0], [100, 0], [150, 80], [0, 80], [0, 0]) as any).subtype()).toBe('PlanarClosed')
+            const outlines = () => new (m as any).classes.ShapeCollection(r, m.rect(10, 10).moveZ(50))
+            expect(r._selectorOfsubtype(outlines(), 'PlanarClosed').length).toBe(2)
+            expect(r._selectorOfsubtype(outlines(), 'Rect').length).toBe(2)
+        })
+
         it('elevation(from, options) and isometry(cam, options) on a single shape', () =>
         {
             const box = () => m.box(10, 10, 10) as any

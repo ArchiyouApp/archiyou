@@ -597,7 +597,7 @@ function isBrep(o: any): boolean
  *  collection draws nothing, and the reverse is just as empty. */
 function asCollection(o: any): any
 {
-    if (isKernelShapeCollection(o)) return o
+    if (isKernelShapeCollection(o)) return isBrep(o) ? o : (asBrepCollection(o) ?? o)
 
     const Col = o?._modeler?.classes?.ShapeCollection
     if (typeof Col === 'function')
@@ -605,6 +605,30 @@ function asCollection(o: any): any
         try { return new Col(o) } catch { /* fall through to the shape itself */ }
     }
     return o
+}
+
+/** A meshup collection of brep Shapes as a brep one, with its groups: on brep, all(), group()
+ *  and collection() are meshup collections (the scene's), and drawn as one they drew nothing.
+ *  Null when the collection is empty or holds a mesh Shape. */
+function asBrepCollection(o: any): any
+{
+    const shapes: Array<any> = o?.toArray?.() ?? []
+    if (!shapes.length || !shapes.every((s: any) => s?._ocShape !== undefined)) return null
+
+    const modeler = o?._modeler ?? shapes.find((s: any) => s?._modeler)?._modeler
+    const Col = (modeler?.mode?.() === 'brep') ? modeler?.classes?.ShapeCollection : null
+    if (typeof Col !== 'function') return null
+    let col: any
+    try { col = new Col(shapes) } catch { return null }
+    if (!isBrep(col)) return null
+
+    // brep keeps a group as the array of its Shapes: the exporter makes classes of their names
+    o?._groups?.forEach?.((group: any, name: string) =>
+    {
+        const members: Array<any> = group?.toArray?.() ?? []
+        if (members.length) col._groups[name] = members
+    })
+    return col
 }
 
 /** The drawable 2D line-work of a Shape or ShapeCollection from EITHER kernel.
