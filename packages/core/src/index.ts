@@ -56,6 +56,8 @@ export type {
   AyGoogleSheetCopyResult,
 } from './modules/sdkTypes';
 export { ARCHIYOU_CORE_VERSION } from './constants';
+// The Google Sheets a script's code names, for an app to fetch before the run (request.content)
+export { scanContentNeeds } from './modules/contentNeeds';
 
 // Key public types
 export type {

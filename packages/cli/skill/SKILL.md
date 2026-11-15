@@ -170,6 +170,7 @@ edges), `model-org` (layers, names, colours), `surface`.
 | A primitive is missing | some exist only in the brep kernel: `--kernel brep` |
 | Unnamed parts | `.name()` them |
 | `$module('x'): no such module` | the script uses a script module: `--modules <dir>` with the module's directory (or the one that holds it); it must be built (`dist/bundle.js`) |
+| `this run does not have the Google Sheet …` | `run` fetches the public sheets a script names (the xlsx export, anonymously, as the server does); this one is not public: share it as "Anyone with the link can view" |
 
 ## 6. Output files
 

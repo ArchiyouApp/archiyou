@@ -6,6 +6,7 @@
  *  One Runner per process, reused for every run like the editor does.
  */
 
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, resolve } from 'node:path';
@@ -125,6 +126,7 @@ const SOLIDS = new Set(['Mesh', 'Solid']);
 //// RUNNER ////
 
 let runner: any = null;
+let core: any = null;
 /** The script modules this process can load, as the server's catalog would list them */
 let catalog: Array<any> = [];
 
@@ -132,7 +134,7 @@ async function loadRunner(verbose: boolean, moduleDirs: Array<string>): Promise<
 {
     if (!runner)
     {
-        const core: any = await quiet(verbose, () => import('@archiyou/core'));
+        core = await quiet(verbose, () => import('@archiyou/core'));
         runner = await quiet(verbose, () => new core.Runner().load());
         const modules = localModules(moduleDirs);
         catalog = modules.map(m => m.entry);
@@ -141,6 +143,36 @@ async function loadRunner(verbose: boolean, moduleDirs: Array<string>): Promise<
         });
     }
     return runner;
+}
+
+//// GOOGLE SHEETS ////
+
+const sheets = new Map<string, Promise<any>>();
+
+/** Public Google Sheets by id, keyed as request.content wants them, fetched once per process
+ *  (a sweep runs the script many times): the xlsx export, anonymously, as the server's worker
+ *  does. A sheet that is not public, or that Google does not give, is left out: the run then
+ *  says what it misses. */
+async function publicSheets(ids: Array<string>): Promise<Record<string, any>>
+{
+    const fetchOne = async (id: string) =>
+    {
+        try
+        {
+            const res = await fetch(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/export?format=xlsx`, { signal: AbortSignal.timeout(30_000) });
+            if (!res.ok || !(res.headers.get('content-type') ?? '').includes('spreadsheetml')) return null;   // a sign-in page is not a sheet
+            const bytes = await res.arrayBuffer();
+            const version = createHash('sha256').update(new Uint8Array(bytes)).digest('hex').slice(0, 16);
+            return { kind: 'google-sheet', id, bytes, version, via: 'public' };
+        }
+        catch { return null; }
+    };
+    const items = await Promise.all(ids.map(id =>
+    {
+        if (!sheets.has(id)) { sheets.set(id, fetchOne(id)); }
+        return sheets.get(id)!;
+    }));
+    return Object.fromEntries(items.filter(Boolean).map(item => [`google-sheet:${item.id}`, item]));
 }
 
 //// MODULES ////
@@ -200,16 +232,31 @@ async function runOnce(o: RunOptions): Promise<RunResult>
     const r = await loadRunner(o.verbose, o.modules);
     const name = basename(o.file, extname(o.file));
     const started = performance.now();
-    const res: any = await quiet(o.verbose, () => r.execute({
+    const execute = (content: Record<string, any>) => quiet(o.verbose, () => r.execute({
         kernel: o.kernel,
         script: { name, code: o.code },
         params: o.params,
         modules: catalog,
+        content,
         outputs: o.outDir
             ? ['default/model/glb', 'default/metrics/*/json', ...o.pipelines.flatMap(p => p.formats.map(f => pipelinePath(p.name, f)))]
             : ['default/metrics/*/json'],
         messages: ['user', 'warn'],
     }));
+    // The public Google Sheets the script reads, as the server does: those its code names before
+    // the run, and when it still stops for one (named some other way), that one and the run again
+    let content = await publicSheets(core.scanContentNeeds(o.code).map((n: any) => n.id));
+    let res: any = await execute(content);
+    const missing = (res.needs?.content ?? []).filter((n: any) => n.kind === 'google-sheet' && !content[`google-sheet:${n.id}`]).map((n: any) => n.id);
+    if (missing.length)
+    {
+        const more = await publicSheets(missing);
+        if (Object.keys(more).length)
+        {
+            content = { ...content, ...more };
+            res = await execute(content);
+        }
+    }
     const base = { file: o.file, kernel: o.kernel, seconds: (performance.now() - started) / 1000, params: [], pipelines: [], parts: [], unnamed: 0, messages: [], warnings: [], metrics: {}, files: {} };
 
     if (res.status !== 'success')
