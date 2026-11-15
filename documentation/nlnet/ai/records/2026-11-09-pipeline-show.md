@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-11-09 → (open) |
+| Dates | 2026-11-09 → 2026-11-16 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: a bug report, then a proposal in the conversation) |
 | Human | Mark van der Net: reported the switcher bug on ur_house_detailed, asked how to test a pipeline in the model, approved the proposed `.show()`, wrote the prompts, reviewed the code |
@@ -10,7 +10,11 @@
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+```
+2026-11-09 19:58 +0100  There is a bug in doc switcher (i tried in ur_house_detailed) and selected projectoverview => document is not changed (shows only the project drawings)
+2026-11-09 21:13 +0100  is there a way to test a pipeline. For example $pipeline('techdraw').run(); To show the results in main model
+2026-11-09 21:15 +0100  ok good idea
+```
 
 ## Plan (agent output, reviewed by the human before implementation)
 
@@ -35,8 +39,13 @@ debug `.show()` and the human approved it ("ok good idea"):
 - Tests in runner.pipeline.test.ts; a section in the pipelines guide.
 
 ## Review and decisions by the human
-(filled as you go)
+- Reported the switcher bug on ur_house_detailed.
+- Asked for a way to see a pipeline's result in the model; approved the proposed `.show()` instead of a `.run()` in the script ("ok good idea").
+- Tried `.show()` on ur_house_sketch the next day: it showed nothing there because its pipeline failed on brep, which became the unit 2026-11-10-foldout-view-brep.
+- 2026-11-16: had both committed with the other uncommitted work of the tree; the pipeline tests pass.
 
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| a118508 | Document viewer: the document switcher switches again | 19:58 |
+| dbfca71 | Pipelines: show() puts what a pipeline makes in the model | 21:13, 21:15 |

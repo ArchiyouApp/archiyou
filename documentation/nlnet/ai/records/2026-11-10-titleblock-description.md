@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-11-10 → (open) |
+| Dates | 2026-11-10 → 2026-11-16 |
 | Model | Claude Fable 5.1 (claude-fable-5-1), Claude Code agent |
 | Tool | Claude Code in plan mode, then as agent |
 | Human | Mark van der Net: asked for the description line and its separator, wrote the prompts, reviewed plan and code |
@@ -10,7 +10,9 @@
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+```
+2026-11-10 11:04 +0100  Can you add a description field to the doc block "titleblock", it should be just below the title, add a thin horizontal line to seperate it from the designer/manual line. If description is not given, omit the entire line
+```
 
 ## Plan (agent output, reviewed by the human before implementation)
 
@@ -60,8 +62,10 @@ Without `description`: nothing is inserted and the thick rule + title stay where
 - `npx tsc --noEmit -p packages/core` for type errors.
 
 ## Review and decisions by the human
-(filled as you go)
+- Approved the plan as written (thin rule, wrapping description, no change without a description).
+- 2026-11-16: had the change committed with the other uncommitted work of the tree; the titleblock tests pass.
 
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| 38a33f7 | Titleblock: an optional description under the title | 11:04 |

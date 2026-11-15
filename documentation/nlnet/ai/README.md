@@ -153,3 +153,8 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-10-30 | [Projects: a fast project page, dossier files, designs from a configurator](./records/2026-10-30-projects-workspace-flow.md) | Claude Opus 5.5 | develop | 4 |
 | 2026-11-10 | [Param groups: one delete icon in the tab bar, centred tabs](./records/2026-11-10-param-group-tabs.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-11-10 | [Fulfillment access and the configurator's events](./records/2026-11-10-fulfillment-access.md) | Claude Opus 5.5 | develop | 3 |
+| 2026-11-03 | [Script saves without overwriting newer versions](./records/2026-11-03-save-conflicts.md) | Claude Opus 5.5 | develop | 3 |
+| 2026-11-09 | [Document switcher fix and Pipeline.show()](./records/2026-11-09-pipeline-show.md) | Claude Opus 5.5 | develop | 2 |
+| 2026-11-09 | [Opening a script: a busy button, and no model of the script left behind](./records/2026-11-09-script-open.md) | Claude Opus 5.5 | develop | 1 |
+| 2026-11-10 | [Titleblock: optional description line](./records/2026-11-10-titleblock-description.md) | Claude Fable 5.1 | develop | 1 |
+| 2026-11-10 | [Fold-out view on the brep kernel](./records/2026-11-10-foldout-view-brep.md) | Claude Opus 5.5 | develop | 1 |

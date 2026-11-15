@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-11-03 → (open) |
+| Dates | 2026-11-03 → 2026-11-16 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code as agent (no plan mode) |
 | Human | Mark van der Net: reported that the editor overwrote the database copy of a script with what looked like a local version, asked for the debugging, approved the fix |
@@ -10,7 +10,11 @@
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+```
+2026-11-03 11:48 +0100  There is still a bug that overwrites the script on the database of what looks like the local version. Can you debug this?
+2026-11-03 11:51 +0100  yes go ahead
+2026-11-15 23:36 +0100  After i get a popup about a new version, when i chose load version the popup does not go away
+```
 
 ## Diagnosis (agent output, reviewed by the human)
 
@@ -43,8 +47,14 @@ combine:
    one stays in the history).
 
 ## Review and decisions by the human
-(filled as you go)
+- Reported the overwrite on ur_house_sketch and approved the plan ("yes go ahead").
+- The change of a28ee93 was undone by accident by 211ba23 (a commit of another unit that swept in an older copy of the files) and committed again as d3238c2 on 2026-11-09.
+- 2026-11-15: found that the conflict dialog stayed open after "Load the saved version". Fixed in another session: the dialog was kept open by stopping every `wa-hide`, also the one its own closing sends; it now only stops a hide while there is still a conflict, and says so when the server's version could not be fetched.
+- 2026-11-16: had the fix committed with the other uncommitted work of the tree.
 
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| a28ee93 | Scripts: no save over a newer version | 11:48, 11:51 |
+| d3238c2 | Scripts: no save over a newer version, again (undone by 211ba23) | 11:48, 11:51 (re-applied) |
+| 895c48c | Editor: the conflict dialog closes once resolved | 2026-11-15 23:36 |

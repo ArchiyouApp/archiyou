@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Dates | 2026-11-10 → (open) |
+| Dates | 2026-11-10 → 2026-11-16 |
 | Model | Claude Opus 5.5 (claude-opus-5-5), Claude Code agent |
 | Tool | Claude Code as agent (no plan mode: a direct request, the approach in the conversation) |
 | Human | Mark van der Net: found that `$pipeline(...).show()` showed nothing for ur_house_sketch, asked for `make.foldoutView()` on brep too, wrote the prompts, reviewed the code |
@@ -10,7 +10,11 @@
 | Session transcript | kept locally; the prompts are reproduced in full below |
 
 ## Prompts (verbatim, local time)
-(filled when the unit closes)
+```
+2026-11-10 11:17 +0100  Im trying $pipeline.show() (see ur_house_sketch) but it does not show the result of the pipeline. Can you check?
+2026-11-10 15:35 +0100  Can you implement the foldoutView in brep too?
+2026-11-10 20:43 +0100  Can you fix those last brep things. Make the script work
+```
 
 ## Plan (agent output)
 
@@ -48,8 +52,11 @@ ur_house_sketch (version of 13:03) then renders its spec document on brep like o
 different on brep, in the model, not the drawing: the roof is a Wire, the floor plan cut.
 
 ## Review and decisions by the human
-(filled as you go)
+- Found that `.show()` showed nothing for ur_house_sketch; asked for `make.foldoutView()` on brep.
+- Asked to fix what the agent reported as left open ("Make the script work"): solids() on brep, annotations following a move, the Rect subtype.
+- 2026-11-16: had it committed with the other uncommitted work of the tree, the meshup change as its own commit in the submodule (29210aa, "solids(): also the brep Solids a collection holds"); the foldoutView, dimensions and brep modeler tests pass.
 
 ## Commits
 | Commit | Subject | Prompt it answers |
 |---|---|---|
+| a51eb4e | make.foldoutView() on brep, and brep fixes for ur_house_sketch | 15:35, 20:43 |
