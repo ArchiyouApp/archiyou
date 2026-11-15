@@ -66,6 +66,8 @@ export class Pipeline
     _auto = false
     /** Called when the function throws. Set by the Runner; else the error goes to the scope console */
     onError: ((e: Error) => void) | null = null
+    /** Also put what it makes in the model (see show()) */
+    _show = false
 
     private _vars: Record<string, any> = {}
     private _run: PipelineRun | null = null
@@ -85,6 +87,25 @@ export class Pipeline
             throw new Error(`$pipeline('${this.name}', fn): Please give a function, like $pipeline('${this.name}', function(){ ...; return { iso } })`);
         }
         this._function = fn;
+        return this;
+    }
+
+    /** Show what the pipeline makes in the model too, to check it while writing it. It runs
+     *  after the script, like for an export, and copies of the shapes it made go into a
+     *  layer named after it ('techdraw (pipeline)'), its dimensions with them. Shapes of the
+     *  model it returns are already there. For checking only: the model's exports get them too,
+     *  so take it out when the pipeline is done. Its own outputs stay as they are.
+     *  @returns The pipeline.
+     *
+     *  @example
+     *  $pipeline('techdraw', function()
+     *  {
+     *      return { front: all().elevation('front').autoDim() };
+     *  }).show();
+     */
+    show(): this
+    {
+        this._show = true;
         return this;
     }
 

@@ -2592,6 +2592,10 @@ ${contextLines.join('\n')}
         // TODO: more duration to Runner
         //result.duration = scope.modeler._duration; // duration of the last operation
 
+        // Pipelines the script shows in the model (Pipeline.show()): before the state and the
+        // outputs read the scene
+        if(scope._main) await this._showPipelines(scope);
+
         // Archiyou state data: scenegraph (path-keyed) + annotations.
         // The viewer and scene-navigator reconcile against this on every run.
         result.state = this._buildArchiyouState(scope);
@@ -2668,6 +2672,26 @@ ${contextLines.join('\n')}
         return pipelineNames.reduce(
             async (acc, name) => [...await acc, ...await this._exportPipeline(scope, request, name, result)],
             Promise.resolve([] as Array<ScriptOutputData>));
+    }
+
+    /** Run the pipelines the script shows (Pipeline.show()) and put copies of what they made in
+     *  the model, with their dimensions. All run first, so one does not see another's copies.
+     *  A failing one is reported by its run (onError) and shows nothing. */
+    async _showPipelines(scope:RunnerScriptScope):Promise<void>
+    {
+        const shown = this.getPipelines(scope).filter(p => p._show);
+        await shown.reduce(async (prev, p) => { await prev; await p.run(scope, scope._archiyou); }, Promise.resolve());
+
+        const annotator = scope._archiyou?.annotator;
+        shown
+            .map(p => ({ pipeline: p, run: p.result() }))
+            .filter(({ run }) => run && !run.error && run.output)
+            .forEach(({ pipeline, run }) =>
+            {
+                scope.modeler.showPipelineScene(pipeline.name, run.output);
+                if(run.annotations.length && annotator){ annotator.setAnnotations([...annotator.getAnnotations(), ...run.annotations]) }
+                scope._archiyou?.console?.info?.(`Pipeline '${pipeline.name}' is shown in the model (.show()): take it out when the pipeline is done`);
+            });
     }
 
     /** Export the requested outputs of one pipeline. A named one runs first (once), and its

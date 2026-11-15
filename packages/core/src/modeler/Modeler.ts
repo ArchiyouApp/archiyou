@@ -82,7 +82,7 @@ type Meshup = typeof import('@archiyou/meshup')
 
 import { defaultTextFont, getFont, registerFont, fetchFont } from "./TextFonts";
 import { SceneNodeGraphNode, isPointLike } from "@archiyou/meshup";
-import { Layouter } from "./Layouter";
+import { Layouter, copyShapeDetached } from "./Layouter";
 import { GLTFBuilder } from "../GLTFBuilder";
 import { Animator, animationNamesFor } from "../animator/Animator";
 import { Make } from './Make';
@@ -1188,6 +1188,37 @@ export class Modeler
             });
         });
         return root;
+    }
+
+    /** Copies of what a pipeline made, in a layer of the model named after it: what
+     *  Pipeline.show() puts in the model to check a pipeline. Its own output stays whole (the
+     *  pipeline can still be exported in the same run). Nodes that only reference a model
+     *  shape the pipeline returned are left out: that shape is in the model already.
+     *  @returns The layer, null when the pipeline made no shapes. */
+    showPipelineScene(name: string, output: meshup.SceneNode): meshup.SceneNode | null
+    {
+        const own = (node: meshup.SceneNode) => node.hasShape() && (node.shape() as any)?._node === node;
+        if (!output.descendants().some(own)) { return null }
+
+        const layer = new meshup.SceneNode(`${name} (pipeline)`);
+        this._scene.addChild(layer);
+        const clone = (source: meshup.SceneNode, parent: meshup.SceneNode): void =>
+        {
+            if (source.hasShape() && !own(source)) { return }
+            const node = new meshup.SceneNode(source.name);
+            node.setStyle(source.style.explicitData());
+            parent.addChild(node);  // before setShape: it takes its sid from the scene root
+            if (source.hasShape())
+            {
+                const copy = copyShapeDetached(source.shape());
+                copy._suppressScene = (source.shape() as any)._suppressScene;
+                node.setShape(copy);
+            }
+            source.children().forEach(child => clone(child, node));
+        };
+        output.children().forEach(child => clone(child, layer));
+        layer.pruneEmptyNodes();
+        return layer;
     }
 
     /** Run `fn` with `root` as the scene (and `annotations` as the ones to export), then put

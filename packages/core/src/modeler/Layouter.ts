@@ -82,7 +82,7 @@ export class Layouter
         {
             return {
                 node: s,
-                shape: this._copyShapeDetached(s.shape()), // detached workshape - does not pollute the scene
+                shape: copyShapeDetached(s.shape()), // detached workshape - does not pollute the scene
             }
         });
     }
@@ -607,7 +607,7 @@ export class Layouter
 
         if (source.hasShape())
         {
-            node.setShape(this._copyShapeDetached(source.shape()) as any)
+            node.setShape(copyShapeDetached(source.shape()) as any)
         }
 
         source.children().forEach(child =>
@@ -618,34 +618,6 @@ export class Layouter
         })
 
         return { scene: node, map }
-    }
-
-    /** A copy that is not in the scene and never will be by itself.
-     *
-     *  Clearing `_node` and `_modeler` is not enough: a shape that was itself made with
-     *  `copy()` carries `_scene`, the scene root, and `copy()` finds the active layer through
-     *  it — so exploding a model with copied parts in it put a copy of each of them into
-     *  whatever layer the script left active, and every later export saw them. The sticky
-     *  `_suppressScene` flag (what `tmp()` sets) is what keeps `copy()` from adding it. */
-    private _copyShapeDetached(shape: any): any
-    {
-        const modeler = shape?._modeler ?? null
-        const node = shape?._node ?? null
-        const suppressed = shape?._suppressScene
-
-        shape._modeler = null
-        shape._node = null
-        shape._suppressScene = true
-        const copy = shape.copy()
-        shape._modeler = modeler
-        shape._node = node
-        shape._suppressScene = suppressed
-
-        copy._modeler = modeler
-        copy._node = null
-        copy._scene = null
-
-        return copy
     }
 
     //// UTILS ////
@@ -682,4 +654,32 @@ function multiplyQuaternions(a: [number, number, number, number], b: [number, nu
         aw * bz + ax * by - ay * bx + az * bw,
         aw * bw - ax * bx - ay * by - az * bz,
     ];
+}
+
+/** A copy that is not in the scene and never will be by itself.
+ *
+ *  Clearing `_node` and `_modeler` is not enough: a shape that was itself made with
+ *  `copy()` carries `_scene`, the scene root, and `copy()` finds the active layer through
+ *  it — so exploding a model with copied parts in it put a copy of each of them into
+ *  whatever layer the script left active, and every later export saw them. The sticky
+ *  `_suppressScene` flag (what `tmp()` sets) is what keeps `copy()` from adding it. */
+export function copyShapeDetached(shape: any): any
+{
+    const modeler = shape?._modeler ?? null
+    const node = shape?._node ?? null
+    const suppressed = shape?._suppressScene
+
+    shape._modeler = null
+    shape._node = null
+    shape._suppressScene = true
+    const copy = shape.copy()
+    shape._modeler = modeler
+    shape._node = node
+    shape._suppressScene = suppressed
+
+    copy._modeler = modeler
+    copy._node = null
+    copy._scene = null
+
+    return copy
 }

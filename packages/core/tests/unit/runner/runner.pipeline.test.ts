@@ -299,6 +299,38 @@ describe('Runner pipelines', () =>
         expect(missing.errors?.[0]?.message).toContain(`no pipeline 'nope'`)
     })
 
+    it('shows copies of what a pipeline made in the model with show(), its own output whole', async () =>
+    {
+        const result = await run(`
+            b = box(100, 50, 30);
+            $pipeline('drawings', function()
+            {
+                r = rect(50, 20).moveX(500);
+                r.dim();
+                return { iso: b.iso(), r, b };
+            }).show();
+            $pipeline('other', function(){ return { count: rect(10, 10).moveX(-500), all: all() } }).show();
+        `, ['default/model/dxf', 'drawings/model/dxf'])
+
+        expect(result.status).toBe('success')
+        const scene = runner.getScope('default').modeler.scene()
+        const layer = scene.find('drawings (pipeline)')
+        expect(layer).toBeTruthy()
+        expect(layer!.find('iso')).toBeTruthy()
+        expect(layer!.find('r')?.shapes().length).toBe(1)
+        expect(layer!.find('b')).toBeFalsy()                        // the model's box is not copied
+        expect(scene.find('other (pipeline)')!.find('all')).toBeFalsy()  // nor what another one showed
+        expect(output(result, 'default/model/dxf') as string).toContain('DIMENSION')
+        expect(output(result, 'drawings/model/dxf') as string).toContain('DIMENSION')
+        expect(JSON.stringify(result.state?.scenegraph ?? {})).toContain('drawings (pipeline)')
+    })
+
+    it('shows nothing of a pipeline without show()', async () =>
+    {
+        await run(DRAWINGS, ['default/model/glb'])
+        expect(runner.getScope('default').modeler.scene().find('drawings (pipeline)')).toBeFalsy()
+    })
+
     it('works on the brep kernel', async () =>
     {
         const result = await run(DRAWINGS, ['default/model/glb', 'drawings/model/dxf'], 'brep')

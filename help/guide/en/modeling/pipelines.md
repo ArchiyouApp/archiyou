@@ -33,6 +33,19 @@ When your script has pipelines, a chip shows next to the run button. Pick a pipe
 
 *Export to…* in the main menu exports what you picked. So for a drawing pipeline, *Export to… ▸ DXF* gives you the drawings as DXF, with a layer per returned key.
 
+## Check a pipeline in the model
+
+While you write a pipeline, `.show()` puts what it makes in the model too, next to what you model, so you see it without switching:
+
+```js
+$pipeline('techdraw', function()
+{
+    return { front: all().elevation('front').autoDim() };
+}).show();
+```
+
+The pipeline runs after your script, and copies of the shapes it made land in a layer `techdraw (pipeline)`, with their dimensions. Shapes of the model it returns are there already. The pipeline's own output does not change. Take `.show()` out when the pipeline is done: as long as it is there, the exports of the model contain the drawings too.
+
 ## Pipelines in documents
 
 A document can show what a pipeline makes. Give it the name of the pipeline and refer to the returned keys in its views:
