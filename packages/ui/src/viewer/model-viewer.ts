@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
+import { msg, str } from '@lit/localize';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -154,6 +155,38 @@ function _computeGridParams(sceneSize: number): { size: number; divisions: numbe
   return { size, divisions };
 }
 
+const _glbContent = new WeakMap<object, boolean>();
+
+/** Whether a GLB has something to show: a mesh (solids, lines and points are meshes) or an
+ *  annotation. A pipeline that makes no shapes (an offer, tables) still gets a GLB, with an
+ *  empty scene. Read from the GLB's JSON chunk, once per output; what does not read as a
+ *  GLB counts as content, so it is shown as before. */
+function glbHasContent(output: unknown): boolean
+{
+  if (!(output instanceof ArrayBuffer) && !ArrayBuffer.isView(output)) return true;
+  const known = _glbContent.get(output);
+  if (known !== undefined) return known;
+
+  const bytes = (output instanceof ArrayBuffer)
+    ? new Uint8Array(output)
+    : new Uint8Array(output.buffer, output.byteOffset, output.byteLength);
+  let content = true;
+  try
+  {
+    // header (magic, version, length), then the JSON chunk (length, type, data)
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const jsonLength = view.getUint32(12, true);
+    const gltf = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength)));
+    content = (gltf.meshes?.length ?? 0) > 0 || (gltf.extras?.state?.annotations?.length ?? 0) > 0;
+  }
+  catch
+  {
+    content = true;
+  }
+  _glbContent.set(output, content);
+  return content;
+}
+
 /**
  * <model-viewer> — Three.js GLTF viewer with IBL, spotlight shadows, and AgX tone mapping.
  */
@@ -167,12 +200,23 @@ export class ModelViewer extends SignalWatcher(LitElement)
     // The output of the pipeline picked next to Run: the model, or a pipeline's own scene,
     // which has none of the model's scenegraph, annotations and handles
     const result = executionResult.get();
-    this._pendingPipeline = activePipeline.get();
-    const glbPath = pipelineModelPath(this._pendingPipeline);
-    this._pendingGlbOutput = result?.outputs?.find(o => o.path.requestedPath === glbPath);
-    // Asked for but not made (the pipeline failed or has no shapes): show nothing, not the model
-    this._pendingNoOutput = this._pendingPipeline !== 'default' && result?.status !== 'error'
-      && !this._pendingGlbOutput && !!result?.request?.outputs?.includes(glbPath);
+    this._pickedPipeline = activePipeline.get();
+    const glbPath = pipelineModelPath(this._pickedPipeline);
+    const made = result?.outputs?.find(o => o.path.requestedPath === glbPath);
+    const pipelineGlb = (made && glbHasContent(made.output)) ? made : undefined;
+    // Asked for but not made, or made empty: the pipeline failed, or it ran and has no shapes (an offer, tables)
+    const notMade = this._pickedPipeline !== 'default' && result?.status !== 'error'
+      && !pipelineGlb && !!result?.request?.outputs?.includes(glbPath);
+    const failed = (result?.warnings ?? []).some(w => w.startsWith(`Pipeline '${this._pickedPipeline}' failed`));
+    // No shapes: the model instead (every run makes it), with its scenegraph and handles
+    this._pendingModelInstead = notMade && !failed;
+    // Failed: show nothing, so the error does not hide behind a model that looks fine
+    this._pendingNoOutput = notMade && failed;
+    // The pipeline whose output is shown
+    this._pendingPipeline = this._pendingModelInstead ? 'default' : this._pickedPipeline;
+    this._pendingGlbOutput = this._pendingModelInstead
+      ? result?.outputs?.find(o => o.path.requestedPath === pipelineModelPath('default'))
+      : pipelineGlb;
     this._pendingScenegraph = (this._pendingPipeline === 'default') ? scenegraph.get() : null;
     this._pendingResetCount = resetCameraCounter.get();
     this._pendingSelectedPath = selectedPath.get();
@@ -196,6 +240,9 @@ export class ModelViewer extends SignalWatcher(LitElement)
         @handle-drag-move=${this._onHandleDragMove}
         @handle-drag-end=${this._onHandleDragEnd}
       ></viewer-handles-overlay>
+      ${this._pendingModelInstead
+        ? html`<div class="pipeline-note">${msg(str`${this._pickedPipeline} has no 3D output: this is the model`)}</div>`
+        : ''}
       ${this.menuPlacement === 'none' ? '' : html`<viewer-menu
         ?presentation=${this.presentation}
         placement=${this.menuPlacement}
@@ -559,7 +606,11 @@ export class ModelViewer extends SignalWatcher(LitElement)
   /** The pipeline whose output is shown (see activePipeline): 'default' is the model */
   private _pendingPipeline = 'default';
   private _lastPipeline = 'default';
-  /** The last run asked for the pipeline's GLB but did not get one */
+  /** The pipeline picked next to Run; _pendingPipeline is 'default' when the model shows instead */
+  private _pickedPipeline = 'default';
+  /** The picked pipeline ran but has no shapes: the model shows instead */
+  private _pendingModelInstead = false;
+  /** The last run asked for the pipeline's GLB but did not get one, because the pipeline failed */
   private _pendingNoOutput = false;
   /** Axis a flat pipeline output (a drawing) is looked at along; null for 3D output */
   private _flatAxis: 'x' | 'y' | 'z' | null = null;
@@ -3625,8 +3676,28 @@ export class ModelViewer extends SignalWatcher(LitElement)
     }
 
     :host([recording]) viewer-labels-overlay,
-    :host([recording]) viewer-handles-overlay {
+    :host([recording]) viewer-handles-overlay,
+    :host([recording]) .pipeline-note {
       visibility: hidden;
+    }
+
+    /* The picked pipeline has no shapes, so the model shows: said at the top, out of the way */
+    .pipeline-note {
+      position: absolute;
+      top: var(--space-sm);
+      inset-inline: 0;
+      width: fit-content;
+      max-width: calc(100% - 2 * var(--space-sm));
+      margin-inline: auto;
+      padding: var(--space-2xs, 0.25rem) var(--space-sm);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-full);
+      background: var(--color-bg-elevated);
+      color: var(--color-text-muted);
+      font-family: var(--font-sans);
+      font-size: var(--text-xs);
+      pointer-events: none;
+      z-index: 10;
     }
 
     :host([recording]) viewer-menu {

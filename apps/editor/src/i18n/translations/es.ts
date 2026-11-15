@@ -345,5 +345,6 @@
 's9d2d0ffa8688530c': `Añadir al proyecto`,
 's88cc54d11bdbf907': `Añadir este diseño a tu proyecto`,
 'sed1bdd152de1bc53': `Añade este diseño a uno de tus proyectos o a uno nuevo`,
+'s5ba5abb18fffc6e0': str`${0} no tiene salida 3D: este es el modelo`,
     };
   

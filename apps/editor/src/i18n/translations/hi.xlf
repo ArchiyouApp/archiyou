@@ -1116,6 +1116,10 @@
   <source>Add this design to one of your projects, or a new one</source>
   <target>इस डिज़ाइन को अपने किसी प्रोजेक्ट या नए प्रोजेक्ट में जोड़ें</target>
 </trans-unit>
+<trans-unit id="s5ba5abb18fffc6e0">
+  <source><x id="0" equiv-text="${this._pickedPipeline}"/> has no 3D output: this is the model</source>
+  <target><x id="0" equiv-text="${this._pickedPipeline}"/> का कोई 3D आउटपुट नहीं है: यह मॉडल है</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

@@ -1116,6 +1116,10 @@
   <source>Add this design to one of your projects, or a new one</source>
   <target>أضف هذا التصميم إلى أحد مشاريعك أو إلى مشروع جديد</target>
 </trans-unit>
+<trans-unit id="s5ba5abb18fffc6e0">
+  <source><x id="0" equiv-text="${this._pickedPipeline}"/> has no 3D output: this is the model</source>
+  <target>لا يوجد لـ <x id="0" equiv-text="${this._pickedPipeline}"/> مخرج ثلاثي الأبعاد: هذا هو النموذج</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

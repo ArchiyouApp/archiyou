@@ -345,5 +345,6 @@
 's9d2d0ffa8688530c': `Zum Projekt hinzufügen`,
 's88cc54d11bdbf907': `Diesen Entwurf zum Projekt hinzufügen`,
 'sed1bdd152de1bc53': `Diesen Entwurf zu einem deiner Projekte oder einem neuen hinzufügen`,
+'s5ba5abb18fffc6e0': str`${0} hat keine 3D-Ausgabe: dies ist das Modell`,
     };
   
