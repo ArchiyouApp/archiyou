@@ -86,16 +86,17 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
 
     return html`
       <div class="toolbar">
+        <!-- "change", not "wa-change": WebAwesome 3 never fires the latter. -->
         <wa-select
           class="doc-select"
           size="small"
           .value=${selected}
-          @wa-change=${(e: Event) =>
+          @change=${(e: Event) =>
           {
             this._selectedDoc = ((e.target as HTMLElement & { value: string }).value);
           }}
         >
-          ${docNames.map(name => html`<wa-option value=${name}>${name}</wa-option>`)}
+          ${docNames.map(name => html`<wa-option value=${name} ?selected=${name === selected}>${name}</wa-option>`)}
         </wa-select>
         ${this._formatDocSize()
           ? html`<span class="doc-size">${this._formatDocSize()}</span>`
