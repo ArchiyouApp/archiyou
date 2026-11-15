@@ -36,6 +36,13 @@ export class TextArea extends Container
         this.position(this.DEFAULT_TEXTAREA_POSITION);
     }
 
+    /** Set the text of this TextArea: what Document.set() calls on a textarea named with var() */
+    setContent(v:any):this
+    {
+        this._text = (typeof v === 'string') ? v : (v?.toString() ?? '');
+        return this;
+    }
+
     /** Set options and defaults */
     setOptions(options:TextAreaOptions = {})
     {

@@ -739,14 +739,17 @@ export class Document
 
     //// BLOCKS OF CONTAINERS ////
 
-    /** Place a title block in the bottom right of the active page: the title, designer,
-     *  licenses, logo, version, units, metrics and the parameters of the run.
-     *  @param data  { title, designer, logoUrl, designLicense, manualLicense }. Defaults:
-     *               'Untitled', 'Unknown', the Archiyou logo, 'CC BY-NC' and 'CC BY-NC'.
+    /** Place a title block in the bottom right of the active page: the title, an optional
+     *  description, designer, licenses, logo, version, units, metrics and the parameters of the run.
+     *  @param data  { title, description, designer, logoUrl, designLicense, manualLicense }. Defaults:
+     *               'Untitled', no description, 'Unknown', the Archiyou logo, 'CC BY-NC' and 'CC BY-NC'.
+     *               A description is a short text (two lines at most) under the title, with a
+     *               thin line between it and the designer line. Without one that row is left out.
      *
-     *  Its texts are variables, to set later with set(): 'titleblock:title', 'titleblock:designer',
-     *  'titleblock:designLicense', 'titleblock:manualLicense', 'titleblock:logoUrl',
-     *  'titleblock:version', 'titleblock:units', 'titleblock:metrics' and 'titleblock:params'.
+     *  Its texts are variables, to set later with set(): 'titleblock:title', 'titleblock:description'
+     *  (only when a description was given), 'titleblock:designer', 'titleblock:designLicense',
+     *  'titleblock:manualLicense', 'titleblock:logoUrl', 'titleblock:version', 'titleblock:units',
+     *  'titleblock:metrics' and 'titleblock:params'.
      *  With a titleblock on more pages, set() changes all of them.
      *
      *  'titleblock:units' says what the drawing's bare numbers are in ('All dimensions in mm').
@@ -773,7 +776,7 @@ export class Document
         }
 
         if(!data){
-            throw new Error('Document::titleblock: Please provide information { title, design, logoUrl, designLicense, manualLicense }');
+            throw new Error('Document::titleblock: Please provide information { title, description, designer, logoUrl, designLicense, manualLicense }');
         }
 
         const settings = { ...DEFAULT_SETTINGS, ...data } as TitleBlockInput;
@@ -821,14 +824,37 @@ export class Document
                           vars: ['titleblock:designer', 'titleblock:designLicense', 'titleblock:manualLicense'] });
         const designBlock =  this.lastBlock();
 
+        // Where the title's rule goes: right above the designer block, or above the
+        // description row when there is one
+        let titleRuleY = designBlock.bbox[3] + BLOCK_MARGIN*2;
+
+        // Description: an optional row under the title, a thin line between it and the designer block
+        if(settings.description)
+        {
+            const DESCRIPTION_HEIGHT = this._activePage._resolveValueWithUnitsStringToRel('7mm', 'height'); // two lines of 3mm
+
+            this.hline({ thickness: '0.5pnt', color: 'black', length: TITLEBLOCK_WIDTH })
+                .position(1, titleRuleY)
+                .pivot(1,0.5)
+
+            this.textarea(settings.description, { size: '3mm' })
+                .width(TITLEBLOCK_WIDTH)
+                .height(DESCRIPTION_HEIGHT)
+                .pivot(1,0)
+                .position(1, titleRuleY + BLOCK_MARGIN)
+                ._varAdd('titleblock:description');
+
+            titleRuleY += BLOCK_MARGIN + DESCRIPTION_HEIGHT + BLOCK_MARGIN;
+        }
+
         this.hline({ thickness: '2pnt', color: 'black', length: TITLEBLOCK_WIDTH})
-            .position(1, designBlock.bbox[3] + BLOCK_MARGIN*2)
+            .position(1, titleRuleY)
             .pivot(1,0.5)
         // header
         this.text( data?.title || DEFAULT_SETTINGS.title, { size: '8mm', bold: true })
             .pivot(1,0)
             .width(TITLEBLOCK_WIDTH)
-            .position(1, designBlock.bbox[3] + BLOCK_MARGIN*2)
+            .position(1, titleRuleY)
             ._varAdd('titleblock:title');
 
         return this;

@@ -807,6 +807,7 @@ export interface ContainerBlock
 export interface TitleBlockInput
 {
     title ?: string
+    description ?: string // a line under the title; left out when not given
     designer ?: string
     logoUrl ?: string // default: archiyou logo
     designLicense ?: PublishLicense // license of the design

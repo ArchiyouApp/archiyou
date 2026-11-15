@@ -55,3 +55,45 @@ describe('titleblock unit note', () =>
         expect((await doc.toSVGPages())[0].svg).toContain('Dimensions in mm unless noted')
     })
 })
+
+/** An optional description under the title, with a thin line between it and the designer row */
+describe('titleblock description', () =>
+{
+    const LOGO = 'data:image/png;base64,iVBORw0KGgo='
+
+    it('writes the description under the title and names it as a variable', async () =>
+    {
+        const doc = makeDocs().create('sheet')
+        doc.page('p').titleblock({ title: 'Bench', designer: 'Archiyou', description: 'A garden bench for two', logoUrl: LOGO })
+
+        const svg = (await doc.toSVGPages())[0].svg
+        expect(svg).toContain('A garden bench for two')
+
+        doc.set('titleblock:description', 'A bench for three')
+        expect((await doc.toSVGPages())[0].svg).toContain('A bench for three')
+    })
+
+    it('leaves the whole row out when no description is given', async () =>
+    {
+        const doc = makeDocs().create('sheet')
+        doc.page('p').titleblock({ title: 'Bench', designer: 'Archiyou', logoUrl: LOGO })
+
+        expect((await doc.toSVGPages())[0].svg).toContain('Bench')
+        expect(() => doc.set('titleblock:description', 'x')).toThrow(/does not exist/)
+    })
+
+    it('adds exactly one thin line and moves the title up by the row', async () =>
+    {
+        const plain = makeDocs().create('sheet')
+        plain.page('p').titleblock({ title: 'Bench', designer: 'Archiyou', logoUrl: LOGO })
+        const described = makeDocs().create('sheet')
+        described.page('p').titleblock({ title: 'Bench', designer: 'Archiyou', description: 'A bench', logoUrl: LOGO })
+
+        const containers = (d:any) => d._activePage._containers as any[]
+        const lines = (d:any) => containers(d).filter(c => c._type === 'graphic' && c._options?.type === 'hline')
+        const title = (d:any) => containers(d).find(c => c._type === 'text' && c._text === 'Bench')
+
+        expect(lines(described).length).toBe(lines(plain).length + 1)
+        expect(title(described)._position[1]).toBeGreaterThan(title(plain)._position[1])
+    })
+})
