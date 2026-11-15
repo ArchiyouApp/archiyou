@@ -242,7 +242,7 @@ export class PageEditor extends SignalWatcher(LitElement)
         class="conflict-dialog"
         label="Newer version on the server"
         ?open=${saveConflict.get() !== null}
-        @wa-hide=${(e: Event) => e.preventDefault()}
+        @wa-hide=${this._handleConflictHide}
       >
         <p class="delete-message">
           <strong>${saveConflict.get()?.name || 'This script'}</strong> was saved elsewhere (another tab,
@@ -864,9 +864,23 @@ export class PageEditor extends SignalWatcher(LitElement)
 
   /** A save the server refused (see scripts-sync): load its version, or save this one on top
    *  as a new version (the other stays in the history). */
+  /** The conflict dialog closes only once the conflict is resolved: not on Escape or a click
+   *  outside. A closed `open` also comes through here (wa-dialog asks with wa-hide before it
+   *  closes), so the hide is only stopped while there still is a conflict. */
+  private _handleConflictHide = (e: Event) =>
+  {
+    if (saveConflict.get() !== null) e.preventDefault();
+  };
+
   private async _handleConflict(choice: 'theirs' | 'mine')
   {
     await resolveConflict(choice);
+    if (saveConflict.get() !== null)
+    {
+      // resolveConflict() could not get the server's version
+      this._showNotice('Could not reach the server. Try again in a moment.');
+      return;
+    }
     if (choice === 'theirs')
     {
       this._handleExecute();
