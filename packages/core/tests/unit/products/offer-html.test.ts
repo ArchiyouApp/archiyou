@@ -171,6 +171,102 @@ describe('ProductManager: the offer page', () =>
     })
 })
 
+describe('ProductManager: the offer in every scenario', () =>
+{
+    /** The template of the offer page, computing by scenario: the wall's montage is the builder's
+     *  in Full Service, the client's in DIY Bouwpakket; the totals follow. */
+    function template()
+    {
+        const s = source()
+        const computed: Array<any> = []
+        const byScenario: Record<string, { montage: unknown, wall: number, totaal: number, subtotaal: number, excl: number }> = {
+            'Full Service': { montage: 300, wall: 1957.82, totaal: 4526.8, subtotaal: 3772.82, excl: 3741.16 },
+            'DIY Bouwpakket': { montage: 'DIY', wall: 1657.82, totaal: 4166.8, subtotaal: 3472.82, excl: 3443.64 },
+        }
+        const rows = (input: any) =>
+        {
+            const v = byScenario[input.scenario] ?? byScenario['DIY Bouwpakket']!
+            return s.bouwkosten.map(r => r['onderdeel'] === 'Wanden' ? { ...r, Montage: v.montage, 'Totaal (incl. BTW)': v.wall } : r)
+        }
+        const tables: Record<string, Array<Record<string, unknown>>> = {
+            bouwersprijzen: [{ bouwer: 'Bouwer C', gebouwdeel: 'casco', groep: 'wanden', component: 'hsbwand-160', naam: 'HSB wand 160', eenheid: 'm2', 'totaal per eenheid': 144.73, 'totaal per m3': 788.7 }],
+            bouwers: [{ bouwer: 'Bouwer C', prijspeil: 46325, 'Full Service': true, 'DIY Bouwpakket': true }],
+            scenarios: [
+                { kosten: 'material', 'Full Service': true, 'DIY Bouwpakket': true, 'DIY Full': true },
+                { kosten: 'montage', 'Full Service': true, 'DIY Bouwpakket': false, 'DIY Full': false },
+            ],
+            proces: s.proces!,
+        }
+        return {
+            computed,
+            tables: () => [...Object.keys(tables), 'bouwkosten'].map(name => ({ name })),
+            table: (name: string, input?: any) => (name === 'bouwkosten' ? rows(input ?? computed.at(-1)) : tables[name] ?? []),
+            namedRanges: () => [{ name: 'inputs.wanden', range: 'A1' }],
+            compute: (input: any) =>
+            {
+                computed.push(input)
+                const v = byScenario[input.scenario] ?? byScenario['DIY Bouwpakket']!
+                return { bouwkosten: { subtotaal: v.subtotaal, totaal: v.totaal, excl_btw: v.excl } }
+            },
+        }
+    }
+
+    it('gives every line\'s total per scenario the builder offers, and leaves the offer as it was', () =>
+    {
+        const wb = template()
+        const pm = new ProductManager().fromOffer(wb as any)
+        expect(() => pm.offerScenarios()).toThrow(/needs an offer first/)
+        pm.add('hsbwand-160', { oppervlak: 10 }).offer({ bouwer: 'Bouwer C', scenario: 'DIY Bouwpakket' })
+
+        const data = pm.offerScenarios()
+        // the template's scenarios; the builder's row says nothing about DIY Full, so it stays
+        expect(data.scenarios).toEqual(['Full Service', 'DIY Bouwpakket', 'DIY Full'])
+        expect(data.lines.map(l => [l.gebouwdeel, l.onderdeel, l.type, l.hoeveelheid, l.eenheid])).toEqual([
+            ['CASCO', 'Wanden', 'HSB wand 160', 10, 'm2'],
+            ['LOGISTIEK', 'Logistiek', 'Logistiek (< 100 km)', 1, 'dag'],
+        ])
+        expect(data.lines[0]!.totals).toEqual([1957.82, 1657.82, 1657.82])
+        expect(data.lines[1]!.totals).toEqual([1815, 1815, 1815])
+        expect(data.totals.map(t => t.totaal)).toEqual([4526.8, 4166.8, 4166.8])
+        expect(data.totals[0]!.opslagen).toBeCloseTo(4526.8 - 3772.82, 6)
+        expect(data.totals[0]!.btw).toBeCloseTo(4526.8 - 3741.16, 6)
+
+        // the last compute is the offer's own again
+        expect(wb.computed.at(-1)).toMatchObject({ scenario: 'DIY Bouwpakket', wanden: 10 })
+
+        // a scenario the builder does not offer is left out; given scenarios are taken as they are
+        const no = template()
+        no.table = ((name: string, input?: any) => (name === 'bouwers' ? [{ bouwer: 'Bouwer C', 'DIY Full': false }] : template().table(name, input))) as any
+        const pm2 = new ProductManager().fromOffer(no as any).add('hsbwand-160', { oppervlak: 10 })
+        pm2.offer({ bouwer: 'Bouwer C' })
+        expect(pm2.offerScenarios().scenarios).toEqual(['Full Service', 'DIY Bouwpakket'])
+        expect(pm2.offerScenarios({ scenarios: ['DIY Full'] }).scenarios).toEqual(['DIY Full'])
+    })
+
+    it('is a table of the script with the totals under it, in whole euros', () =>
+    {
+        const calc = new Calc()
+        calc.setArchiyou({} as any)
+        const pm = new ProductManager(() => ({ calc }) as any).fromOffer(template() as any)
+        pm.add('hsbwand-160', { oppervlak: 10 }).offer({ bouwer: 'Bouwer C', scenario: 'Full Service' })
+
+        const table = pm.scenarioTable('costs')
+        expect(calc.db.table('costs')).toBe(table)
+        expect(table.columns()).toEqual(['gebouwdeel', 'onderdeel', 'type', 'hoeveelheid', 'eenheid', 'Full Service', 'DIY Bouwpakket', 'DIY Full'])
+        expect(table.toData()).toEqual([
+            { gebouwdeel: 'CASCO', onderdeel: 'Wanden', type: 'HSB wand 160', hoeveelheid: 10, eenheid: 'm2', 'Full Service': 1958, 'DIY Bouwpakket': 1658, 'DIY Full': 1658 },
+            { gebouwdeel: 'LOGISTIEK', onderdeel: 'Logistiek', type: 'Logistiek (< 100 km)', hoeveelheid: 1, eenheid: 'dag', 'Full Service': 1815, 'DIY Bouwpakket': 1815, 'DIY Full': 1815 },
+        ])
+        const footers = table.computeFooterRows()
+        expect(footers.map(f => [f.values['onderdeel'], f.values['Full Service'], f.values['DIY Bouwpakket']])).toEqual([
+            ['Subtotaal', 3773, 3473],
+            ['Opslagen', 754, 694],
+            ['BTW', 786, 723],
+            ['Totaal incl. BTW', 4527, 4167],
+        ])
+    })
+})
+
 describe('Table.toHtml()', () =>
 {
     it('is a flat page of the rows, or the page attached with html()', () =>

@@ -16,6 +16,7 @@ $PARAMS.define('OVERHANG_RIGHT', 'number', { label: "Overhang Right", group: 'ro
 $PARAMS.define('OVERHANG_BACK', 'number', { label: "Overhang Back", group: 'roof', units: "mm", order: 0, default: 500, minimum: 0, maximum: 2000, multipleOf: 10 });
 $PARAMS.define('MAIN_FACADE', 'options', { label: "Main Facade side", order: 0, default: "Front", options: ["Front","Left","Right","Back"] });
 $PARAMS.define('GENERATE_OPENINGS', 'boolean', { label: "Openings", order: 0, default: true });
+$PARAMS.define('SCENARIO', 'options', { label: "Scenario", group: 'offer', default: "Full Service", options: ["Full Service", "DIY Casco Afbouw", "DIY Bouwpakket", "DIY Full"] });
 
 
 //$PARAMS.define('ENERGY_CALC', 'boolean', { label: "Energy calculation", group: 'energy', default: false });
@@ -48,6 +49,8 @@ WIDTH = $WIDTH; // outside width of house (excluding overhangs)
 HEIGHT = $HEIGHT; // total outside height of house in mm
 DEPTH = $DEPTH; // outside depth of house (excluding overhangs)
 
+
+SCENARIO = $SCENARIO; // what the client takes from the builder: see the offer below
 
 ROOF_TYPE = $ROOF_TYPE;
 ROOF_ANGLE = $ROOF_ANGLE; // angle of left slope
@@ -636,51 +639,117 @@ calc.table(
     ['area', 'description', 'value', 'unit']
 )
 
-//// OFFER SPREADSHEET PIPELINE ////
-// Push the model's numbers into a copy of a Google Sheet offer template. External
-// spreadsheets are handled by the `cloudcalc` module (modules/archiyou-modules/cloudcalc):
-// open the template, then copy it with the inputs filled in. The copy lands in the
-// shared drive the module is configured with and its URL is the pipeline's result.
+//// OFFER ////
+// The offer for the client: the components of this sketch, priced in the offer template with the
+// prices the builders published to it (each from their own product sheet). The template is a public
+// Google Sheet, read by the cloudcalc module. Pipelines, so a normal run does not fetch it:
+//   offer       the offer as tables: BOUWKOSTEN and SPECIFICATIES (Rc and kg CO2-eq) of the chosen
+//               scenario, and 'costs': every component group in every scenario (see the costoverview document)
+//   offercopy   a copy of the template for the client, filled in; returns its link. The client
+//               can switch the builder, the scenario and the component of a row (HSB wand, ...) in it.
 
+OFFER_TEMPLATE = 'https://docs.google.com/spreadsheets/d/1WC2p-zd0MNBiI1MFs4dAdfk3pBupXHaC9NsgSpIEkQo/edit';
 
-/*
-areaWindows = ($GENERATE_OPENINGS)
-    ? windows.reduce((sum,w) => sum + Math.round(w.plane.area()*1e-6),0)
-    : 0;
-numDoors = ($GENERATE_OPENINGS) ? 1 : 0; // TODO
-numSlidingDoors = ($GENERATE_OPENINGS) ? 1 : 0; // TODO
-projectId = $PROJECT_ID || 'PROJECTXYZ';
+// The products and their offer. byVolume: the walls and the roof by the volume of their solids, priced at the component's cost per m3
+function makeOffer(scope, { byVolume = false } = {})
+{
+    $module('cloudcalc');
 
-$pipeline('offer',
-          function(scope)
-          {
-              $module('cloudcalc');
-              const template = cloudcalc.open('URBUILD_OFFER_TEMPLATE'); // a sheet name published in CLOUDCALC_SHEETS
-              return template.copy(
-                  {
-                      projectid: projectId,
-                      width: scope.WIDTH,
-                      depth: scope.DEPTH,
-                      height: scope.HEIGHT,
-                      wallsurface: scope.areaWalls,
-                      roofsurface: scope.areaRoof,
-                      facadesurface: scope.areaFacade,
-                      windowssurface: (scope.areaWindows > 2) ? scope.areaWindows - 2 : 0, // remove door from it
-                      doors: scope.numDoors,
-                      // slidedoor: scope.numSlidingDoors, // Use glass surface total
-                      storeys: scope.NUM_FLOORS - 1, // excluding groundfloor
-                      floorarea_gross: scope.floorAreaGross,
-                      floorarea_net: scope.floorAreaNet,
-                      volume_net: scope.volumeNet,
-                      gutter_min: scope.gutterHeightMin,
-                      gutter_max: scope.gutterHeightMax,
-                  },
-                  { title: 'URBUILD_OFFER_' + projectId }
-              ).url;
-          }
-      )
+    const isDoor = (o) => /door/i.test(o.name ?? '');
+    const doors = scope.openings.filter(isDoor);
+    const windows = scope.openings.filter(o => !isDoor(o));
+    const area = (list) => list.reduce((sum, o) => sum + o.width * o.height, 0) * 1e-6; // m2
+    const footprint = scope.WIDTH * scope.DEPTH * 1e-6;
+    const net = (gross) => Math.max(0, gross - area(scope.openings));
 
-*/
+    // the house as components of the product sheet, each in its unit (m2 or pieces)
+    const products = make.products().fromOffer(OFFER_TEMPLATE);
+    [
+        ['schroeffundering', { oppervlak: footprint }], // the foundation with the ground floor on it: one component
+        ['verdiepingsvloer', { oppervlak: footprint * (scope.NUM_FLOORS - 1) }],
+        ['hsbwand', byVolume ? null : { oppervlak: net(scope.areaWalls) }],
+        ['dak', byVolume ? null : { oppervlak: scope.areaRoof }],
+        ['gevel', { oppervlak: net(scope.areaFacade) }],
+        // windows down to the floor are fixed, the others draaikiep
+        ['vastraam', { oppervlak: area(windows.filter(o => o.sill === 0)) }],
+        ['draaikiepraam', { oppervlak: area(windows.filter(o => o.sill > 0)) }],
+        ['voordeur', { st: doors.filter(o => o.width < 1800).length }],
+        ['schuifpui', { st: doors.filter(o => o.width >= 1800).length }],
+        ['trap', { st: (scope.NUM_FLOORS > 1) ? 1 : 0 }],
+        ['toilet', { st: 1 }],
+        ['badkamer_klein', { st: 1 }],
+        ['keuken', { st: 1 }],
+        ['elektra', { oppervlak: scope.floorAreaGross }],
+        ['verwarming', { st: 1 }],
+    ]
+        .filter(([, quantity]) => quantity && Object.values(quantity)[0] > 0)
+        .forEach(([component, quantity]) => products.add(component, quantity));
+    if(byVolume)
+    {
+        products.assign('hsbwand', scope.wallsCombined, { label: 'wanden' });
+        products.assign('dak', scope.roofSolids, { label: 'dak' });
+    }
+
+    // the template's kengetallen (sizes in cm), and days of transport by size: Tiny 1 ... Villa 4
+    const offer = products.offer({
+        scenario: scope.SCENARIO,
+        inputs: {
+            projectid: `URHOUSE ${scope.WIDTH}x${scope.DEPTH}`,
+            width: scope.WIDTH / 10,
+            depth: scope.DEPTH / 10,
+            height: scope.HEIGHT / 10,
+            wallsurface: scope.areaWalls,
+            facadesurface: scope.areaFacade,
+            roofsurface: scope.areaRoof,
+            windowssurface: Math.round(area(windows) * 10) / 10,
+            doors: doors.length,
+            storeys: scope.NUM_FLOORS - 1, // excluding the ground floor
+            floorarea_gross: scope.floorAreaGross,
+            floorarea_net: scope.floorAreaNet,
+            volume_net: scope.volumeNet,
+            gutter_min: scope.gutterHeightMin / 10,
+            gutter_max: scope.gutterHeightMax / 10,
+            logistiek: [50, 90, 130].filter(a => scope.floorAreaNet > a).length + 1,
+        },
+    });
+    return { products, offer };
+}
+
+$pipeline('offer', function(scope)
+{
+    const { products, offer } = makeOffer(scope);
+    offer.sheet('BOUWKOSTEN').toTable();
+    offer.sheet('SPECIFICATIES').toTable();
+    // what every component group costs the client in every scenario: the costoverview document shows it
+    return { costs: products.scenarioTable('costs') };
+});
+
+$pipeline('offercopy', function(scope)
+{
+    return makeOffer(scope).offer.cloudcopy({ title: `URHOUSE offerte ${scope.WIDTH}x${scope.DEPTH}`, share: 'writer' }).url;
+});
+
+//// COST OVERVIEW DOCUMENT ////
+// One page: the costs per component group, a column per scenario
+
+doc
+    .create('costoverview')
+    .page('costs')
+    .pipeline('offer')
+    .titleblock({
+        title: 'URHOUSE',
+        description: 'Cost overview per component group and scenario',
+        designer: 'URBUILD'
+    })
+    .text('Cost overview', { size: '1.2cm' })
+    .position(0,1)
+    .text(`URHOUSE ${WIDTH}x${DEPTH} - costs per component group, in every scenario (EUR incl. BTW)`, { size: '0.5cm' })
+    .position(0,0.92)
+    .table('costs', { fontsize: 7 })
+    .width(0.7)
+    .height(0.75)
+    .pivot([0,1])
+    .position(0,0.86)
 
 //// SPEC SHEET DOCUMENT ////
 

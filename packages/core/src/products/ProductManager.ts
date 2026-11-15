@@ -231,6 +231,30 @@ export interface OfferOptions
     key?: string;
 }
 
+/** One line of the offer (a component group) with what it costs the client in each scenario. */
+export interface OfferScenarioLine
+{
+    /** The section of the offer the line is in ('CASCO'). */
+    gebouwdeel: string;
+    /** The component group, as the offer names the row ('Wanden'). */
+    onderdeel: string;
+    /** The component chosen for it ('HSB wand 160'). */
+    type: string;
+    hoeveelheid: number | null;
+    eenheid: string;
+    /** The line's total per scenario, in the order of `OfferScenarios.scenarios`; null where the offer gives none. */
+    totals: Array<number | null>;
+}
+
+/** The last offer() in every scenario: see offerScenarios(). */
+export interface OfferScenarios
+{
+    scenarios: Array<string>;
+    lines: Array<OfferScenarioLine>;
+    /** The offer's totals per scenario, in the order of `scenarios`. */
+    totals: Array<{ subtotaal: number, opslagen: number, totaal: number, exclBtw: number, btw: number }>;
+}
+
 /** What compute() returns: the costs including margins, and the lines with theirs. */
 export interface ProductOverview extends ProductCosts
 {
@@ -1192,7 +1216,7 @@ export class ProductManager
      *  are sold in: what a supplier is asked for. Beams in lengths of stock, the parts cut from
      *  them longest first (with a saw cut between two parts); sheets in pieces of stock by their
      *  area, with the waste of the sheet; what is sold per m1 or m2 in those, with the waste. A
-     *  component the model has as a whole (add('beganegrondvloer', ...), or a mass) brings the
+     *  component the model has as a whole (add('verdiepingsvloer', ...), or a mass) brings the
      *  products of its block in the sheet, scaled by size. Priced by the sheet's product rows,
      *  excluding its margins and BTW: the purchase, not the client's price. Beams first, then
      *  sheets, then the rest. Needs fromSheet().
@@ -1481,6 +1505,105 @@ export class ProductManager
         const rows = data.sections.flatMap(s => s.lines.map(l =>
             [l.onderdeel, l.type, l.specificatie, l.hoeveelheid ?? '', l.eenheid, l.prijs ?? '', ...l.costs.map(c => c ?? ''), l.totaal ?? '']));
         return (calc.table(name, rows, columns) as Table).html(renderOfferHtml(data));
+    }
+
+    /**
+     *  The last offer() in every scenario of the template: per offer line (a component group:
+     *  Wanden, Dak, Keuken...) what it costs the client when the builder does it all and when the
+     *  client does part of it themselves, and the totals of each scenario. The offer itself is left
+     *  as offer() made it.
+     *
+     *      products.offer({ bouwer: 'URBUILD' })
+     *      products.offerScenarios().lines    // [{ onderdeel: 'Wanden', type: 'HSB wand', totals: [1658, 1200, 990] }, ...]
+     *
+     *  @param options.scenarios - The scenarios to compute. Default: those of the template (its table
+     *                             scenarios) that the builder offers; without such a table, the offer's own.
+     */
+    offerScenarios(options: { scenarios?: Array<string> } = {}): OfferScenarios
+    {
+        const source = this._offerSource('offerScenarios');
+        const { wb, input } = this._offered!;
+        const text = (v: unknown) => String(v ?? '').trim();
+        const builder = (source.bouwers ?? []).find(b => text(b['bouwer']) === text(input['bouwer']));
+        const ofTemplate = (source.scenarios ?? []).length > 0
+            ? Object.keys(source.scenarios![0]!).filter(c => c.trim().toLowerCase() !== 'kosten')
+            : [];
+        const scenarios = options.scenarios
+            ?? (ofTemplate.length > 0 ? ofTemplate.filter(s => builder?.[s] !== false) : [text(input['scenario'])].filter(Boolean));
+        if (scenarios.length === 0)
+        {
+            throw new Error('ProductManager.offerScenarios(): the template names no scenarios; give them: offerScenarios({ scenarios: [...] })');
+        }
+
+        // every scenario: the offer's inputs with that scenario
+        const perScenario = scenarios.map(scenario =>
+        {
+            const inputs = { ...input, scenario };
+            const outputs = wb.compute(inputs) as Record<string, any>;
+            const data = offerPageData({ bouwkosten: wb.table('bouwkosten', inputs), outputs, input: inputs });
+            const lines = data.sections.flatMap(s => s.lines.map(l => ({ ...l, gebouwdeel: s.titel })));
+            return { lines, totals: data.totals };
+        });
+        wb.compute(input); // the offer as offer() made it, for what the script reads from it next
+
+        // the lines by the template's row, in order of first appearance: a scenario does not add rows, but be safe
+        const keyOf = (l: { gebouwdeel: string, onderdeel: string, type: string }) => [l.gebouwdeel, l.onderdeel, l.type].join('|');
+        const keys = [...new Set(perScenario.flatMap(s => s.lines.map(keyOf)))];
+        const lines = keys.map(key =>
+        {
+            const found = perScenario.map(s => s.lines.find(l => keyOf(l) === key));
+            const first = found.find(l => l !== undefined)!;
+            return {
+                gebouwdeel: first.gebouwdeel,
+                onderdeel: first.onderdeel,
+                type: first.type,
+                hoeveelheid: first.hoeveelheid,
+                eenheid: first.eenheid,
+                totals: found.map(l => l?.totaal ?? null),
+            };
+        });
+        return {
+            scenarios,
+            lines,
+            totals: perScenario.map(({ totals: t }) => ({ subtotaal: t.subtotaal, opslagen: t.opslagen, totaal: t.totaal, exclBtw: t.exclBtw, btw: t.btw })),
+        };
+    }
+
+    /**
+     *  offerScenarios() as a table of the script: a row per offer line with its total (incl. BTW,
+     *  rounded to euros) in each scenario, and the offer's subtotal, surcharges, BTW and total per
+     *  scenario under it. Lines with nothing in them (no quantity, no cost) are left out.
+     *
+     *      products.offer({ bouwer: 'URBUILD' })
+     *      products.scenarioTable('costs')     // columns gebouwdeel, onderdeel, type, hoeveelheid, eenheid, <scenario>...
+     *
+     *  @param name - Name of the table. Default 'scenarios'.
+     *  @param options.scenarios - As offerScenarios().
+     */
+    scenarioTable(name = 'scenarios', options: { scenarios?: Array<string> } = {}): Table
+    {
+        const calc = this._modules?.()?.calc;
+        if (!calc)
+        {
+            throw new Error('ProductManager.scenarioTable(): tables are only available inside a run');
+        }
+        const data = this.offerScenarios(options);
+        const euros = (v: number | null) => (v === null ? '' : Math.round(v));
+        const rows = data.lines
+            .filter(l => (l.hoeveelheid ?? 0) > 0 || l.totals.some(t => (t ?? 0) !== 0))
+            .map(l => [l.gebouwdeel, l.onderdeel, l.type, l.hoeveelheid ?? '', l.eenheid, ...l.totals.map(euros)]);
+        const columns = ['gebouwdeel', 'onderdeel', 'type', 'hoeveelheid', 'eenheid', ...data.scenarios];
+        const table = calc.table(name, rows, columns) as Table;
+
+        const totalRows: Array<[string, (t: OfferScenarios['totals'][number]) => number]> = [
+            ['Subtotaal', t => t.subtotaal],
+            ['Opslagen', t => t.opslagen],
+            ['BTW', t => t.btw],
+            ['Totaal incl. BTW', t => t.totaal],
+        ];
+        return totalRows.reduce((tbl, [label, pick], i) => tbl.footer(
+            { onderdeel: label, ...Object.fromEntries(data.scenarios.map((s, j) => [s, () => Math.round(pick(data.totals[j]!))])) },
+            { line: i === 0, bold: i === totalRows.length - 1 }), table);
     }
 
     /** What the offer page reads from the last offer(). */
