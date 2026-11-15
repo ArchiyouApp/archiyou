@@ -506,6 +506,40 @@ describe('Modeler — mesh mode methods', () =>
         expect(m.layer()).toBeDefined();
     });
 
+    it('layer() of an existing layer is a query; activate() goes back to it', () =>
+    {
+        m.reset();
+        const names = (layer: string) => m.layer(layer).shapes().toArray().map(s => s.name());
+
+        m.layer('a');
+        m.box(10).name('b1');
+        m.layer('c');
+        m.box(10).name('b2');
+        expect(names('a')).toEqual(['b1']);    // a query: what follows stays in 'c'
+        m.box(10).name('b3');
+        expect(names('c')).toEqual(['b2', 'b3']);
+
+        (m.layer('a') as any).activate();
+        m.box(10).name('b4');
+        expect(names('a')).toEqual(['b1', 'b4']);
+        expect(names('c')).toEqual(['b2', 'b3']);
+    });
+
+    it('layer() finds the layer, not a shape of the same name', () =>
+    {
+        m.reset();
+        m.layer('other');
+        m.box(10).name('walls');               // a shape named like the layer below, found first
+        m.layer('walls');
+        m.box(10).name('w1');
+        m.layer('rest');
+
+        const walls = m.layer('walls');
+        expect(walls.isLayer()).toBe(true);
+        expect(walls.shapes().toArray().map(s => s.name())).toEqual(['w1']);
+        expect(() => (m.layer('other').children()[0] as any).activate()).toThrow(/not a layer|no modeler/);
+    });
+
     it('side selector on a rotated box returns its own front polygon, not a bbox face', () =>
     {
         const box = m.box(10, 10, 100).rotateX(-10).rotateY(10);

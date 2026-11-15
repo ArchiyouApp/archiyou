@@ -853,8 +853,10 @@ export class Modeler
         return this._activeLayer ? this._activeLayer.shapes() : new meshup.ShapeCollection();
     }
 
-    /** Start a layer, or go back to one: the shapes made after it go in that layer. Layers
-     *  group shapes in the scene tree, and colour or hide them together.
+    /** Start a layer: the shapes made after it go in that layer. Layers group shapes in the
+     *  scene tree, and colour or hide them together. A layer that exists already is only
+     *  returned, to read or style it (`layer('legs').shapes()`): the shapes made after it go
+     *  where they went before. To go back to it, `layer('legs').activate()`.
      *
      *  @param name Name of the layer
      *
@@ -863,25 +865,35 @@ export class Modeler
      *  box(1200, 700, 30)
      *  layer('legs').color('grey')
      *  box(60, 60, 720)
+     *  layer('top').activate()
+     *  box(1200, 50, 30).moveY(-375)   // in 'top'
      */
     layer(name?: string): meshup.SceneNode
     {
         if (!name) { return this._activeLayer ?? this._scene }
 
-        // Check if layer name exists
+        // A layer of that name; a shape's node of that name is not one
         const existingLayers = this.scene()
-            .findAll(n => n.name === name);
+            .findAll(n => n.isLayer() && n.name === name);
 
         if(existingLayers.length > 0)
         {
             if(existingLayers.length > 1){ console.warn(`Multiple layers with name "${name}" found. Getting the first one.`) }
+            (existingLayers[0] as any)._modeler = this; // for activate()
             return existingLayers[0];
         }
 
         const layer = new meshup.SceneNode(name);
         (this._activeLayer!.parent() || this._activeLayer!).addChild(layer);
+        (layer as any)._modeler = this; // for activate()
         this._setActiveLayer(layer);
         return this._activeLayer!;
+    }
+
+    /** @internal Make a layer the active one: see SceneNode.activate() below the class */
+    _activateLayer(node: meshup.SceneNode): void
+    {
+        this._setActiveLayer(node);
     }
 
     /** All shapes in the model, as one collection to work on at once.
@@ -1688,4 +1700,27 @@ export class Modeler
         }
     }
 
+}
+
+/** Go back to a layer: the shapes made after it go in it. layer(name) of a layer that exists
+ *  only returns it, to read or style it, so this is how to model in it again.
+ *
+ *  @example
+ *  layer('top'); box(1200, 700, 30)
+ *  layer('legs'); box(60, 60, 720)
+ *  layer('top').activate()
+ *  box(1200, 50, 30).moveY(-375)   // in 'top'
+ */
+;(meshup.SceneNode.prototype as any).activate = function (this: any): any
+{
+    if (!this._modeler)
+    {
+        throw new Error(`SceneNode.activate(): "${this.name}" has no modeler: get the layer with layer('${this.name}')`);
+    }
+    if (!this.isLayer())
+    {
+        throw new Error(`SceneNode.activate(): "${this.name}" is a shape, not a layer`);
+    }
+    this._modeler._activateLayer(this);
+    return this;
 }
