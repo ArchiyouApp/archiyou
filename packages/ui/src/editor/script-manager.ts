@@ -5,6 +5,7 @@ import { SignalWatcher } from '@lit-labs/signals';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
+import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 
 import { Script } from '@archiyou/core/src/Script';
 import type { ScriptData } from '@archiyou/core/src/execution/types';
@@ -37,6 +38,9 @@ function compareVersions(a: string, b: string): number
 export class ScriptManager extends SignalWatcher(LitElement)
 {
   @property({ type: Boolean, reflect: true }) open = false;
+  /** The editor is opening the picked script (it may first fetch the latest version from
+   *  the server, slow on a slow connection): the Open button spins and takes no more clicks. */
+  @property({ type: Boolean }) opening = false;
 
   @state() private _selectedFileId: string | null = null;
   @state() private _sortBy: 'name' | 'date-updated' | 'date-created' = 'date-updated';
@@ -108,8 +112,10 @@ export class ScriptManager extends SignalWatcher(LitElement)
         <div class="dialog-footer">
           <button class="btn-secondary" @click=${this._cancel}>Cancel</button>
           <button class="btn-primary"
-              ?disabled=${this._selectedFileId === null}
+              ?disabled=${this._selectedFileId === null || this.opening}
+              aria-busy=${this.opening ? 'true' : 'false'}
               @click=${this._open}>
+            ${this.opening ? html`<wa-spinner></wa-spinner>` : nothing}
             Open
           </button>
         </div>
@@ -332,7 +338,7 @@ export class ScriptManager extends SignalWatcher(LitElement)
 
   private _open()
   {
-    if (this._selectedFileId === null) return;
+    if (this._selectedFileId === null || this.opening) return;
 
     // Shared tabs open a foreign (read-only) script from its full payload.
     if (this._tab !== 'mine')
@@ -564,12 +570,23 @@ export class ScriptManager extends SignalWatcher(LitElement)
     }
 
     .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-sm, 8px);
       background: var(--color-primary);
       color: var(--color-white, #fff);
     }
 
     .btn-primary:hover:not(:disabled) { opacity: 0.88; }
     .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+    /* Busy, not unavailable: stays readable while the script is being opened */
+    .btn-primary[aria-busy='true'] { opacity: 0.75; cursor: progress; }
+
+    .btn-primary wa-spinner {
+      font-size: var(--text-sm);
+      --track-color: color-mix(in srgb, var(--color-white, #fff) 30%, transparent);
+      --indicator-color: var(--color-white, #fff);
+    }
 
     .btn-secondary {
       background: transparent;

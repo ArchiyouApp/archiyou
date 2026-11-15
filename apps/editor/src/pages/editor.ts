@@ -180,6 +180,7 @@ export class PageEditor extends SignalWatcher(LitElement)
       ></editor-toolbar>
       <script-manager
         ?open=${this._showScriptManager}
+        ?opening=${this._openingScript}
         @script-manager-open=${this._handleScriptManagerOpen}
         @script-manager-open-shared=${this._handleScriptManagerOpenShared}
         @script-manager-cancel=${this._handleScriptManagerCancel}
@@ -264,6 +265,8 @@ export class PageEditor extends SignalWatcher(LitElement)
   @state() private _activeTools: ToolDef[] = [];
   private _linkedTutorial: string | null = null;
   @state() private _showScriptManager = false;
+  /** Open Script is fetching the picked script's latest version from the server */
+  @state() private _openingScript = false;
   @state() private _showScriptImporter = false;
   @state() private _showShareMenu = false;
   @state() private _showPublishMenu = false;
@@ -774,9 +777,18 @@ export class PageEditor extends SignalWatcher(LitElement)
     const pipelineModel = (pipeline === 'default') ? [] : [pipelineModelPath(pipeline)];
     // with the script's animations while the Animation tool is open (see pipelineModelPath)
     const modelPath = pipelineModelPath('default');
+    const fileId = editorScript.get()?.fileId;
     const result = await runScript(
       this._buildRequest([modelPath, ...pipelineModel, 'default/tables/*/json', ...this._toolOutputs()])
     );
+
+    // Another script was opened while this one ran: its result is of the script left behind,
+    // not to be shown (nor taken as the new one's thumbnail). Run the script now open instead.
+    if (editorScript.get()?.fileId !== fileId)
+    {
+      this._rerun = true;
+      return undefined;
+    }
 
     if (result)
     {
@@ -979,7 +991,23 @@ export class PageEditor extends SignalWatcher(LitElement)
 
   private async _handleScriptManagerOpen(e: CustomEvent<string>)
   {
-    await refreshFromServer(e.detail);   // the server may have a newer version than this browser
+    if (this._openingScript) return;
+    // The server may have a newer version than this browser: on a slow connection that takes
+    // a while, so the Open button spins meanwhile. Cancel abandons the open.
+    this._openingScript = true;
+    try
+    {
+      await refreshFromServer(e.detail);
+    }
+    catch (err)
+    {
+      console.warn('Editor: could not check the server for a newer version, opening the copy in this browser', err);
+    }
+    finally
+    {
+      this._openingScript = false;
+    }
+    if (!this._showScriptManager) return;   // cancelled meanwhile
     openScript(e.detail);
     this._showScriptManager = false;
     triggerResetCamera();

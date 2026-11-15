@@ -22,7 +22,7 @@ import { uuid4 } from '@archiyou/core/src/utils';
 
 import { EDITOR_START_SCRIPT } from '../settings';
 import type { UserState, WorkspaceCoreState } from './types';
-import { scenegraph, reconcileScenegraph, setInteractiveShapes, applyManagedParamsAndPresets, applyManagedValues } from './editor';
+import { scenegraph, reconcileScenegraph, setInteractiveShapes, applyManagedParamsAndPresets, applyManagedValues, clearSceneState } from './editor';
 import { applyManagedBehaviours, evaluateParamBehaviours } from './param-behaviours';
 import { currentUser } from '../services/auth-service.js';
 import { syncCreate, syncSaveActive, syncSaveNow, syncDelete, flushPendingSave } from '../services/scripts-sync.js';
@@ -340,6 +340,14 @@ function _archiveScript(s: Script | null): void
   bumpScripts();
 }
 
+/** Make another script the active one. The run of the script left behind goes with it, so
+ *  the viewer and the tools show nothing of it while the new one has not run yet. */
+function _activate(script: Script): void
+{
+  if (editorScript.get()?.fileId !== script.fileId) clearExecutionResult();
+  editorScript.set(script);
+}
+
 /** Archive current active, create a fresh default script, set as active. */
 export function createNewScript(): Script
 {
@@ -347,7 +355,7 @@ export function createNewScript(): Script
 
   const fresh = _freshScript();
   _upsertScript(fresh);   // also represent the new active in the collection
-  editorScript.set(fresh);
+  _activate(fresh);
   bumpScripts();
   saveActive();
   saveCollection();
@@ -403,7 +411,7 @@ export function importScriptFromData(data: Record<string, any>): Script | null
 
   _archiveScript(editorScript.get());
   _upsertScript(localScript);
-  editorScript.set(localScript);
+  _activate(localScript);
   bumpScripts();
   saveActive();
   saveCollection();
@@ -421,7 +429,7 @@ export function openScript(fileId: string): Script | null
   if (!target) return null;
 
   _archiveScript(editorScript.get());   // ensure current is in the list
-  editorScript.set(target);
+  _activate(target);
   saveActive({ sync: false });          // opening is not an edit: nothing to send to the server
   saveCollection();
   return target;
@@ -436,7 +444,7 @@ export function openSharedScript(data: Record<string, any>): Script | null
   if (!script) return null;
 
   _archiveScript(editorScript.get());   // ensure current (if editable) is in the list
-  editorScript.set(script);
+  _activate(script);
   saveActive();                         // local persistence only — sync is skipped for foreign
   return script;
 }
@@ -489,13 +497,13 @@ export function deleteScriptById(fileId: string): void
   {
     if (filtered.length > 0)
     {
-      editorScript.set(filtered[filtered.length - 1]);
+      _activate(filtered[filtered.length - 1]);
     }
     else
     {
       const fresh = _freshScript();
       _upsertScript(fresh);
-      editorScript.set(fresh);
+      _activate(fresh);
       bumpScripts();
     }
     saveActive();
@@ -615,6 +623,15 @@ export function setExecutionResult(result: RunnerScriptExecutionResult): void
     activePipeline.set('default');
   }
   executionResult.set(result);
+}
+
+/** Forget the latest run, with the scene state that came from it: nothing to show until the
+ *  next run. For a switch to another script, see _activate(). */
+export function clearExecutionResult(): void
+{
+  clearSceneState();
+  setInteractiveShapes([]);
+  executionResult.set(null);
 }
 
 export function setExecuting(value: boolean): void

@@ -217,6 +217,8 @@ export class ModelViewer extends SignalWatcher(LitElement)
     this._pendingGlbOutput = this._pendingModelInstead
       ? result?.outputs?.find(o => o.path.requestedPath === pipelineModelPath('default'))
       : pipelineGlb;
+    // No run at all (the editor switched to another script): the previous script's model goes
+    this._pendingNoResult = !result;
     this._pendingScenegraph = (this._pendingPipeline === 'default') ? scenegraph.get() : null;
     this._pendingResetCount = resetCameraCounter.get();
     this._pendingSelectedPath = selectedPath.get();
@@ -342,6 +344,20 @@ export class ModelViewer extends SignalWatcher(LitElement)
     {
       this._disposeModel();
       this._lastGlbOutput = undefined;
+      this._dirty = true;
+    }
+
+    /*  The result was cleared because another script was opened: show nothing until that one
+        has run, rather than the model of the script left behind. A GLB loaded directly
+        (load(), no editor signals) or an animation's model has no result and stays. */
+    if (this._pendingNoResult && this._renderer && !this._directGlbOutput && !this._pendingAnimationModel
+      && (this._currentModel || this._htmlHandles.length))
+    {
+      this._disposeModel();
+      this._lastGlbOutput = undefined;
+      // Handles outlive a re-run of the same script, not a switch to another one
+      this._htmlHandles = [];
+      this._syncOverlayHandles();
       this._dirty = true;
     }
 
@@ -612,6 +628,8 @@ export class ModelViewer extends SignalWatcher(LitElement)
   private _pendingModelInstead = false;
   /** The last run asked for the pipeline's GLB but did not get one, because the pipeline failed */
   private _pendingNoOutput = false;
+  /** There is no run to show (cleared on a switch of script) */
+  private _pendingNoResult = false;
   /** Axis a flat pipeline output (a drawing) is looked at along; null for 3D output */
   private _flatAxis: 'x' | 'y' | 'z' | null = null;
   /** Orthographic or not, and the view direction, before a flat output changed them */
