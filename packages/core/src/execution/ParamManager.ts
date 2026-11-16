@@ -638,6 +638,15 @@ export class ParamManager
         // friendly aliases (min/max/step/options) + JSON-Schema keywords, in one table
         const schema: Record<string, any> = { ...baseSchema, ...ParamManager.schemaKeywordsFrom(o) };
 
+        // The values of an options param say its type, as normalizeProperty() has it: [120, 140]
+        // is a number param. Left at the base schema's 'string', its enum of numbers would reject
+        // every value, a number for its type and a string for not being in the enum
+        if (type === 'options' && Array.isArray(schema.enum) && schema.enum.length > 0)
+        {
+            schema.type = ParamManager._enumJsonType(schema.enum);
+            schema.enum = (schema.type === 'number') ? schema.enum.map(Number) : schema.enum.map(String);
+        }
+
         if (o.listItemType !== undefined) schema.items = { type: o.listItemType };
 
         // 'number-ranges' settings JSON Schema has no word for; fromData() derives the rest

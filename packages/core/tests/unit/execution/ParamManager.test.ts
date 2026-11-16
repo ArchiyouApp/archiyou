@@ -34,6 +34,33 @@ describe('ParamManager.define() — ergonomic form', () =>
         expect(p.default).toBe('a')
     })
 
+    it('types an options param by its values: numbers make a number param', () =>
+    {
+        const pm = new ParamManager()
+        pm.define('depth', 'options', { options: [120, 140, 184, 235], default: 120 })
+
+        const schema = pm.getParamsMap()['DEPTH'].schema as any
+        expect(schema.type).toBe('number')
+        expect(schema.enum).toEqual([120, 140, 184, 235])
+    })
+
+    it('takes a requested value of a numeric options param', () =>
+    {
+        const pm = new ParamManager()
+        pm._requestValues = { DEPTH: 235 }
+        pm.define('DEPTH', 'options', { options: [120, 140, 184, 235], default: 120 })
+
+        expect(pm.getParamsMap()['DEPTH']._value).toBe(235)
+    })
+
+    it('keeps an options param of words a string param', () =>
+    {
+        const pm = new ParamManager()
+        pm.define('mode', 'options', { options: ['a', 'b'], default: 'a' })
+
+        expect((pm.getParamsMap()['MODE'].schema as any).type).toBe('string')
+    })
+
     it('builds a boolean param', () =>
     {
         const pm = new ParamManager()

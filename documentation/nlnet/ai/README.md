@@ -158,3 +158,4 @@ The script refuses a message that contains a link or a co-author trailer, a summ
 | 2026-11-09 | [Opening a script: a busy button, and no model of the script left behind](./records/2026-11-09-script-open.md) | Claude Opus 5.5 | develop | 1 |
 | 2026-11-10 | [Titleblock: optional description line](./records/2026-11-10-titleblock-description.md) | Claude Fable 5.1 | develop | 1 |
 | 2026-11-10 | [Fold-out view on the brep kernel](./records/2026-11-10-foldout-view-brep.md) | Claude Opus 5.5 | develop | 1 |
+| 2026-11-16 | [Params: an options param with numbers is a number param](./records/2026-11-16-options-param-type.md) | Claude Opus 5.5 | develop | 1 |
