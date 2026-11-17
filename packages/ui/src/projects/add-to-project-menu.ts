@@ -26,6 +26,7 @@ import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import { projectLabel, type ProjectSummary } from '@archiyou/types';
 
 import { userState } from '@archiyou/editor/src/state/workspace';
+import { PROJECT_LIST_VISIBLE_ROWS } from '@archiyou/editor/src/settings';
 import {
   listProjects, createProject, addConfiguration, uploadConfigurationThumbnail, type ConfigurationInput,
 } from '@archiyou/editor/src/services/projects';
@@ -94,7 +95,7 @@ export class AddToProjectMenu extends SignalWatcher(LitElement)
               @input=${(e: Event) => { this._title = (e.target as HTMLInputElement).value; }}></wa-input>`
           : nothing}
 
-        ${this._projects.length > 6
+        ${this._projects.length > this.visibleRows
           ? html`
             <wa-input class="search" size="small" type="search" placeholder=${msg('Search projects…')}
               .value=${this._query} @input=${(e: Event) => { this._query = (e.target as HTMLInputElement).value; }}>
@@ -143,6 +144,8 @@ export class AddToProjectMenu extends SignalWatcher(LitElement)
   @property({ attribute: false }) build: (() => ConfigurationInput | null) | null = null;
   /** Suggested title for a new project (usually the script's name). */
   @property({ type: String }) suggestedTitle = '';
+  /** How many projects the list shows before it scrolls; more projects also get a search field. */
+  @property({ type: Number, attribute: 'visible-rows' }) visibleRows = PROJECT_LIST_VISIBLE_ROWS;
 
   @state() private _projects: ProjectSummary[] = [];
   @state() private _loading = false;
@@ -159,6 +162,8 @@ export class AddToProjectMenu extends SignalWatcher(LitElement)
   override updated(changed: Map<string, unknown>)
   {
     if (changed.has('open') && this.open) void this._load();
+    // the list's height in rows, for the stylesheet (a custom property on the host, no inline style)
+    if (changed.has('visibleRows')) this.style.setProperty('--project-rows', String(Math.max(1, this.visibleRows)));
   }
 
   // ── 4. Behaviour & Methods ──
@@ -301,12 +306,19 @@ export class AddToProjectMenu extends SignalWatcher(LitElement)
       gap: var(--space-sm);
     }
 
+    /* As many rows as visible-rows, then it scrolls. Rows keep their height: a flex child
+       would otherwise shrink to fit the max-height, squeezing every row instead of scrolling */
     .list {
+      --row-height: 2.25rem;
+      --row-gap: var(--space-xs);
       display: flex;
       flex-direction: column;
-      gap: var(--space-xs);
-      max-height: 16rem;
+      gap: var(--row-gap);
+      max-height: calc(var(--project-rows, 5) * var(--row-height) + (var(--project-rows, 5) - 1) * var(--row-gap));
       overflow-y: auto;
+      overscroll-behavior: contain;
+      /* room for the scrollbar, so it does not sit on the rows' borders */
+      scrollbar-gutter: stable;
     }
 
     .choice {
@@ -350,7 +362,11 @@ export class AddToProjectMenu extends SignalWatcher(LitElement)
     }
 
     .list .choice {
+      flex-shrink: 0;
+      box-sizing: border-box;
+      height: var(--row-height);
       min-height: 0;
+      padding: 0 var(--space-sm);
       font-size: var(--text-xs);
     }
 

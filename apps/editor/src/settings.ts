@@ -13,6 +13,10 @@ export const APP_VERSION: string = typeof __APP_VERSION__ === 'string' ? __APP_V
 export const OVERLAY_MENU_WIDTH  = 'clamp(min(28rem, 100vw - 2rem), 40vw, 100vw - 2rem)';
 export const OVERLAY_MENU_HEIGHT = 'clamp(min(24rem, 100dvh - 2rem), 50dvh, 100dvh - 2rem)';
 
+// Add to project: how many projects the list shows before it scrolls (and above which it gets a
+// search field)
+export const PROJECT_LIST_VISIBLE_ROWS = 5;
+
 // Parameter tabs
 export const PARAM_TAB_NAME_MAX_LENGTH       = 15;
 export const PARAM_DESCRIPTION_MAX_LENGTH    = 128;
