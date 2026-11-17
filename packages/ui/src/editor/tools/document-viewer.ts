@@ -12,9 +12,10 @@ import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
+import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import '../../unit-switch.js';
 
-import { executionResult, activePipeline, docUnitSystem, setDocUnitSystem } from '@archiyou/editor/src/state/workspace';
+import { executionResult, activePipeline, docUnitSystem, setDocUnitSystem, docToShow, selectDoc } from '@archiyou/editor/src/state/workspace';
 import { formatLength, systemOfUnit } from '@archiyou/core/src/units/UnitConverter';
 import type { UnitSystem } from '@archiyou/core/src/units/UnitConverter';
 import type { ModelUnits } from '@archiyou/core/src/modeler/types';
@@ -74,15 +75,17 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
     }
 
     const svgMap = this._buildSvgMap();
-    const docNames = Object.keys(svgMap);
+    const docNames = this._docNames(svgMap);
 
     if (docNames.length === 0)
     {
       return this._renderEmpty('file-text', 'No documents in this script');
     }
 
-    const selected = this._resolveSelected(docNames);
-    const svg = sanitizeSvg(this._stripProlog(svgMap[selected] ?? ''));
+    const selected = docToShow(docNames) as string;
+    // only the document on screen is made, by a run of its own when it is picked
+    const made = selected in svgMap;
+    const svg = made ? sanitizeSvg(this._stripProlog(svgMap[selected])) : '';
 
     return html`
       <div class="toolbar">
@@ -91,14 +94,11 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
           class="doc-select"
           size="small"
           .value=${selected}
-          @change=${(e: Event) =>
-          {
-            this._selectedDoc = ((e.target as HTMLElement & { value: string }).value);
-          }}
+          @change=${(e: Event) => selectDoc((e.target as HTMLElement & { value: string }).value)}
         >
           ${docNames.map(name => html`<wa-option value=${name} ?selected=${name === selected}>${name}</wa-option>`)}
         </wa-select>
-        ${this._formatDocSize()
+        ${made && this._formatDocSize()
           ? html`<span class="doc-size">${this._formatDocSize()}</span>`
           : ''}
         <span class="spacer"></span>
@@ -121,7 +121,7 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
             appearance="plain"
             with-caret
             ?loading=${this._exporting}
-            ?disabled=${this._exporting}
+            ?disabled=${this._exporting || !made}
             title="Save the document"
           >
             <wa-icon library="lucide" name="file-down" label="Save the document"></wa-icon>
@@ -134,14 +134,13 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
           <wa-icon library="lucide" name="crosshair" label="Reset view"></wa-icon>
         </wa-button>
       </div>
-      <div class="svg-stage">
-        <div class="svg-wrapper">${unsafeHTML(svg)}</div>
-      </div>
+      ${made
+        ? html`<div class="svg-stage"><div class="svg-wrapper">${unsafeHTML(svg)}</div></div>`
+        : this._renderPending(executionResult.get()?.status === 'error')}
     `;
   }
 
   // ── 2. State ──
-  @state() private _selectedDoc: string | null = null;
   // Document size in mm (the SVG viewBox unit). Formatted for display via the
   // active Metric/Imperial preference in _formatDocSize().
   @state() private _docW: number | null = null;
@@ -158,10 +157,10 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
   override updated()
   {
     const svgMap = this._buildSvgMap();
-    const docNames = Object.keys(svgMap);
+    const docNames = this._docNames(svgMap);
     if (docNames.length === 0) return;
 
-    const selected = this._resolveSelected(docNames);
+    const selected = docToShow(docNames) as string;
 
     // Keep wa-select in sync (its value can lag the slotted options on first paint)
     if (this._select && this._select.value !== selected)
@@ -207,11 +206,13 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
   }
 
   // ── 4. Behaviour & Methods ──
-  private _resolveSelected(docNames: string[]): string
+  /** The documents to pick from. The model's are in the run's meta, made or not; a pipeline
+   *  picked next to Run makes all of its own. */
+  private _docNames(svgMap: SvgMap): string[]
   {
-    return (this._selectedDoc && docNames.includes(this._selectedDoc))
-      ? this._selectedDoc
-      : docNames[0];
+    return (activePipeline.get() === 'default')
+      ? (executionResult.get()?.meta?.docs ?? [])
+      : Object.keys(svgMap);
   }
 
   private _buildSvgMap(): SvgMap
@@ -414,6 +415,22 @@ export class EditorDocumentTool extends SignalWatcher(LitElement)
     this._panzoom?.destroy();
     this._panzoom = null;
     this._pzEl = null;
+  }
+
+  /** The stage while the picked document is being made, or when its run failed */
+  private _renderPending(failed: boolean)
+  {
+    return html`
+      <div class="svg-stage">
+        <div class="empty-state">
+          ${failed
+            ? html`<wa-icon library="lucide" name="triangle-alert" class="empty-icon"></wa-icon>
+                   <span class="empty-msg">The document could not be made: see the console</span>`
+            : html`<wa-spinner class="empty-icon"></wa-spinner>
+                   <span class="empty-msg">Making the document…</span>`}
+        </div>
+      </div>
+    `;
   }
 
   private _renderEmpty(icon: string, message: string)

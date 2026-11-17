@@ -40,7 +40,7 @@ import '@archiyou/ui/editor/modules-menu.js';
 import '@archiyou/ui/editor/keys-menu.js';
 import type { ToolDef } from '@archiyou/ui/editor/toolbar.js';
 
-import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystemOverride, docUnitSystemOverride, perStatement, kernel, autoRun, wasActiveScriptRestored, activePipeline, pipelineModelPath, forActivePipeline, bakeAnimations, registerOutputRunner } from '../state/workspace';
+import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystemOverride, docUnitSystemOverride, perStatement, kernel, autoRun, wasActiveScriptRestored, activePipeline, pipelineModelPath, forActivePipeline, bakeAnimations, registerOutputRunner, registerToolOutputsFiller, docToShow } from '../state/workspace';
 import { currentValues, type ConfigurationInput } from '../services/projects';
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
 import { refreshFromServer, resolveConflict, saveConflict } from '../services/scripts-sync';
@@ -299,6 +299,8 @@ export class PageEditor extends SignalWatcher(LitElement)
     registerParamFrameRunner(params => this._runParamFrame(params));
     // The Data tool makes a table's HTML page through here
     registerOutputRunner(outputs => this._runOutputs(outputs));
+    // The Documents tool has the document picked in it made through here
+    registerToolOutputsFiller(() => void this._fillToolOutputs());
     this._consumeNewQueryParam();
     void this._consumeScriptLink();
     // A tutorial link wins over the first-visit tour. Either way the help panel opens.
@@ -712,6 +714,8 @@ export class PageEditor extends SignalWatcher(LitElement)
     finally
     {
       this._running = null;
+      // the document on screen when the run did not know its name yet (a first run)
+      void this._fillToolOutputs();
     }
   }
 
@@ -782,7 +786,29 @@ export class PageEditor extends SignalWatcher(LitElement)
   /** The outputs of a tool, documents those of the picked pipeline */
   private _outputsOf(tool: ToolDef): string[]
   {
-    return (tool.outputs ?? []).map(path => path.startsWith('default/docs/') ? forActivePipeline(path) : path);
+    return (tool.outputs ?? []).flatMap(path => path.startsWith('default/docs/') ? this._docPaths(path) : [path]);
+  }
+
+  /** A document output of a tool ('default/docs/*' + '/svg'). For the model only the document on
+   *  screen: each document runs its own pipeline. Its name is known from the last run, which
+   *  lists the documents without making them; before a first run there is none to make
+   *  (see _fillToolOutputs()). A pipeline picked next to Run makes all of its documents. */
+  private _docPaths(path: string): string[]
+  {
+    if (activePipeline.get() !== 'default') return [forActivePipeline(path)];
+    const name = docToShow(executionResult.get()?.meta?.docs ?? []);
+    return name ? [path.replace('/*/', `/${name}/`)] : [];
+  }
+
+  /** Make the documents of the open tools the result on screen lacks: the one just picked,
+   *  or after a run that did not know the names yet */
+  private async _fillToolOutputs()
+  {
+    const result = executionResult.get();
+    if (!result || result.status === 'error') return;
+    const made = new Set((result.outputs ?? []).map(o => o.path.requestedPath));
+    const missing = this._toolOutputs().filter(path => path.startsWith('default/docs/') && !path.includes('*') && !made.has(path));
+    if (missing.length) await this._executeToolOutputs(missing);
   }
 
   private async _executeOnce(): Promise<RunnerScriptExecutionResult | undefined>
@@ -1293,9 +1319,10 @@ export class PageEditor extends SignalWatcher(LitElement)
     this._activeTools = [...base, tool].sort((a, b) => Number(b.id === 'help') - Number(a.id === 'help'));
     // If the newly active tool declares outputs and we already have a result,
     // run a lean extra execute immediately to populate its data.
-    if (tool.outputs?.length && executionResult.get())
+    const outputs = this._outputsOf(tool);
+    if (outputs.length && executionResult.get())
     {
-      this._executeToolOutputs(this._outputsOf(tool));
+      this._executeToolOutputs(outputs);
     }
   }
 

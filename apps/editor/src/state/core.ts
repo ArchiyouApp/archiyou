@@ -220,6 +220,35 @@ export const scripts          = signal<Script[]>(_initialScripts);
 export const executing        = signal<boolean>(false);
 export const executionResult  = signal<RunnerScriptExecutionResult | null>(null);
 
+/** The document the Documents tool shows, by name; null (or a name the script does not
+ *  have) is its first. A run makes only this document: each document runs its own pipeline,
+ *  so making all of them made the tool slow to open. Session-only. */
+export const selectedDoc      = signal<string | null>(null);
+
+/** The document to show of these names (from the run's meta): the picked one, else the first */
+export function docToShow(names: string[]): string | undefined
+{
+  const picked = selectedDoc.get();
+  return (picked && names.includes(picked)) ? picked : names[0];
+}
+
+/** How the editor makes the outputs of its open tools that the result on screen lacks (the
+ *  document just picked). The page registers it. */
+let _toolOutputsFiller: (() => void) | null = null;
+
+export function registerToolOutputsFiller(filler: (() => void) | null): void
+{
+  _toolOutputsFiller = filler;
+}
+
+/** Show this document in the Documents tool, made by a run of its own if the result has
+ *  not got it yet */
+export function selectDoc(name: string): void
+{
+  selectedDoc.set(name);
+  _toolOutputsFiller?.();
+}
+
 /** Per-statement execution mode: run the script statement-by-statement so a single
  *  failure halts with a partial model instead of losing the whole run, and each
  *  statement is timed (see the Profiling tool). Toggled in the Run options menu.
