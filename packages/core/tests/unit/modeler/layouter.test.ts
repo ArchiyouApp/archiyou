@@ -121,6 +121,34 @@ describe('Layouter', () =>
         expect(count()).toBe(before)
     })
 
+    test('exploding pulls every part clear of the ones placed before it, also parts inside a bigger one', () =>
+    {
+        /*  As a framed wall: studs inside the box of the insulation between them, a sheet over
+            them, a floor under it all. A fixed number of fixed steps could not get a stud out of that box, and
+            logged "Max iterations reached" for each one. */
+        modeler.reset()
+        modeler.box(4000, 3000, 200).move(0, 0, -100)
+        modeler.box(4000, 20, 2600).move(0, -100, 1300)
+        modeler.box(3600, 140, 2600).move(0, 0, 1300)
+        Array.from({ length: 9 }, (_, i) => modeler.box(40, 140, 2600).move(-1800 + i * 450, 0, 1300))
+
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const distance = 100
+        const layouter = new Layouter(modeler.scene()).exploded({ distance })
+        expect(error).not.toHaveBeenCalled()
+        error.mockRestore()
+
+        const boxes = layouter.result().transforms.map(t =>
+        {
+            const box = (t.sceneNode.shape() as SmartMesh).bbox()
+            const [x, y, z] = t.translation
+            return [box.min().x + x, box.min().y + y, box.min().z + z, box.max().x + x, box.max().y + y, box.max().z + z]
+        })
+        expect(boxes).toHaveLength(12)
+        const apart = (a: number[], b: number[]) => [0, 1, 2].some(i => Math.max(b[i] - a[i + 3], a[i] - b[i + 3]) >= distance - 1e-6)
+        boxes.forEach((a, i) => boxes.slice(0, i).forEach(b => expect(apart(a, b)).toBe(true)))
+    })
+
     test('a row lays out what it can measure and leaves a point where it is', () =>
     {
         modeler.reset()

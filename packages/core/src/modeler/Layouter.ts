@@ -57,6 +57,33 @@ function centeredOnX(transforms: Array<LayoutTransformation>, minX: number, maxX
     });
 }
 
+/** How far a box goes along the unit direction `dir` to keep `distance` from each of `others`,
+ *  as the exploded view places a part. Boxes that are that far apart along one axis are far
+ *  enough apart. The box jumps past the others it still comes near, each by the least it takes
+ *  on any axis; past one it does not come back to it, so it ends within one jump per box (fixed
+ *  steps could run out on a part inside a bigger one's box). */
+function clearingTravel(box: { min(): any, max(): any }, others: Array<{ min(): any, max(): any }>, dir: [number, number, number], distance: number): number
+{
+    const bounds = (b: { min(): any, max(): any }) => ({ min: [b.min().x, b.min().y, b.min().z], max: [b.max().x, b.max().y, b.max().z] })
+    const moving = bounds(box)
+    const placed = others.map(bounds)
+    const axes = [0, 1, 2].filter(i => Math.abs(dir[i]) > 1e-9)
+
+    const near = (t: number, o: { min: number[], max: number[] }) =>
+        Math.hypot(...[0, 1, 2].map(i => Math.max(0, o.min[i] - (moving.max[i] + t * dir[i]), (moving.min[i] + t * dir[i]) - o.max[i]))) < distance - TOLERANCE
+    const leaving = (o: { min: number[], max: number[] }) => Math.min(...axes.map(i => (dir[i] > 0)
+        ? (o.max[i] + distance - moving.min[i]) / dir[i]
+        : (moving.max[i] - o.min[i] + distance) / -dir[i]))
+
+    const settle = (t: number, jumps: number): number =>
+    {
+        const blocking = placed.filter(o => near(t, o))
+        if (!blocking.length || !axes.length || jumps > placed.length) { return t }
+        return settle(Math.max(t, ...blocking.map(leaving)), jumps + 1)
+    }
+    return settle(0, 0)
+}
+
 export class Layouter
 {
     private _scene: MeshupSceneNode
@@ -130,10 +157,6 @@ export class Layouter
             distance = this.shapeCollection().bbox().maxSize()/10.0;
         }
 
-        // Step to increase distance for each shape to ensure separation
-        const DISTANCE_STEP = distance / 2; 
-        const MAX_ITERATIONS = 10; // to prevent infinite loops
-
         const shapeNodes = this.workNodeShapes(); 
 
         // Pick a center of the exploded view
@@ -149,6 +172,7 @@ export class Layouter
         const placedShapeNodes = [
             shapeNodes[0] // start with first
         ]
+        const placedBoxes = placedShapeNodes.map(n => n.shape.bbox())
         
         // Now iterate over Shapes and move along explode vector until no collision with previously placed shapes
         shapeNodes.forEach(({ node, shape }, index) =>
@@ -161,25 +185,11 @@ export class Layouter
             // Find a position for the shape that does not collide with previously placed shapes
             if(index > 0) // skip first shape
             {
-                let shapeBbox = shape.bbox();
-                let iterations = 0;
-                
-                while(placedShapeNodes
-                                .map(n => n.shape.bbox())
-                                .reduce((minDist, s) => Math.min(minDist, shapeBbox.distance(s)), Infinity) < distance)
-                {
-                    // prevent infinite loop
-                    if (++iterations > MAX_ITERATIONS)
-                    { 
-                        console.error(`Layouter.explodedView: Max iterations reached for shape ${index}.`);
-                        break; 
-                    } 
-                    // Move shape along explodeDir by DISTANCE_STEP
-                    shape.move(explodeDir.copy().scale(DISTANCE_STEP));
-                    shapeBbox = shape.bbox(); // update bbox after moving
-                }
+                const travel = clearingTravel(shape.bbox(), placedBoxes, [explodeDir.x, explodeDir.y, explodeDir.z], distance)
+                if (travel > 0) { shape.move(explodeDir.copy().scale(travel)) }
                 // done with this shape, add to placed list
                 placedShapeNodes.push({ node, shape });
+                placedBoxes.push(shape.bbox());
             }
         });
 
