@@ -101,6 +101,33 @@ describe('view scale', () =>
         expect(mmPerUnit(view)).toBeCloseTo(1/20, 6)
     })
 
+    it('autoScale() picks the largest construction scale that fits, 1:30 and 1:40 included', async () =>
+    {
+        const { modeler, modules } = await setup()
+        // half of a 297mm-wide page is 148.5mm: a 4000mm drawing does not fit at 1:25 (160mm)
+        // but does at 1:30 (133mm), where 'auto' would have dropped to 1:50
+        const shapes = modeler.collection(modeler.rect(4000, 800)) as any
+
+        const svg = await pageWith(modules, shapes, doc => doc.autoScale())
+        const view = viewsOf(svg)[0]
+
+        expect(mmPerUnit(view)).toBeCloseTo(1/30, 6)
+    })
+
+    it('autoScale() stops at 1:500 and clips what does not fit there', async () =>
+    {
+        const { modeler, modules } = await setup()
+        const shapes = modeler.collection(modeler.rect(200000, 800)) as any   // 200m: 400mm at 1:500
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+        const svg = await pageWith(modules, shapes, doc => doc.autoScale())
+        const view = viewsOf(svg)[0]
+
+        expect(mmPerUnit(view)).toBeCloseTo(1/500, 6)
+        expect(warn.mock.calls.map(c => String(c[0])).join('\n')).toContain('clipped')
+        warn.mockRestore()
+    })
+
     it('honours a scale too big for the view, clips it, and says so', async () =>
     {
         const { modeler, modules } = await setup()

@@ -7,7 +7,7 @@ import { stripOuterSVGTags, getPreserveAspectRatio, convertValueFromToUnit } fro
 import { collectAnnotations, annotationMarginMm } from '../annotator/annotationLayer'
 import { drawableLayer, renderDrawingFromLayer, type SVGLayer } from '../modeler/SVGExporter'
 import { STYLER_DEFAULT_RULES, toStylerRuleEntries, drawnClassLists, unmatchedSelectors, unmatchedMessage, type Styler, type StylerRule, type StylerRuleEntry } from './styler/Styler'
-import { resolveScale, scaleLabel, type ResolvedScale } from './scale'
+import { resolveScale, scaleLabel, AUTO_SCALES, type ResolvedScale } from './scale'
 import { buildViewFurniture, type Furniture } from './viewFurniture'
 import type { ViewOptions, CaptionOptions, BarOptions } from './types'
 
@@ -428,6 +428,14 @@ export class View extends Container
     {
         this._viewCaption = (value === undefined) ? true : (value as any);
         return this;
+    }
+
+    /** Draw at the largest of the usual construction scales that fits the view: 1:5, 1:10,
+     *  1:20, 1:25, 1:30, 1:40, 1:50, 1:100, 1:200 or 1:500 (see AUTO_SCALES). Short for
+     *  scale() with that list. */
+    autoScale():this
+    {
+        return this.scale(AUTO_SCALES);
     }
 
     /** Style parts of this view's drawing beyond the default line-work.

@@ -38,6 +38,12 @@ export const IMPERIAL_SCALE_LADDER:Array<number> = [
     1/2, 1/4, 1/8, 1/12, 1/16, 1/24, 1/32, 1/48, 1/64, 1/96, 1/192, 1/384,
 ]
 
+/** The scales autoScale() picks from, largest first: the ones a construction drawing uses,
+ *  from a detail at 1:5 to a site plan at 1:500 */
+export const AUTO_SCALES:Array<number> = [
+    1/5, 1/10, 1/20, 1/25, 1/30, 1/40, 1/50, 1/100, 1/200, 1/500,
+]
+
 export function scaleLadder(unitSystem?:'metric'|'imperial'):Array<number>
 {
     return (unitSystem === 'imperial') ? IMPERIAL_SCALE_LADDER : METRIC_SCALE_LADDER

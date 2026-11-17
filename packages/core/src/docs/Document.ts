@@ -1612,6 +1612,25 @@ export class Document
         return this;
     }
 
+    /** Draw the active view at the largest of the usual construction scales that fits it:
+     *  1:5, 1:10, 1:20, 1:25, 1:30, 1:40, 1:50, 1:100, 1:200 or 1:500. Short for
+     *  scale([1/5, 1/10, ...]); the caption says which one it came out at.
+     *
+     *  @example
+     *  box(4000, 200, 2600)
+     *  front = all().elevation('front').tmp()
+     *  docs.create('plan')
+     *      .page('front')
+     *      .view('front', front).autoScale().caption()
+     */
+    autoScale():this
+    {
+        if(!this._activeContainer || this._activeContainer._type !== 'view'){ throw new Error(`Document::autoScale(): No active view to scale. Make a view first with view("myView")!`)};
+        (this._activeContainer as View).autoScale();
+
+        return this;
+    }
+
     //// DOCUMENT AGGREGATION OPERATIONS ////
 
     /** Add the pages of other documents to this one, like the documents of a component.
