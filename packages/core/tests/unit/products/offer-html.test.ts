@@ -75,6 +75,10 @@ describe('offer-html: the offer as data', () =>
         expect(data.totals.btw).toBeCloseTo(723.16, 6)
         expect(data.prijspeil?.toISOString().slice(0, 10)).toBe('2026-10-30')
         expect(data.gebouw).toEqual([{ label: 'Netto vloeroppervlak', value: 30, unit: 'm²' }])
+        // the template's storeys are those above the ground floor; the page counts the bouwlagen
+        const bouwlagen = (storeys: number) => offerPageData({ ...source(), input: { ...source().input, storeys } }).gebouw.find(g => g.label === 'Bouwlagen')?.value
+        expect(bouwlagen(0)).toBe(1)
+        expect(bouwlagen(1)).toBe(2)
         expect(sheetDate('')).toBeNull()
         expect(sheetDate('2026-10-30')?.toISOString().slice(0, 10)).toBe('2026-10-30')
     })
@@ -105,7 +109,7 @@ describe('offer-html: the page', () =>
 
     it('shows the lines, the client\'s own part, the totals, the scenario chosen and the process', () =>
     {
-        const html = renderOfferHtml(offerPageData(source(), { datum: new Date('2026-10-30') }))
+        const html = renderOfferHtml(offerPageData(source(), { datum: new Date('2026-10-30'), kosten: true }))
         const euro = (v: number) => new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(v)
         expect(html).toContain('HSB wand 160')
         expect(html).toContain(euro(1657.82))
@@ -116,6 +120,25 @@ describe('offer-html: the page', () =>
         expect(html).toContain('Constructieberekeningen')
         expect(html).toContain('30 oktober 2026')
         expect(html).toContain('@page { size: A4')
+    })
+
+    it('leaves the costs per category out of the lines, unless asked', () =>
+    {
+        const html = renderOfferHtml(offerPageData(source()))
+        expect(html).toContain('HSB wand 160')
+        expect(html).not.toContain('class="costs"')
+        expect(html).not.toContain('Montage zelf')
+    })
+
+    it('shows a drawing in the header as an image, so the page stays without scripts', () =>
+    {
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><script>alert(1)</script><path d="M0 0L10 10"/></svg>'
+        const html = renderOfferHtml(offerPageData(source(), { afbeelding: svg }))
+        expect(html).toContain(`<img alt="Offerte" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}">`)
+        expect(html).not.toMatch(/<svg|<script/)
+        expect(html).toContain('<header class="with-figure">')
+        expect(renderOfferHtml(offerPageData(source()))).not.toContain('<figure>')
+        expect(() => offerPageData(source(), { afbeelding: 'iso.png' })).toThrow(/SVG document/)
     })
 })
 

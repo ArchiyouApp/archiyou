@@ -5,14 +5,17 @@ import { SignalWatcher } from '@lit-labs/signals';
 import '@awesome.me/webawesome/dist/components/select/select.js';
 import '@awesome.me/webawesome/dist/components/option/option.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
 
-import { executionResult } from '@archiyou/editor/src/state/workspace';
+import { executionResult, runOutputs } from '@archiyou/editor/src/state/workspace';
+import { getOutput } from '@archiyou/core/src/runner/worker/output';
 import type { ComputedFooterRow, CellStyle, TableStyle } from '@archiyou/core/src/calc/types';
 import { formatNumber } from '@archiyou/core/src/calc/numfmt';
 import { cellStyleOf } from '@archiyou/core/src/calc/style';
 
 type DataRow = Record<string, any>;
-type TableData = { rows: DataRow[]; footer: ComputedFooterRow[]; style?: TableStyle };
+/** A table of the run: the model's ('default') or the picked pipeline's */
+type TableData = { pipeline: string; name: string; rows: DataRow[]; footer: ComputedFooterRow[]; style?: TableStyle };
 type TableMap = Record<string, TableData>;
 
 /** Gives each distinct cell look a class name and collects the CSS for them */
@@ -109,6 +112,7 @@ export class EditorDataTool extends SignalWatcher(LitElement)
       : tableNames[0];
 
     const { rows, footer, style } = tableMap[selected] ?? { rows: [], footer: [] };
+    const label = (key: string) => (tableMap[key].pipeline === 'default') ? tableMap[key].name : `${tableMap[key].name} (${tableMap[key].pipeline})`;
     const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
     // a table with a style (from a sheet or Table.style()) shows that look instead of the striping
     const classes = new StyleClasses();
@@ -130,10 +134,21 @@ export class EditorDataTool extends SignalWatcher(LitElement)
             this._selectedTable = ((e.target as HTMLElement & { value: string }).value);
           }}
         >
-          ${tableNames.map(name => html`<wa-option value=${name}>${name}</wa-option>`)}
+          ${tableNames.map(name => html`<wa-option value=${name}>${label(name)}</wa-option>`)}
         </wa-select>
         <span class="row-count">${rows.length} row${rows.length !== 1 ? 's' : ''}</span>
+        <wa-button
+          size="small"
+          appearance="plain"
+          title="Open the table as its HTML page, in a new tab"
+          ?loading=${this._htmlBusy}
+          @click=${() => this._openHtml(tableMap[selected])}
+        >
+          <wa-icon slot="start" library="lucide" name="external-link"></wa-icon>
+          HTML
+        </wa-button>
       </div>
+      ${this._htmlError ? html`<p class="html-error">${this._htmlError}</p>` : ''}
       <div class="table-wrapper">
         ${columns.length === 0
           ? html`<p class="empty-msg">Table is empty</p>`
@@ -176,6 +191,8 @@ export class EditorDataTool extends SignalWatcher(LitElement)
 
   // ── 2. State ──
   @state() private _selectedTable: string | null = null;
+  @state() private _htmlBusy = false;
+  @state() private _htmlError = '';
   @query('.table-select') private _select!: HTMLElement & { value: string };
 
   // ── 3. Lifecycle ──
@@ -214,21 +231,68 @@ export class EditorDataTool extends SignalWatcher(LitElement)
   private _tableCss: StyleClasses | null = null;
   private _appliedCss = '';
 
+  /** The tables of the run, by key: the name for the model's, 'pipeline/name' for those of
+   *  the picked pipeline (the editor asks for both, see _executeOnce) */
   private _buildTableMap(): TableMap
   {
     const outputs = executionResult.get()?.outputs ?? [];
     return outputs
-      .filter(o => o.path.category === 'tables' && o.path.pipeline === 'default' && Array.isArray(o.output))
+      .filter(o => o.path.category === 'tables' && o.path.format === 'json' && Array.isArray(o.output))
       .reduce<TableMap>((map, o) =>
       {
+        const pipeline = o.path.pipeline ?? 'default';
         const name = o.path.entityName ?? 'table';
-        map[name] = {
+        map[pipeline === 'default' ? name : `${pipeline}/${name}`] = {
+          pipeline,
+          name,
           rows: o.output as DataRow[],
           footer: (o.footer ?? []) as ComputedFooterRow[],
           style: o.style,
         };
         return map;
       }, {});
+  }
+
+  /** The table's HTML page (`<pipeline>/tables/<name>/html`: the generated one, or the page
+   *  the script gave it with Table.html(), like an offer) made by a run of its own, opened
+   *  in a new tab. The tab is opened right away, on the click, so no popup blocker stops it */
+  private async _openHtml(table: TableData | undefined)
+  {
+    if (!table || this._htmlBusy) return;
+    const path = `${table.pipeline}/tables/${table.name}/html`;
+    const tab = window.open('', '_blank');
+    if (!tab)
+    {
+      this._htmlError = 'The browser blocked the new tab. Allow pop-ups for the editor and try again.';
+      return;
+    }
+    tab.document.title = `${table.name}.html`;
+    tab.document.body.textContent = `Making ${table.name}.html …`;
+    this._htmlBusy = true;
+    this._htmlError = '';
+    try
+    {
+      const result = await runOutputs([path]);
+      const page = result ? getOutput(result, path) : undefined;
+      if (typeof page !== 'string')
+      {
+        const why = result?.errors?.[0]?.message ?? 'the run gave no page';
+        throw new Error(why);
+      }
+      const url = URL.createObjectURL(new Blob([page], { type: 'text/html' }));
+      tab.location.href = url;
+      // the tab has loaded it by then; it keeps the page when the address is revoked
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    }
+    catch (err)
+    {
+      tab.close();
+      this._htmlError = `No HTML page for ${table.name}: ${(err as Error).message}`;
+    }
+    finally
+    {
+      this._htmlBusy = false;
+    }
   }
 
   private _renderEmpty(icon: string, message: string)
@@ -292,6 +356,16 @@ export class EditorDataTool extends SignalWatcher(LitElement)
     }
 
     .table-select { flex: 1; min-width: 0; font-size: var(--text-xs); --wa-font-size-medium: var(--text-xs); }
+
+    .html-error
+    {
+      margin: 0;
+      padding: var(--space-xs) var(--space-sm);
+      font-size: var(--text-xs);
+      color: var(--color-danger);
+      border-bottom: 1px solid var(--color-border);
+      flex-shrink: 0;
+    }
 
     .row-count
     {

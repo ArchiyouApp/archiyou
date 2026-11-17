@@ -62,6 +62,10 @@ export interface OfferPageData
     /** Per scenario which categories the builder delivers (the rest is DIY), in the template's order. */
     scenarios: { categories: Array<string>, names: Array<string>, delivers: Array<Array<boolean>> } | null;
     gebouw: Array<{ label: string, value: number, unit: string }>;
+    /** A drawing of the design for the header, an SVG document; '' for none. */
+    afbeelding: string;
+    /** Whether each line shows its costs per category (Materiaal, Montage, ...) under it. */
+    kosten: boolean;
 }
 
 /** What offerPageData() reads: the computed template's tables and outputs, and the offer's inputs. */
@@ -85,16 +89,24 @@ export interface OfferPageOptions
     notitie?: string;
     /** The date on the offer. Default: today. */
     datum?: Date;
+    /** A drawing of the design in the header, as an SVG document: an isometry, for instance
+     *  `all().onlyVisible().solids().iso([-1,-1,1]).toSVG()`. */
+    afbeelding?: string;
+    /** Show each line's costs per category (Materiaal, Voorbewerking, Montage, ...) under it.
+     *  Default false: the client sees what a part costs, the matrix below says who does what. */
+    kosten?: boolean;
 }
 
 //// SETTINGS ////
 
-/** The inputs of the template shown as the building's size, with their label and unit. */
-const GEBOUW_INPUTS: Array<[string, string, string]> = [
-    ['floorarea_net', 'Netto vloeroppervlak', 'm²'],
-    ['floorarea_gross', 'Bruto vloeroppervlak', 'm²'],
-    ['volume_net', 'Netto inhoud', 'm³'],
-    ['storeys', 'Bouwlagen', ''],
+/** The inputs of the template shown as the building's size, with their label and unit, and how
+ *  the shown value follows from the input. */
+const GEBOUW_INPUTS: Array<[string, string, string, (v: number) => number]> = [
+    ['floorarea_net', 'Netto vloeroppervlak', 'm²', v => v],
+    ['floorarea_gross', 'Bruto vloeroppervlak', 'm²', v => v],
+    ['volume_net', 'Netto inhoud', 'm³', v => v],
+    // the template's storeys are those above the ground floor: a building of 2 bouwlagen has 1
+    ['storeys', 'Bouwlagen', '', v => v + 1],
 ];
 const CATEGORY_LABELS: Record<string, string> = {
     material: 'Materiaal', onsite: 'Onsite', voorbewerking: 'Voorbewerking', assemblage: 'Assemblage', montage: 'Montage', afbouw: 'Afbouw',
@@ -186,9 +198,27 @@ export function offerPageData(source: OfferSource, options: OfferPageOptions = {
         proces: procesData(source.proces ?? []),
         scenarios: scenarioData(source.scenarios ?? []),
         gebouw: GEBOUW_INPUTS
-            .map(([name, label, unit]) => ({ label, unit, value: num(source.input?.[name]) }))
+            .map(([name, label, unit, shown]) =>
+            {
+                const value = num(source.input?.[name]);
+                return { label, unit, value: value === null ? null : shown(value) };
+            })
             .filter((g): g is { label: string, unit: string, value: number } => g.value !== null && g.value > 0),
+        afbeelding: svgDocument(options.afbeelding),
+        kosten: options.kosten === true,
     };
+}
+
+/** The SVG document the option afbeelding gives, or '' for none. Anything else is an error of the
+ *  script: an image of another kind, a file name, a shape instead of its toSVG(). */
+function svgDocument(svg: unknown): string
+{
+    if (svg === undefined || svg === null || svg === '') return '';
+    if (typeof svg !== 'string' || !/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<svg[\s>]/i.test(svg))
+    {
+        throw new Error(`offerPage(): afbeelding is an SVG document (a string starting with <svg), as toSVG() gives it; got ${typeof svg === 'string' ? `'${svg.slice(0, 40)}'` : typeof svg}`);
+    }
+    return svg;
 }
 
 /** The process steps (a number in aan, their price on the description row right below) and the
@@ -254,7 +284,7 @@ export function renderOfferHtml(data: OfferPageData): string
         <tr>
           <td class="what"><strong>${escape(l.onderdeel)}</strong>${l.type ? ` · ${escape(l.type)}` : ''}
             ${l.specificatie ? `<div class="spec">${escape(l.specificatie)}</div>` : ''}
-            <div class="costs">${costsOf(l)}</div></td>
+            ${data.kosten ? `<div class="costs">${costsOf(l)}</div>` : ''}</td>
           <td class="n">${l.hoeveelheid === null ? '' : `${NUMBER.format(l.hoeveelheid)} ${escape(l.eenheid)}`}</td>
           <td class="n">${euro(l.prijs)}</td>
           <td class="n total">${euro(l.totaal)}</td>
@@ -328,6 +358,10 @@ export function renderOfferHtml(data: OfferPageData): string
   dt { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
   dd { margin: 0; font-weight: 600; }
   .wrap { overflow-x: auto; }
+  header.with-figure { display: grid; grid-template-columns: 1fr 260px; gap: 16px; align-items: center; }
+  header.with-figure dl { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  figure { margin: 0; }
+  figure img { display: block; width: 100%; height: auto; max-height: 260px; object-fit: contain; }
   table { border-collapse: collapse; width: 100%; }
   th, td { padding: 8px 6px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
   thead th { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
@@ -345,7 +379,12 @@ export function renderOfferHtml(data: OfferPageData): string
   .matrix td:first-child { text-align: left; }
   .matrix .chosen { background: #e8f3ec; color: var(--accent); font-weight: 600; }
   footer { margin-top: 40px; font-size: 12px; color: var(--muted); }
-  @media (max-width: 560px) { .lines thead th:nth-child(3), .lines td:nth-child(3) { display: none; } }
+  @media (max-width: 560px)
+  {
+    .lines thead th:nth-child(3), .lines td:nth-child(3) { display: none; }
+    header.with-figure { grid-template-columns: 1fr; }
+    header.with-figure figure { order: -1; }
+  }
   @media print {
     @page { size: A4; margin: 16mm 14mm; }
     body { font-size: 11pt; }
@@ -357,9 +396,15 @@ export function renderOfferHtml(data: OfferPageData): string
 </head>
 <body>
 <main>
-  <header>
-    <h1>${escape(data.titel)}</h1>
-    <dl>${facts}</dl>
+  <header class="${data.afbeelding ? 'with-figure' : ''}">
+    <div>
+      <h1>${escape(data.titel)}</h1>
+      <dl>${facts}</dl>
+    </div>
+    ${data.afbeelding
+        // as an image, not inline: the page stays without scripts, whatever the SVG holds
+        ? `<figure><img alt="${escape(data.titel)}" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(data.afbeelding)}"></figure>`
+        : ''}
   </header>
 
   <section>

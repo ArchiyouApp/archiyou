@@ -269,6 +269,25 @@ export function forActivePipeline(path: string): string
   return path.replace(/^default\//, `${activePipeline.get()}/`);
 }
 
+/** How the editor runs the script for a few outputs on request (a table as its HTML page),
+ *  with the code and parameter values on screen, after the run going on. The result is not
+ *  shown: it is the caller's. The page registers it; a tool calls it without knowing how a
+ *  run is put together. */
+export type OutputRunner = (outputs: string[]) => Promise<RunnerScriptExecutionResult | undefined>;
+let _outputRunner: OutputRunner | null = null;
+
+export function registerOutputRunner(runner: OutputRunner | null): void
+{
+  _outputRunner = runner;
+}
+
+/** A run of the script for just these output paths ('offerdoc/tables/offerte/html') */
+export function runOutputs(outputs: string[]): Promise<RunnerScriptExecutionResult | undefined>
+{
+  if (!_outputRunner) return Promise.reject(new Error('runOutputs(): no editor to run the script'));
+  return _outputRunner(outputs);
+}
+
 /** Combined view — use when you need the full core shape. */
 export const core = computed<WorkspaceCoreState>(() => ({
   user:      userState.get(),

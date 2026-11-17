@@ -40,7 +40,7 @@ import '@archiyou/ui/editor/modules-menu.js';
 import '@archiyou/ui/editor/keys-menu.js';
 import type { ToolDef } from '@archiyou/ui/editor/toolbar.js';
 
-import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystemOverride, docUnitSystemOverride, perStatement, kernel, autoRun, wasActiveScriptRestored, activePipeline, pipelineModelPath, forActivePipeline, bakeAnimations } from '../state/workspace';
+import { editorScript, executing, executionResult, scenegraph, scriptParams, scripts, updateScriptCode, setExecutionResult, setExecuting, paramValue, createNewScript, openScript, openSharedScript, deleteScriptById, importScriptFromData, isReadOnly, isScriptNameTaken, selectedPath, scriptUnitSystemOverride, docUnitSystemOverride, perStatement, kernel, autoRun, wasActiveScriptRestored, activePipeline, pipelineModelPath, forActivePipeline, bakeAnimations, registerOutputRunner } from '../state/workspace';
 import { currentValues, type ConfigurationInput } from '../services/projects';
 import { editorPathFor, resolveScriptLink } from '../services/script-links';
 import { refreshFromServer, resolveConflict, saveConflict } from '../services/scripts-sync';
@@ -297,6 +297,8 @@ export class PageEditor extends SignalWatcher(LitElement)
     registerHelpRunner(code => void this._runHelpCode(code));
     // The Animation tool runs a parameter sweep's frames through here
     registerParamFrameRunner(params => this._runParamFrame(params));
+    // The Data tool makes a table's HTML page through here
+    registerOutputRunner(outputs => this._runOutputs(outputs));
     this._consumeNewQueryParam();
     void this._consumeScriptLink();
     // A tutorial link wins over the first-visit tour. Either way the help panel opens.
@@ -720,15 +722,29 @@ export class PageEditor extends SignalWatcher(LitElement)
    *  time; a run asked for meanwhile goes after it. Nothing on screen changes. */
   private async _runParamFrame(params: Record<string, any>): Promise<ArrayBuffer | null>
   {
-    await this._afterRunning();
-    const frame = (async () =>
+    return this._runAside(async () =>
     {
       const request = this._buildRequest(['default/model/glb'], ['error']);
       request.params = { ...(request.params ?? {}), ...params };
       const result = await runScript(request);
       const glb = (result && result.status !== 'error') ? getOutput(result, 'default/model/glb') : undefined;
       return (glb instanceof ArrayBuffer) ? glb : (glb instanceof Uint8Array) ? glb.slice().buffer as ArrayBuffer : null;
-    })();
+    });
+  }
+
+  /** A run for just these outputs, with the parameter values on screen; its result is the
+   *  caller's and is not shown (see runOutputs in state/core) */
+  private async _runOutputs(outputs: string[]): Promise<RunnerScriptExecutionResult | undefined>
+  {
+    return this._runAside(() => runScript(this._buildRequest(outputs, ['error'])));
+  }
+
+  /** A run of its own, one after the other with the editor's runs: after the one going on,
+   *  and a run asked for meanwhile follows it */
+  private async _runAside<T>(work: () => Promise<T>): Promise<T>
+  {
+    await this._afterRunning();
+    const frame = work();
     this._running = frame.then(() => undefined);
     try
     {
@@ -775,11 +791,13 @@ export class PageEditor extends SignalWatcher(LitElement)
     // The model always (the thumbnail is of the model), and the output of the picked pipeline
     const pipeline = activePipeline.get();
     const pipelineModel = (pipeline === 'default') ? [] : [pipelineModelPath(pipeline)];
+    // the tables of the model, and of the picked pipeline: the Data tool shows both
+    const tables = (pipeline === 'default') ? ['default/tables/*/json'] : ['default/tables/*/json', `${pipeline}/tables/*/json`];
     // with the script's animations while the Animation tool is open (see pipelineModelPath)
     const modelPath = pipelineModelPath('default');
     const fileId = editorScript.get()?.fileId;
     const result = await runScript(
-      this._buildRequest([modelPath, ...pipelineModel, 'default/tables/*/json', ...this._toolOutputs()])
+      this._buildRequest([modelPath, ...pipelineModel, ...tables, ...this._toolOutputs()])
     );
 
     // Another script was opened while this one ran: its result is of the script left behind,
