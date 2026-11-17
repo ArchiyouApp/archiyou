@@ -36,7 +36,7 @@ import {
 import type { AnimationInfo, PresetKind } from '@archiyou/core/src/animator/types';
 import type { ScriptParam } from '@archiyou/core/src/execution/ScriptParam';
 import { chapterAt } from '../../viewer/animation-playback.js';
-import { recordAnimation, recordSize, type RecordFormat, type RecordSizeId } from '../../viewer/animation-recorder.js';
+import { recordAnimation, recordSize, hasRecordSize, type RecordFormat, type RecordSizeId } from '../../viewer/animation-recorder.js';
 import { codeTheme } from '../codebox.js';
 
 /** One animation of the script: what the code says, and what the last run made of it. */
@@ -66,7 +66,9 @@ const RECORD_FORMATS: Array<{ format: RecordFormat, icon: string, label: () => s
 const RECORD_SIZE_LABELS: Array<{ size: RecordSizeId, label: () => string }> = [
   { size: 'landscape', label: () => msg('Landscape') },
   { size: 'square', label: () => msg('Square') },
+  { size: 'portrait', label: () => msg('Portrait') },
   { size: 'story', label: () => msg('Story') },
+  { size: 'small', label: () => msg('Small') },
   { size: 'viewer', label: () => msg('As the viewer') },
 ];
 
@@ -390,7 +392,7 @@ export class EditorAnimationTool extends SignalWatcher(LitElement)
           <wa-icon library="lucide" name=${f.icon} label=${f.label()}></wa-icon>
         </wa-button>
         <h3>${f.label()}</h3>
-        ${RECORD_SIZE_LABELS.map(({ size, label }) =>
+        ${RECORD_SIZE_LABELS.filter(({ size }) => hasRecordSize(f.format, size)).map(({ size, label }) =>
         {
           const { width, height } = recordSize(f.format, size, aspect);
           return html`<wa-dropdown-item value=${size}>${label()}<span slot="details">${width} × ${height}</span></wa-dropdown-item>`;

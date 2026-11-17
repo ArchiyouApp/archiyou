@@ -21,7 +21,7 @@ import type { AnimationFrameSource, AnimationLoopMode } from '@archiyou/editor/s
 
 export type RecordFormat = 'mp4' | 'gif';
 
-export type RecordSizeId = 'landscape' | 'square' | 'story' | 'viewer';
+export type RecordSizeId = 'landscape' | 'square' | 'portrait' | 'story' | 'small' | 'viewer';
 
 export interface RecordOptions
 {
@@ -52,12 +52,20 @@ export interface Recording
 /** Frames per second: smooth for a video, fewer for a GIF, which gets big fast. */
 export const RECORD_FPS: Record<RecordFormat, number> = { mp4: 30, gif: 15 };
 
-/** The sizes to choose from, in pixels; 'viewer' has the shape of the view on screen, as long
- *  as the longest side of a landscape one. */
-export const RECORD_SIZES: Record<RecordFormat, Record<Exclude<RecordSizeId, 'viewer'>, [number, number]>> = {
+/** The sizes each format offers, in pixels; 'viewer' (always offered) has the shape of the view
+ *  on screen, as long as the longest side of a landscape one. A GIF has the feed sizes of
+ *  LinkedIn and Instagram (1:1, 4:5), a landscape within X's 1280 × 1080, and a small one for
+ *  mail and chat; not a story, as stories take video. */
+export const RECORD_SIZES: Record<RecordFormat, Partial<Record<Exclude<RecordSizeId, 'viewer'>, [number, number]>> & { landscape: [number, number] }> = {
   mp4: { landscape: [1920, 1080], square: [1080, 1080], story: [1080, 1920] },
-  gif: { landscape: [800, 450], square: [600, 600], story: [450, 800] },
+  gif: { landscape: [1280, 720], square: [1080, 1080], portrait: [1080, 1350], small: [480, 480] },
 };
+
+/** Whether a format offers a size. */
+export function hasRecordSize(format: RecordFormat, size: RecordSizeId): boolean
+{
+  return size === 'viewer' || !!RECORD_SIZES[format][size];
+}
 
 /** The size of a recording; 'viewer' from the view's width over height. Even, as H.264 has it. */
 export function recordSize(format: RecordFormat, size: RecordSizeId, aspect: number): { width: number, height: number }
@@ -65,7 +73,9 @@ export function recordSize(format: RecordFormat, size: RecordSizeId, aspect: num
   const even = (n: number) => Math.max(2, 2 * Math.round(n / 2));
   if (size !== 'viewer')
   {
-    const [width, height] = RECORD_SIZES[format][size];
+    const fixed = RECORD_SIZES[format][size];
+    if (!fixed) throw new Error(`A ${format} has no size ${size}`);
+    const [width, height] = fixed;
     return { width, height };
   }
   const longest = RECORD_SIZES[format].landscape[0];

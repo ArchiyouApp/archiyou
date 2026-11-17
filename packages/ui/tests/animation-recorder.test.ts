@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-import { recordTimes, recordSize, recordAnimation } from '../src/viewer/animation-recorder.js';
+import { recordTimes, recordSize, hasRecordSize, recordAnimation } from '../src/viewer/animation-recorder.js';
 import type { AnimationFrameSource } from '@archiyou/editor/src/state/viewer';
 
 /**
@@ -53,15 +53,26 @@ describe('the size of a recording', () =>
   {
     expect(recordSize('mp4', 'landscape', 1)).toEqual({ width: 1920, height: 1080 });
     expect(recordSize('mp4', 'story', 1)).toEqual({ width: 1080, height: 1920 });
-    expect(recordSize('gif', 'square', 1)).toEqual({ width: 600, height: 600 });
+    expect(recordSize('gif', 'square', 1)).toEqual({ width: 1080, height: 1080 });
+    expect(recordSize('gif', 'portrait', 1)).toEqual({ width: 1080, height: 1350 });
+    expect(recordSize('gif', 'landscape', 1)).toEqual({ width: 1280, height: 720 });
+    expect(recordSize('gif', 'small', 1)).toEqual({ width: 480, height: 480 });
+  });
+
+  it('offers only the sizes of a format, and the viewer\'s for each', () =>
+  {
+    expect(hasRecordSize('gif', 'story')).toBe(false);
+    expect(hasRecordSize('mp4', 'small')).toBe(false);
+    expect(hasRecordSize('mp4', 'viewer')).toBe(true);
+    expect(() => recordSize('gif', 'story', 1)).toThrow();
   });
 
   it('as the viewer: its shape, as long as a landscape one, in even pixels', () =>
   {
     expect(recordSize('mp4', 'viewer', 1.5)).toEqual({ width: 1920, height: 1280 });
     expect(recordSize('mp4', 'viewer', 0.5)).toEqual({ width: 960, height: 1920 });
-    const odd = recordSize('gif', 'viewer', 800 / 451);
-    expect(odd.width).toBe(800);
+    const odd = recordSize('gif', 'viewer', 1280 / 721);
+    expect(odd.width).toBe(1280);
     expect(odd.height % 2).toBe(0);
   });
 });

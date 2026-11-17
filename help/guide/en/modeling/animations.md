@@ -163,14 +163,18 @@ The Animation tool records the selected animation as the viewer shows it: in the
 
 | Size | MP4 | GIF |
 |---|---|---|
-| Landscape | 1920 × 1080 | 800 × 450 |
-| Square | 1080 × 1080 | 600 × 600 |
-| Story | 1080 × 1920 | 450 × 800 |
-| As the viewer | the shape of the viewer, 1920 on its longest side | 800 on its longest side |
+| Landscape | 1920 × 1080 | 1280 × 720 |
+| Square | 1080 × 1080 | 1080 × 1080 |
+| Portrait | – | 1080 × 1350 |
+| Story | 1080 × 1920 | – |
+| Small | – | 480 × 480 |
+| As the viewer | the shape of the viewer, 1920 on its longest side | 1280 on its longest side |
+
+The GIF sizes fit social media: square and portrait (4:5) show uncropped in the feeds of LinkedIn and Instagram, landscape stays within what X takes for a GIF (1280 × 1080), and small is for mail and chat. Stories and reels take video, not GIF.
 
 It records as it plays: once, as a loop that runs on seamlessly, or there and back, at the speed you set (at 0.5× the video is twice as long). It does not record in real time but frame by frame, 30 a second for a video and 15 for a GIF, so it comes out the same on a slow computer as on a fast one, usually faster than it plays. The viewer shows the frames as they are made, and *Cancel* stops it. When a picture has another shape than the viewer, it shows at least what the viewer shows; dimension labels and handles are not in it.
 
-A video is H.264, which phones, social media and video editors take. A GIF takes one palette of at most 256 colours for the whole clip, and gets big quickly: keep it short and small.
+A video is H.264, which phones, social media and video editors take. A GIF takes one palette of at most 256 colours for the whole clip, and gets big quickly: keep it short, or pick small. Some sites take a GIF only up to a few megabytes (LinkedIn about 5 MB, X 15 MB); a longer clip in a large size is better as an MP4.
 
 ## In a configurator
 
