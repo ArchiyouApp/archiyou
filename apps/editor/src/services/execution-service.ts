@@ -126,6 +126,38 @@ function resetWorker(): void
   previous?.then((w) => w.terminate()).catch(() => { /* never started */ });
 }
 
+//// STOPPING ////
+
+/** A run let go of by stopExecution() */
+class RunStopped extends Error
+{
+  override name = 'RunStopped';
+}
+
+let stopRuns: () => void = () => undefined;
+let stopSignal: Promise<never> = newStopSignal();
+
+/** What the local runs going on race: it rejects when they are stopped */
+function newStopSignal(): Promise<never>
+{
+  const signal = new Promise<never>((_, reject) => { stopRuns = () => reject(new RunStopped('The run was stopped')); });
+  signal.catch(() => undefined); // a signal no run raced is no unhandled rejection
+  return signal;
+}
+
+/**
+ * Stop the local runs going on. A script runs synchronously in the worker and cannot be
+ * interrupted, so the worker is torn down (the next run starts a fresh one and loads the
+ * kernel again), and its runs, whose answer will never come, are let go: runScript()
+ * gives them undefined. A run on the server goes on.
+ */
+export function stopExecution(): void
+{
+  stopRuns();
+  stopSignal = newStopSignal();
+  resetWorker();
+}
+
 //// CONTENT ////
 
 /** Whether the last local run was of the user's own script. */
@@ -184,9 +216,10 @@ async function runLocalWithContent(request: RunnerScriptExecutionRequest): Promi
 
 async function runAgainForNeeds(request: RunnerScriptExecutionRequest, d: Partial<ScriptData>, trust: RunTrust, triesLeft: number, steps: string[]): Promise<RunnerScriptExecutionResult>
 {
+  const stopped = stopSignal; // the one of this run: a stop makes a new one
   const worker = await getWorker();
   const ran = performance.now();
-  const result = await worker.run(request);
+  const result = await Promise.race([worker.run(request), stopped]);
   const needs = result?.needs?.content ?? [];
   steps.push(`run ${ms(ran)}${needs.length ? ` (stopped for ${[...new Set(needs.map((n) => n.kind))].join(', ')})` : ''}`);
   if (!needs.length) return result;
@@ -353,7 +386,8 @@ export interface RunScriptOptions
 
 /**
  * Execute a script request — on the server when a target is set, otherwise in the
- * shared local worker (initialising it on first use).
+ * shared local worker (initialising it on first use). Undefined when the run was stopped
+ * (stopExecution()).
  */
 export async function runScript(request: RunnerScriptExecutionRequest, options: RunScriptOptions = {}): Promise<RunnerScriptExecutionResult | undefined>
 {
@@ -412,6 +446,7 @@ export async function runScript(request: RunnerScriptExecutionRequest, options: 
     }
     catch (error)
     {
+      if (error instanceof RunStopped) return undefined;
       console.error('runScript(): failed:', error);
       return createExecutionFailureResult(request, error);
     }

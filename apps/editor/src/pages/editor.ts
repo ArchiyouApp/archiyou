@@ -3,7 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { SignalWatcher } from '@lit-labs/signals';
 import { type RouterLocation } from '@vaadin/router';
 
-import { createExecutionFailureResult, runScript, warmupWorker } from '../services/execution-service';
+import { createExecutionFailureResult, runScript, stopExecution, warmupWorker } from '../services/execution-service';
 import { scheduleWorkingThumbnail } from '../services/thumbnails';
 import { getOutput } from '@archiyou/core/src/runner/worker/output';
 import { authService } from '../services/auth-service';
@@ -138,6 +138,7 @@ export class PageEditor extends SignalWatcher(LitElement)
               ?readonly=${isReadOnly.get()}
             @change=${this._handleCodeChange}
             @execute=${this._handleExecute}
+            @stop=${this._stop}
             @cursor-change=${(e: CustomEvent<{ code: string, pos: number }>) => setHelpCursor(e.detail.code, e.detail.pos)}
             @help-lookup=${this._handleHelpLookup}
           ></editor-code-box>
@@ -567,7 +568,7 @@ export class PageEditor extends SignalWatcher(LitElement)
       this._codeChangeTimeout = null;
     }
 
-    // A run already in progress would make _handleExecute() drop this one
+    // after the run going on rather than one more after it
     await this._whenIdle();
     void this._handleExecute();
   }
@@ -695,7 +696,8 @@ export class PageEditor extends SignalWatcher(LitElement)
       return this._running;
     }
 
-    this._running = (async () =>
+    this._stopped = false;
+    this._running = this._showRunning((async () =>
     {
       let result: RunnerScriptExecutionResult | undefined;
       do
@@ -705,7 +707,7 @@ export class PageEditor extends SignalWatcher(LitElement)
       }
       while (this._rerun);
       return result;
-    })();
+    })());
 
     try
     {
@@ -715,9 +717,35 @@ export class PageEditor extends SignalWatcher(LitElement)
     {
       this._running = null;
       // the document on screen when the run did not know its name yet (a first run)
-      void this._fillToolOutputs();
+      if (!this._stopped) void this._fillToolOutputs();
     }
   }
+
+  /** Stop the run going on (the Run button turns into Stop meanwhile). The result on screen
+   *  stays, and nothing asked for during the run follows it. */
+  private _stop = () =>
+  {
+    this._rerun = false;
+    this._stopped = true;
+    stopExecution();
+  };
+
+  /** Show a run as going on (executing) while this work runs */
+  private async _showRunning<T>(work: Promise<T>): Promise<T>
+  {
+    this._runsShown++;
+    setExecuting(true);
+    try
+    {
+      return await work;
+    }
+    finally
+    {
+      if (--this._runsShown === 0) setExecuting(false);
+    }
+  }
+  private _runsShown = 0;
+  private _stopped = false;
 
   private _running: Promise<RunnerScriptExecutionResult | undefined> | null = null;
 
@@ -846,7 +874,7 @@ export class PageEditor extends SignalWatcher(LitElement)
       if (result.status !== 'error' && active && glb instanceof ArrayBuffer) scheduleWorkingThumbnail(active, glb, scenegraph.get());
       return result;
     }
-    else
+    else if (!this._stopped)
     {
       console.error(`Execute failed without result. This should not happen!`);
     }
@@ -865,9 +893,9 @@ export class PageEditor extends SignalWatcher(LitElement)
     }
 
     const runCount = this._runCount;
-    const extraResult = await runScript(
+    const extraResult = await this._showRunning(runScript(
       this._buildRequest(outputs, ['error'])
-    );
+    ));
 
     // A full run started meanwhile and carries these outputs itself: this result is older
     if (!extraResult || runCount !== this._runCount)
@@ -1336,26 +1364,16 @@ export class PageEditor extends SignalWatcher(LitElement)
     this._activeTools = this._activeTools.filter(t => t.id !== id);
   }
 
+  /** Run (execute() shows it as going on). During a run it asks for one more after it. */
   private async _handleExecute()
   {
-    if (executing.get())
+    try
     {
-      console.warn('Already running a script, ignoring execute command');
-      return;
-    }
-
-    setExecuting(true);
-
-    try { 
       await this.execute();
     }
     catch (err)
     {
       console.error('Execute error:', err);
-    }
-    finally
-    {
-      setExecuting(false);
     }
   }
   

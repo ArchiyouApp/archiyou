@@ -213,10 +213,17 @@ export class CodeBox extends SignalWatcher(LitElement)
           <editor-key-badge></editor-key-badge>
           <span class="spacer"></span>
           ${this._renderPipelineChip()}
-          <button class="execute-button" data-help="run"
-              @click=${this._handleRunClick} title="Run (Ctrl+Enter)">
-              <wa-icon library="lucide" name="play" label="Execute"></wa-icon>
-          </button>
+          ${executing.get()
+            ? html`
+              <button class="execute-button" data-help="run"
+                  @click=${this._handleStopClick} title="Stop the run">
+                  <wa-icon library="lucide" name="square" label="Stop"></wa-icon>
+              </button>`
+            : html`
+              <button class="execute-button" data-help="run"
+                  @click=${this._handleRunClick} title="Run (Ctrl+Enter)">
+                  <wa-icon library="lucide" name="play" label="Execute"></wa-icon>
+              </button>`}
           <div class="options-wrap">
             <button class="options-button ${this._optionsOpen ? 'active' : ''}"
                 @click=${this._toggleOptions}
@@ -582,6 +589,12 @@ export class CodeBox extends SignalWatcher(LitElement)
   private _handleRunClick()
   {
     this._fireExecute();
+  }
+
+  /** Stop the run going on: the page stops it ('stop') */
+  private _handleStopClick()
+  {
+    this.dispatchEvent(new CustomEvent('stop', { bubbles: true, composed: true }));
   }
 
   private _handlePerStatementChange(e: Event)
