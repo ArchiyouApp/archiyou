@@ -383,6 +383,14 @@ export const config = {
    * ⚠️  `path` must be a persistent volume in production, or thumbnails vanish on redeploy
    * while the DB still points at them (clients fall back to a placeholder icon).
    */
+  /**
+   * Snapshots of the product sheet for make.db() (services/MakeDbStore.ts): added by
+   * `pnpm admin:makedb add <file>`, given to runs as content. A persistent volume in production.
+   */
+  makedb: {
+    path: process.env.SERVER_MAKEDB_PATH ?? './data/makedb',
+  },
+
   thumbnails: {
     path: process.env.SERVER_THUMBNAIL_PATH ?? './data/thumbnails',
     /** Public prefix the files are served under. Relative → same origin as the API. */

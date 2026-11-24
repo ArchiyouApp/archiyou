@@ -14,6 +14,7 @@ import type { QueueTaskData, QueueTaskResult, QueueDebugTask, RedisConfig } from
 import { isQueueDebugTask } from './types';
 import { connectToRedis } from './utils';
 import { SheetContent } from './SheetContent';
+import { makeDbStore } from '../services/MakeDbStore';
 
 
 //// MAIN CLASS ////
@@ -276,16 +277,20 @@ export class ExecutionWorker
         const code = (request.script as { code?: unknown })?.code;
         const needs = typeof code === 'string' ? scanContentNeeds(code) : [];
         const named = await this.sheets.resolve(needs);
-        let content = { ...(request.content ?? {}), ...named.content };
-        let problems = named.problems;
+        // the snapshot of the product sheet the code reckons with (make.db()), kept on this server
+        const db = makeDbStore.resolve(needs);
+        let content = { ...(request.content ?? {}), ...named.content, ...db.content };
+        let problems = [...named.problems, ...db.problems];
         let result = await execute(content);
 
         // what the run still stopped for, and was not tried before it
         const tried = new Set(needs.map(n => n.id));
-        const missing = (result.needs?.content ?? []).filter(n => n.kind === 'google-sheet' && !tried.has(n.id) && !content[`google-sheet:${n.id}`]);
+        const missing = (result.needs?.content ?? []).filter(n => (n.kind === 'google-sheet' || n.kind === 'make-db') && !tried.has(n.id) && !content[`${n.kind}:${n.id}`]);
         if (missing.length)
         {
-            const more = await this.sheets.resolve(missing);
+            const sheets = await this.sheets.resolve(missing);
+            const dbs = makeDbStore.resolve(missing);
+            const more = { content: { ...sheets.content, ...dbs.content }, problems: [...sheets.problems, ...dbs.problems] };
             problems = [...problems, ...more.problems];
             if (Object.keys(more.content).length)
             {
