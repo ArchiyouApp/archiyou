@@ -19,7 +19,7 @@ import { SIGNAL_RANGES, type SignalRange } from '@archiyou/types';
 
 import { config } from '../config';
 import { closeDb } from '../db/client';
-import { emailService } from '../services/EmailService';
+import { emailService, type SendOutcome } from '../services/EmailService';
 import { buildReport, renderReport } from '../signals/report';
 import { addDays, signalStore, utcDay } from '../signals/SignalStore';
 
@@ -64,8 +64,7 @@ async function report(): Promise<void>
   if (process.argv.includes('--send'))
   {
     if (!config.signals.to.length) usage('SERVER_SIGNALS_EMAIL is not set: there is nobody to send it to.');
-    await emailService.sendTeamReport(rendered);
-    console.log(`Sent "${rendered.subject}" to ${config.signals.to.join(', ')}.`);
+    tell(await emailService.sendTeamReport(rendered), `the report "${rendered.subject}"`);
     return;
   }
   console.log(`${rendered.subject}\n\n${rendered.text}`);
@@ -73,13 +72,25 @@ async function report(): Promise<void>
 
 async function alertTest(): Promise<void>
 {
-  await emailService.sendTeamAlert({
+  const outcome = await emailService.sendTeamAlert({
     subject: 'Test alert from Archiyou signals',
     text: 'If this reached you, alerts reach the team.',
     details: [['Sent by', 'pnpm admin:signals alert-test'], ['To', config.signals.to.join(', ') || '(the console)']],
     link: `${config.frontendUrl.replace(/\/$/, '')}/admin/signals`,
   });
-  if (config.signals.to.length) console.log(`Sent a test alert to ${config.signals.to.join(', ')}.`);
+  tell(outcome, 'a test alert');
+}
+
+/** Say what became of a mail; a refused one also sets exit code 1. */
+function tell(outcome: SendOutcome, what: string): void
+{
+  if (outcome === 'sent') console.log(`Sent ${what} to ${config.signals.to.join(', ')}.`);
+  else if (outcome === 'logged') console.log(`Printed ${what} above: no Mailgun key or no SERVER_SIGNALS_EMAIL, so nothing was sent.`);
+  else
+  {
+    console.error(`✗ Mailgun refused ${what} (see the error above); nothing was sent.`);
+    process.exitCode = 1;
+  }
 }
 
 async function main(): Promise<void>

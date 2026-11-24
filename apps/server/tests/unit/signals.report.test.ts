@@ -105,6 +105,14 @@ describe('daily report', () =>
     expect(text).toContain('Nothing went wrong.');
   });
 
+  it('tries again next time when Mailgun refuses the report', async () =>
+  {
+    sendReport.mockResolvedValueOnce('failed');
+    expect(await report.sendDailyReport(now)).toBe('failed');
+    expect(await report.sendDailyReport(now)).toBe('sent');
+    expect(await report.sendDailyReport(now)).toBe('already-sent');
+  });
+
   it('gives the day back when the report could not be made', async () =>
   {
     sendReport.mockRejectedValueOnce(new Error('render failed'));

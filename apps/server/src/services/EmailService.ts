@@ -30,6 +30,10 @@ interface Message {
   team?: boolean;
 }
 
+/** What became of a mail: handed to Mailgun, only printed (no Mailgun key or no team
+ *  address), or refused/unreachable. */
+export type SendOutcome = 'sent' | 'logged' | 'failed';
+
 export interface EmailAttachment {
   name: string;
   data: Uint8Array | string;
@@ -247,13 +251,13 @@ export class EmailService {
     text: string;
     details: Array<[string, string | null | undefined]>;
     link: string;
-  }): Promise<void> {
+  }): Promise<SendOutcome> {
     const devNote = alert.details.filter(([, v]) => !!v).map(([k, v]) => `${k}: ${v}`).join('\n   ');
     if (!config.signals.to.length) {
       console.log(`🚨 [signals] ${alert.subject}\n   ${alert.text}${devNote ? `\n   ${devNote}` : ''}`);
-      return;
+      return 'logged';
     }
-    await this.send({
+    return this.send({
       to: config.signals.to.join(', '),
       subject: alert.subject,
       html: renderEmail({
@@ -271,24 +275,24 @@ export class EmailService {
 
   /** The daily report (signals/report.ts), already rendered. Without addresses in
    *  SERVER_SIGNALS_EMAIL its text is printed to the console. */
-  async sendTeamReport(report: { subject: string; html: string; text: string }): Promise<void> {
+  async sendTeamReport(report: { subject: string; html: string; text: string }): Promise<SendOutcome> {
     if (!config.signals.to.length) {
       console.log(`📊 [signals] ${report.subject}\n${report.text}`);
-      return;
+      return 'logged';
     }
-    await this.send({ to: config.signals.to.join(', '), subject: report.subject, html: report.html, devNote: report.text, team: true });
+    return this.send({ to: config.signals.to.join(', '), subject: report.subject, html: report.html, devNote: report.text, team: true });
   }
 
   /** Low-level send. Never throws to callers — a failed/absent send must not leak
    *  whether an account exists (forgot-password always answers 200). */
-  private async send({ to, subject, html, replyTo, devNote, attachments, team }: Message): Promise<void> {
+  private async send({ to, subject, html, replyTo, devNote, attachments, team }: Message): Promise<SendOutcome> {
     if (!config.mailgun.key) {
       const files = (attachments ?? []).map((a) => `${a.name} (${byteLength(a.data)} bytes)`).join(', ');
       console.log(
         `📧 [EmailService] MAILGUN_KEY not set — not sending. ` +
           `to="${to}" subject="${subject}"${devNote ? `\n   ${devNote}` : ''}${files ? `\n   attachments: ${files}` : ''}`,
       );
-      return;
+      return 'logged';
     }
 
     try {
@@ -309,10 +313,13 @@ export class EmailService {
         console.error(`📧 [EmailService] Mailgun send failed (${res.status}) to="${to}": ${body}`);
         // Not the address: it is personal, and the subject says which mail it was.
         if (!team) signal({ type: 'email.failed', source: 'api', message: `Mailgun answered ${res.status}`, data: { subject: subject.slice(0, 100) } });
+        return 'failed';
       }
+      return 'sent';
     } catch (err) {
       console.error(`📧 [EmailService] Mailgun send error to="${to}":`, err);
       if (!team) signal({ type: 'email.failed', source: 'api', message: `Mailgun unreachable: ${(err as Error)?.message ?? err}`, data: { subject: subject.slice(0, 100) } });
+      return 'failed';
     }
   }
 }

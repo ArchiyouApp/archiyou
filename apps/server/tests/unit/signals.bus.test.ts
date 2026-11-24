@@ -164,6 +164,21 @@ describe('alerts', () =>
     expect(alerts.alertStats.suppressed).toBe(2);
   });
 
+  it('takes an alert back when Mailgun refuses it, and tries again with the next occurrence', async () =>
+  {
+    sendAlert.mockResolvedValueOnce('failed');
+    const error: Signal = { type: 'api.error', source: 'api', message: 'refused once' };
+    bus.signal(error);
+    await bus.flushSignals();
+    expect(alerts.alertStats.failed).toBe(1);
+    expect(await store.signalStore.lastAlerted(bus.fingerprint(error))).toBeNull();
+    bus.signal(error);
+    await bus.flushSignals();
+    expect(sendAlert).toHaveBeenCalledTimes(2);
+    expect(alerts.alertStats.sent).toBe(1);
+    expect(await store.signalStore.lastAlerted(bus.fingerprint(error))).not.toBeNull();
+  });
+
   it('never alerts about email.failed', async () =>
   {
     bus.signal({ type: 'email.failed', source: 'api', message: 'Mailgun answered 500' });

@@ -130,7 +130,8 @@ export class SignalStore
     return row?.at ?? null;
   }
 
-  async markAlerted(fingerprint: string, day: string, at = new Date()): Promise<void>
+  /** `at: null` takes an alert back (its mail could not be sent), so the next occurrence tries again. */
+  async markAlerted(fingerprint: string, day: string, at: Date | null = new Date()): Promise<void>
   {
     await db.update(signals).set({ alertedAt: at })
       .where(and(eq(signals.fingerprint, fingerprint), eq(signals.day, day)));

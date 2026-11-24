@@ -44,11 +44,11 @@ export interface DailyReport
   health: {
     received: number; dropped: number; storeFailed: number;
     umamiSent: number; umamiFailed: number; umamiDropped: number;
-    alertsSent: number; alertsSuppressed: number;
+    alertsSent: number; alertsSuppressed: number; alertsFailed: number;
   };
 }
 
-export type ReportOutcome = 'sent' | 'not-yet' | 'already-sent';
+export type ReportOutcome = 'sent' | 'not-yet' | 'already-sent' | 'failed';
 
 /** Send the report on yesterday, if it is time and nobody sent it yet. */
 export async function sendDailyReport(now = new Date()): Promise<ReportOutcome>
@@ -60,7 +60,12 @@ export async function sendDailyReport(now = new Date()): Promise<ReportOutcome>
   try
   {
     const report = await buildReport(day);
-    await emailService.sendTeamReport(renderReport(report));
+    if (await emailService.sendTeamReport(renderReport(report)) === 'failed')
+    {
+      // Mailgun refused it: the next hourly check tries again.
+      await signalStore.releaseReport(day);
+      return 'failed';
+    }
     resetHealth();
     return 'sent';
   }
@@ -99,6 +104,7 @@ export async function buildReport(day: string): Promise<DailyReport>
       umamiDropped: umamiStats.dropped,
       alertsSent: alertStats.sent,
       alertsSuppressed: alertStats.suppressed,
+      alertsFailed: alertStats.failed,
     },
   };
 }
@@ -132,6 +138,7 @@ function resetHealth(): void
   umamiStats.dropped = 0;
   alertStats.sent = 0;
   alertStats.suppressed = 0;
+  alertStats.failed = 0;
 }
 
 //// RENDERING ////
@@ -158,7 +165,7 @@ function healthLines(r: DailyReport): string[]
     h.dropped ? `${h.dropped} dropped (unknown, too many at once)` : '',
     h.storeFailed ? `${h.storeFailed} could not be stored` : '',
     `Umami: ${h.umamiSent} sent${h.umamiFailed ? `, ${h.umamiFailed} failed` : ''}${h.umamiDropped ? `, ${h.umamiDropped} dropped` : ''}`,
-    `Alerts: ${h.alertsSent} sent${h.alertsSuppressed ? `, ${h.alertsSuppressed} held back by the hourly limit` : ''}`,
+    `Alerts: ${h.alertsSent} sent${h.alertsSuppressed ? `, ${h.alertsSuppressed} held back by the hourly limit` : ''}${h.alertsFailed ? `, ${h.alertsFailed} refused by Mailgun` : ''}`,
   ].filter(Boolean);
 }
 

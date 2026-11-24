@@ -16,7 +16,7 @@ import { signalStore, type SignalOccurrence } from './SignalStore';
 
 const HOUR_MS = 60 * 60 * 1000;
 
-export const alertStats = { sent: 0, suppressed: 0 };
+export const alertStats = { sent: 0, suppressed: 0, failed: 0 };
 
 /** When each alert of the last hour went out. */
 let recent: number[] = [];
@@ -39,8 +39,15 @@ export async function considerAlert(o: SignalOccurrence, rule: SignalRule, now =
   // Marked before it is sent, so two flushes that race send it once.
   await signalStore.markAlerted(o.fingerprint, o.day, new Date(now));
   recent.push(now);
+  const outcome = await emailService.sendTeamAlert(alertMail(o, rule));
+  if (outcome === 'failed')
+  {
+    // Mailgun refused it: take the alert back, so the problem's next occurrence tries again.
+    await signalStore.markAlerted(o.fingerprint, o.day, null);
+    alertStats.failed++;
+    return false;
+  }
   alertStats.sent++;
-  await emailService.sendTeamAlert(alertMail(o, rule));
   return true;
 }
 
@@ -71,4 +78,5 @@ export function resetAlerts(): void
   recent = [];
   alertStats.sent = 0;
   alertStats.suppressed = 0;
+  alertStats.failed = 0;
 }
