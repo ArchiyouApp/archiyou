@@ -126,11 +126,27 @@ export function fit(product: Product, m: PartMeasure, tolerance: number): Array<
     return dims.every((d, i) => near(largest[i]!, d)) ? [0] : null;
 }
 
-/** A part of a sheet product turned so that its size equal to the product's thickness is its
- *  thickness. An offcut can be smaller than it is thick: insulation under a window, 80 mm high
+/** A part turned to fit its product: of a sheet product, so that its size equal to the product's
+ *  thickness is its thickness; of a beam, so that its sizes equal to the section are the section. An offcut can be smaller than it is thick: insulation under a window, 80 mm high
  *  in a wall of 140, has 80 as its smallest size. Unchanged when no size matches. */
 export function orient(product: Product, m: PartMeasure, tolerance: number): PartMeasure
 {
+    // a piece of a beam shorter than its section (a block of 38 mm cut from a 38x235): its two
+    // sizes that are the section, and the third its length
+    if (product.measure === 'linear' && product.dims.length === 2)
+    {
+        const dims = [m.thickness, m.width, m.length];
+        const [a, b] = product.dims as [number, number];
+        for (let i = 0; i < 3; i++)
+        {
+            for (let j = 0; j < 3; j++)
+            {
+                if (i === j || Math.abs(dims[i]! - a) > tolerance || Math.abs(dims[j]! - b) > tolerance) { continue; }
+                return { ...m, thickness: dims[i]!, width: dims[j]!, length: dims[3 - i - j]! };
+            }
+        }
+        return m;
+    }
     const thickness = product.thickness;
     if (product.measure !== 'sheet' || thickness === null || Math.abs(m.thickness - thickness) <= tolerance) { return m; }
     const dims = [m.thickness, m.width, m.length];

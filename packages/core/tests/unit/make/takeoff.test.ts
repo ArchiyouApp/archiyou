@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { snapshotFromTables, type MakeDbSnapshot } from '../../../src/make/db'
 import { cutPlan } from '../../../src/make/products/ProductManager'
+import { Takeoff } from '../../../src/make/takeoff/Takeoff'
+import { MakeDb } from '../../../src/make/db'
+import { Script } from '../../../src/Script'
 import { Runner } from '../../../src/runner/Runner'
 
 /**
@@ -28,6 +31,8 @@ function snapshot(): MakeDbSnapshot
             producten: [
                 ['productgroep', 'product_id', 'term', 'aliassen', 'vorm', 'materiaal', 'breedte', 'hoogte', 'lengte', 'prijs', 'prijseenheid', 'prijs per basiseenheid'],
                 ['SLS', 'sls-38x140', 'Structural stud C24 38x140', 'stud, regel', 'balk', 'naaldhout_constructief', 38, 140, 5400, 2, 'm1', 10.8],
+                ['SLS-GEVINGERLAST', 'sls-gevingerlast-38x140', 'Finger-jointed stud C24 38x140', '', 'balk', 'naaldhout_constructief', 38, 140, 12000, 3, 'm1', 36],
+                ['TAPE', 'tape-60', 'Tape 60 mm', 'tape', 'rol', '', '', 60, 25000, 0.5, 'm1', 12.5],
             ],
             bewerkingen: [
                 ['naam', 'fase', 'werkeenheid', 'tijd (seconden)', 'kosten (EUR per werkeenheid)'],
@@ -52,10 +57,11 @@ function snapshot(): MakeDbSnapshot
 }
 
 const item = (s: MakeDbSnapshot) => ({ kind: 'make-db', id: 'latest', bytes: new TextEncoder().encode(JSON.stringify(s)).buffer, version: s.version, via: 'public' })
-async function run(code: string)
+async function run(code: string, options: { components?: Record<string, string>, content?: boolean } = {})
 {
     const r = await new Runner().load()
-    const result: any = await r.execute({ script: { code }, content: { 'make-db:latest': item(snapshot()) }, outputs: [] } as any)
+    r.linkComponentScripts(Object.entries(options.components ?? {}).map(([name, code]) => Script.fromData({ name, code }) as Script))
+    const result: any = await r.execute({ script: { code }, content: options.content === false ? {} : { 'make-db:latest': item(snapshot()) }, outputs: [] } as any)
     return { result, scope: r.getScope('default') as any }
 }
 const close = (v: number) => Math.round(v * 1e4) / 1e4
@@ -120,5 +126,64 @@ describe('make.takeoff()', () =>
         const strict = await run(`make.strict(); box(10, 10, 10).name('loose'); ${MODEL}`)
         expect(strict.result.status).toBe('error')
         expect(JSON.stringify(strict.result.errors)).toMatch(/have no product/)
+    })
+})
+
+/** A component: two studs of a wall part, its tape, and the work on it as a whole */
+const PART = `
+    $PARAMS.define('WIDTH', 'number', { default: 1000 });
+    studs = collection(box(38, 140, 2400), box(38, 140, 2400).move($WIDTH)).product('stud', { component: 'wand' });
+    make.add('tape-60', { lengte: 2 }, { component: 'wand', label: 'naden' });
+    make.complete('wand', { oppervlak: 2 }, { except: ['sls-38x140'] });
+`
+
+describe('make.takeoff() of components', () =>
+{
+    it('brings what a component adds with its shapes: used twice, twice', async () =>
+    {
+        const once = await run(`p = $component('./part').model(); take = make.takeoff(); L = take.lines();`, { components: { part: PART } })
+        const twice = await run(`a = $component('./part').model(); b = $component('./part', { WIDTH: 1200 }).model().moveY(2000); take = make.takeoff(); L = take.lines();`, { components: { part: PART } })
+        expect(once.result.errors ?? []).toEqual([])
+        const of = (lines: any[], id: string) => lines.find(l => l.id === id)
+        expect(of(once.scope.L, 'tape-60').lengte).toBeCloseTo(2)
+        expect(of(twice.scope.L, 'tape-60').lengte).toBeCloseTo(4)
+        expect(of(twice.scope.L, 'sls-38x140').st).toBe(4)
+        // complete(): the component's element work (montagewand), not its studs again
+        expect(of(once.scope.L, 'montagewand').st).toBeCloseTo(1)
+        expect(of(twice.scope.L, 'montagewand').st).toBeCloseTo(2)
+    })
+
+    it('takes the first name that fits, turns short pieces, and lets a part be part of another', async () =>
+    {
+        const { scope } = await run(`
+            long = box(38, 140, 6000).product(['SLS', 'SLS-GEVINGERLAST']);
+            block = box(38, 140, 38).move(500).product('SLS');
+            rafter = box(38, 180, 3000).move(1000).product('sls-38x140', { fit: false });
+            head = box(200, 200, 10).move(2000).partOf(long);
+            take = make.takeoff();
+            IDS = take.lines().map(l => [l.id, l.st, Math.round(l.lengte * 1000)]);
+            HEAD = head.product(); CHECK = make.check();
+        `)
+        expect(scope.IDS).toEqual([['sls-gevingerlast-38x140', 1, 6000], ['sls-38x140', 2, 3038]])
+        expect(scope.HEAD).toEqual({ kind: 'part of', id: 'sls-gevingerlast-38x140', db: null })
+        expect(scope.CHECK).toEqual([])
+    })
+
+    it('without the make database a shape keeps its name, and the takeoff finds the product', async () =>
+    {
+        const { result, scope } = await run(`stud = box(38, 140, 2400).product('stud', { component: 'wand' }); P = stud.product(); make.add('tape-60', { lengte: 3 });`, { content: false })
+        expect(result.status).toBe('success')
+        expect(scope.P).toMatchObject({ kind: 'product', pending: true, name: "'stud'" })
+        const take = new Takeoff(new MakeDb(snapshot()), scope.stud, {}, null, () => {}, scope.make.extras())
+        expect(take.lines().map(l => [l.id, l.st, l.labour])).toEqual([['sls-38x140', 1, 'wand/sls-38x140'], ['tape-60', 0, null]])
+    })
+
+    it('passes the content on to components, and their problems on to the model', async () =>
+    {
+        const { result, scope } = await run(`p = $component('./bad').model(); take = make.takeoff(); C = make.check().map(i => i.where + ': ' + i.message);`,
+            { components: { bad: `box(10, 10, 10).product('banana'); box(38, 140, 2400).product('stud');` } })
+        expect(result.errors ?? []).toEqual([])
+        expect(scope.C).toEqual([expect.stringMatching(/^in a component: shape\.product\('banana'\): 'banana' is no product of the sheet/),
+            'make.takeoff(): 1 shape(s) have no product and are not reckoned with: shape'])
     })
 })

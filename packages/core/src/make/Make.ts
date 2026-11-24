@@ -320,6 +320,7 @@ export class Make
         (this as any).stats = undefined;
         this._issues = [];
         this._strict = false;
+        this._extras = { shapes: 0, adds: [], completes: [], issues: this._issues };
     }
 
     /** Shared BinPacker WASM instance, or null until loaded. */
@@ -2619,6 +2620,7 @@ export class Make
     private _catalogs = new Map<string, Catalog>();
     private _strict = false;
     private _issues: Array<MakeIssue> = [];
+    private _extras: MakeExtras = { shapes: 0, adds: [], completes: [], issues: this._issues };
 
     /** The products of the make database, found by name: see make/catalog/Catalog.ts */
     catalog(version: string = 'latest'): Catalog
@@ -2668,7 +2670,7 @@ export class Make
         const db = this.db(options.db);
         this._materialsFrom(db);
         return new Takeoff(db, shapes ?? this.modeler.all(), options, () => this.archiyou,
-            issue => this._issue({ ...issue }));
+            issue => this._issue({ ...issue }), this._extras);
     }
 
     /** Say a problem: kept and logged, so the model still runs (a shape that could not be given
@@ -2689,24 +2691,90 @@ export class Make
      *  material. See Catalog for how a name is found.
      *  @returns the resolutions, one per part (shapes of the same size are one part)
      */
-    productFor(shapes: any, name: string, options: ProductForOptions = {}): Array<Resolution>
+    productFor(shapes: any, name: string | Array<string>, options: ProductForOptions = {}): Array<Resolution>
     {
-        const catalog = this.catalog(options.db);
-        this._materialsFrom(catalog.db);
+        // several names: per part the first that gives it a product without an error
+        // (['SLS', 'SLS-GEVINGERLAST']: finger-jointed only where longer than SLS comes)
+        const names = (Array.isArray(name) ? name : [name]).map(String);
+        const said = Array.isArray(name) ? `[${names.map(n => `'${n}'`).join(', ')}]` : `'${name}'`;
         const parts = collectParts(partSource(shapes), { labels: false, order: 'scene', includeHidden: true });
+        let catalog: Catalog;
+        try { catalog = this.catalog(options.db); }
+        catch (e)
+        {
+            // Without the make database (a run not signed in, a test) the shapes keep the name and
+            // their size, and make.takeoff() finds the product: a component needs nothing to run
+            if (!(e instanceof ContentNeededError)) { throw e; }
+            const pending = { kind: 'make', pending: names, said, tolerance: options.tolerance, fit: options.fit, recipe: options.recipe, label: options.label, block: options.component, db: options.db ?? null };
+            if (!parts.length) { asArray(shapes).forEach(shape => this._carry(shape, { ...pending, measure: null })); }
+            parts.forEach(part => part.shapes.forEach(shape => this._carry(shape, { ...pending, measure: part.measure })));
+            return [];
+        }
+        this._materialsFrom(catalog.db);
+        const resolve = (measure: any) => { const f = catalog.resolveFirst(names, measure, options.tolerance, options.fit !== false); return { n: f.name, r: f.resolution }; };
         if (!parts.length)
         {
             // no solid: a curve or a point is a product only by a name that means one
-            const r = catalog.resolve(name, null, options.tolerance);
-            this._mark(asArray(shapes), name, r, options);
+            const { n, r } = resolve(null);
+            this._mark(asArray(shapes), n, said, r, options);
             return [r];
         }
         return parts.map(part =>
         {
-            const r = catalog.resolve(name, part.measure, options.tolerance);
-            this._mark(part.shapes, name, r, options);
+            const { n, r } = resolve(part.measure);
+            this._mark(part.shapes, n, said, r, options);
             return r;
         });
+    }
+
+    /**
+     *  Add what the model does not show, for make.takeoff(): `make.add('tape-universeel-60',
+     *  { lengte: 12 }, { component: 'hsbwand', label: 'plaatnaden' })`, quantities in the sheet's
+     *  units (st, lengte m1, oppervlak m2, volume m3). In a component it goes with the shapes it
+     *  gave a product: a model that uses the component twice gets it twice.
+     */
+    add(id: string, quantities: Record<string, number>, options: MakeExtras['adds'][number]['options'] = {}): this
+    {
+        this._extras.adds.push({ id, quantities, options });
+        return this;
+    }
+
+    /**
+     *  Add what a component of the sheet has that the model does not draw, for make.takeoff(): its
+     *  rows scaled to `quantities` (`{ oppervlak: 8.1 }` for a wall), except the products the model
+     *  has as shapes, and those in `except`. Goes with the shapes, as add().
+     */
+    complete(component: string, quantities: Record<string, number>, options: MakeExtras['completes'][number]['options'] = {}): this
+    {
+        this._extras.completes.push({ component, quantities, options });
+        return this;
+    }
+
+    /**
+     *  Say that shapes are drawn but reckoned as part of something else (shape.partOf()): the roof's
+     *  layers in the rows of its component ('dak', by its area with make.complete()), the head plate
+     *  in the product of the pile it is on. make.takeoff() then neither counts them nor lists them as
+     *  having no product.
+     *  @param what - a component or product id, or the shape it is part of
+     */
+    partOfFor(shapes: any, what: any): void
+    {
+        const of = typeof what === 'string' ? what
+            : (this.productOf(what)?.id ?? (typeof what?.name === 'function' ? what.name() : '') ?? 'another shape');
+        asArray(shapes).forEach(shape => this._carry(shape, { kind: 'make', partOf: of || 'another shape', db: null }));
+    }
+
+    /** What this run added with add() and complete() */
+    extras(): MakeExtras
+    {
+        return this._extras;
+    }
+
+    /** Let the shapes carry this run's add() and complete(), each a share */
+    private _carry(shape: any, mark: Record<string, unknown>): void
+    {
+        if (shape._product?.extras !== this._extras) { this._extras.shapes++; }
+        shape._product = { ...mark, extras: this._extras };
     }
 
     /**
@@ -2715,7 +2783,15 @@ export class Make
      */
     componentFor(shapes: any, id: string): void
     {
-        const catalog = this.catalog();
+        let catalog: Catalog;
+        try { catalog = this.catalog(); }
+        catch (e)
+        {
+            // without the make database: make.takeoff() checks the id
+            if (!(e instanceof ContentNeededError)) { throw e; }
+            asArray(shapes).forEach(shape => this._carry(shape, { kind: 'make', component: id, db: null }));
+            return;
+        }
         const known = catalog.components();
         const where = `${describe(shapes)}.component('${id}')`;
         if (!known.includes(id))
@@ -2724,7 +2800,7 @@ export class Make
             this._issue({ level: 'error', where, name: id, message: `'${id}' is no component of the sheet` + (close.length ? `; did you mean: ${close.join(', ')}?` : '') });
             return;
         }
-        asArray(shapes).forEach(shape => { shape._product = { kind: 'make', component: id, db: catalog.db.version }; });
+        asArray(shapes).forEach(shape => this._carry(shape, { kind: 'make', component: id, db: catalog.db.version }));
     }
 
     /** What a shape is, as shape.product() and shape.component() said: undefined when nothing */
@@ -2734,6 +2810,8 @@ export class Make
         const made = shape?._product;
         if (made?.kind !== 'make') { return undefined; }
         if (made.component) { return { kind: 'component', id: made.component, db: made.db }; }
+        if (made.partOf) { return { kind: 'part of', id: made.partOf, db: made.db }; }
+        if (made.pending) { return { kind: 'product', id: '', name: made.said, pending: true, db: null }; }
         const product = this.catalog(made.db).get(made.product);
         return product ? {
             kind: 'product', id: product.id, term: String(product.row['term'] ?? '') || undefined, groups: product.groups,
@@ -2743,16 +2821,16 @@ export class Make
     }
 
     /** Note on each shape what it is, and say what was guessed or went wrong */
-    private _mark(shapes: Array<any>, name: string, r: Resolution, options: ProductForOptions): void
+    private _mark(shapes: Array<any>, name: string, said: string, r: Resolution, options: ProductForOptions): void
     {
-        const where = `${describe(shapes)}.product('${name}')`;
+        const where = `${describe(shapes)}.product(${said})`;
         r.issues.forEach(i => this._issue({ level: i.level, where, name, message: i.message }));
         if (!r.product) { return; }
         const db = this.catalog(options.db).db.version;
         const material = String(r.product.row['materiaal'] ?? '').trim();
         shapes.forEach(shape =>
         {
-            shape._product = { kind: 'make', product: r.product!.id, name, how: r.how, measure: r.measure, recipe: options.recipe, label: options.label, block: options.component, db };
+            this._carry(shape, { kind: 'make', product: r.product!.id, name, how: r.how, measure: r.measure, recipe: options.recipe, label: options.label, block: options.component, db });
             if (material && !shape._material && typeof shape.material === 'function') { shape.material(material); }
         });
     }
@@ -2918,11 +2996,28 @@ export interface ProductForOptions
     recipe?: string;
     /** Describes the shapes in lists: 'stijlen en regels' */
     label?: string;
+    /** false: take the product whatever the shape's size, for a part drawn otherwise than it is
+     *  sold (a rafter cut at an angle, whose box is wider than its section; a pile drawn
+     *  schematically). Its quantities still come from the shape. Default true: a misfit is said. */
+    fit?: boolean;
     /** A version of the make database; default the latest the run was given */
     db?: string;
     /** The component of the sheet the part is in ('hsbwand'): its rows give the part's recipe
      *  (the work on a stud of a wall), and make.takeoff().by('component') groups by it */
     component?: string;
+}
+
+/** What a script adds to what its shapes are, for a takeoff: make.add() and make.complete(). Shared
+ *  by the shapes it gave a product or component: each brings an equal share of it, so a copy of
+ *  the whole (a wall used twice) brings all of it again, and a part of it its part. */
+export interface MakeExtras
+{
+    /** How many shapes share it */
+    shapes: number;
+    adds: Array<{ id: string, quantities: Record<string, number>, options: { label?: string, component?: string, waste?: number, recipe?: string } }>;
+    completes: Array<{ component: string, quantities: Record<string, number>, options: { label?: string, except?: Array<string> } }>;
+    /** The problems of the run (its make.check()), so a model using the component hears of them */
+    issues: Array<MakeIssue>;
 }
 
 /** A problem make.check() lists */
@@ -2939,7 +3034,7 @@ export interface MakeIssue
 /** What shape.product() returns without a name */
 export interface ShapeProduct
 {
-    kind: 'product' | 'component';
+    kind: 'product' | 'component' | 'part of';
     id: string;
     term?: string;
     groups?: Array<string>;
@@ -2949,12 +3044,17 @@ export interface ShapeProduct
     name?: string;
     how?: string | null;
     measure?: any;
-    /** The version of the make database it came from */
-    db: string;
+    /** The version of the make database it came from; null when the run had none */
+    db: string | null;
+    /** Named, but not found yet: the run had no make database; make.takeoff() finds it */
+    pending?: boolean;
 }
 
+/** The shapes, collections within collections flattened */
 const asArray = (shapes: any): Array<any> =>
-    Array.isArray(shapes) ? shapes : (typeof shapes?.toArray === 'function' ? shapes.toArray() : [shapes]);
+    (Array.isArray(shapes) ? shapes : (typeof shapes?.toArray === 'function' ? shapes.toArray() : [shapes]))
+        .flatMap((s: any) => (s && typeof s.toArray === 'function' && s !== shapes ? asArray(s) : [s]))
+        .filter((s: any) => s != null);
 
 /** A shape or collection by its name, for messages: 'stud3', 'wall (12 shapes)' */
 function describe(shapes: any): string

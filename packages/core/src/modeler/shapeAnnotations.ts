@@ -51,10 +51,13 @@ declare module '@archiyou/meshup' {
         material(name?: string): any
         /** Give this shape a product of the make database by name ('SLS', 'stud', 'osb 18'); its size
          *  chooses among what the name can mean. Chainable. Without a name: what it is. See make/catalog. */
-        product(name?: string, options?: ProductForOptions): any
+        product(name?: string | Array<string>, options?: ProductForOptions): any
         /** Make this shape a mass of a component of the make database ('hsbwand'). Chainable.
          *  Without an id: what it is. */
         component(id?: string): any
+        /** Drawn, but reckoned as part of something else: a component ('dak') or the shape it is on.
+         *  make.takeoff() neither counts it nor lists it as having no product. Chainable. */
+        partOf(what: any): any
         /** Mass/weight in the active unit system. Shortcut for material().weight(). */
         weight(): number | undefined
         /** Embodied carbon (kgCO2e) of this shape. Defaults to cradle-to-gate A1-A3. */
@@ -87,9 +90,11 @@ declare module '@archiyou/meshup' {
     interface ShapeCollection {
         /** Give every solid in it a product of the make database by name: each the product its
          *  size fits. Chainable. Without a name: what each shape is. */
-        product(name?: string, options?: ProductForOptions): any
+        product(name?: string | Array<string>, options?: ProductForOptions): any
         /** Make every shape in it a mass of a component of the make database. Chainable. */
         component(id?: string): any
+        /** Every shape in it drawn, but reckoned as part of something else. Chainable. */
+        partOf(what: any): any
         /** Export the 2D shapes in this collection (+ linked dimension lines) to DXF. */
         toDXF(options?: toDXFOptions): string | null
         /** Automatic dimensioning of the shapes in this collection (Annotator). */
@@ -203,6 +208,11 @@ function materialClasses(manager: any, name?: string): Array<string>
 /** The make module a shape reaches through its modeler, or null with a warning */
 function makeOf(shape: any, method: string): any
 {
+    // a collection: its first shape that reaches one, collections within it too
+    if (shape && !shape._ay && typeof shape.toArray === 'function')
+    {
+        shape = shape.toArray().map((s: any) => (s?._ay ? s : (typeof s?.toArray === 'function' ? s.toArray().flat(Infinity).find((x: any) => x?._ay) : null))).find(Boolean) ?? shape
+    }
     const make = shape?._ay?.modeler?.make
     if (!make)
     {
@@ -233,12 +243,24 @@ ShapeProto.component = function (this: any, id?: string) {
     return this
 }
 
+/** Drawn, but reckoned as part of something else (a component, or the shape it is on). */
+ShapeProto.partOf = function (this: any, what: any) {
+    makeOf(this, 'partOf')?.partOfFor(this, what)
+    return this
+}
+
 const CollectionProto = meshup.ShapeCollection.prototype as any
+
+/** Every shape in the collection drawn, but reckoned as part of something else. */
+CollectionProto.partOf = function (this: any, what: any) {
+    makeOf(this, 'partOf')?.partOfFor(this, what)
+    return this
+}
 
 /** Every solid in the collection its product, each by its size; without a name: what each shape is. */
 CollectionProto.product = function (this: any, name?: string, options?: any) {
     const shapes = this.toArray()
-    const make = makeOf(shapes[0], 'product')
+    const make = makeOf(this, 'product')
     if (name === undefined) return shapes.map((s: any) => make?.productOf(s))
     make?.productFor(this, name, options)
     return this
@@ -247,7 +269,7 @@ CollectionProto.product = function (this: any, name?: string, options?: any) {
 /** Every shape in the collection a mass of a component; without an id: what each shape is. */
 CollectionProto.component = function (this: any, id?: string) {
     const shapes = this.toArray()
-    const make = makeOf(shapes[0], 'component')
+    const make = makeOf(this, 'component')
     if (id === undefined) return shapes.map((s: any) => make?.productOf(s))
     make?.componentFor(this, id)
     return this

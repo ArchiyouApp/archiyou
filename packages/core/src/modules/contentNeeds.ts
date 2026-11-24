@@ -24,6 +24,6 @@ export function scanContentNeeds(code: string): AyContentNeed[]
 export function makeDbNeeds(code: string): AyContentNeed[]
 {
     const pinned = [...code.matchAll(/\bmake\.db\(\s*(['"`])([0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]+|latest)\1\s*\)/g)].map((m) => m[2]!);
-    const latest = /\bmake\.db\(\s*\)|\bmake\.takeoff\(|\.product\(\s*['"`]|\.component\(\s*['"`]/.test(code) ? ['latest'] : [];
+    const latest = /\bmake\.db\(\s*\)|\bmake\.takeoff\(|\.product\(\s*['"`[]|\.component\(\s*['"`]/.test(code) ? ['latest'] : [];
     return [...new Set([...pinned, ...latest])].map((id) => ({ kind: 'make-db', id, reason: 'make.db' }));
 }

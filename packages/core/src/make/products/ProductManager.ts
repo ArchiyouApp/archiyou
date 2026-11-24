@@ -499,6 +499,8 @@ export class ProductManager
     /** Shapes a group assign() saw but found no product for, until something else takes them. */
     private _unmatched = new Set<any>();
     private _added: Array<Addition> = [];
+    /** What complete() added, so a later complete() of the component does not take it as modelled */
+    private _completed = new Set<Addition>();
     /** Without products: what add() and complete() said, for the shapes assign() mapped to bring along. */
     private _mappedTakeOff: TakeOff | null = null;
     private _waste = new Map<string, number>();
@@ -867,7 +869,7 @@ export class ProductManager
      *  @param component - A component of the sheet: 'hsbwand'.
      *  @param quantities - How much of it the model has, in its unit: `{ oppervlak: 21.6 }` or `{ st: 2 }`.
      */
-    elementWork(component: string, quantities: ProductQuantities, options: Pick<ProductOptions, 'label'> = {}): this
+    elementWork(component: string, quantities: ProductQuantities, options: Pick<ProductOptions, 'label'> & { elements?: number } = {}): this
     {
         this._checkComponent('elementWork', component);
         const block = this._loadCostData('elementWork').blocks.get(component);
@@ -881,9 +883,10 @@ export class ProductManager
         {
             throw new Error(`ProductManager.elementWork('${component}'): it is sized in ${block.unit}: give ${key ?? 'its size'}`);
         }
-        // per element: once for each (a component sized in m2 is one element here); per m2 of it;
-        // or, in the block layout, as much as the block has, scaled by size
-        const elements = block.unit === 'st' ? amount : 1;
+        // per element: once for each (a component sized in m2 is one element here, or as many as
+        // `elements` says: the takeoff of a wall used twice); per m2 of it; or, in the block
+        // layout, as much as the block has, scaled by size
+        const elements = block.unit === 'st' ? amount : (options.elements ?? 1);
         block.element.forEach(work => this.add(work.operation, {
             [work.quantity]: work.per === 'element' ? work.factor! * elements
                 : work.per === 'oppervlak' ? work.factor! * (quantities.oppervlak ?? amount)
@@ -907,7 +910,7 @@ export class ProductManager
      *  products.assign('houtvezel-flex-240', wall.insulation, { component: 'hsbwand' })
      *  products.complete('hsbwand', { oppervlak: 8.1 })  // sheathing, gypsum, screws, tape and the element work
      */
-    complete(component: string, quantities: ProductQuantities, options: Pick<ProductOptions, 'label'> & { except?: Array<string> } = {}): this
+    complete(component: string, quantities: ProductQuantities, options: Pick<ProductOptions, 'label'> & { except?: Array<string>, elements?: number } = {}): this
     {
         if (this._mapsOnly())
         {
@@ -929,7 +932,8 @@ export class ProductManager
         const line = (id: string) => this._products.find(p => p.id === id)?.groups[0] ?? id;
         const shown = [
             ...[...this._assigned.values()].filter(a => a.kind === 'product' && a.block === component).map(a => (a as { product: Product }).product.id),
-            ...this._added.filter(a => a.kind === 'product' && a.component === component).map(a => a.id),
+            // what an earlier complete() added is the block's, not the model's: a second wall completes too
+            ...this._added.filter(a => a.kind === 'product' && a.component === component && !this._completed.has(a)).map(a => a.id),
         ];
         const shownLines = new Set(shown.map(line));
         const scale = amount / block.size;
@@ -939,7 +943,11 @@ export class ProductManager
                 .filter(([, v]) => v > 0)
                 .map(([k, v]) => [k, v * scale])) }))
             .filter(p => Object.keys(p.scaled).length > 0)
-            .forEach(p => this.add(p.id, p.scaled, { label: options.label ?? component, component }));
+            .forEach(p =>
+            {
+                this.add(p.id, p.scaled, { label: options.label ?? component, component });
+                this._completed.add(this._added[this._added.length - 1]!);
+            });
         return this.elementWork(component, quantities, options);
     }
 

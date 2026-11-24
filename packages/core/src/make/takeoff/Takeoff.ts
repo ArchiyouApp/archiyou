@@ -23,7 +23,9 @@ import { collectParts, partSource, type PartMeasure } from '../../modeler/parts'
 import type { MakeDb } from '../db';
 import { ProductManager, cutPlan, type ProductCosts, type ProductLine, type OrderLine, type ProductQuantities, type Product } from '../products/ProductManager';
 import { toProduct } from '../catalog/products';
+import { Catalog } from '../catalog/Catalog';
 import type { Table } from '../../calc/Table';
+import type { MakeExtras } from '../Make';
 
 export type TakeoffKey = 'component' | 'product' | 'label' | 'material' | 'vorm' | 'group' | 'phase';
 
@@ -92,7 +94,7 @@ interface Added
     kind: 'add' | 'complete';
     id: string;
     quantities: ProductQuantities;
-    options: { label?: string, component?: string, waste?: number, recipe?: string };
+    options: { label?: string, component?: string, waste?: number, recipe?: string, except?: Array<string>, elements?: number };
 }
 
 const CATEGORIES = ['material', 'onsite', 'voorbewerking', 'assemblage', 'montage', 'afbouw'] as const;
@@ -117,19 +119,24 @@ export class Takeoff
      *  @param report - where problems go: make's list (check(), strict())
      */
     constructor(db: MakeDb, shapes: any, private readonly options: TakeoffOptions = {}, private readonly modules: (() => any) | null = null,
-        private readonly report: (issue: TakeoffIssue) => void = () => {})
+        private readonly report: (issue: TakeoffIssue) => void = () => {}, own: MakeExtras | null = null)
     {
         this.db = db;
         this._shapes = shapes;
         const parts = collectParts(partSource(shapes), { labels: false, order: 'scene', includeHidden: options.hidden === true });
         const seen = new Set<any>();
+        // what make.add() and make.complete() added, per script: each of its shapes brings a share
+        const shares = new Map<MakeExtras, number>();
         parts.forEach(part => part.shapes.forEach(shape =>
         {
             if (seen.has(shape)) { return; }
             seen.add(shape);
+            const extras = shape?._product?.extras as MakeExtras | undefined;
+            if (extras?.shapes) { shares.set(extras, (shares.get(extras) ?? 0) + 1 / extras.shapes); }
             if (shape?._fastening) { return; }    // screws of make.fasten(): counted by their heads, below
             const made = shape?._product;
             if (made?.kind !== 'make') { this._loose.push(shape); return; }
+            if (made.partOf) { return; }    // reckoned as part of something else (shape.partOf())
             if (made.db && made.db !== db.version)
             {
                 this._issue('warning', `${this._name(shape)}`, `its product was found in make database ${made.db}; the takeoff reckons with ${db.version}`);
@@ -141,10 +148,35 @@ export class Takeoff
                 this._placed.push({ shape, component: made.component, volume: Number.isFinite(own) && own > 0 ? own : part.measure.volume, block: made.component, label });
                 return;
             }
+            if (made.pending)
+            {
+                // named in a run without the make database: found now, as shape.product() would have
+                const { name, resolution: r } = this._catalog().resolveFirst(made.pending, made.measure ?? part.measure, made.tolerance, made.fit !== false);
+                r.issues.forEach(i => this._issue(i.level, `${this._name(shape)}.product(${made.said ?? `'${name}'`})`, i.message));
+                if (r.product) { this._placed.push({ shape, product: r.product, measure: r.measure ?? part.measure, block: made.block ?? '', label, recipe: made.recipe }); }
+                return;
+            }
             const product = this._products().get(made.product);
             if (!product) { this._issue('error', this._name(shape), `'${made.product}' is not in make database ${db.version}`); return; }
             this._placed.push({ shape, product, measure: made.measure ?? part.measure, block: made.block ?? '', label, recipe: made.recipe });
         }));
+        // the problems of the components the shapes come from: their own make.check()
+        shares.forEach((_, extras) =>
+        {
+            if (extras === own) { return; }
+            (extras.issues ?? []).forEach(i => this._issue(i.level, `in a component: ${i.where}`, i.message));
+        });
+        // the run's own, when none of its shapes carries it (it gave no shape a product)
+        if (own && (own.adds.length || own.completes.length) && !shares.has(own) && own.shapes === 0) { shares.set(own, 1); }
+        const scaled = (q: Record<string, number>, share: number) => Object.fromEntries(Object.entries(q).map(([k, v]) => [k, Number(v) * share]));
+        // a complete() per use of a component: a wall used twice is two elements to square and mount
+        shares.forEach((share, extras) =>
+        {
+            extras.adds.forEach(a => this._added.push({ kind: 'add', id: a.id, quantities: scaled(a.quantities, share), options: a.options }));
+            extras.completes.forEach(c => this._added.push({ kind: 'complete', id: c.component, quantities: scaled(c.quantities, share),
+                options: { ...c.options, elements: share } }));
+        });
+
         if (this._loose.length)
         {
             const names = [...new Set(this._loose.map(s => this._name(s)))];
@@ -164,7 +196,7 @@ export class Takeoff
 
     /** Add what a component of the sheet has that the model does not: its rows scaled to `quantities`,
      *  except the products the model has. `take.complete('hsbwand', { oppervlak: 8.1 })` */
-    complete(component: string, quantities: ProductQuantities, options: { label?: string } = {}): this
+    complete(component: string, quantities: ProductQuantities, options: { label?: string, except?: Array<string> } = {}): this
     {
         this._added.push({ kind: 'complete', id: component, quantities, options });
         this._cache.clear();
@@ -255,6 +287,22 @@ export class Takeoff
         });
     }
 
+    /**
+     *  The model as rows of the sheet's componenten tab: per product its quantities and the work
+     *  its recipe gives, then the work on the element; totals incl. margins. What `archiyou blocks`
+     *  writes for a component's variants (see ProductManager.block()).
+     */
+    block(): ReturnType<ProductManager['block']>
+    {
+        return this._engine(null).block();
+    }
+
+    /** The shapes that have no product or component, so are not reckoned with */
+    loose(): Array<any>
+    {
+        return [...this._loose];
+    }
+
     /** What it could not reckon with: shapes without a product, products without a recipe or price or weight */
     check(): Array<TakeoffIssue>
     {
@@ -327,7 +375,7 @@ export class Takeoff
             try
             {
                 if (a.kind === 'add') { pm.add(a.id, a.quantities, a.options); }
-                else { pm.complete(a.id, a.quantities, a.options); }
+                else { pm.complete(a.id, a.quantities, { label: a.options.label, except: a.options.except, elements: a.options.elements }); }
             }
             catch (e) { if (!group) { this._issue('error', `take.${a.kind}('${a.id}')`, (e as Error).message); } }
         });
@@ -434,6 +482,12 @@ export class Takeoff
         if (product.measure === 'linear' && num(q.lengte) > 0 && Number.isFinite(a!)) { return num(q.lengte) * 1000 / a! * mass; }
         if (product.measure === 'sheet' && num(q.oppervlak) > 0 && Number.isFinite(a! * b!)) { return num(q.oppervlak) * 1e6 / (a! * b!) * mass; }
         return num(q.st) * mass;
+    }
+
+    private _catalogOf: Catalog | null = null;
+    private _catalog(): Catalog
+    {
+        return this._catalogOf ??= new Catalog(this.db);
     }
 
     private _productMap: Map<string, Product> | null = null;

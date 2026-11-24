@@ -44,6 +44,8 @@ export interface Resolution extends Lookup
     product: Product | null;
     /** The part's measure, turned where that made it fit */
     measure: PartMeasure | null;
+    /** The product fits the part's size (or the part has none to check) */
+    fits?: boolean;
     issues: Array<ResolveIssue>;
 }
 
@@ -149,7 +151,7 @@ export class Catalog
      *  shape that is no solid) only a name that means one product resolves. Ties, fuzzy reads
      *  and misfits are chosen, and said, as warnings; what cannot be chosen is an error.
      */
-    resolve(name: string, measure: PartMeasure | null, tolerance: number = 1): Resolution
+    resolve(name: string, measure: PartMeasure | null, tolerance: number = 1, check: boolean = true): Resolution
     {
         const lookup = this.find(name);
         const issues: Array<ResolveIssue> = [];
@@ -164,7 +166,7 @@ export class Catalog
 
         if (!measure)
         {
-            if (lookup.candidates.length === 1) { return { ...lookup, product: lookup.candidates[0]!, measure, issues }; }
+            if (lookup.candidates.length === 1) { return { ...lookup, product: lookup.candidates[0]!, measure, issues, fits: true }; }
             issues.push({ level: 'error', message: `'${name}' can be ${lookup.candidates.length} products (${ids(lookup.candidates)}) and the shape has no size to choose by` });
             return { ...lookup, product: null, measure, issues };
         }
@@ -181,8 +183,9 @@ export class Catalog
         {
             if (lookup.candidates.length === 1)
             {
-                issues.push({ level: 'warning', message: `${lookup.candidates[0]!.id} does not fit the part's size ${sizeText(measure)}` });
-                return { ...lookup, product: lookup.candidates[0]!, measure, issues };
+                // told not to check (fit: false): drawn otherwise than it is sold
+                if (check) { issues.push({ level: 'warning', message: `${lookup.candidates[0]!.id} does not fit the part's size ${sizeText(measure)}` }); }
+                return { ...lookup, product: lookup.candidates[0]!, measure, issues, fits: false };
             }
             issues.push({ level: 'error', message: `no product of '${name}' fits the part's size ${sizeText(measure)}; it has: ${ids(lookup.candidates)}` });
             return { ...lookup, product: null, measure, issues };
@@ -193,7 +196,17 @@ export class Catalog
         {
             issues.push({ level: 'warning', message: `${tied.length} products of '${name}' fit ${sizeText(measure)} equally well (${ids(tied)}): took ${best.product.id}; name one of them, or a narrower group` });
         }
-        return { ...lookup, product: best.product, measure: best.measure, issues };
+        return { ...lookup, product: best.product, measure: best.measure, issues, fits: true };
+    }
+
+    /** resolve() for several names: the first whose product fits the part, else the first that
+     *  gives it a product without an error, else the first name's resolution ([SLS, SLS-GEVINGERLAST]: finger-jointed only where
+     *  longer than SLS comes) */
+    resolveFirst(names: Array<string>, measure: PartMeasure | null, tolerance: number = 1, check: boolean = true): { name: string, resolution: Resolution }
+    {
+        const tries = names.map(name => ({ name, resolution: this.resolve(name, measure, tolerance, check) }));
+        const usable = (t: typeof tries[number]) => t.resolution.product && !t.resolution.issues.some(i => i.level === 'error');
+        return tries.find(t => usable(t) && t.resolution.fits) ?? tries.find(usable) ?? tries[0]!;
     }
 
     /** Names close to `name`, to suggest when nothing matched: aliases, groups and ids */
