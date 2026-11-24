@@ -89,17 +89,24 @@ function withSpecs(rows, specs)
 
 //// GOOGLE ////
 
-/** The core's CO2 and Rc per component: its named ranges outputs.<id>.gwp (3 cells) and .rc. */
+/** The core's CO2 per unit (3 values) and Rc per component: its named ranges outputs.<id>.gwp and
+ *  .rc, or, in the table layout that has none, its rows (coreBlocks()). */
 function coreSpecs(core)
 {
   const names = core.getNamedRanges().map((r) => r.getName());
-  return new Map(names
+  const named = names
     .map((n) => (n.match(/^outputs\.([^.]+)\.gwp$/) || [])[1])
     .filter(Boolean)
     .map((id) => [id, {
       gwp: core.getRangeByName(`outputs.${id}.gwp`).getValues()[0],
       rc: names.includes(`outputs.${id}.rc`) ? core.getRangeByName(`outputs.${id}.rc`).getValue() : '',
-    }]));
+    }]);
+  const all = core.getSheetByName('componenten').getDataRange().getValues();
+  const headerAt = all.findIndex((r) => text(r[0]).toLowerCase() === 'component');
+  const fromRows = headerAt < 0 ? [] : coreBlocks(all[headerAt], all.slice(headerAt + 1), null)
+    .filter((b) => b.table)
+    .map((b) => [b.id, { gwp: b.gwp, rc: b.rc }]);
+  return new Map([...fromRows, ...named]);
 }
 
 /** The data rows of a tab, `width` columns from `firstRow` on, up to its last row. */

@@ -46,17 +46,36 @@ export interface BlockProduct
 {
     id: string;
     vorm: string;
+    /** What part of the component it is: constructiehout, isolatie, bevestigingsmiddelen, ... */
+    bouwdeel?: string;
     /** Its quantities in the representative component. */
     quantities: Record<QuantityKey, number>;
     steps: Array<RecipeStep>;
 }
 
-/** Work on the element as a whole: `amount` of `quantity` for the representative size. */
+/** Work on the element as a whole: `amount` of `quantity` for the representative size. In the
+ *  table layout it says how: `factor` per element, or per m2 of it (`per` 'oppervlak'). */
 export interface ElementWork
 {
     operation: string;
     quantity: QuantityKey;
     amount: number;
+    per?: 'element' | 'oppervlak';
+    factor?: number;
+}
+
+/** What a component's first row says about it. */
+export interface BlockInfo
+{
+    gebouwdeel: string;
+    groep: string;
+    naam: string;
+    /** The component it is a variant of, or ''. */
+    variantOf: string;
+    /** m2K/W, or null when the sheet has none. */
+    rc: number | null;
+    /** Where it came from: 'archiyou/timberwall@0.31', or 'handmatig'. */
+    bron: string;
 }
 
 /** One representative component of the sheet. */
@@ -69,10 +88,16 @@ export interface Block
     size: number;
     /** The representative volume (m3). */
     volume: number;
+    info: BlockInfo;
     products: Array<BlockProduct>;
     element: Array<ElementWork>;
     /** The costs of the representative component, excluding margins. */
     costs: Record<CostCategory, number>;
+    /** The CO2 of the representative component, kg: A1-A3, A4-C4, D. */
+    gwp: [number, number, number];
+    /** The layout it was read from: a block of rows under its id ('block'), or a table with the
+     *  id on every row ('table'). */
+    layout: 'block' | 'table';
 }
 
 const text = (value: unknown): string => String(value ?? '').trim();
@@ -89,8 +114,21 @@ export function quantityOfUnit(unit: unknown): QuantityKey | null
     return UNIT_QUANTITY[text(unit)] ?? null;
 }
 
-/** The blocks of the componenten table, by component id. Null when these rows are not such a
- *  table (a builder's componenten tab has the same name and another layout). */
+/** The column of the Rc in either layout */
+const rcOf = (row: Record<string, unknown>): number | null =>
+{
+    const v = row['Rc (m2K/W)'] ?? row['R (m2K/W)'];
+    return v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v);
+};
+
+/**
+ *  The components of the componenten table, by id. Null when these rows are not such a table
+ *  (a builder's componenten tab has the same name and another layout). Two layouts:
+ *   - blocks: the id on a component's first row only, its rows below it, then its totals
+ *   - a table: the id on every row; its first row (with its name) says what the component is,
+ *     then per product a row (fase materiaal) with the operations on it below it, and the work on
+ *     the element as a whole. An operation is per all rows of its product in the component.
+ */
 export function readBlocks(rows: Array<Record<string, unknown>>): Map<string, Block> | null
 {
     const first = rows[0];
@@ -101,25 +139,36 @@ export function readBlocks(rows: Array<Record<string, unknown>>): Map<string, Bl
 
     const blocks = new Map<string, Block>();
     let block: Block | null = null;
+    const tableSteps = new Map<Block, Map<string, Array<RecipeStep>>>();
 
     rows.forEach(row =>
     {
         const id = text(row['component']);
-        if (id)
+        if (id && id !== block?.id)
         {
-            const size = number(row['representatieve maat']);
-            const [width, height, depth] = ['breedte', 'hoogte', 'diepte'].map(side => number(row[`representatieve ${side} (mm)`]));
-            block = {
-                id, size,
-                unit: text(row['eenheid maat']),
-                volume: width! * height! * depth! / 1e9,
-                products: [],
-                element: [],
-                costs: { material: 0, onsite: 0, voorbewerking: 0, assemblage: 0, montage: 0, afbouw: 0 },
-            };
-            blocks.set(id, block);
+            const known = blocks.get(id);
+            if (known) { block = known; }
+            else
+            {
+                const size = number(row['representatieve maat']);
+                const [width, height, depth] = ['breedte', 'hoogte', 'diepte'].map(side => number(row[`representatieve ${side} (mm)`]));
+                block = {
+                    id, size,
+                    unit: text(row['eenheid maat']),
+                    volume: width! * height! * depth! / 1e9,
+                    info: { gebouwdeel: text(row['gebouwdeel']), groep: text(row['componentgroep']), naam: text(row['naam (in de offerte)']),
+                        variantOf: text(row['variant van']), rc: rcOf(row), bron: text(row['bron']) },
+                    products: [],
+                    element: [],
+                    costs: { material: 0, onsite: 0, voorbewerking: 0, assemblage: 0, montage: 0, afbouw: 0 },
+                    gwp: [0, 0, 0],
+                    layout: 'block',
+                };
+                blocks.set(id, block);
+            }
         }
-        // the rows under a block's total have no phase
+        else if (id && block && !text(row['naam (in de offerte)'])) { block.layout = 'table'; }
+        // the rows under a block's total have no phase, nor has a component's first row in a table
         const fase = text(row['fase']);
         if (!block || !fase) { return; }
         const current: Block = block;
@@ -128,6 +177,7 @@ export function readBlocks(rows: Array<Record<string, unknown>>): Map<string, Bl
         {
             current.costs[category] += number(row[COST_COLUMNS[category]]);
         });
+        ['GWP A1-A3 (kg)', 'GWP A4-C4 (kg)', 'GWP D (kg)'].forEach((column, i) => { current.gwp[i] += number(row[column]); });
 
         // a material row is a product of the block; any other row with a product is work on it
         const operation = text(row['bewerking']);
@@ -139,6 +189,7 @@ export function readBlocks(rows: Array<Record<string, unknown>>): Map<string, Bl
                 current.products.push({
                     id: product,
                     vorm: text(row['vorm / werkeenheid']).toLowerCase(),
+                    bouwdeel: text(row['bouwdeel']),
                     quantities: {
                         st: number(row['stuks (totaal)']),
                         lengte: number(row['lengte (totaal m1)']),
@@ -156,17 +207,31 @@ export function readBlocks(rows: Array<Record<string, unknown>>): Map<string, Bl
         if (!product)
         {
             const quantity = quantityOfUnit(row['vorm / werkeenheid']);
+            const per = text(row['per']);
             if (quantity)
             {
-                current.element.push({ operation, quantity, amount: number(row['hoeveelheid in prijseenheid']) });
+                current.element.push({ operation, quantity, amount: number(row['hoeveelheid in prijseenheid']),
+                    ...(per === 'element' || per === 'oppervlak' ? { per, factor: number(row['factor']) } : {}) });
             }
+            return;
+        }
+        const per = text(row['per']) as QuantityKey;
+        if (!per) { return; }
+        const step = { operation, fase, per, factor: number(row['factor']) };
+        if (text(row['component']))
+        {
+            // the table: per all rows of the product in the component, whichever comes first
+            const steps = tableSteps.get(current) ?? new Map<string, Array<RecipeStep>>();
+            tableSteps.set(current, steps);
+            steps.set(product, [...(steps.get(product) ?? []), step]);
             return;
         }
         // the product row above it: a block can have the same product twice
         const owner = [...current.products].reverse().find(p => p.id === product);
-        const per = text(row['per']) as QuantityKey;
-        if (owner && per) { owner.steps.push({ operation, fase, per, factor: number(row['factor']) }); }
+        if (owner) { owner.steps.push(step); }
     });
+    // in a table a product's operations go with each of its rows, so combineRows() weighs them back
+    tableSteps.forEach((steps, b) => b.products.forEach(p => { p.steps.push(...(steps.get(p.id) ?? [])); }));
     return blocks;
 }
 

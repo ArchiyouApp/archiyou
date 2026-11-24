@@ -34,42 +34,77 @@ function coreColumns(header)
   PHASES.forEach((p) => { cols[p] = header.findIndex((h) => new RegExp(`^${p}s?kosten`).test(String(h).trim().toLowerCase())); });
   const missing = Object.entries(cols).filter(([, i]) => i < 0).map(([k]) => k);
   if (missing.length > 0) throw new Error(`componenten: kolommen niet gevonden: ${missing.join(', ')}`);
+  // optional: the component a block is a variant of (blocks made from a script's presets have it)
+  cols.variant = find('variant van');
   return cols;
 }
 
 /** The component blocks of the core's componenten rows (below the header): per block its size, its
  *  product lines (the rows of fase materiaal: an operation names its product too), its labour cost
- *  per phase (TOTAAL row) and its price per unit incl. margins. */
-function coreBlocks(header, rows)
+ *  per phase and its price per unit incl. margins, its CO2 per unit and its Rc. Two layouts: blocks
+ *  (the id on a component's first row, a TOTAAL row and the price per unit below it), and a table
+ *  (the id on every row, no totals: they are added up here, the price with `margins`, percentages
+ *  { material, labor, general }). */
+function coreBlocks(header, rows, margins)
 {
   const c = coreColumns(header);
-  return rows.reduce((blocks, r) =>
+  const gwpCols = ['gwp a1-a3', 'gwp a4-c4', 'gwp d'].map((g) => header.findIndex((h) => String(h).trim().toLowerCase().startsWith(g)));
+  const rcCol = header.findIndex((h) => /^rc \(|^r \(m2k\/w\)/.test(String(h).trim().toLowerCase()));
+  const blocks = rows.reduce((list, r) =>
   {
-    if (text(r[c.component]) !== '')
+    const id = text(r[c.component]);
+    const last = list[list.length - 1];
+    if (id !== '' && (!last || id !== last.id))
     {
-      blocks.push({ id: text(r[c.component]), gebouwdeel: text(r[c.gebouwdeel]), groep: text(r[c.groep]), naam: text(r[c.naam]),
+      list.push({ id, gebouwdeel: text(r[c.gebouwdeel]), groep: text(r[c.groep]), naam: text(r[c.naam]),
+        variant: c.variant < 0 ? '' : text(r[c.variant]),
         breedte: num(r[c.breedte]), hoogte: num(r[c.hoogte]), diepte: num(r[c.diepte]), maat: num(r[c.maat]), eenheid: text(r[c.eenheid]) || 'm2',
-        lines: [], costs: null, baseline: null });
+        rc: rcCol < 0 || text(r[rcCol]) === '' ? '' : num(r[rcCol]),
+        lines: [], costs: null, baseline: null, table: false, sums: { material: 0, gwp: [0, 0, 0] } });
+      PHASES.forEach((p) => { list[list.length - 1].sums[p] = 0; });
     }
-    const block = blocks[blocks.length - 1];
-    if (!block) return blocks;
+    else if (id !== '' && last && text(r[c.naam]) === '') { last.table = true; }
+    const block = list[list.length - 1];
+    if (!block) return list;
     const omschrijving = text(r[c.omschrijving]);
+    const fase = text(r[c.fase]).toLowerCase();
     if (/^TOTAAL/i.test(omschrijving))
     {
       block.costs = Object.fromEntries(PHASES.map((p) => [p, num(r[c[p]])]));
       block.costs.material = num(r[c.materiaal]);
+      return list;
     }
-    else if (block.costs && block.baseline === null && /^per (m2|st|stuk)\b.*incl/i.test(omschrijving))
+    if (block.costs && block.baseline === null && /^per (m2|st|stuk)\b.*incl/i.test(omschrijving))
     {
       block.baseline = num(r[c.totaal]);
+      return list;
     }
-    else if (!block.costs && text(r[c.fase]).toLowerCase() === 'materiaal' && text(r[c.product]) !== '')
+    if (block.costs || fase === '') return list;
+    // a row of the component: its costs and CO2 count, a product row is a line
+    block.sums.material += num(r[c.materiaal]);
+    PHASES.forEach((p) => { block.sums[p] += num(r[c[p]]); });
+    gwpCols.forEach((g, i) => { if (g >= 0) block.sums.gwp[i] += num(r[g]); });
+    if (fase === 'materiaal' && text(r[c.product]) !== '')
     {
       block.lines.push({ product: text(r[c.product]), omschrijving, unit: text(r[c.prijseenheid]), price: num(r[c.eenheidsprijs]),
         qty: num(r[c.hoeveelheid]), material: num(r[c.materiaal]) });
     }
-    return blocks;
+    return list;
   }, []);
+  // a table has no totals: add them up, and the price per unit with the margins
+  blocks.filter((b) => !b.costs && b.table).forEach((b) =>
+  {
+    b.costs = Object.fromEntries(PHASES.map((p) => [p, b.sums[p]]));
+    b.costs.material = b.sums.material;
+    if (margins && b.maat > 0)
+    {
+      const labour = PHASES.reduce((sum, p) => sum + b.sums[p], 0);
+      b.baseline = (b.sums.material * (1 + num(margins.material) / 100) + labour * (1 + num(margins.labor) / 100))
+        * (1 + num(margins.general) / 100) / b.maat;
+    }
+  });
+  blocks.forEach((b) => { b.gwp = b.maat > 0 ? b.sums.gwp.map((v) => v / b.maat) : ['', '', '']; delete b.sums; });
+  return blocks;
 }
 
 /** The label of each product of the core (tables.producten: header, rows), by its id: productLabel(). */
@@ -101,7 +136,7 @@ function seedComponent(block, labels, rate)
   const names = block.lines.map((l) => labels.get(l.product) || l.product);
   return {
     id: block.id,
-    inputs: [block.id, block.gebouwdeel, block.groep, block.naam, '', block.breedte || '', block.hoogte || '', block.diepte || '', unit],
+    inputs: [block.id, block.gebouwdeel, block.groep, block.naam, block.variant || '', block.breedte || '', block.hoogte || '', block.diepte || '', unit],
     material: maat > 0 ? Math.round(material / maat * 10000) / 10000 : '',
     hours,
     baseline: block.baseline,
@@ -136,7 +171,13 @@ function coreSnapshot(core)
   const [header, rows] = [all[headerAt], all.slice(headerAt + 1)];
   const labels = productLabels(products[0], products.slice(1));
   const rate = num(named(core, 'settings.rate_labor'));
-  return { seeds: coreBlocks(header, rows).map((b) => seedComponent(b, labels, rate)) };
+  return { seeds: coreBlocks(header, rows, coreMargins(core)).map((b) => seedComponent(b, labels, rate)) };
+}
+
+/** The core's margins, percentages: on material, on labour, and on both. */
+function coreMargins(core)
+{
+  return { material: named(core, 'settings.margin_material'), labor: named(core, 'settings.margin_labor'), general: named(core, 'settings.margin_general') };
 }
 
 /** The Archiyou menu of the core sheet: the functions of core-sheet.gs. */

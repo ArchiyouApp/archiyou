@@ -2,7 +2,10 @@ import { describe, it, expect, beforeAll, vi } from 'vitest'
 
 import { Modeler } from '../../../src/modeler/Modeler'
 import { Calc } from '../../../src/calc/Calc'
+import { MaterialManager } from '../../../src/materials/MaterialManager'
+import { MATERIALEN_ROWS } from '../materials/materialen.fixture'
 import { ProductManager, cutLengths, type ProductRow, type OperationRow, type ComponentRow } from '../../../src/products/ProductManager'
+import { readBlocks, combineRows } from '../../../src/products/recipes'
 
 /**
  * ProductManager: parts of a model → products of a product sheet → costs.
@@ -313,6 +316,16 @@ describe('ProductManager.compute()', () =>
         expect(source('sls-t-38x140', { st: 1, lengte: 1 })).toBe('balk')
     })
 
+    it('follows the recipe of the product it is told to, where it has no row of its own', () =>
+    {
+        // sls-38x140 has none in the wall: by its group it would take SLS; told, it takes the mats' recipe
+        const told = sheet().add('sls-38x140', { st: 2, lengte: 5 }, { component: 'wall', recipe: 'wff-140' }).compute().lines[0]!
+        expect(told.labour).toBe('wall/wff-140')
+        expect(told.costs!.assemblage).toBeCloseTo(2 * 2, 6)
+        // a product with its own row keeps it
+        expect(sheet().add('sls-38x235', { st: 1 }, { component: 'wall', recipe: 'wff-140' }).compute().lines[0]!.labour).toBe('wall/sls-38x235')
+    })
+
     it('takes the steps most recipes have, at the median factor, when it merges them', () =>
     {
         // two rows for sls-38x235: pakken at 1 and at 3; afkorten only in one of two still counts
@@ -349,6 +362,64 @@ describe('ProductManager.compute()', () =>
         expect(overview.afbouw).toBeCloseTo(16.2 * 8 * 1.2, 6)
         expect(() => sheet().elementWork('wall', { st: 1 })).toThrow(/sized in m2: give oppervlak/)
         expect(() => sheet().elementWork('nope', { st: 1 })).toThrow(/no component 'nope'.*It has: wall, floor/)
+    })
+
+    describe('the table layout: the component\'s id on every row, its first row says what it is', () =>
+    {
+        const t = (component: string, cells: Record<string, unknown>) => row({ component, ...cells })
+        const first = (component: string, naam: string, size: number, extra: Record<string, unknown> = {}) => t(component, {
+            ...head(component, 'm2', size), gebouwdeel: 'casco', componentgroep: 'wanden', 'naam (in de offerte)': naam, bouwdeel: '', ...extra })
+        /** A wall whose beams are on two rows (frame and blocking) with one set of operations, and work per element and per m2 */
+        const TABLE = [
+            first('wall', 'HSB wand (Rc 5,2)', 8.1, { 'Rc (m2K/W)': 5.24, bron: 'archiyou/timberwall@0.31' }),
+            t('wall', { bouwdeel: 'constructiehout', fase: 'materiaal', product: 'sls-38x235', 'vorm / werkeenheid': 'balk', 'stuks (totaal)': 6, materiaalkosten: 60, 'GWP A1-A3 (kg)': -100 }),
+            t('wall', { bouwdeel: 'constructiehout', fase: 'voorbewerking', product: 'sls-38x235', bewerking: 'pakken', 'vorm / werkeenheid': 'st', per: 'st', factor: 1, voorbewerkingskosten: 13.5 }),
+            t('wall', { bouwdeel: 'isolatie', fase: 'materiaal', product: 'wff-140', 'vorm / werkeenheid': 'mat', 'stuks (totaal)': 6, materiaalkosten: 50 }),
+            t('wall', { bouwdeel: 'constructiehout', fase: 'materiaal', product: 'sls-38x235', 'vorm / werkeenheid': 'balk', 'stuks (totaal)': 3, materiaalkosten: 40, 'GWP A1-A3 (kg)': -50 }),
+            t('wall', { bouwdeel: 'bevestigingsmiddelen', fase: 'materiaal', product: 'screw-ss-6x100', 'vorm / werkeenheid': 'stuk', 'stuks (totaal)': 30, materiaalkosten: 15 }),
+            t('wall', { bouwdeel: 'element', fase: 'montage', bewerking: 'montagewand', 'vorm / werkeenheid': 'st', per: 'element', factor: 1, 'hoeveelheid in prijseenheid': 1, montagekosten: 30 }),
+            t('wall', { bouwdeel: 'element', fase: 'afbouw', bewerking: 'afmonteren', 'vorm / werkeenheid': 'm2', per: 'oppervlak', factor: 1, 'hoeveelheid in prijseenheid': 8.1, afbouwkosten: 64.8 }),
+            first('wall_esb', 'HSB wand, ESB', 8.1, { 'variant van': 'wall' }),
+            t('wall_esb', { bouwdeel: 'constructiehout', fase: 'materiaal', product: 'sls-38x235', 'vorm / werkeenheid': 'balk', 'stuks (totaal)': 9, materiaalkosten: 100 }),
+        ]
+        const tableSheet = () => ({ ...workbook(), table: (name: string) => name === 'componenten' ? TABLE : workbook().table(name), namedRanges: () => [] })
+
+        it('reads the components in it, with what their first row says, and the rows of each', () =>
+        {
+            const blocks = readBlocks(TABLE)!
+            expect([...blocks.keys()]).toEqual(['wall', 'wall_esb'])
+            const wall = blocks.get('wall')!
+            expect(wall.layout).toBe('table')
+            expect(wall.info).toEqual({ gebouwdeel: 'casco', groep: 'wanden', naam: 'HSB wand (Rc 5,2)', variantOf: '', rc: 5.24, bron: 'archiyou/timberwall@0.31' })
+            expect(blocks.get('wall_esb')!.info.variantOf).toBe('wall')
+            expect(wall.costs).toMatchObject({ material: 165, voorbewerking: 13.5, montage: 30, afbouw: 64.8 })
+            expect(wall.gwp).toEqual([-150, 0, 0])
+            // an operation is per all rows of its product: each row has it, so the two weigh back to 1 x st
+            expect(wall.products.filter(p => p.id === 'sls-38x235').map(p => p.steps.length)).toEqual([1, 1])
+            expect(combineRows(wall.products.filter(p => p.id === 'sls-38x235'))).toEqual([{ operation: 'pakken', fase: 'voorbewerking', per: 'st', factor: 1 }])
+            expect(wall.element).toEqual([
+                { operation: 'montagewand', quantity: 'st', amount: 1, per: 'element', factor: 1 },
+                { operation: 'afmonteren', quantity: 'oppervlak', amount: 8.1, per: 'oppervlak', factor: 1 }])
+        })
+
+        it('has its components without named ranges, and prices them from their rows with the margins', () =>
+        {
+            const pm = new ProductManager().fromSheet(tableSheet())
+            const prices = pm.prices()
+            expect(prices.map(p => [p.component, p.naam, p.groep, p.eenheid])).toEqual([['wall', 'HSB wand (Rc 5,2)', 'wanden', 'm2'], ['wall_esb', 'HSB wand, ESB', 'wanden', 'm2']])
+            expect(prices[0]!.material).toBeCloseTo(165 / 8.1 * 1.1, 6)
+            expect(prices[0]!.montage).toBeCloseTo(30 / 8.1 * 1.2, 6)
+            // the products, without the screws
+            expect(prices[0]!.omschrijving).not.toMatch(/screw|Schroef/i)
+            // a mass of it is priced by the rows too
+            expect(pm.add('wall', { oppervlak: 16.2 }).compute().lines[0]!.costs!.material).toBeCloseTo(165 * 2, 6)
+        })
+
+        it('adds the work on the element per element, or per m2 of it', () =>
+        {
+            const pm = new ProductManager().fromSheet(tableSheet()).elementWork('wall', { oppervlak: 16.2 })
+            expect(pm.list().map(l => [l.id, l.st, l.oppervlak])).toEqual([['montagewand', 1, 0], ['afmonteren', 0, 16.2]])
+        })
     })
 
     it('completes a component with the products of its block the model does not show, by size', () =>
@@ -715,5 +786,47 @@ describe('ProductManager.toTable()', () =>
         expect(made[0]).toMatchObject({ name: 'products', columns: ['product', 'description', 'vorm', 'st', 'lengte', 'oppervlak', 'volume', 'zaaglengte', 'waste'] })
         expect(made[0].rows).toEqual([['montagewand', '', 'st', 1, 0, 0, 0, 0, '']])
         expect(() => products().toTable()).toThrow(/only available inside a run/)
+    })
+})
+
+describe('ProductManager: products are made of the materials of the same sheet', () =>
+{
+    const rows: Array<ProductRow> = [{ product_id: 'sls-38x140', productgroep: 'SLS', vorm: 'balk', breedte: 38, hoogte: 140, lengte: 5400, basiseenheid: 'st', materiaal: 'naaldhout_constructief' } as ProductRow]
+    const workbook = (withMaterials: boolean) =>
+    {
+        const tables: Record<string, Array<any>> = { producten: rows, bewerkingen: [], componenten: [], ...(withMaterials ? { materialen: MATERIALEN_ROWS } : {}) }
+        return {
+            table: (name: string) => tables[name] as Array<Record<string, unknown>>,
+            tables: () => Object.keys(tables).map(name => ({ name })),
+            namedRanges: () => [],
+            compute: () => ({ marges: { materiaal: 0, arbeid: 0, algemeen: 0 }, verlies: [] }),
+        }
+    }
+
+    it('fromSheet() loads the materialen tab into the run, and a part takes its product\'s material', () =>
+    {
+        const materials = new MaterialManager()
+        const pm = new ProductManager(() => ({ materials } as any)).fromSheet(workbook(true))
+        const stud = box(38, 140, 2700) as any
+        pm.assign('SLS', [stud])
+
+        expect(materials.loaded).toBe(true)
+        expect(materials.get('naaldhout_constructief')!.thermalConductivity!.value).toBe(0.13)
+        expect(stud._material).toBe('naaldhout_constructief')
+    })
+
+    it('keeps a material the shape was given itself', () =>
+    {
+        const pm = new ProductManager(() => ({ materials: new MaterialManager() } as any)).fromSheet(workbook(true))
+        const stud = (box(38, 140, 2700) as any).material('douglas')
+        pm.assign('SLS', [stud])
+        expect(stud._material).toBe('douglas')
+    })
+
+    it('works with a sheet that has no materialen tab', () =>
+    {
+        const materials = new MaterialManager()
+        new ProductManager(() => ({ materials } as any)).fromSheet(workbook(false))
+        expect(materials.loaded).toBe(false)
     })
 })

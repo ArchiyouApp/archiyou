@@ -111,6 +111,50 @@ describe('URBUILD library: the core', () =>
         expect(rough.notes).toEqual(['maat 8.1 m2 uit breedte en hoogte tegen 9 in het core-sheet: de uren per eenheid wijken af', 'geen TOTAAL-regel: uren op 0'])
     })
 
+    it('reads the table layout: the id on every row, no totals, so it adds them up and prices them with the margins', () =>
+    {
+        const header = [...HEADER, 'GWP A1-A3 (kg)', 'GWP A4-C4 (kg)', 'GWP D (kg)', 'Rc (m2K/W)', 'variant van']
+        const r = (values: Record<string, unknown>) => header.map((h) => values[h] ?? '')
+        const first = { component: 'hsbwand_esb', gebouwdeel: 'casco', componentgroep: 'wanden', 'naam (in de offerte)': 'HSB wand, ESB (Rc 5,2)',
+            'representatieve breedte (mm)': 3000, 'representatieve hoogte (mm)': 2700, 'representatieve diepte (mm)': 262.5, 'representatieve maat': 8.1,
+            'eenheid maat': 'm2', 'Rc (m2K/W)': 5.18, 'variant van': 'hsbwand' }
+        const rows = [
+            r(first),
+            r({ component: 'hsbwand_esb', fase: 'materiaal', product: 'sls-38x235', omschrijving: 'stijlen en regels', prijseenheid: 'm1', eenheidsprijs: 5.02,
+                'hoeveelheid in prijseenheid': 24.5, materiaalkosten: 135.4, 'GWP A1-A3 (kg)': -81 }),
+            r({ component: 'hsbwand_esb', fase: 'voorbewerking', product: 'sls-38x235', bewerking: 'afkorten', voorbewerkingskosten: 27 }),
+            r({ component: 'hsbwand_esb', fase: 'materiaal', product: 'esb-15', omschrijving: 'buitenplaat', prijseenheid: 'm2', eenheidsprijs: 9.5,
+                'hoeveelheid in prijseenheid': 8.1, materiaalkosten: 84.6, 'GWP A1-A3 (kg)': -40 }),
+            r({ component: 'hsbwand_esb', fase: 'montage', bewerking: 'montagewand', montagekosten: 150 }),
+            r({ component: 'keuken', 'naam (in de offerte)': 'Basiskeuken', 'representatieve maat': 1, 'eenheid maat': 'st' }),
+            r({ component: 'keuken', fase: 'materiaal', product: 'keukenblok', materiaalkosten: 1200 }),
+        ]
+        const [esb, kitchen] = gs.coreBlocks(header, rows, { material: 10, labor: 20, general: 5 })
+        expect(esb.table).toBe(true)
+        expect(esb.costs).toEqual({ material: 220, onsite: 0, voorbewerking: 27, assemblage: 0, montage: 150, afbouw: 0 })
+        expect(esb.baseline).toBeCloseTo((220 * 1.1 + 177 * 1.2) * 1.05 / 8.1, 6)
+        expect(esb.lines.map((l: any) => l.product)).toEqual(['sls-38x235', 'esb-15'])
+        expect(esb.gwp[0]).toBeCloseTo(-121 / 8.1, 6)
+        expect([esb.rc, esb.variant]).toEqual([5.18, 'hsbwand'])
+        expect(kitchen.costs.material).toBe(1200)
+
+        const seed = gs.seedComponent(esb, new Map(), 40)
+        expect(seed.material).toBeCloseTo(220 / 8.1, 4)
+        expect(seed.hours).toEqual([0, 0.68, 0, 3.75, 0])
+        expect(seed.inputs[gs.BUILDER_INPUTS.indexOf('variant van')]).toBe('hsbwand')
+        expect(seed.notes).toEqual([])
+    })
+
+    it('seeds a variant with the component it is a variant of, from the core\'s column "variant van" when it has one', () =>
+    {
+        const header = [...HEADER, 'variant van']
+        const variant = WALL.map((r, i) => [...r.map((v, j) => (i === 0 && j === col('component') ? 'hsbwand_esb' : v)), i === 0 ? 'hsbwand' : ''])
+        const [wall, esb] = gs.coreBlocks(header, [...WALL.map((r) => [...r, '']), row({}).concat(''), ...variant])
+        expect(gs.seedComponent(esb, new Map(), 40).inputs[gs.BUILDER_INPUTS.indexOf('variant van')]).toBe('hsbwand')
+        expect(gs.seedComponent(wall, new Map(), 40).inputs[gs.BUILDER_INPUTS.indexOf('variant van')]).toBe('')
+        expect(gs.seedComponent(gs.coreBlocks(HEADER, WALL)[0], new Map(), 40).inputs[gs.BUILDER_INPUTS.indexOf('variant van')]).toBe('')
+    })
+
     it('labels the core\'s products by their id', () =>
     {
         const header = ['product_id', 'type', 'vorm', 'dikte', 'breedte', 'hoogte']

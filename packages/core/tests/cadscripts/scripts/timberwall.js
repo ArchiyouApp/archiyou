@@ -1,54 +1,62 @@
 // timberwall
-// Basic framed wall according to traditional standards
+// Timber frame wall with its layers and screws: the component hsbwand of URBUILD_DATABASE_CORE
 
-$PARAMS.define('WIDTH', 'number', { label: "Width", units: "mm", order: 0, default: 3000, minimum: 1000, maximum: 4000, multipleOf: 1 });
-$PARAMS.define('HEIGHT', 'number', { label: "Height", units: "mm", order: 0, default: 2500, minimum: 1000, maximum: 3000, multipleOf: 1 });
-$PARAMS.define('DEPTH', 'options', { label: "Depth", order: 0, default: "120", options: ["89","120","140","184","235"] });
-$PARAMS.define('OPENING', 'boolean', { label: "With opening", order: 0, default: false });
-$PARAMS.define('OPENING_START', 'number', { label: "Opening Start", units: "mm", order: 0, default: 1000, minimum: 0, maximum: 3000, multipleOf: 1 });
-$PARAMS.define('OPENING_SILL', 'number', { label: "Opening Sill", units: "mm", order: 0, default: 1000, minimum: 0, maximum: 3000, multipleOf: 1 });
-$PARAMS.define('OPENING_WIDTH', 'number', { label: "Opening Width", units: "mm", order: 0, default: 1000, minimum: 200, maximum: 2000, multipleOf: 1 });
-$PARAMS.define('OPENING_HEIGHT', 'number', { label: "Opening Height", units: "mm", order: 0, default: 1000, minimum: 200, maximum: 2500, multipleOf: 1 });
-$PARAMS.define('BOARDS', 'options', { label: "Boards", order: 0, default: "none", options: ["none","OSB39","OSB318"] });
-$PARAMS.define('INSULATION', 'options', { label: "Insulation", order: 0, default: "hempflax", options: ["hempflax","glasswool","none","woodwool"] });
-$PARAMS.define('TOP_CONNECT', 'boolean', { label: "Double Top", order: 0, default: false });
+$PARAMS.define('WIDTH', 'number', { label: "Width", group: "main", units: "mm", order: 0, default: 3000, minimum: 1000, maximum: 4000, multipleOf: 1 });
+$PARAMS.define('HEIGHT', 'number', { label: "Height", group: "main", units: "mm", order: 1, default: 2700, minimum: 1000, maximum: 3000, multipleOf: 1 });
+$PARAMS.define('DEPTH', 'options', { label: "Depth", group: "main", order: 2, default: 235, options: [120, 140, 184, 235] });
+$PARAMS.define('INSULATION', 'options', { label: "Insulation", group: "layers", order: 3, default: "woodwool", options: ["none", "glasswool", "woodwool", "hempflax"] });
+$PARAMS.define('SHEATHING', 'options', { label: "Sheathing (outside)", group: "layers", order: 4, default: "houtvezel16", options: ["none", "houtvezel16", "esb15"] });
+$PARAMS.define('MEMBRANE', 'options', { label: "Vapour control (inside)", group: "layers", order: 5, default: "none", options: ["none", "dampremmer"] });
+$PARAMS.define('LINING', 'options', { label: "Lining (inside)", group: "layers", order: 6, default: "gips12.5", options: ["none", "gips12.5"] });
+$PARAMS.define('TOP_CONNECT', 'boolean', { label: "Double Top", group: "main", order: 7, default: true });
+$PARAMS.define('OPENING', 'boolean', { label: "With opening", group: "opening", order: 8, default: false });
+$PARAMS.define('OPENING_START', 'number', { label: "Opening start", group: "opening", units: "mm", order: 9, default: 1000, minimum: 0, maximum: 4000, multipleOf: 1 });
+$PARAMS.define('OPENING_SILL', 'number', { label: "Opening sill", group: "opening", units: "mm", order: 10, default: 500, minimum: 0, maximum: 3000, multipleOf: 1 });
+$PARAMS.define('OPENING_WIDTH', 'number', { label: "Opening width", group: "opening", units: "mm", order: 11, default: 600, minimum: 300, maximum: 3000, multipleOf: 1 });
+$PARAMS.define('OPENING_HEIGHT', 'number', { label: "Opening height", group: "opening", units: "mm", order: 12, default: 1000, minimum: 300, maximum: 3000, multipleOf: 1 });
+$PARAMS.define('ROOF_HEIGHT', 'number', { label: "Ridge height", group: "roof", units: "mm", order: 13, default: 0, minimum: 0, maximum: 4000, multipleOf: 1 });
+$PARAMS.define('ROOF_RIDGE_CENTER', 'number', { label: "Ridge at %", group: "roof", order: 14, default: 0, minimum: 0, maximum: 100, multipleOf: 1 });
 
-// Archiyou 0.22
+//// SETTINGS ////
 
 STUD_THICKNESS = 38;
-BOARDING_STOCK_WIDTH = 1220;
-BOARDING_STOCK_HEIGHT = 2440;
-CERT_COST_PERC = 0.1;
+GRID = 600;                      // studs center to center
+COMPONENT = 'hsbwand';           // the component of URBUILD_DATABASE_CORE this wall is
 
-//// MATERIAL SETTINGS ////
+// The layers, by the product of the core sheet they are. Everything else about them (thickness,
+// λ, density, CO2, price) comes from the sheet through the product's material.
+SHEATHINGS = {
+    houtvezel16: { product: 'houtvezel-buitenplaat-16-mg4-635x2510', thickness: 16, board: [2510, 635] },
+    // worked as the wood fibre board it replaces (its block has no ESB): not as the gypsum, a plaat too
+    esb15: { product: 'esb-15-mg4-675x2580', thickness: 15, board: [2580, 675], recipe: 'houtvezel-buitenplaat-16-mg4-635x2510' },
+};
+MEMBRANES = { dampremmer: { product: 'dampremmer-1500x50000', thickness: 0.2 } };
+LININGS = { 'gips12.5': { product: 'gipsplaat-12.5-1200', thickness: 12.5 } };
+// the mat for the cavity, by its depth where known: cut at an angle (a gable), a piece can look thinner
+WOODWOOL_MATS = { 120: 'houtvezel-flex-120', 140: 'houtvezel-flex-140', 184: 'houtvezel-flex-200', 235: 'houtvezel-flex-240' };
+INSULATION_PRODUCTS = { woodwool: WOODWOOL_MATS[$DEPTH] ?? 'HOUTVEZEL-FLEX', hempflax: 'HENNEP', glasswool: 'GLASWOL-ROL' };
 
-MATERIALS = {
-    WOOD: { EUR_M3: 375, KG_M3: 460, GWP: -707  }, // GWP in kgCO2eq/m3
-    OSB: { EUR_M3: 335, KG_M3: 600, GWP: -691 }, // 9 or 18 mm: 348 EUR/m3 - 327 EUR/m3
-    ECOBOARD: { EUR_M3: 535, KG_M3: 570, LAMBDA: 0.09, GWP: -621  }, // Agepan DWD protect
-    WATERBARRIER: { EUR_M2: 2.7 },
-    GLASS_WOOL: { EUR_M3: 41, LAMBDA: 0.035, GWP: 24, }, // Knauff Naturoll 035
-    GLASS_WOOL_ACOUSTIC: { EUR_M3: 45, LAMBDA: 0.037, GWP: 16 }, // Knauf Acoustifit
-    WOOD_WOOL: { EUR_M3: 90, LAMBDA: 0.036, GWP: -38 }, // Gutex Thermoflex 111
-    HEMP: { EUR_M3: 120, KG_M3: 36, LAMBDA: 0.039, GWP: -20.3  }// Hempflax
-}
+// The screws: what goes where, as the block of hsbwand describes it
+SCREWS = {
+    frame: { product: 'schroef-rvs-6x100', pattern: 'end', count: 2, label: 'regels op de stijlen' },        // 2 through a plate into each stud end
+    double: { product: 'schroef-rvs-5x60', pitch: 400, label: 'dubbele bovenregel' },                       // the double top plate: 60 mm, so it stays in the plate below
+    sheathing: { product: 'schroef-rvs-4.5x50', pitch: 150, label: 'buitenplaat op het frame' },                   // the outside board on studs and plates
+    lining: { product: 'schroef-verzinkt-4x40', pitch: 200, label: 'binnenplaat op het frame' },                   // gypsum: about 12 a m2
+};
+TAPE = 'tape-universeel-60';
 
-BOARDS_OPTIONS_TO_DATA = {
-    'none' : { thickness: 0, kgm3: 0, eurm2: 0},
-    'OSB39' : { thickness: 9, kgm3: MATERIALS.OSB.KG_M3, eurm2: 3.14 },
-    'OSB318' : { thickness: 18, kgm3: MATERIALS.OSB.KG_M3, eurm2: 5.89 },
-    'AGEPAN16' : { thickness: 16, kgm3: MATERIALS.ECOBOARD.KG_M3, eurm2: 8.57 }
-}
+//// VARIANTS ////
+// The variants of this component, each a block of the core sheet's componenten tab: a preset
+// with the reference size and its layers. The blocks are made from these by running the script
+// per preset (archiyou blocks timberwall.js); the preset's name is the component's id.
 
-//// CALC SETTINGS ////
-
-PRICING = {
-    LABOR_COST_EUR_PER_STUD: 15, 
-    LABOR_COST_EUR_PER_OPENING: 100,
-    LABOR_PROFIT_PERC: 0.15,
-    MATERIAL_PROFIT_PERC : 0.25,
-    PLATFORM_PERC: 0.25,
-}
+REFERENCE = { WIDTH: 3000, HEIGHT: 2700, TOP_CONNECT: true, OPENING: false, ROOF_HEIGHT: 0, MEMBRANE: 'none' };
+$PARAMS.preset('hsbwand', { ...REFERENCE, DEPTH: 235, INSULATION: 'woodwool', SHEATHING: 'houtvezel16', LINING: 'gips12.5' },
+    { label: 'HSB wand 235, houtvezel' });
+$PARAMS.preset('hsbwand_esb', { ...REFERENCE, DEPTH: 235, INSULATION: 'woodwool', SHEATHING: 'esb15', LINING: 'gips12.5' },
+    { label: 'HSB wand 235, houtvezel, ESB', variantOf: 'hsbwand' });
+$PARAMS.preset('hsbwand_140', { ...REFERENCE, DEPTH: 140, INSULATION: 'woodwool', SHEATHING: 'houtvezel16', LINING: 'gips12.5' },
+    { label: 'HSB wand 140, houtvezel', variantOf: 'hsbwand' });
 
 //// PARAM DYNAMICS ////
 
@@ -59,15 +67,18 @@ $PARAMS.OPENING_START.enableIf($OPENING);
 
 ///// CALCULATED PARAMS ////
 
-openings = [{ 
-              left: $OPENING_START, 
-              sill: $OPENING_SILL, 
+openings = [{
+              left: $OPENING_START,
+              sill: $OPENING_SILL,
               width: $OPENING_WIDTH,
               height: $OPENING_HEIGHT }]
 
+ridge = { height: $ROOF_HEIGHT, center: $ROOF_RIDGE_CENTER/100 };
+FRAME_HEIGHT = $HEIGHT - $TOP_CONNECT*STUD_THICKNESS;   // make.wall's height; the double top plate goes on top
+
 //// WALL FRAME ////
 
-// Interactive dim line
+// Interactive dim lines
 line([0,0,0],[$WIDTH,0,0])
     .hide()
     .dim( { offset: 600 })
@@ -78,374 +89,147 @@ line([$WIDTH,0,0],[$WIDTH,0,$HEIGHT])
     .dim( { offset: 600 })
     .bindParam('HEIGHT');
 
-
-wall = make.wall(
+wall = modeler.make.wall(
                 $WIDTH,
-                $HEIGHT-$TOP_CONNECT*STUD_THICKNESS,
-                Number($DEPTH), // options param values are strings
-                STUD_THICKNESS, 
-                610, 
-                ($OPENING) ? openings : []);
-
+                FRAME_HEIGHT,
+                $DEPTH,
+                STUD_THICKNESS,
+                GRID,
+                ($OPENING) ? openings : [],
+                ridge
+);
 
 wall.openingDiagrams.hide();
-wall.gridlines.hide();
+wall.diagram.hide();
 if($INSULATION == 'none'){ wall.insulation.hide () };
 
 // make extra connecting top-plate
+topDouble = null;
 if($TOP_CONNECT)
 {
-    wall.plates.add(
-            boxbetween([0,-$DEPTH/2,0],[$WIDTH,$DEPTH/2, STUD_THICKNESS])
+    topDouble = boxbetween([0,-$DEPTH/2,0],[$WIDTH,$DEPTH/2, STUD_THICKNESS])
             .move(0,0,$HEIGHT-STUD_THICKNESS)
             .color('green')
-    )
+            .name('topdouble');
+    wall.plates.add(topDouble);
 }
 
-//// BOARDING ////
-boardThickness = BOARDS_OPTIONS_TO_DATA[$BOARDS].thickness;
-boardKgM3 = BOARDS_OPTIONS_TO_DATA[$BOARDS].kgm3;
-boardCostM2 = BOARDS_OPTIONS_TO_DATA[$BOARDS].eurm2;
+// every member of the frame, and the ones lying flat and standing up
+horizontals = collection(wall.plates, wall.openingFramesHorizontals);
+verticals = collection(wall.studs, wall.cripplesTop, wall.cripplesBottom, wall.openingFramesVerticals, wall.openingKingStuds, wall.openingJackStuds);
+frame = collection(horizontals, verticals);
 
-// We make sections based on openings
-boards = collection();
-// clone() is the shallow copy (shares the shapes); sort() returns a new collection
-wallOpenings = wall.openingDiagrams.clone().sort((s1,s2) => s1.bbox().min().x - s2.bbox().min().x);
+//// LAYERS ////
+// Panels over the whole wall, the shape of its elevation (with the gable when there is a ridge),
+// without the opening. Outside is -y, inside +y.
 
-function makeSectionBoarding(start,end,height)
+/** A panel of the wall's elevation, `thickness` thick, from y = `at` towards `side` (-1 out, 1 in) */
+function panel(thickness, at, side)
 {
-    if(end-start > 0)
+    const outline = ($ROOF_HEIGHT > 0)
+        ? [[0, at, 0], [$WIDTH, at, 0], [$WIDTH, at, FRAME_HEIGHT], [$WIDTH*$ROOF_RIDGE_CENTER/100, at, FRAME_HEIGHT + $ROOF_HEIGHT], [0, at, FRAME_HEIGHT]]
+        : [[0, at, 0], [$WIDTH, at, 0], [$WIDTH, at, $HEIGHT], [0, at, $HEIGHT]];
+    const p = modeler.polygon(outline).extrude(thickness, [0, side, 0]);
+    if($OPENING)
     {
-        let offset = 0;
-        if (start !== 0)
-        {
-            let nextGridLine = wall.gridlines.find(gl => gl.center().x > start);
-            offset = (nextGridLine) ? nextGridLine.center().x - start : 0;  
-        }
-
-        let boarding = make.boarding( { 
-                width: end-start,
-                height: height,
-                direction: 'horizontal',
-                stockWidth: BOARDING_STOCK_WIDTH, 
-                stockHeight: BOARDING_STOCK_HEIGHT, 
-                grid: 610,
-                gridOffset: offset,
-                leftover: true })
-                    .move(start)
-        boards.add(boarding)
-        return boarding;
+        p.subtract(boxbetween([$OPENING_START, at - 1000, $OPENING_SILL], [$OPENING_START + $OPENING_WIDTH, at + 1000, $OPENING_SILL + $OPENING_HEIGHT]).tmp());
     }
+    return p;
 }
 
+sheathingSpec = SHEATHINGS[$SHEATHING];
+membraneSpec = MEMBRANES[$MEMBRANE];
+liningSpec = LININGS[$LINING];
 
+sheathing = sheathingSpec ? panel(sheathingSpec.thickness, -$DEPTH/2, -1).name('sheathing') : null;
+membrane = membraneSpec ? panel(membraneSpec.thickness, $DEPTH/2, 1).name('membrane').opacity(0.5) : null;
+lining = liningSpec ? panel(liningSpec.thickness, $DEPTH/2 + (membraneSpec?.thickness ?? 0), 1).name('lining') : null;
 
-if(boardThickness)
-{
-    if (wallOpenings.length > 0)
-    {
-        wallOpenings.forEach((o,i,all) =>
-        {
-            // before opening section
-            let sectionBeforeStartX = (i === 0) ? 0 : all[i-1].bbox().max().x + STUD_THICKNESS;
-            let sectionBeforeEndX = o.bbox().min().x - STUD_THICKNESS;
-            makeSectionBoarding(sectionBeforeStartX,sectionBeforeEndX, $HEIGHT);
-            // after opening section
-            let sectionAfterStartX = o.bbox().max().x + STUD_THICKNESS
-            let sectionAfterEndX = (i < all.length - 1 )
-                        ? all[i+1].bbox().min().x - STUD_THICKNESS // to next opening
-                        : $WIDTH // to end of wall
-            makeSectionBoarding(sectionAfterStartX,sectionAfterEndX, $HEIGHT);
-            // bottom of opening
-            makeSectionBoarding(sectionBeforeEndX,sectionAfterStartX, o.bbox().min().z - STUD_THICKNESS)
-            // top of opening
-            makeSectionBoarding(sectionBeforeEndX,sectionAfterStartX, $HEIGHT-o.bbox().max().z- STUD_THICKNESS).moveY(o.bbox().max().z + STUD_THICKNESS)
-        })
-    }
-    else {
-        // just make one big boarding filling total wall
-        makeSectionBoarding(0,$WIDTH, $HEIGHT*1);
-    }
+//// SCREWS ////
+// Drawn as a circle on the face each goes in at and a line along its length (make.fasten)
 
-    // finish boards by extruding and rotating
-    extrudedBoards = boards
-        .hide()
-        .copy()
-        .rotateAround(90, [1,0,0], [0,0,0])
-        .moveY(-$DEPTH/2)
-        .extrude(boardThickness, [0,-1,0])
-        .color('yellow')
-}
-
-//// TABLES: MATERIALS ////
-
-allWoodBeams = collection(wall.studs, wall.plates, wall.cripplesTop, wall.cripplesBottom, wall.openingFramesHorizontals, wall.openingFramesVerticals, wall.openingKingStuds, wall.openingJackStuds );
-woodVolumeM3 = allWoodBeams.volume()/Math.pow(10,9); 
-woodLengthM = allWoodBeams.reduce((agg,s) => agg + s.length(), 0)/1000;
-openingsM2 = (wall.openingDiagrams.length) ? wall.openingDiagrams.reduce((agg,s) => agg + s.bbox().front().area(), 0) / Math.pow(10,6) : 0
-wallMinusOpeningsM2 = (($WIDTH*$HEIGHT/1000000)-openingsM2);
-boardingAreaM2 = (boards.length) ? wallMinusOpeningsM2 : 0;
-boardingVolumeM3 = wallMinusOpeningsM2*boardThickness/1000; 
-insulationM3 = ($INSULATION !== 'none') ? (wallMinusOpeningsM2 * ($DEPTH/1000) - woodVolumeM3) : 0;
-insulationM2 = insulationM3 / ($DEPTH/1000); 
-barierM2 = (boards.length) ? wallMinusOpeningsM2 * 1.20 : 0; // a bit more overlap and loss
-
-insulationEUR_M3 = { 
-    none : 0,
-    glasswool : MATERIALS.GLASS_WOOL.EUR_M3,
-    //'glaswol-acoust' : MATERIALS.GLASS_WOOL_ACOUSTIC.EUR_M3,
-    woodwool: MATERIALS.WOOD_WOOL.EUR_M3,
-    hempflax: MATERIALS.HEMP.EUR_M3
- }[$INSULATION] || 0;
-
-SCREW_40_COST_PC = roundTo(13.01/500,2);
-SCREW_70_COST_PC = roundTo(12.19/200,2);
-SCREW_90_COST_PC = roundTo(16.84/200,2);
-SCREW_140_COST_PC = roundTo(21.19/200,2);
-
-// for boarding
-numScrews40 =  boards.length ? Math.ceil((wall.studs.length * wall.studs.first().bbox().height() + wall.plates.bbox().width()*2 )  / 400) : 0; // every 400 mm
-// framing
-numScrews70 = Math.ceil(wall.studs.first().bbox().height()/1000/0.2)*2;
-numScrews90 = wall.studs.length * 4;
-numScrews140 = wall.studs.length * 2;
-
-materialRows = [
-        ['wood SLS',`${STUD_THICKNESS}x${$DEPTH}`, 'length', roundTo(woodLengthM,2), 'm', roundTo(MATERIALS.WOOD.EUR_M3*(STUD_THICKNESS*$DEPTH/1000000),2), roundTo(woodVolumeM3 * MATERIALS.WOOD.EUR_M3,2)]];
-
-if($INSULATION !== 'none')
-{
-    materialRows.push(['insulation',`${$INSULATION}`, 'volume', roundTo(insulationM3,2), 'm3', insulationEUR_M3, roundTo(insulationM3 * insulationEUR_M3, 2)]);
-}
-
-// boards and water barrier
-if ($BOARDS !== 'none')
-{ 
-    materialRows.push(['no insulation','122x244', 'area', roundTo(boardingAreaM2,2), 'm2', boardCostM2, roundTo(boardingAreaM2 * boardCostM2,2)]); 
-    materialRows.push(['water barier','', 'area + overlap', roundTo(barierM2,2), 'm2', MATERIALS.WATERBARRIER.EUR_M2 , roundTo(barierM2*MATERIALS.WATERBARRIER.EUR_M2,2)]);
-    materialRows.push(['screws boards','4x40', 'pcs', numScrews40, 'pcs', SCREW_40_COST_PC,roundTo(numScrews40*SCREW_40_COST_PC,2)]);
-}
-        
-materialRows = materialRows.concat([
-        ['screws studs','5x90', 'pcs', numScrews90, 'pcs', SCREW_90_COST_PC, roundTo(numScrews90*SCREW_90_COST_PC,2)],
-        ['screws studs','6x140', 'pcs', numScrews140, 'pcs', SCREW_140_COST_PC,roundTo(numScrews140*SCREW_140_COST_PC,2)],
-        ['screws doubles','5x70', 'pcs', numScrews70, 'pcs', SCREW_70_COST_PC,roundTo(numScrews70*SCREW_70_COST_PC,2)],
-    ]);
-// manual sum
-materialRows.push(['','', '', '', '', '', '----- +']);
-materialRows.push(['TOTAL MATERIAL COST EST','', '', '', '', '', `€ ${roundTo(materialRows.reduce((sum,row) => sum+((typeof row[6] === 'number') ? row[6] : 0), 0),2)}`])
-
-// total screw cost for price metric calculation 
-hardwareCost = roundTo(numScrews90*SCREW_90_COST_PC,2) + roundTo(numScrews140*SCREW_140_COST_PC,2) + roundTo(numScrews70*SCREW_70_COST_PC,2);
- 
-calc.table('materials', 
-    materialRows,
-    ['material','dim in cm', 'quantity', 'amount', 'unit', '€ per unit', 'cost € est']);
-
-//// METRICS ////
-
-// Metric: pricing
-// See calculation in above 
-
-materialCost = Math.round(
-                    hardwareCost
-                    + woodVolumeM3 * MATERIALS.WOOD.EUR_M3
-                    + boardingAreaM2 * boardCostM2
-                    + insulationM3 * insulationEUR_M3
-                    + barierM2 * MATERIALS.WATERBARRIER.EUR_M2
-                    );
-
-laborCost = Math.round(
-                PRICING.LABOR_COST_EUR_PER_STUD * wall.studs.length
-                + PRICING.LABOR_COST_EUR_PER_OPENING * wall.openingDiagrams.length);
-
-productionCost = Math.round(
-                    materialCost * (PRICING.MATERIAL_PROFIT_PERC + 1)
-                     + laborCost * (PRICING.LABOR_PROFIT_PERC + 1))
-
-calc.metric('production cost', productionCost, { label: 'Production cost', unit: 'EUR', icon: 'currency-eur'})
-
-// Metric: R-value
-thermalResistanceLambda = { 
-    none : 0,
-    glasswool : MATERIALS.GLASS_WOOL.LAMBDA,
-    'glaswol-acoust' : MATERIALS.GLASS_WOOL_ACOUSTIC.LAMBDA,
-    woodwool: MATERIALS.WOOD_WOOL.LAMBDA,
-    hempflax: MATERIALS.HEMP.LAMBDA,
- }[$INSULATION] || 0;
-
-thermalResistance = (thermalResistanceLambda)
-                        ? roundTo(($DEPTH/1000)/thermalResistanceLambda,2)
-                        : 0;
-
-calc.metric('Rd',thermalResistance , { label: 'Rd', unit: 'm2K/W', icon: 'heat-wave'})
-
-// Metric: GWP iso
-insulationGWP_kgCO2eq_M3 = {  
-    none : 0, 
-    glasswool : MATERIALS.GLASS_WOOL.GWP, 
-    'glaswol-acoust' : MATERIALS.GLASS_WOOL_ACOUSTIC.GWP,
-    woodwool: MATERIALS.WOOD_WOOL.GWP,
-    hempflax: MATERIALS.HEMP.GWP
- }[$INSULATION] || 0;
-
-calc.metric('GWP', Math.round(insulationGWP_kgCO2eq_M3*insulationM3), { label: 'Eco impact', unit: 'kgCO2eq', icon: 'leaf'} )
-
-// Metric: weight
-boardingKgM2 = BOARDS_OPTIONS_TO_DATA[$BOARDS].kgm3
-weight = Math.round(
-            boardingVolumeM3 * boardingKgM2
-        + woodVolumeM3 * MATERIALS.WOOD.KG_M3
-        );
-calc.metric('weight', weight, { label: 'Mass', unit: 'kg', icon: 'weight-kilogram'})
-
-//// TABLES: PARTS
-
-PART_COLUMNS = ['part','subpart', 'material', 'section (mm)', 'dim (mm)', 'quantity']
-section = `${STUD_THICKNESS}x${$DEPTH}`;
-
-parts = [
-    ['base wall frame',  'top & bottom plate', 'wood SLS', section, wall.plates[0].bbox().width(), wall.plates.length],
-    ['base wall frame',  'studs + opening kingstuds', 'wood SLS', section, wall.studs[0].bbox().height(), wall.studs.length + wall.openingKingStuds.length ],
-]
-
-// if we have any (succesfull) openings
-if(wall.openingDiagrams.length)
-{
-    parts = parts.concat([  
-        ['opening',  'cripple studs top', 'wood SLS', section, (wall.cripplesTop.first()) ? wall.cripplesTop.first().bbox().height() : '', wall.cripplesTop.length ],
-        ['opening',  'cripple studs bottom', 'wood SLS', section, (wall.cripplesBottom.first()) ? wall.cripplesBottom.bbox().height() : '', wall.cripplesBottom.length ],
-        ['opening',  'frame horizontals', 'wood SLS', section, (wall.openingFramesHorizontals.first()) ? wall.openingFramesHorizontals.first().bbox().width() : '', wall.openingFramesHorizontals.length ],
-        ['opening',  'frame verticals', 'wood SLS', section, (wall.openingFramesVerticals.first()) ? wall.openingFramesVerticals.first().bbox().height() : '', wall.openingFramesVerticals.length ],
-    ])
-}
-
-// add boarding
-wholeBoards = boards.filter(s => s.bbox().height() === BOARDING_STOCK_HEIGHT && s.bbox().width() === BOARDING_STOCK_WIDTH )
-cutBoards = boards.filter(s => s.bbox().height() !== BOARDING_STOCK_HEIGHT || s.bbox().width() !== BOARDING_STOCK_WIDTH)
-boardParts = [];
-
-if(wholeBoards && wholeBoards.length > 0){
-    boardParts.push(
-        ['boards', 'uncut', $BOARDS, `${wholeBoards.first().bbox().width()}x${wholeBoards.first().bbox().height()}`, boardThickness, wholeBoards.length]
-    )
-}
-if(cutBoards && cutBoards.length > 0) // TODO: improve by make.partList non-beam shapes too!
-{
-    cutBoards.forEach(cutBoard => 
-        boardParts.push(
-            ['boards', 'cut',  $BOARDS, `${cutBoard.bbox().width()}x${cutBoard.bbox().height()}`, boardThickness, 1]
-    ))
-}
-// aggregate by section
-// TODO: something like table.groupBy(...);
-boardPartsBySection = {};
-boardParts.forEach(row => {
-    if (boardPartsBySection[row[3]]){ boardPartsBySection[row[3]][5] += 1;}
-    else { boardPartsBySection[row[3]] = row }});
-parts = parts.concat(Object.values(boardPartsBySection))
-
-
-calc.table('parts',
-    parts,
-    PART_COLUMNS);
+screws = [
+    make.fasten(horizontals, verticals, { ...SCREWS.frame, component: COMPONENT }),
+    topDouble ? make.fasten(topDouble, wall.plates.filter(p => p !== topDouble), { ...SCREWS.double, component: COMPONENT }) : null,
+    sheathing ? make.fasten(sheathing, frame, { ...SCREWS.sheathing, component: COMPONENT }) : null,
+    lining ? make.fasten(lining, frame, { ...SCREWS.lining, component: COMPONENT }) : null,
+].filter(Boolean);
 
 //// CAM PIPELINE ////
 
 function docPipeline()
 {
-    iso = wall.iso().move($WIDTH*2);
-    
     dimLevels = [
         { axis :'y', at: 0.1, minDistance: 3, offset: 100, showLine: false }, // cutline slightly above stud
         { axis :'x', at: 0.05, minDistance: 3, offset: 200, showLine: false }
-    ]
-        ;
+    ];
 
     if($OPENING)
-    { 
-        dimLevels.push( { axis: 'x', at: $OPENING_START+STUD_THICKNESS, align: false, offset: 0, minDistance: STUD_THICKNESS+2, showLine: false }) 
-        dimLevels.push( { axis: 'y', at: $OPENING_START+$OPENING_HEIGHT/2, align: false, offset: 0, minDistance:STUD_THICKNESS+2, showLine: false }) 
+    {
+        dimLevels.push( { axis: 'x', at: $OPENING_START+STUD_THICKNESS, align: false, offset: 0, minDistance: STUD_THICKNESS+2, showLine: false })
+        dimLevels.push( { axis: 'y', at: $OPENING_START+$OPENING_HEIGHT/2, align: false, offset: 0, minDistance:STUD_THICKNESS+2, showLine: false })
     }
     layout = wall.elevation('front')
-            .moveToOrigin() // center on origin
+            .moveTo(0,0,0) // center on origin
             .move($WIDTH/2, $HEIGHT/2) // align at x-axis
             .autoDim({ levels: dimLevels, });
-
-    layout.bbox().back().dim({ offset: 100 })
-    layout.bbox().right().dim({ offset: 100 })
-
-    // Board saw plan
-    sawplan = collection(); // empty
-    if(boards.length)
-    {
-        sawplan = boards.pack({ 
-                        autoRotate: false , // not needed, already XY
-                        flatten: false,  // not needed, already flat
-                        stockWidth: BOARDING_STOCK_WIDTH, 
-                        stockHeight: BOARDING_STOCK_HEIGHT, 
-                        margin: 5 }).addToScene()
-        sawplan.group('bins').dashed();
-    }
 }
 
-// docPipeline(); // DEBUG DOC PIPELINE
-
-
 //// SPEC DOC ////
+
 spec = doc
     .create('plan')
     .pipeline(docPipeline)
     .page('main')
+    .size('A4')
     .padding('1cm')
-    .titleblock({ title: 'Framed wall', designer: 'traditional', designLicense: 'public', manualLicense: 'CC-BY-NC' })
-    .text('Framed Wall', { size: '10mm' })
-    .position(0,1.0)
-    .text(`${$WIDTH}x${$HEIGHT}x${$DEPTH} - ${STUD_THICKNESS}x${$DEPTH}`, { size: '5mm' })
-    .position(0,0.93)
-    .view('iso')
-    .shapes('iso')
-    .pivot('topleft')
-    .position(0.13,0.96)
-    .width(0.4)
-    .height(0.4)
-    .text('Material list', { size: '6mm'})
-    .position(0,0.33)
-    .table('materials', { fontsize: 6 })
-    .pivot(0,0)
-    .position(0,0.0)
-    .height(0.28)
-    .width(0.4)
-    .text('Cut list', { size: '6mm'})
-    .position(0.42,0.38)
-    .table('parts', {fontsize: 6 })
-    .position(0.42,0.0)
-    .pivot(0,0)
-    .width(0.35)
-    .height(0.32)
-    .view('layout')
+    .titleblock(
+      { title: 'Framed wall', designer: 'traditional',
+          designLicense: 'public', manualLicense: 'CC-BY-NC' })
+    // at 1:25, or 1:50 (1:100) for a wall too long for the page at 1:25
+    .view('elevation', { scale: [1/10, 1/20, 1/25, 1/30, 1/40, 1/50, 1/100], caption: true })
     .shapes('layout')
-    .pivot('topright')
-    .position(1,1)
-    .width(0.6)
-    .height(0.55)
-    /*
-    .table('pricing',{fontsize: 5.5 })
-    .position(0.7,0.4)
-    .width(0.3)
-    */
+    .pivot('topleft')
+    .position(0.0,1.0)
+    .width(1.0)
+    .height(1.0)
 
-if($BOARDS !== 'none')
+//// PRODUCTS ////
+// What the parts are, as products of URBUILD_DATABASE_CORE (its component hsbwand). Only mapped
+// here, nothing is loaded: the model using this wall prices them with
+//   make.products().fromSheet(url).collect(all())
+// The wall draws all of its layers and screws; complete() only adds the work on the element as a
+// whole (squaring, handling, mounting) and what a layer left out would have had.
+
+products = make.products();
+// finger-jointed only where longer than SLS comes
+products.assign(['SLS', 'SLS-GEVINGERLAST'], frame, { component: COMPONENT, label: 'stijlen en regels' });
+if(INSULATION_PRODUCTS[$INSULATION])
 {
-    spec = spec.view('sawplan')
-        .pivot('bottomleft')
-        .shapes('sawplan')
-        .position(0, 0.33)
-        .width(0.2)
-        .height(0.2)
-        .text('sawplan', { size: '5mm'})
-        .position(0,0.6)
-        .text(`stock ${BOARDING_STOCK_WIDTH}x${BOARDING_STOCK_HEIGHT}`, { size: '3mm'})
-        .position(0,0.56)
+    // by a group, a mat of 240 fills a cavity of 235
+    products.assign(INSULATION_PRODUCTS[$INSULATION], wall.insulation, { component: COMPONENT, tolerance: 5, label: 'isolatie tussen de stijlen' });
+}
+if(sheathing) { products.assign(sheathingSpec.product, sheathing, { component: COMPONENT, label: 'buitenplaat', recipe: sheathingSpec.recipe }); }
+if(membrane) { products.assign(membraneSpec.product, membrane, { component: COMPONENT, label: 'dampremmende folie' }); }
+if(lining) { products.assign(liningSpec.product, lining, { component: COMPONENT, label: 'binnenplaat' }); }
+
+// Tape: the seams of the outside boards (lying, in rows) taped in the workshop, and the edges
+// of the element taped on site
+wallAreaM2 = ($WIDTH*$HEIGHT + $WIDTH*$ROOF_HEIGHT/2 - (($OPENING) ? $OPENING_WIDTH*$OPENING_HEIGHT : 0)) * 1e-6;
+if(sheathing)
+{
+    const [boardLength, boardHeight] = sheathingSpec.board;
+    const rows = Math.ceil($HEIGHT / boardHeight);
+    const seams = (rows - 1) * $WIDTH + rows * (Math.ceil($WIDTH / boardLength) - 1) * boardHeight;
+    const edges = 2 * ($WIDTH + $HEIGHT);
+    products.add(TAPE, { lengte: (seams + edges) / 1000 }, { component: COMPONENT, label: 'plaatnaden en elementomtrek' });
 }
 
+// what this wall leaves out or replaces, so complete() does not add the block's own
+BLOCK_SHEATHING = SHEATHINGS.houtvezel16.product;
+leftOut = [
+    ...(sheathing ? [] : [SCREWS.sheathing.product, TAPE]),
+    ...(sheathingSpec?.product === BLOCK_SHEATHING ? [] : [BLOCK_SHEATHING]),
+    ...(lining ? [] : ['gipsplaat-12.5-1200', SCREWS.lining.product]),
+];
+products.complete(COMPONENT, { oppervlak: wallAreaM2 }, { except: leftOut });

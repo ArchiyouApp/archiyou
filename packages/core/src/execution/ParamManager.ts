@@ -36,6 +36,15 @@ import { deepEqual } from '../utils'
 /** Main ParamManager
  *  Maintains all ParamManagerOperators 
  */
+/** What a preset is besides its values. `variantOf`: the preset (a component of a product
+ *  sheet) this one is a variant of, as the sheet's column "variant van" has it. */
+export interface PresetOptions
+{
+    label?: string;
+    description?: string;
+    variantOf?: string;
+}
+
 export class ParamManager
 {
     //// SETTINGS ////
@@ -53,6 +62,10 @@ export class ParamManager
     /** Presets declared from the script via preset() this run.
      *  Shaped to match Script.presets (Record<presetName, Record<paramName, ScriptParamData>>). */
     _definedPresets:Record<string, Record<string, ScriptParamData>> = {};
+
+    /** What preset() was told about each preset besides its values (label, description,
+     *  variantOf): kept apart, since Script.presets has no place for it yet. */
+    _presetOptions:Record<string, PresetOptions> = {};
 
     /** Object types declared this run via defineObject() (name → JSON Schema).
      *  An INSTANCE field on purpose, never module-level: Runner builds a fresh
@@ -732,7 +745,7 @@ export class ParamManager
     /** Programmatically declare a preset (named set of param values) from the script.
      *  @example $PARAMS.preset('SMALL', { WIDTH: 80, MODE: 'a' }, { description: 'Compact version' })
      */
-    preset(name: string, values: Record<string, any>, _options?: { description?: string; label?: string }): this
+    preset(name: string, values: Record<string, any>, options?: PresetOptions): this
     {
         if (!name) { throw new Error(`ParamManager::preset(): Please supply a name for the preset!`); }
         if (!values || typeof values !== 'object') { throw new Error(`ParamManager::preset(): Please supply a values object for preset "${name}"!`); }
@@ -749,10 +762,24 @@ export class ParamManager
                 : ({ name: upper, type: 'number', schema: {} } as unknown as ScriptParamData);
             rec[upper] = { ...base, _value: value };
         }
-        // NOTE: _options.description/label have no home in Script.presets yet — accepted for forward-compat.
+        // NOTE: the options have no home in Script.presets yet: kept apart, see presetOptions()
         this._definedPresets[name] = rec;
+        if (options) { this._presetOptions[name] = { ...options }; }
 
         return this;
+    }
+
+    /** The options a preset was declared with (label, description, variantOf), or {}. */
+    presetOptions(name: string): PresetOptions
+    {
+        return this._presetOptions[name] ?? {};
+    }
+
+    /** The values of a preset declared this run, by param name: { WIDTH: 3000, DEPTH: 235 } */
+    presetValues(name: string): Record<string, any> | null
+    {
+        const rec = this._definedPresets[name];
+        return rec ? Object.fromEntries(Object.entries(rec).map(([k, p]) => [k, (p as any)._value])) : null;
     }
 
     /** Presets declared from the script this run (shaped like Script.presets). */

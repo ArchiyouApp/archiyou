@@ -41,9 +41,15 @@
  *  A shape that is only a mass (a box for a wall, a block for a bathroom) is not measured for
  *  products at all: assign it to a component of the sheet ('hsbwand', 'badkamer_klein') and its
  *  volume is priced at the component's cost per m3. That is rough on purpose: the component
- *  stands for a representative build-up, and its block in the sheet's componenten tab says
- *  which. A component is what has an output `outputs.<component>.costm3`, next to its cost per
- *  unit, `costm2` or `costst`.
+ *  stands for a representative build-up, and its rows in the sheet's componenten tab say which.
+ *  That tab is a table (see recipes.ts): the component's id on every row, its first row with its
+ *  name, group, size and Rc, no totals; its costs are added up from its rows. In the older layout
+ *  of blocks, a component is what has an output `outputs.<component>.costm3`, next to its cost
+ *  per unit, `costm2` or `costst`.
+ *
+ *  A product without a recipe of its own follows one like it; `recipe` says which where the
+ *  likeness is wrong: an ESB board on a wall's outside is worked as the wood fibre board it
+ *  replaces, `{ recipe: 'houtvezel-buitenplaat-16-mg4-635x2510' }`, not as the gypsum board inside.
  *
  *  Sizes are in mm, as in the sheet, and so is the model.
  */
@@ -87,8 +93,9 @@ export interface OperationRow
     [column: string]: unknown;
 }
 
-/** A component, as fromRows() takes it. fromSheet() reads them from the sheet's outputs:
- *  `outputs.<component>.costm3`, and `costm2` or `costst` for its unit. */
+/** A component, as fromRows() takes it. fromSheet() reads them from the componenten table's
+ *  first rows, or in the older layout from the sheet's outputs: `outputs.<component>.costm3`,
+ *  and `costm2` or `costst` for its unit. */
 export interface ComponentRow
 {
     component: string;
@@ -148,6 +155,10 @@ export interface ProductOptions
     label?: string;
     /** The component of the sheet this is part of ('hsbwand'): its block has the recipe. */
     component?: string;
+    /** A product whose recipe this one follows, where it has none of its own: an ESB board on
+     *  the outside of a wall is worked as the wood fibre board it replaces, not as the gypsum
+     *  board that is a plaat too. */
+    recipe?: string;
 }
 
 export interface AssignOptions extends ProductOptions
@@ -255,6 +266,47 @@ export interface OfferScenarios
     totals: Array<{ subtotaal: number, opslagen: number, totaal: number, exclBtw: number, btw: number }>;
 }
 
+/** A line of block(): a product with the work its recipe gives, or work on the element. */
+export interface BlockLine extends Required<ProductQuantities>
+{
+    id: string;
+    kind: LineKind;
+    vorm: string;
+    description: string;
+    /** Waste as a fraction: the line's own, else the sheet's default for its vorm. */
+    waste: number | null;
+    /** The product's groups, most specific first ('SLS', ...); empty for work on the element. */
+    groups: Array<string>;
+    /** Costs excluding margins. */
+    costs: ProductCosts;
+    /** Whose recipe gave the steps: 'hsbwand/sls-38x235', 'hsbwand/SCHROEF-RVS'; null when none. */
+    recipe: string | null;
+    /** The products of the sheet's rows that recipe was read from: the line itself, or ones like it. */
+    like: Array<string>;
+    steps: Array<BlockStep>;
+}
+
+/** An operation on a product in block(): factor x its quantity `per`. */
+export interface BlockStep
+{
+    operation: string;
+    fase: string;
+    per: keyof ProductQuantities;
+    factor: number;
+    quantity: number;
+    /** Excluding margins. */
+    cost: number;
+}
+
+/** What block() returns: the lines, and the totals including margins as compute() has them. */
+export interface ComponentBlock
+{
+    lines: Array<BlockLine>;
+    totals: ProductCosts;
+    noRecipe: Array<string>;
+    noPrice: Array<string>;
+}
+
 /** What compute() returns: the costs including margins, and the lines with theirs. */
 export interface ProductOverview extends ProductCosts
 {
@@ -300,6 +352,8 @@ export interface ProductSheetOptions
     operations?: string;
     /** The recipes and representative components, see recipes.ts. Default 'componenten'. */
     components?: string;
+    /** The materials the products are made of, for the run's materials. Default 'materialen'. */
+    materials?: string;
     /** For a private sheet opened by its URL: the name of the Google key in Keys to read it
      *  with, as `cloudcalc.open(url, { key })` takes it. Default: the user's default key. */
     key?: string;
@@ -608,7 +662,7 @@ export class ProductManager
     private _operations: Array<OperationRow> = [];
     private _components: Array<Component> = [];
     private _workbook: SheetWorkbook | null = null;
-    private _sheet: Required<Omit<ProductSheetOptions, 'key'>> = { products: 'producten', operations: 'bewerkingen', components: 'componenten' };
+    private _sheet: Required<Omit<ProductSheetOptions, 'key'>> = { products: 'producten', operations: 'bewerkingen', components: 'componenten', materials: 'materialen' };
     /** Per shape, the product it was matched to. A later assign() replaces it. */
     private _assigned = new Map<any, Assignment>();
     /** Shapes a group assign() saw but found no product for, until something else takes them. */
@@ -617,13 +671,15 @@ export class ProductManager
     /** Without products: what add() and complete() said, for the shapes assign() mapped to bring along. */
     private _mappedTakeOff: TakeOff | null = null;
     private _waste = new Map<string, number>();
+    /** Per product, the product whose recipe it follows (the option `recipe`). */
+    private _recipeOf = new Map<string, string>();
     private _costs: Array<ProductCosts> | null = null;
     /** Per line of the last compute(), whose recipe gave its labour. */
     private _labour: Array<string | null> | null = null;
     /** The sheet's outputs, for the components' prices and the margins. */
     private _outputs: Record<string, any> | null = null;
     private _costData: CostData | null = null;
-    private _recipes = new Map<string, { steps: Array<RecipeStep>, source: string } | null>();
+    private _recipes = new Map<string, { steps: Array<RecipeStep>, source: string, like: Array<string> } | null>();
     /** The offer template fromOffer() read. */
     private _offer: SheetWorkbook | null = null;
     /** The template and inputs of the last offer(), for its page. */
@@ -664,12 +720,35 @@ export class ProductManager
             .filter((m): m is RegExpMatchArray => m !== null);
         // the row of the cell after the tab: 'componenten2'!$AD$40 is 40
         const rowOf = (id: string) => Number(String(ranges.find(r => r.name === `outputs.${id}.costm3`)?.range ?? '').split('!').pop()!.match(/[A-Z]+\$?(\d+)/i)?.[1] ?? Infinity);
-        const components = [...new Set(costs.filter(m => m[2] === 'm3').map(m => m[1]!))]
+        let components: Array<ComponentRow> = [...new Set(costs.filter(m => m[2] === 'm3').map(m => m[1]!))]
             .sort((a, b) => rowOf(a) - rowOf(b))
             .map(id => ({ component: id, eenheid: costs.find(m => m[1] === id && m[2] !== 'm3')?.[2] ?? null }));
+        // the table layout has no names per component: its components are its first rows
+        const blocks = wb.tables().some(t => t.name === this._sheet.components) ? readBlocks(wb.table(this._sheet.components)) : null;
+        if (blocks && [...blocks.values()].some(b => b.layout === 'table'))
+        {
+            components = [...blocks.values()].map(b => ({ component: b.id, eenheid: b.unit || null, gebouwdeel: b.info.gebouwdeel }));
+        }
         this.fromRows(wb.table(this._sheet.products) as Array<ProductRow>, operations as Array<OperationRow>, components);
         this._workbook = wb;
+        // the same sheet says what the products are made of: its materialen tab
+        const materials = this._modules?.()?.materials;
+        if (materials && wb.tables().some(t => t.name === this._sheet.materials))
+        {
+            materials.fromWorkbook(wb, this._sheet.materials);
+        }
         return this;
+    }
+
+    /** A shape takes the material of the product it is: the product's `materiaal` column, a
+     *  `materiaal_id` of the sheet's materialen tab. A material set on the shape itself stays. */
+    private _giveMaterial(shape: any, product: Product): void
+    {
+        const material = String(product.row['materiaal'] ?? '').trim();
+        if (material && !shape?._material && typeof shape?.material === 'function')
+        {
+            shape.material(material);
+        }
     }
 
     /**
@@ -805,7 +884,9 @@ export class ProductManager
             {
                 if (!found) { if (!this._assigned.has(shape)) { this._unmatched.add(shape); } return; }
                 this._assigned.set(shape, { kind: 'product', product: found.product, measure: found.measure, label, block: options.component });
+                if (options.recipe) { this._recipeOf.set(found.product.id, options.recipe); }
                 this._unmatched.delete(shape);
+                this._giveMaterial(shape, found.product);
             });
             return found?.product ?? null;
         });
@@ -873,6 +954,7 @@ export class ProductManager
         }
         this._added.push({ id, kind, quantities, ...options });
         if (options.waste !== undefined) { this._waste.set(id, options.waste); }
+        if (options.recipe && kind === 'product') { this._recipeOf.set(id, options.recipe); }
         this._costs = null;
         return this;
     }
@@ -900,8 +982,14 @@ export class ProductManager
         {
             throw new Error(`ProductManager.elementWork('${component}'): it is sized in ${block.unit}: give ${key ?? 'its size'}`);
         }
-        block.element.forEach(work => this.add(work.operation, { [work.quantity]: work.amount * amount / block.size },
-            { label: options.label ?? component, component }));
+        // per element: once for each (a component sized in m2 is one element here); per m2 of it;
+        // or, in the block layout, as much as the block has, scaled by size
+        const elements = block.unit === 'st' ? amount : 1;
+        block.element.forEach(work => this.add(work.operation, {
+            [work.quantity]: work.per === 'element' ? work.factor! * elements
+                : work.per === 'oppervlak' ? work.factor! * (quantities.oppervlak ?? amount)
+                : work.amount * amount / block.size,
+        }, { label: options.label ?? component, component }));
         return this;
     }
 
@@ -1017,6 +1105,28 @@ export class ProductManager
             Object.fromEntries(Object.entries(quantities).map(([key, value]) => [key, Number(value) * share]));
         shares.forEach((share, takeOff) => takeOff.adds.forEach(a => this._collectStep(`add('${a.id}')`,
             () => this.add(a.id, scaled(a.quantities, share), a.options))));
+
+        // the screws make.fasten() drew: one per head circle, by product and component, before
+        // complete() so it knows the model has them
+        const screws = new Map<string, { id: string, component: string | undefined, count: number, labels: Set<string> }>();
+        const walk = (s: any): void =>
+        {
+            if (s == null) return;
+            if (Array.isArray(s)) { s.forEach(walk); return; }
+            const f = s._fastening;
+            if (f?.head && f.product)
+            {
+                const key = `${f.product}|${f.component ?? ''}`;
+                const entry = screws.get(key) ?? { id: f.product, component: f.component ?? undefined, count: 0, labels: new Set<string>() };
+                entry.count++;
+                entry.labels.add(f.label ?? 'fastening');
+                screws.set(key, entry);
+            }
+            if (typeof s.toArray === 'function' && s.isShapeCollection?.()) { s.toArray().forEach(walk); }
+        };
+        walk(shapes);
+        screws.forEach(({ id, component, count, labels }) => this._collectStep(`add('${id}')`,
+            () => this.add(id, { st: count }, { label: [...labels].join(', '), ...(component ? { component } : {}) })));
 
         // complete() once per component, for all of it
         const completes = new Map<string, { quantities: ProductQuantities, except: Set<string> }>();
@@ -1189,6 +1299,46 @@ export class ProductManager
     }
 
     /**
+     *  The model as a block of the sheet's componenten tab: what a component is made of at the
+     *  size it was run at. Per product its quantities and, under it, the work its recipe gives
+     *  (factor x the quantity it is per); then the work on the element as a whole. This is how a
+     *  component's block is made from its script, run at the block's reference size: the block's
+     *  hoeveelheden come from the model, its recipes (per, factor) stay the sheet's. Needs
+     *  fromSheet().
+     *
+     *      products = make.products().fromSheet(url).collect(all())
+     *      products.block().lines   // [{ product: 'sls-38x235', st: 9, lengte: 24.5, steps: [{ operation: 'afkorten', per: 'st', factor: 2, quantity: 18 }, ...] }, ...]
+     */
+    block(): ComponentBlock
+    {
+        const overview = this.compute();
+        const data = this._loadCostData('block');
+        const blockOf = new Map<string, string>();
+        this._entries().forEach(e => { if (e.block && !blockOf.has(e.id)) { blockOf.set(e.id, e.block); } });
+
+        const lines: Array<BlockLine> = overview.lines.map(line =>
+        {
+            const quantities = Object.fromEntries(QUANTITY_KEYS.map(k => [k, line[k]])) as Required<ProductQuantities>;
+            const base = { id: line.id, kind: line.kind, vorm: line.vorm, description: line.description, waste: line.waste, groups: [] as Array<string>, like: [] as Array<string>, ...quantities, costs: line.costs!, steps: [] as Array<BlockStep>, recipe: null as string | null };
+            if (line.kind !== 'product') { return base; }
+            const product = this._products.find(p => p.id === line.id)!;
+            const recipe = this._recipe(product, blockOf.get(line.id) ?? '', data);
+            base.recipe = recipe?.source ?? null;
+            base.like = recipe?.like ?? [];
+            base.waste = line.waste ?? data.waste.get(product.vorm) ?? null;
+            base.groups = product.groups;
+            base.steps = (recipe?.steps ?? []).map(step => ({
+                operation: step.operation, fase: step.fase, per: step.per, factor: step.factor,
+                quantity: round(step.factor * quantities[step.per]),
+                cost: step.factor * quantities[step.per] * this._rate(step.operation),
+            }));
+            return base;
+        });
+        const { lines: _lines, noRecipe, noPrice, ...totals } = overview;
+        return { lines, totals, noRecipe, noPrice };
+    }
+
+    /**
      *  The lines as a table of the script: quantities, and the costs after compute().
      *  @param name - Name of the table. Default 'products'.
      */
@@ -1306,7 +1456,7 @@ export class ProductManager
         {
             throw new Error('ProductManager.orderTable(): tables are only available inside a run');
         }
-        const outputs = this._sheetOutputs('orderTable');
+        const outputs = this._componentOutputs('orderTable');
         const named = (component: string) => String(outputs[component]?.naam ?? '').trim() || component || 'other';
         const r2 = (v: number) => Math.round(v * 100) / 100;
         // the component column only for a list of several
@@ -1339,7 +1489,7 @@ export class ProductManager
      */
     prices(): Array<OfferPrice>
     {
-        const out = this._sheetOutputs('prices');
+        const out = this._componentOutputs('prices');
         return this._components
             .map(c => ({ c, o: out[c.id] ?? {} }))
             .filter(({ o }) => o.groep && o.naam && Array.isArray(o.costs))
@@ -1799,10 +1949,20 @@ export class ProductManager
     /** The recipe a product follows, nearest first: its own row in the component's block, one like
      *  it in that block, then the same product, group or vorm anywhere. Its own row counts even
      *  without operations: the sheet then says there is no work on it. */
-    private _recipe(product: Product, block: string, data: CostData): { steps: Array<RecipeStep>, source: string } | null
+    private _recipe(product: Product, block: string, data: CostData): { steps: Array<RecipeStep>, source: string, like: Array<string> } | null
     {
         const key = `${block}|${product.id}`;
         if (this._recipes.has(key)) { return this._recipes.get(key)!; }
+
+        // told to follow another product's recipe, where it has no row of its own in the block
+        const like = this._products.find(p => p.id === this._recipeOf.get(product.id) && p.id !== product.id);
+        const ownRow = data.blocks.get(block)?.products.some(r => r.id === product.id);
+        if (like && !ownRow)
+        {
+            const followed = this._recipe(like, block, data);
+            this._recipes.set(key, followed);
+            return followed;
+        }
 
         const inGroup = (id: string, group: string) => this._products.find(p => p.id === id)?.groups.includes(group) === true;
         const scope = (rows: Array<BlockProduct>, prefix: string) => [
@@ -1817,11 +1977,11 @@ export class ProductManager
             .map(c =>
             {
                 const exact = c.exact && block !== '' && c.source.startsWith(`${block}/`);
-                return { steps: exact ? combineRows(c.rows) : mergeRecipes(c.rows.map(r => r.steps)), source: c.source, exact };
+                return { steps: exact ? combineRows(c.rows) : mergeRecipes(c.rows.map(r => r.steps)), source: c.source, exact, like: c.rows.map(r => r.id) };
             })
             .find(c => c.exact || c.steps.length > 0);
 
-        const recipe = found ? { steps: found.steps, source: found.source } : null;
+        const recipe = found ? { steps: found.steps, source: found.source, like: [...new Set(found.like)] } : null;
         this._recipes.set(key, recipe);
         return recipe;
     }
@@ -1958,6 +2118,36 @@ export class ProductManager
     }
 
     /** The sheet's outputs: of the last compute(), or computed now. */
+    /**
+     *  The sheet's outputs, with per component what its outputs.<id>.* say: in the table layout,
+     *  which has none, made from its rows: its first row's names, its costs per unit (incl. the
+     *  margins), its CO2 per unit, its Rc and its products.
+     */
+    private _componentOutputs(method: string): Record<string, any>
+    {
+        const outputs = { ...this._sheetOutputs(method) };
+        // a sheet without the componenten table has its components in its outputs only
+        const name = this._sheet.components;
+        if (!this._workbook!.tables().some(t => t.name === name)) { return outputs; }
+        const data = this._loadCostData(method);
+        const { materiaal, arbeid, algemeen } = data.margins;
+        data.blocks.forEach(b =>
+        {
+            if (b.layout !== 'table' || outputs[b.id]?.naam) { return; }
+            const per = b.size > 0 ? 1 / b.size : 0;
+            const onMaterial = (1 + materiaal / 100) * (1 + algemeen / 100);
+            const onLabour = (1 + arbeid / 100) * (1 + algemeen / 100);
+            outputs[b.id] = {
+                gebouwdeel: b.info.gebouwdeel, groep: b.info.groep, naam: b.info.naam,
+                costs: CATEGORIES.map(k => b.costs[k] * per * (k === 'material' ? onMaterial : onLabour)),
+                gwp: b.gwp.map(v => v * per),
+                rc: b.info.rc,
+                producten: [...new Set(b.products.filter(p => !['bevestigingsmiddelen', 'luchtdichting'].includes(p.bouwdeel ?? '')).map(p => p.id))].join(', '),
+            };
+        });
+        return outputs;
+    }
+
     private _sheetOutputs(method: string): Record<string, any>
     {
         if (!this._workbook)
