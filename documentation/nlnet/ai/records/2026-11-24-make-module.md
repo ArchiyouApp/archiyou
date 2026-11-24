@@ -162,7 +162,48 @@ Step 4, the takeoff:
   same 5 fail as before.
 - Not yet: CO2 in the takeoff (the sheet has it per product and per component row).
 
+Step 5, the scripts on the new API:
+
+- What a component script needs, added to core: `make.add()` and `make.complete()` (what the model
+  does not draw; they go with the shapes the run gave a product, each a share, so a wall used
+  twice brings them twice), `product([...names])` (the first that fits: SLS, else finger-jointed),
+  `{ fit: false }` (by id, for parts drawn otherwise than sold: rafters cut at an angle),
+  `shape.partOf(what)` (drawn but reckoned as part of something else: the roof's layers in the
+  rows of `dak`, a head plate in its pile), `take.loose()`, `take.block()`.
+- Without the make database (a run not signed in, a test) `.product()` keeps the name and the
+  shape's size and the takeoff finds the product: a component needs nothing to run, as before.
+- Found and fixed on the way:
+  - a component run did not get its parent's content (sheets, the make database); it does now,
+    the component cache key includes the content's versions, and a component that stops for
+    content makes its parent ask for it;
+  - a component's own problems stayed in its run; they reach the model's `make.check()`;
+  - a piece of a beam shorter than its section (a 38 mm block cut from a 38x235) fit nothing: three
+    studs under a window were never priced (the old API dropped them silently);
+  - a second `complete()` of a component took what the first one added as modelled and left out
+    the sheathing, gypsum and screws (the old `collect()` hid this by merging all completes into
+    one, which counted a component used four times as one element in the table layout).
+- `timberwall` (repo) on the new API. `archiyou blocks` reckons with a snapshot (`--makedb`) and
+  `make.takeoff().block()`, writes to the sheet the snapshot came from: the same € per m2 as from
+  the sheet (157.83 / 138.25; `hsbwand_esb` 153.48: the ESB recipe fix of material-flow).
+- Publishing from the library: `pnpm admin:components versions|export author/name[:version]`
+  (apps/server, reads only) writes a script with its version; `archiyou blocks <script.json>`
+  writes its rows with bron `author/name@version` and bron-id the version's id. The server keeps
+  no Google key: the export is on the server, the writing where the key is.
+- CLI: `archiyou run --components <dir>` (and the script's own folder): `.js` files, or `.json`
+  scripts with params and presets as the server keeps them.
+- The production scripts of the house (`ur_house_detailed`, `timberwall`, `ur_roof`, `ur_bent`,
+  `ur_floor_foundation`, `foundation_screw`) read from the database (read only) and changed by the
+  agent in their product sections only, run locally against the old API as a baseline: the same
+  € 23,192 and all 31 lines alike, then € 23,217 with the three studs; and now 266 hours, 8.1 t.
+  They are for the human to save once this core is deployed. `ur_floor_foundation` calls
+  `.autoScale()` on a document view, which no branch of this core has; left as it is.
+- Tests: core `takeoff.test.ts` (components used twice, names, short pieces, partOf, without the
+  database, content and problems through components). Core: the same 5 fail as before, and the
+  round-trip table of the random `ur_house_sketch` (as before); CLI, server, editor pass.
+
 ## Next
 
-Step 5: `timberwall` and `ur_house_detailed` on the new API; publishing components as an admin
-command. Before it reaches the real core: the `term`/`aliassen` columns there.
+Step 6: remove the old API (`make.products().assign/collect/unassigned`, cloudcalc only for offer
+templates). Still on the old API in production: `ur_house_sketch`, `ur_floor`,
+`ur_house_detailed_storeys`, `wall_time_cost`, `products_abstract`, `products_test`. Before it
+reaches the real core: the `term`/`aliassen` columns there.
