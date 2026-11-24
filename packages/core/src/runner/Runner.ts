@@ -2373,6 +2373,7 @@ ${contextLines.join('\n')}
      *  - modelUnits  the same numbers are other lengths in inches than in millimeters, and
      *               every dimension and doc scale follows them.
      *  - docUnitSystem  the documents' system for the run; their text follows it.
+     *  - content    which version of each sheet or make database it was given.
      *
      *  A document otherwise follows the model's units(), which the component's code sets.
      */
@@ -2387,6 +2388,8 @@ ${contextLines.join('\n')}
             unitSystem: request.unitSystem ?? '',
             modelUnits: request.modelUnits ?? '',
             docUnitSystem: request.docUnitSystem ?? '',
+            // a new snapshot of a sheet or the make database is other input
+            content: Object.entries(request.content ?? {}).map(([key, item]: [string, any]) => `${key}@${item?.version ?? ''}`).sort(),
         }));
     }
 

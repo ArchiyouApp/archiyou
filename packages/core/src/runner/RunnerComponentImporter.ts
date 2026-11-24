@@ -114,6 +114,7 @@
 
 import type { Runner } from './Runner'
 import { Script } from '../Script';
+import { ContentNeededError } from '../modules/sdkTypes';
 import { ScriptOutputManager } from '../execution/ScriptOutputManager';
 import { ScriptOutputPath } from '../execution/ScriptOutputPath';
 import { isScriptOutputCategory } from '../execution/typeguards';
@@ -567,6 +568,8 @@ export class RunnerComponentImporter
             unitSystem: parentRequest?.unitSystem,
             docUnitSystem: parentRequest?.docUnitSystem,
             modelUnits: parentRequest?.modelUnits,
+            // the content the run was given (sheets, the make database): a component reads it as its parent does
+            content: parentRequest?.content,
             script: script,
             component: this.label, // scope identifier
             params: this._params,
@@ -594,6 +597,11 @@ export class RunnerComponentImporter
             // Check for errors. Before caching: a component that threw gets another chance.
             if(r.status === 'error')
             {
+                // it stopped for content the run was not given: the parent's run asks for it too
+                if(r.needs?.content?.length)
+                {
+                    throw new ContentNeededError(`$component("${this.label}"): ${(r.errors?.[0] as any)?.message ?? 'needs content'}`, r.needs);
+                }
                 const msgs = (r.errors ?? []).map(e => (e && typeof e === 'object' && 'message' in e) ? (e as any).message : String(e)).join('; ');
                 throw new Error(`$component("${this.label}")::_executeComponentScript(): Error executing component script: ${msgs}`);
             }
