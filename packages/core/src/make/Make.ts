@@ -8,30 +8,30 @@
  */
 
 import { ArchiyouModules } from '../types';
-import type { Modeler } from './Modeler';
+import type { Modeler } from '../modeler/Modeler';
 import { ShapeCollection } from '@archiyou/meshup';
 import type * as meshup from '@archiyou/meshup';
 import type { Polygon } from '@archiyou/meshup';
 import type { Mesh } from '@archiyou/meshup';
-import type * as brepTypes from './brep/index';
+import type * as brepTypes from '../modeler/brep/index';
 import { Table } from '../calc/Table';
 import { roundTo } from '../utils';
 
-import { collectParts } from './parts';
-import { ProductManager } from '../products/ProductManager';
-import { MakeDb } from '../make/db';
+import { collectParts } from '../modeler/parts';
+import { ProductManager } from './products/ProductManager';
+import { MakeDb } from './db';
 import { ContentNeededError, contentKey } from '../modules/sdkTypes';
 import type { BinPacker, CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm';
 import type { Packer3D } from '@archiyou/pack3d-wasm';
 
 import { Static } from 'typebox';
-import { PackOptionsSchema, Pack3DOptionsSchema, FoldoutViewOptionsSchema } from './schemas';
-import { FOLDOUT_SIDES, convexHull, foldoutPlacement, outermostAt, projectableCoordinates, projectionLine, rotateSheetPoint } from './foldoutView';
-import type { FoldoutPlacement, FoldoutProjection, FoldoutSide, SheetPoint, SheetSegment } from './foldoutView';
+import { PackOptionsSchema, Pack3DOptionsSchema, FoldoutViewOptionsSchema } from '../modeler/schemas';
+import { FOLDOUT_SIDES, convexHull, foldoutPlacement, outermostAt, projectableCoordinates, projectionLine, rotateSheetPoint } from './build/foldoutView';
+import type { FoldoutPlacement, FoldoutProjection, FoldoutSide, SheetPoint, SheetSegment } from './build/foldoutView';
 import { MM_PER_UNIT } from '../units/UnitConverter';
-import { layOut, screwSize, type Box3, type FastenOptions, type Vec3 as FastenVec3 } from './fasten';
-import { isClosedSolid, vote } from './packChoice';
-import { measure, group as groupShapes, toInstance, toOptions, put, fromGrams } from './pack3d';
+import { layOut, screwSize, type Box3, type FastenOptions, type Vec3 as FastenVec3 } from './build/fasten';
+import { isClosedSolid, vote } from './pack/packChoice';
+import { measure, group as groupShapes, toInstance, toOptions, put, fromGrams } from './pack/pack3d';
 
 /** The 2D sheet packer (gdrr2bp), loaded on demand like the 3D load planner and the IFC classifier: most runs never
  *  nest parts, and the module is a few hundred KB. pack2d() and boarding() are synchronous for scripts, so the Runner

@@ -12,8 +12,8 @@ import { MaterialManager } from '../../../src/materials/MaterialManager'
 import type { ArchiyouModules } from '../../../src/types'
 import {
     FOLDOUT_SIDES, convexHull, foldoutPlacement, outermostAt, projectableCoordinates, projectionLine, rotateSheetPoint,
-} from '../../../src/modeler/foldoutView'
-import type { FoldoutSide, SheetPoint, SheetSegment } from '../../../src/modeler/foldoutView'
+} from '../../../src/make/build/foldoutView'
+import type { FoldoutSide, SheetPoint, SheetSegment } from '../../../src/make/build/foldoutView'
 
 let modeler: Modeler
 let annotator: Annotator

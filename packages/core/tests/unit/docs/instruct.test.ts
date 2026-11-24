@@ -13,7 +13,7 @@ import { Instruct, SUBJECT_GROUP, CONTEXT_GROUP } from '../../../src/docs/instru
 import { Step } from '../../../src/docs/instruct/Step'
 import type { ArchiyouModules } from '../../../src/types'
 import { projectMeshes } from '../../../src/modeler/SVGExporter'
-import { loadPack3dModule } from '../../../src/modeler/Make'
+import { loadPack3dModule } from '../../../src/make/Make'
 
 let modeler: Modeler
 let calc: Calc

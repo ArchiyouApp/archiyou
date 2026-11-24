@@ -104,7 +104,21 @@ Step 1, the make database:
 - Tests: core (schema, versions, needs, make.db() in a run with and without it), server
   (MakeDbStore), editor (fetching).
 
+Step 2, one place:
+
+- `git mv` (history kept): `modeler/Make.ts` → `make/Make.ts`; `modeler/fasten.ts`,
+  `foldoutView.ts` → `make/build/`; `modeler/pack3d.ts`, `packChoice.ts` → `make/pack/`;
+  `products/` (ProductManager, recipes, offer-html, apps-script) → `make/products/`; their tests to
+  `tests/unit/make/`. `modeler/parts.ts` and `Layouter.ts` stay: the animator and the docs use them
+  too. Imports rewritten by a script that resolves each from the file's old place and touches only
+  what points at a moved file; the API and completion generators read the new paths. Make.ts itself
+  is not split yet: its code is rewritten in steps 3 and 4 anyway.
+- Nothing changed in what the code does: core 2032 tests pass, the 5 that fail failed before
+  (version, IFC house fixture, two runner-help examples, a ProductManager error message);
+  cadscripts, CLI, server and editor pass. The generated API reference and completions are
+  regenerated; they had fallen behind the source.
+
 ## Next
 
-Step 2: move the code into `make/` without changing what it does; then step 3, `shape.product()`
-with the aliases (a column in `producten`: main term in English, aliases in English and Dutch).
+Step 3: `shape.product()` with the aliases (a column in `producten`: main term in English,
+aliases in English and Dutch), `shape.component()`, `check()`, `strict()`.

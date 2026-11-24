@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 
-import { offerPageData, renderOfferHtml, sheetDate, type OfferSource } from '../../../src/products/offer-html'
-import { ProductManager } from '../../../src/products/ProductManager'
-import type { Table } from '../../../src/calc/Table'
-import { Calc } from '../../../src/calc/Calc'
+import { offerPageData, renderOfferHtml, sheetDate, type OfferSource } from '../../../../src/make/products/offer-html'
+import { ProductManager } from '../../../../src/make/products/ProductManager'
+import type { Table } from '../../../../src/calc/Table'
+import { Calc } from '../../../../src/calc/Calc'
 
 /** A row of tables.bouwkosten, keyed by the template's header (row 4 of BOUWKOSTEN). */
 function line(aan: unknown, onderdeel: string, rest: Partial<Record<string, unknown>> = {}): Record<string, unknown>

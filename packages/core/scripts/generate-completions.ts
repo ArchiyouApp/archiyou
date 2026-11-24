@@ -33,8 +33,8 @@
  *   src/interaction/Handle.ts         → Handle members (what $handle() returns)
  *   src/docs/Docs.ts                  → Docs members (the `doc` global)
  *   src/docs/Document.ts              → Document members (what doc.create() and the chain return)
- *   src/modeler/Make.ts               → Make members (the `make` global)
- *   src/products/ProductManager.ts    → ProductManager members (what make.products() returns)
+ *   src/make/Make.ts                  → Make members (the `make` global)
+ *   src/make/products/ProductManager.ts→ ProductManager members (what make.products() returns)
  *   src/animator/Animator.ts          → Animator members (the `animator` global)
  *   src/animator/Animation.ts         → Animation members (what animator.create() returns)
  *
@@ -422,11 +422,11 @@ const docsMethods = extractPublicMethods(
 /* ------------------------------------------------------------------ */
 
 const makeMethods = extractPublicMethods(
-    getClass('src/modeler/Make.ts', 'Make'),
+    getClass('src/make/Make.ts', 'Make'),
     new Set(['setArchiyou', 'packReady']),
 )
 
-const productManagerMethods = extractPublicMethods(getClass('src/products/ProductManager.ts', 'ProductManager'))
+const productManagerMethods = extractPublicMethods(getClass('src/make/products/ProductManager.ts', 'ProductManager'))
 
 /* ------------------------------------------------------------------ */
 /*  Extract: animator (the `animator` global and the Animation it makes) */

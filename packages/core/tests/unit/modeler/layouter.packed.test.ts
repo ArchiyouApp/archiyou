@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test, vi } from 'vitest'
 
 import { Modeler } from '../../../src/modeler/Modeler'
-import { loadPack3dModule } from '../../../src/modeler/Make'
+import { loadPack3dModule } from '../../../src/make/Make'
 import { boundsOf, layoutPlacements } from '../../../src/animator/layouts'
 
 describe('Layouter.packed', () =>

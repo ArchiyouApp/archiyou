@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 
 import { Modeler } from '../../../src/modeler/Modeler'
-import { contact, layOut, screwSize } from '../../../src/modeler/fasten'
-import { ProductManager } from '../../../src/products/ProductManager'
+import { contact, layOut, screwSize } from '../../../src/make/build/fasten'
+import { ProductManager } from '../../../src/make/products/ProductManager'
 import type { ArchiyouModules } from '../../../src/types'
 
 let modeler: Modeler

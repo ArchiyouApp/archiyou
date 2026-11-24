@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { isPack3dLoaded, loadPack3dModule } from '../../../src/modeler/Make'
+import { isPack3dLoaded, loadPack3dModule } from '../../../src/make/Make'
 import { Packer3D, orientationMask } from '@archiyou/pack3d-wasm'
 import type { Instance, Solution } from '@archiyou/pack3d-wasm'
 

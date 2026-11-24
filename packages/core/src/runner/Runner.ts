@@ -71,7 +71,7 @@ import { MODELER_METHODS_INTO_GLOBAL, SCRIPT_OUTPUT_GLTF_OPTIONS_DEFAULT, output
 import { Animator } from '../animator/Animator';
 import { Styler } from '../docs/styler/Styler';
 import { ParamManager } from '../execution/ParamManager';
-import { loadBinPackerModule, loadPack3dModule, type Make } from '../modeler/Make';
+import { loadBinPackerModule, loadPack3dModule, type Make } from '../make/Make';
 import type { Handle } from '../interaction/Handle';
 import type { ShapeCollection } from '@archiyou/meshup';
 import * as meshup from '@archiyou/meshup';

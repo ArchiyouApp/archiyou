@@ -15,7 +15,7 @@ import type {
 } from './types'
 import { collectParts } from './parts'
 import { placementsOf, type LayoutPlacement } from './placements'
-import { loadedPack3d } from './Make'
+import { loadedPack3d } from '../make/Make'
 import { layoutKindOf, type LayoutKind } from '../animator/Animation'
 import { MM_PER_UNIT } from '../units/UnitConverter'
 

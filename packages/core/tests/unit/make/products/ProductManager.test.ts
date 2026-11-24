@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest'
 
-import { Modeler } from '../../../src/modeler/Modeler'
-import { Calc } from '../../../src/calc/Calc'
-import { MaterialManager } from '../../../src/materials/MaterialManager'
-import { MATERIALEN_ROWS } from '../materials/materialen.fixture'
-import { ProductManager, cutLengths, type ProductRow, type OperationRow, type ComponentRow } from '../../../src/products/ProductManager'
-import { readBlocks, combineRows } from '../../../src/products/recipes'
+import { Modeler } from '../../../../src/modeler/Modeler'
+import { Calc } from '../../../../src/calc/Calc'
+import { MaterialManager } from '../../../../src/materials/MaterialManager'
+import { MATERIALEN_ROWS } from '../../materials/materialen.fixture'
+import { ProductManager, cutLengths, type ProductRow, type OperationRow, type ComponentRow } from '../../../../src/make/products/ProductManager'
+import { readBlocks, combineRows } from '../../../../src/make/products/recipes'
 
 /**
  * ProductManager: parts of a model → products of a product sheet → costs.

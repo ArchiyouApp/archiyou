@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
 import { Modeler } from '../../../src/modeler/Modeler'
-import { loadBinPackerModule } from '../../../src/modeler/Make'
+import { loadBinPackerModule } from '../../../src/make/Make'
 import { ShapeCollection as SmartShapeCollection } from '@archiyou/meshup'
 import { save } from '@archiyou/meshup/src/utils'
 

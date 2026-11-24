@@ -56,10 +56,10 @@
 
 import { ShapeCollection } from '@archiyou/meshup';
 
-import { collectParts, type PartMeasure } from '../modeler/parts';
-import type { ArchiyouModules } from '../types';
-import type { Table } from '../calc/Table';
-import { ModuleUnavailableError } from '../modules/unavailableStub';
+import { collectParts, type PartMeasure } from '../../modeler/parts';
+import type { ArchiyouModules } from '../../types';
+import type { Table } from '../../calc/Table';
+import { ModuleUnavailableError } from '../../modules/unavailableStub';
 import { offerPageData, renderOfferHtml, type OfferPageOptions, type OfferSource } from './offer-html';
 import { combineRows, materialPrice, mergeRecipes, quantityOfUnit, readBlocks, type Block, type BlockProduct, type RecipeStep } from './recipes';
 

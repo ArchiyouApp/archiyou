@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest'
 
-import { loadBinPackerModule, loadPack3dModule } from '../../../src/modeler/Make'
+import { loadBinPackerModule, loadPack3dModule } from '../../../src/make/Make'
 import { Modeler } from '../../../src/modeler/Modeler'
-import { dimensionOf, vote } from '../../../src/modeler/packChoice'
+import { dimensionOf, vote } from '../../../src/make/pack/packChoice'
 
 describe('make.pack: 2D or 3D, by the shapes', () =>
 {

@@ -85,7 +85,7 @@ import { SceneNodeGraphNode, isPointLike } from "@archiyou/meshup";
 import { Layouter, copyShapeDetached } from "./Layouter";
 import { GLTFBuilder } from "../GLTFBuilder";
 import { Animator, animationNamesFor } from "../animator/Animator";
-import { Make } from './Make';
+import { Make } from '../make/Make';
 import { brepShapeToMeshup, meshupShapeToBrep, isBrepShape, DEFAULT_MESHING_QUALITY } from './brep/toMeshup';
 
 import { systemOfUnit, MM_PER_UNIT } from '../units/UnitConverter';

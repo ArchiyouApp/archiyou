@@ -14,7 +14,7 @@ import { Layouter } from '../modeler/Layouter'
 import { collectParts, type Part } from '../modeler/parts'
 import type { LayoutPlacement } from '../modeler/placements'
 import { MM_PER_UNIT } from '../units/UnitConverter'
-import { isPack3dLoaded } from '../modeler/Make'
+import { isPack3dLoaded } from '../make/Make'
 
 /** The placements of a layout, about each part's own centre, keyed by the path of the scene
  *  node the shape is in.

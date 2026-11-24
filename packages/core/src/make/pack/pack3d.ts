@@ -12,7 +12,7 @@
  */
 
 import type { Axle, Balance, Bin, Instance, Item, Options, Orientations } from '@archiyou/pack3d-wasm';
-import type { Pack3DOptions } from './Make';
+import type { Pack3DOptions } from '../Make';
 
 /** How lengths and weights of the script map to the planner's. */
 export interface Pack3DContext

@@ -19,7 +19,7 @@
  *  A new library version: Deploy → Manage deployments → edit → New version, then in each bound script
  *  Libraries → URBUILD → that version (or leave the core's on "HEAD" while developing).
  *
- *  The functions above GOOGLE are plain JavaScript, tested in tests/unit/products/apps-script.test.ts.
+ *  The functions above GOOGLE are plain JavaScript, tested in tests/unit/make/products/apps-script.test.ts.
  */
 
 const CATEGORIES = ['material', 'onsite', 'voorbewerking', 'assemblage', 'montage', 'afbouw'];

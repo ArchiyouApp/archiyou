@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 
 import { Runner } from '../../../src/runner/Runner'
 import { Script } from '../../../src/Script'
-import { isPack3dLoaded } from '../../../src/modeler/Make'
+import { isPack3dLoaded } from '../../../src/make/Make'
 
 /** The fly-in starts from the packed layout, so a run that bakes it loads the 3D load planner, even when the
  *  script never names it. A run the scan cannot see (a computed layout name) starts from the stacks instead.

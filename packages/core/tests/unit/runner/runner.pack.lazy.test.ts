@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 
 import { Runner } from '../../../src/runner/Runner'
 import { Script } from '../../../src/Script'
-import { isBinPackerLoaded, isPack3dLoaded } from '../../../src/modeler/Make'
+import { isBinPackerLoaded, isPack3dLoaded } from '../../../src/make/Make'
 
 /**
  * Both packers load on demand: the 2D sheet packer for pack(), pack2d() or boarding(), the 3D load planner for pack3d()

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 
 import { Runner } from '../../../src/runner/Runner'
 import { Script } from '../../../src/Script'
-import { isPack3dLoaded } from '../../../src/modeler/Make'
+import { isPack3dLoaded } from '../../../src/make/Make'
 
 /**
  * The 3D load planner (pack3d-wasm) loads on demand. make.pack3d() is synchronous for scripts, so the Runner

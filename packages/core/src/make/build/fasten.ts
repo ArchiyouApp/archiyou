@@ -1,5 +1,5 @@
 /**
- *  modeler/fasten.ts — where screws go between two sets of parts. Lightweight on purpose.
+ *  make/build/fasten.ts — where screws go between two sets of parts. Lightweight on purpose.
  *
  *  make.fasten(from, into, options) draws a screw as two curves: a circle on the face it goes
  *  in at (the work face: where you hold the screwdriver) and a line along its full length, so

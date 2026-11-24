@@ -7,7 +7,7 @@
  *  goes to 2D.
  */
 
-import { PLATE_RATIO } from './parts';
+import { PLATE_RATIO } from '../../modeler/parts';
 
 export type Dimension = '2d' | '3d';
 

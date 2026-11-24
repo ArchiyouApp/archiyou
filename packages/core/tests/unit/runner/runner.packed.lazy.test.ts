@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 
 import { Runner } from '../../../src/runner/Runner'
 import { Script } from '../../../src/Script'
-import { isBinPackerLoaded, isPack3dLoaded } from '../../../src/modeler/Make'
+import { isBinPackerLoaded, isPack3dLoaded } from '../../../src/make/Make'
 
 /** A packed() layout needs the 3D load planner, and only that one: the Runner finds the call in the script. */
 describe('Runner — the layout packed() loads the 3D load planner', () =>

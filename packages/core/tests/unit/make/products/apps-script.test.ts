@@ -4,9 +4,9 @@ import path from 'node:path'
 
 /**
  * The URBUILD library (Apps Script): the buttons of the core sheet and of a builder sheet, see
- * src/products/apps-script/common.gs. Its plain functions are loaded here as they are.
+ * src/make/products/apps-script/common.gs. Its plain functions are loaded here as they are.
  */
-const dir = path.resolve(import.meta.dirname, '../../../src/products/apps-script')
+const dir = path.resolve(import.meta.dirname, '../../../../src/make/products/apps-script')
 const code = ['common.gs', 'core.gs', 'builder.gs'].map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n')
 const gs = new Function(`${code}\nreturn { productLabel, mergeRows, withSpecs, coreColumns, coreBlocks, productLabels,
     seedComponent, offerPriceRows, expiredBuilders, componentRows, builderRow, scenariosOf, placeSeeds,

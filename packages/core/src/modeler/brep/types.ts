@@ -8,7 +8,7 @@ import type { Brep, Exporter } from '.'
     The names below are what they refer to; importing them from their real homes keeps this
     file honest until the legacy section is moved out for good. */
 import type { BaseAnnotation } from '../../annotator/AnnotatorBaseAnnotation'
-import type { Make } from '../Make'
+import type { Make } from '../../make/Make'
 import type { Script } from '../../Script'
 import type { ScriptParam } from '../../execution/ScriptParam'
 import type { Metric, DataRows } from '../../calc/types'

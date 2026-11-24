@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest'
 
-import { loadPack3dModule } from '../../../src/modeler/Make'
+import { loadPack3dModule } from '../../../src/make/Make'
 import { Modeler } from '../../../src/modeler/Modeler'
-import { fromGrams, put, toGrams, turn } from '../../../src/modeler/pack3d'
+import { fromGrams, put, toGrams, turn } from '../../../src/make/pack/pack3d'
 
 /** The planner's six orientations: orientation o puts the item's axis PERMS[o][k] along world axis k. */
 const PERMS = [[0, 1, 2], [1, 0, 2], [0, 2, 1], [2, 0, 1], [1, 2, 0], [2, 1, 0]]
