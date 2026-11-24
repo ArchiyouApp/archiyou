@@ -208,6 +208,11 @@ componenten tab, of blocks of rows with totals, which the table replaced): the C
 `ComponentSpecProduct`, `ComponentSpecInfo`, `ComponentRows`, `ComponentRowLine`,
 `ComponentRowStep`); the CLI files `blocks.ts` / `sheetBlocks.ts` are `components.ts` /
 `sheetComponents.ts`. "Block layout" stays the name of the old layout of the tab, which is still read.
+Then `make.takeoff()` became `make.estimate()` (asked by the human: "takeoff", the estimator's
+term for measuring quantities from drawings, is little known, and it reckons more than quantities:
+cost, hours, weight, the order and cut lists): the class `Estimate` in `make/estimate/`, its types
+`EstimateOptions`, `EstimateLine`, `EstimateGroup`, `EstimateIssue`, `EstimateKey`. The old API's
+internal `TakeOff` record in ProductManager keeps its name; it goes with that API in step 6.
 Above, the names are those of when the step was done.
 
 ## Next

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { snapshotFromTables, type MakeDbSnapshot } from '../../../src/make/db'
 import { cutPlan } from '../../../src/make/products/ProductManager'
-import { Takeoff } from '../../../src/make/takeoff/Takeoff'
+import { Estimate } from '../../../src/make/estimate/Estimate'
 import { MakeDb } from '../../../src/make/db'
 import { Script } from '../../../src/Script'
 import { Runner } from '../../../src/runner/Runner'
@@ -68,15 +68,15 @@ const close = (v: number) => Math.round(v * 1e4) / 1e4
 
 const MODEL = `
     studs = collection(box(38, 140, 2400), box(38, 140, 2400).move(600)).product('stud', { component: 'wand' });
-    take = make.takeoff();
+    est = make.estimate();
 `
 
-describe('make.takeoff()', () =>
+describe('make.estimate()', () =>
 {
     it('weighs, prices and times the parts by the sheet: material with its waste, labour by its recipe and time', async () =>
     {
         const { result, scope } = await run(MODEL + `
-            W = take.weight(); COST = take.cost(); TIME = take.time(); LINES = take.lines(); CHECK = take.check();
+            W = est.weight(); COST = est.cost(); TIME = est.time(); LINES = est.lines(); CHECK = est.check();
         `)
         expect(result.errors ?? []).toEqual([])
         // 2 x 2.4 m x 38 x 140 mm x 450 kg/m3
@@ -94,8 +94,8 @@ describe('make.takeoff()', () =>
 
     it('reckons a mass as its component, groups by component, product or phase', async () =>
     {
-        const { scope } = await run(MODEL.replace('take =', `mass = box(1000, 100, 2000).move(5000).component('wand'); take =`) + `
-            LINES = take.lines(); BY = take.by('product'); PHASE = take.by('phase'); COMPONENT = take.by('component');
+        const { scope } = await run(MODEL.replace('est =', `mass = box(1000, 100, 2000).move(5000).component('wand'); est =`) + `
+            LINES = est.lines(); BY = est.by('product'); PHASE = est.by('phase'); COMPONENT = est.by('component');
         `)
         const mass = scope.LINES.find((l: any) => l.id === 'wand')
         // the representative wall itself: 0.2 m3, so its own rows
@@ -110,7 +110,7 @@ describe('make.takeoff()', () =>
 
     it('orders in stock lengths and lists the cuts', async () =>
     {
-        const { scope } = await run(MODEL + `ORDER = take.order(); CUTS = take.cuts(); T = take.cutTable().name();`)
+        const { scope } = await run(MODEL + `ORDER = est.order(); CUTS = est.cuts(); T = est.cutTable().name();`)
         // two parts of 2400 from one length of 5400, a saw cut of 4 mm between
         expect(scope.CUTS.map((c: any) => [c.product, c.stock, c.parts.map((p: any) => p.length), c.rest])).toEqual([['sls-38x140', 5400, [2400, 2400], 596]])
         expect(scope.ORDER.map((o: any) => [o.product, o.quantity, o.unit, close(o.total)])).toEqual([['sls-38x140', 1, 'st', 10.8]])
@@ -119,9 +119,9 @@ describe('make.takeoff()', () =>
 
     it('says what it could not reckon with, in check() and make.check(); strict stops the run', async () =>
     {
-        const { scope } = await run(`box(10, 10, 10).name('loose'); ${MODEL} CHECK = take.check(); MAKE = make.check();`)
+        const { scope } = await run(`box(10, 10, 10).name('loose'); ${MODEL} CHECK = est.check(); MAKE = make.check();`)
         expect(scope.CHECK.map((i: any) => i.message)).toEqual(['1 shape(s) have no product and are not reckoned with: loose'])
-        expect(scope.MAKE.map((i: any) => i.where)).toEqual(['make.takeoff()'])
+        expect(scope.MAKE.map((i: any) => i.where)).toEqual(['make.estimate()'])
 
         const strict = await run(`make.strict(); box(10, 10, 10).name('loose'); ${MODEL}`)
         expect(strict.result.status).toBe('error')
@@ -137,12 +137,12 @@ const PART = `
     make.complete('wand', { oppervlak: 2 }, { except: ['sls-38x140'] });
 `
 
-describe('make.takeoff() of components', () =>
+describe('make.estimate() of components', () =>
 {
     it('brings what a component adds with its shapes: used twice, twice', async () =>
     {
-        const once = await run(`p = $component('./part').model(); take = make.takeoff(); L = take.lines();`, { components: { part: PART } })
-        const twice = await run(`a = $component('./part').model(); b = $component('./part', { WIDTH: 1200 }).model().moveY(2000); take = make.takeoff(); L = take.lines();`, { components: { part: PART } })
+        const once = await run(`p = $component('./part').model(); est = make.estimate(); L = est.lines();`, { components: { part: PART } })
+        const twice = await run(`a = $component('./part').model(); b = $component('./part', { WIDTH: 1200 }).model().moveY(2000); est = make.estimate(); L = est.lines();`, { components: { part: PART } })
         expect(once.result.errors ?? []).toEqual([])
         const of = (lines: any[], id: string) => lines.find(l => l.id === id)
         expect(of(once.scope.L, 'tape-60').lengte).toBeCloseTo(2)
@@ -160,8 +160,8 @@ describe('make.takeoff() of components', () =>
             block = box(38, 140, 38).move(500).product('SLS');
             rafter = box(38, 180, 3000).move(1000).product('sls-38x140', { fit: false });
             head = box(200, 200, 10).move(2000).partOf(long);
-            take = make.takeoff();
-            IDS = take.lines().map(l => [l.id, l.st, Math.round(l.lengte * 1000)]);
+            est = make.estimate();
+            IDS = est.lines().map(l => [l.id, l.st, Math.round(l.lengte * 1000)]);
             HEAD = head.product(); CHECK = make.check();
         `)
         expect(scope.IDS).toEqual([['sls-gevingerlast-38x140', 1, 6000], ['sls-38x140', 2, 3038]])
@@ -169,21 +169,21 @@ describe('make.takeoff() of components', () =>
         expect(scope.CHECK).toEqual([])
     })
 
-    it('without the make database a shape keeps its name, and the takeoff finds the product', async () =>
+    it('without the make database a shape keeps its name, and the estimate finds the product', async () =>
     {
         const { result, scope } = await run(`stud = box(38, 140, 2400).product('stud', { component: 'wand' }); P = stud.product(); make.add('tape-60', { lengte: 3 });`, { content: false })
         expect(result.status).toBe('success')
         expect(scope.P).toMatchObject({ kind: 'product', pending: true, name: "'stud'" })
-        const take = new Takeoff(new MakeDb(snapshot()), scope.stud, {}, null, () => {}, scope.make.extras())
-        expect(take.lines().map(l => [l.id, l.st, l.labour])).toEqual([['sls-38x140', 1, 'wand/sls-38x140'], ['tape-60', 0, null]])
+        const est = new Estimate(new MakeDb(snapshot()), scope.stud, {}, null, () => {}, scope.make.extras())
+        expect(est.lines().map(l => [l.id, l.st, l.labour])).toEqual([['sls-38x140', 1, 'wand/sls-38x140'], ['tape-60', 0, null]])
     })
 
     it('passes the content on to components, and their problems on to the model', async () =>
     {
-        const { result, scope } = await run(`p = $component('./bad').model(); take = make.takeoff(); C = make.check().map(i => i.where + ': ' + i.message);`,
+        const { result, scope } = await run(`p = $component('./bad').model(); est = make.estimate(); C = make.check().map(i => i.where + ': ' + i.message);`,
             { components: { bad: `box(10, 10, 10).product('banana'); box(38, 140, 2400).product('stud');` } })
         expect(result.errors ?? []).toEqual([])
         expect(scope.C).toEqual([expect.stringMatching(/^in a component: shape\.product\('banana'\): 'banana' is no product of the sheet/),
-            'make.takeoff(): 1 shape(s) have no product and are not reckoned with: shape'])
+            'make.estimate(): 1 shape(s) have no product and are not reckoned with: shape'])
     })
 })

@@ -37,7 +37,7 @@ export interface GeneratedComponent
     values: Record<string, any>;
     script: string;
     source: Provenance;
-    rows: any;              // make.takeoff().componentRows()
+    rows: any;              // make.estimate().componentRows()
     rc: any | null;         // MaterialManager.rc()
     rcError: string | null;
     warnings: Array<string>;

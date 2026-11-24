@@ -56,7 +56,7 @@ declare module '@archiyou/meshup' {
          *  Without an id: what it is. */
         component(id?: string): any
         /** Drawn, but reckoned as part of something else: a component ('dak') or the shape it is on.
-         *  make.takeoff() neither counts it nor lists it as having no product. Chainable. */
+         *  make.estimate() neither counts it nor lists it as having no product. Chainable. */
         partOf(what: any): any
         /** Mass/weight in the active unit system. Shortcut for material().weight(). */
         weight(): number | undefined

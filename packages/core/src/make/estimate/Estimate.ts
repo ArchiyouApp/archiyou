@@ -1,18 +1,18 @@
 /**
- *  make/takeoff/Takeoff.ts — from the shapes of a model to what it weighs, costs and takes to make.
+ *  make/estimate/Estimate.ts — from the shapes of a model to what it weighs, costs and takes to make.
  *
  *  The shapes say what they are (shape.product(), shape.component()); the make database says the
- *  rest: prices, recipes, times, margins, waste. make.takeoff() adds it up:
+ *  rest: prices, recipes, times, margins, waste. make.estimate() adds it up:
  *
  *      stud = box(38, 235, 2700).product('SLS', { component: 'hsbwand' })
- *      take = make.takeoff()                 // every shape of the scene, or make.takeoff(wall)
- *      take.weight()                         // kg
- *      take.cost()                           // { material, onsite, voorbewerking, ..., total }: incl. the sheet's margins
- *      take.time()                           // hours by phase: time x the labour factor, as the sheet's arbeidstijd
- *      take.by('component')                  // the same per component, product, label, material, vorm, group or phase
- *      take.order()                          // what to buy, in the stock it is sold in
- *      take.cuts()                           // per length of stock, the parts sawn from it
- *      take.check()                          // what it could not reckon with, and why
+ *      est = make.estimate()             // every shape of the scene, or make.estimate(wall)
+ *      est.weight()                      // kg
+ *      est.cost()                        // { material, onsite, voorbewerking, ..., total }: incl. the sheet's margins
+ *      est.time()                        // hours by phase: time x the labour factor, as the sheet's arbeidstijd
+ *      est.by('component')               // the same per component, product, label, material, vorm, group or phase
+ *      est.order()                       // what to buy, in the stock it is sold in
+ *      est.cuts()                        // per length of stock, the parts sawn from it
+ *      est.check()                       // what it could not reckon with, and why
  *
  *  The reckoning is ProductManager's, read from the snapshot (fromDb()): one engine for the
  *  sheet's own components and for a model. Line costs exclude the margins (as the sheet's
@@ -27,9 +27,9 @@ import { Catalog } from '../catalog/Catalog';
 import type { Table } from '../../calc/Table';
 import type { MakeExtras } from '../Make';
 
-export type TakeoffKey = 'component' | 'product' | 'label' | 'material' | 'vorm' | 'group' | 'phase';
+export type EstimateKey = 'component' | 'product' | 'label' | 'material' | 'vorm' | 'group' | 'phase';
 
-export interface TakeoffOptions
+export interface EstimateOptions
 {
     /** A version of the make database; default the latest the run was given */
     db?: string;
@@ -39,13 +39,13 @@ export interface TakeoffOptions
     hidden?: boolean;
 }
 
-export interface TakeoffLine extends ProductLine
+export interface EstimateLine extends ProductLine
 {
     /** kg, net: the parts as modelled, without waste */
     weight: number;
 }
 
-export interface TakeoffGroup
+export interface EstimateGroup
 {
     key: string;
     /** kg */
@@ -53,10 +53,10 @@ export interface TakeoffGroup
     /** incl. the sheet's margins */
     cost: ProductCosts;
     hours: ProductCosts;
-    lines: Array<TakeoffLine>;
+    lines: Array<EstimateLine>;
 }
 
-export interface TakeoffIssue
+export interface EstimateIssue
 {
     level: 'warning' | 'error';
     where: string;
@@ -76,7 +76,7 @@ export interface CutBar
     rest: number;
 }
 
-/** One shape, as the takeoff takes it */
+/** One shape, as the estimate takes it */
 interface Placed
 {
     shape: any;
@@ -102,24 +102,24 @@ const zero = (): ProductCosts => ({ material: 0, onsite: 0, voorbewerking: 0, as
 const num = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const text = (v: unknown): string => String(v ?? '').trim();
 
-export class Takeoff
+export class Estimate
 {
     readonly db: MakeDb;
     private _placed: Array<Placed> = [];
     private _added: Array<Added> = [];
     private _loose: Array<any> = [];
-    private _issues: Array<TakeoffIssue> = [];
+    private _issues: Array<EstimateIssue> = [];
     private _shapes: any;
     private _cache = new Map<string, ProductManager>();
 
     /**
      *  @param db - the make database to reckon with
-     *  @param shapes - the shapes, collections or groups to take off
+     *  @param shapes - the shapes, collections or groups to estimate
      *  @param modules - the run's modules (for tables), or null
      *  @param report - where problems go: make's list (check(), strict())
      */
-    constructor(db: MakeDb, shapes: any, private readonly options: TakeoffOptions = {}, private readonly modules: (() => any) | null = null,
-        private readonly report: (issue: TakeoffIssue) => void = () => {}, own: MakeExtras | null = null)
+    constructor(db: MakeDb, shapes: any, private readonly options: EstimateOptions = {}, private readonly modules: (() => any) | null = null,
+        private readonly report: (issue: EstimateIssue) => void = () => {}, own: MakeExtras | null = null)
     {
         this.db = db;
         this._shapes = shapes;
@@ -139,7 +139,7 @@ export class Takeoff
             if (made.partOf) { return; }    // reckoned as part of something else (shape.partOf())
             if (made.db && made.db !== db.version)
             {
-                this._issue('warning', `${this._name(shape)}`, `its product was found in make database ${made.db}; the takeoff reckons with ${db.version}`);
+                this._issue('warning', `${this._name(shape)}`, `its product was found in make database ${made.db}; the estimate reckons with ${db.version}`);
             }
             const label = made.label ?? (part.group && part.group !== 'main' ? part.group : this._name(shape));
             if (made.component)
@@ -180,13 +180,13 @@ export class Takeoff
         if (this._loose.length)
         {
             const names = [...new Set(this._loose.map(s => this._name(s)))];
-            this._issue('warning', 'make.takeoff()', `${this._loose.length} shape(s) have no product and are not reckoned with: ${names.slice(0, 8).join(', ')}${names.length > 8 ? ', ...' : ''}`);
+            this._issue('warning', 'make.estimate()', `${this._loose.length} shape(s) have no product and are not reckoned with: ${names.slice(0, 8).join(', ')}${names.length > 8 ? ', ...' : ''}`);
         }
     }
 
     //// WHAT THE MODEL DOES NOT SHOW ////
 
-    /** Add what the model does not show: `take.add('tape-universeel-60', { lengte: 12 }, { component: 'hsbwand' })` */
+    /** Add what the model does not show: `est.add('tape-universeel-60', { lengte: 12 }, { component: 'hsbwand' })` */
     add(id: string, quantities: ProductQuantities, options: Added['options'] = {}): this
     {
         this._added.push({ kind: 'add', id, quantities, options });
@@ -195,7 +195,7 @@ export class Takeoff
     }
 
     /** Add what a component of the sheet has that the model does not: its rows scaled to `quantities`,
-     *  except the products the model has. `take.complete('hsbwand', { oppervlak: 8.1 })` */
+     *  except the products the model has. `est.complete('hsbwand', { oppervlak: 8.1 })` */
     complete(component: string, quantities: ProductQuantities, options: { label?: string, except?: Array<string> } = {}): this
     {
         this._added.push({ kind: 'complete', id: component, quantities, options });
@@ -206,7 +206,7 @@ export class Takeoff
     //// RESULTS ////
 
     /** The lines: a product, component or operation each, with quantities, weight, costs (excl. margins) and hours */
-    lines(): Array<TakeoffLine>
+    lines(): Array<EstimateLine>
     {
         return this._lines(this._engine(null));
     }
@@ -235,7 +235,7 @@ export class Takeoff
      *  label given), material, vorm, group (the product's first group) or phase (one group per
      *  cost category). In the order the model first has them.
      */
-    by(key: TakeoffKey): Array<TakeoffGroup>
+    by(key: EstimateKey): Array<EstimateGroup>
     {
         if (key === 'phase')
         {
@@ -304,24 +304,24 @@ export class Takeoff
     }
 
     /** What it could not reckon with: shapes without a product, products without a recipe or price or weight */
-    check(): Array<TakeoffIssue>
+    check(): Array<EstimateIssue>
     {
         const overview = this._engine(null).compute();
         const issues = [...this._issues];
-        if (overview.noRecipe.length) { issues.push({ level: 'warning', where: 'make.takeoff()', name: '', message: `no recipe in the sheet, so no labour, for: ${overview.noRecipe.join(', ')}` }); }
-        if (overview.noPrice.length) { issues.push({ level: 'warning', where: 'make.takeoff()', name: '', message: `no price in the sheet for: ${overview.noPrice.join(', ')}` }); }
+        if (overview.noRecipe.length) { issues.push({ level: 'warning', where: 'make.estimate()', name: '', message: `no recipe in the sheet, so no labour, for: ${overview.noRecipe.join(', ')}` }); }
+        if (overview.noPrice.length) { issues.push({ level: 'warning', where: 'make.estimate()', name: '', message: `no price in the sheet for: ${overview.noPrice.join(', ')}` }); }
         const weightless = this.lines().filter(l => l.kind !== 'operation' && l.weight === 0).map(l => l.id);
-        if (weightless.length) { issues.push({ level: 'warning', where: 'make.takeoff()', name: '', message: `no density or mass in the sheet, so no weight, for: ${weightless.join(', ')}` }); }
+        if (weightless.length) { issues.push({ level: 'warning', where: 'make.estimate()', name: '', message: `no density or mass in the sheet, so no weight, for: ${weightless.join(', ')}` }); }
         return issues;
     }
 
     //// TABLES ////
 
     /** The lines as a table; with `by`, a row per group */
-    table(name = 'takeoff', options: { by?: TakeoffKey } = {}): Table
+    table(name = 'estimate', options: { by?: EstimateKey } = {}): Table
     {
         const calc = this.modules?.()?.calc;
-        if (!calc) { throw new Error('make.takeoff().table(): tables are only available inside a run'); }
+        if (!calc) { throw new Error('make.estimate().table(): tables are only available inside a run'); }
         const r = (v: number, d = 2) => Math.round(v * 10 ** d) / 10 ** d;
         if (options.by)
         {
@@ -343,7 +343,7 @@ export class Takeoff
     cutTable(name = 'cuts', options: { byComponent?: boolean } = {}): Table
     {
         const calc = this.modules?.()?.calc;
-        if (!calc) { throw new Error('make.takeoff().cutTable(): tables are only available inside a run'); }
+        if (!calc) { throw new Error('make.estimate().cutTable(): tables are only available inside a run'); }
         const rows = this.cuts(options).map(b => [...(options.byComponent ? [b.component] : []), b.product, b.description, Math.round(b.stock),
             b.parts.map(p => Math.round(p.length)).join(' + '), Math.round(b.rest)]);
         return calc.table(name, rows, [...(options.byComponent ? ['component'] : []), 'product', 'description', 'stock (mm)', 'parts (mm)', 'rest (mm)']) as Table;
@@ -352,7 +352,7 @@ export class Takeoff
     //// INSIDE ////
 
     /** The reckoning for all shapes, or for those of one group */
-    private _engine(group: { key: TakeoffKey, value: string } | null): ProductManager
+    private _engine(group: { key: EstimateKey, value: string } | null): ProductManager
     {
         const id = group ? `${group.key}=${group.value}` : '';
         const known = this._cache.get(id);
@@ -377,14 +377,14 @@ export class Takeoff
                 if (a.kind === 'add') { pm.add(a.id, a.quantities, a.options); }
                 else { pm.complete(a.id, a.quantities, { label: a.options.label, except: a.options.except, elements: a.options.elements }); }
             }
-            catch (e) { if (!group) { this._issue('error', `take.${a.kind}('${a.id}')`, (e as Error).message); } }
+            catch (e) { if (!group) { this._issue('error', `est.${a.kind}('${a.id}')`, (e as Error).message); } }
         });
         this._cache.set(id, pm);
         return pm;
     }
 
     /** The screws make.fasten() drew: one per head, by product and component */
-    private _fastenings(pm: ProductManager, group: { key: TakeoffKey, value: string } | null): void
+    private _fastenings(pm: ProductManager, group: { key: EstimateKey, value: string } | null): void
     {
         const counts = new Map<string, { id: string, component?: string, count: number, labels: Set<string> }>();
         const walk = (s: any): void =>
@@ -414,7 +414,7 @@ export class Takeoff
         });
     }
 
-    private _keyOf(p: Placed, key: TakeoffKey): string
+    private _keyOf(p: Placed, key: EstimateKey): string
     {
         switch (key)
         {
@@ -428,7 +428,7 @@ export class Takeoff
         }
     }
 
-    private _keyOfAdded(a: Added, key: TakeoffKey): string
+    private _keyOfAdded(a: Added, key: EstimateKey): string
     {
         const product = a.kind === 'add' ? this._products().get(a.id) : undefined;
         switch (key)
@@ -443,7 +443,7 @@ export class Takeoff
         }
     }
 
-    private _lines(pm: ProductManager): Array<TakeoffLine>
+    private _lines(pm: ProductManager): Array<EstimateLine>
     {
         pm.compute();
         const specs = pm.componentSpecs();

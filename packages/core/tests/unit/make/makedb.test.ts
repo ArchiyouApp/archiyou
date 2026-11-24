@@ -99,7 +99,7 @@ describe('make/db: which snapshot a script needs', () =>
         expect(makeDbNeeds("db = make.db('2026-11-24.1')")).toEqual([{ kind: 'make-db', id: '2026-11-24.1', reason: 'make.db' }])
         expect(makeDbNeeds('db = make.db()').map(n => n.id)).toEqual(['latest'])
         expect(makeDbNeeds("stud = box(38, 235, 2700).product('SLS')").map(n => n.id)).toEqual(['latest'])
-        expect(makeDbNeeds('take = make.takeoff(all())').map(n => n.id)).toEqual(['latest'])
+        expect(makeDbNeeds('est = make.estimate(all())').map(n => n.id)).toEqual(['latest'])
         // $component is a script, not a component of the sheet; an unrelated .product property neither
         expect(makeDbNeeds("wall = $component('./timberwall', {}); x = y.product")).toEqual([])
         expect(scanContentNeeds("make.db('2026-11-24.2'); cloudcalc.open('https://docs.google.com/spreadsheets/d/1o0_OGFKAh9f3Sh6FlVx7JYNoDmSopAzd9U0akVJHGzw')").map(n => `${n.kind}:${n.id}`))

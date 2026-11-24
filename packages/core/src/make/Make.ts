@@ -21,7 +21,7 @@ import { collectParts, partSource } from '../modeler/parts';
 import { ProductManager } from './products/ProductManager';
 import { MakeDb } from './db';
 import { Catalog, type Resolution } from './catalog';
-import { Takeoff, type TakeoffOptions } from './takeoff/Takeoff';
+import { Estimate, type EstimateOptions } from './estimate/Estimate';
 import { ContentNeededError, contentKey } from '../modules/sdkTypes';
 import type { BinPacker, CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm';
 import type { Packer3D } from '@archiyou/pack3d-wasm';
@@ -2655,21 +2655,21 @@ export class Make
 
     /**
      *  What the shapes weigh, cost and take to make, from what they are (shape.product(),
-     *  shape.component()) and the make database: see make/takeoff/Takeoff.ts.
+     *  shape.component()) and the make database: see make/estimate/Estimate.ts.
      *
-     *      take = make.takeoff()          // every shape of the scene
-     *      take.weight(); take.cost(); take.time(); take.by('component'); take.order(); take.cuts(); take.check()
+     *      est = make.estimate()          // every shape of the scene
+     *      est.weight(); est.cost(); est.time(); est.by('component'); est.order(); est.cuts(); est.check()
      *
      *  Problems (a shape without a product, a product without a recipe) go to make.check() as well,
      *  and stop the run when make.strict().
      *
      *  @param shapes - default: every shape of the scene
      */
-    takeoff(shapes?: any, options: TakeoffOptions = {}): Takeoff
+    estimate(shapes?: any, options: EstimateOptions = {}): Estimate
     {
         const db = this.db(options.db);
         this._materialsFrom(db);
-        return new Takeoff(db, shapes ?? this.modeler.all(), options, () => this.archiyou,
+        return new Estimate(db, shapes ?? this.modeler.all(), options, () => this.archiyou,
             issue => this._issue({ ...issue }), this._extras);
     }
 
@@ -2703,7 +2703,7 @@ export class Make
         catch (e)
         {
             // Without the make database (a run not signed in, a test) the shapes keep the name and
-            // their size, and make.takeoff() finds the product: a component needs nothing to run
+            // their size, and make.estimate() finds the product: a component needs nothing to run
             if (!(e instanceof ContentNeededError)) { throw e; }
             const pending = { kind: 'make', pending: names, said, tolerance: options.tolerance, fit: options.fit, recipe: options.recipe, label: options.label, block: options.component, db: options.db ?? null };
             if (!parts.length) { asArray(shapes).forEach(shape => this._carry(shape, { ...pending, measure: null })); }
@@ -2728,7 +2728,7 @@ export class Make
     }
 
     /**
-     *  Add what the model does not show, for make.takeoff(): `make.add('tape-universeel-60',
+     *  Add what the model does not show, for make.estimate(): `make.add('tape-universeel-60',
      *  { lengte: 12 }, { component: 'hsbwand', label: 'plaatnaden' })`, quantities in the sheet's
      *  units (st, lengte m1, oppervlak m2, volume m3). In a component it goes with the shapes it
      *  gave a product: a model that uses the component twice gets it twice.
@@ -2740,7 +2740,7 @@ export class Make
     }
 
     /**
-     *  Add what a component of the sheet has that the model does not draw, for make.takeoff(): its
+     *  Add what a component of the sheet has that the model does not draw, for make.estimate(): its
      *  rows scaled to `quantities` (`{ oppervlak: 8.1 }` for a wall), except the products the model
      *  has as shapes, and those in `except`. Goes with the shapes, as add().
      */
@@ -2753,7 +2753,7 @@ export class Make
     /**
      *  Say that shapes are drawn but reckoned as part of something else (shape.partOf()): the roof's
      *  layers in the rows of its component ('dak', by its area with make.complete()), the head plate
-     *  in the product of the pile it is on. make.takeoff() then neither counts them nor lists them as
+     *  in the product of the pile it is on. make.estimate() then neither counts them nor lists them as
      *  having no product.
      *  @param what - a component or product id, or the shape it is part of
      */
@@ -2787,7 +2787,7 @@ export class Make
         try { catalog = this.catalog(); }
         catch (e)
         {
-            // without the make database: make.takeoff() checks the id
+            // without the make database: make.estimate() checks the id
             if (!(e instanceof ContentNeededError)) { throw e; }
             asArray(shapes).forEach(shape => this._carry(shape, { kind: 'make', component: id, db: null }));
             return;
@@ -3003,11 +3003,11 @@ export interface ProductForOptions
     /** A version of the make database; default the latest the run was given */
     db?: string;
     /** The component of the sheet the part is in ('hsbwand'): its rows give the part's recipe
-     *  (the work on a stud of a wall), and make.takeoff().by('component') groups by it */
+     *  (the work on a stud of a wall), and make.estimate().by('component') groups by it */
     component?: string;
 }
 
-/** What a script adds to what its shapes are, for a takeoff: make.add() and make.complete(). Shared
+/** What a script adds to what its shapes are, for an estimate: make.add() and make.complete(). Shared
  *  by the shapes it gave a product or component: each brings an equal share of it, so a copy of
  *  the whole (a wall used twice) brings all of it again, and a part of it its part. */
 export interface MakeExtras
@@ -3046,7 +3046,7 @@ export interface ShapeProduct
     measure?: any;
     /** The version of the make database it came from; null when the run had none */
     db: string | null;
-    /** Named, but not found yet: the run had no make database; make.takeoff() finds it */
+    /** Named, but not found yet: the run had no make database; make.estimate() finds it */
     pending?: boolean;
 }
 

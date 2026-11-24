@@ -648,7 +648,7 @@ export class ProductManager
 
     /**
      *  Read everything from a snapshot of the sheet (make.db()) instead of the sheet itself: the
-     *  same tables and outputs, computed when the snapshot was made. For make.takeoff().
+     *  same tables and outputs, computed when the snapshot was made. For make.estimate().
      */
     fromDb(db: MakeDb): this
     {
@@ -678,7 +678,7 @@ export class ProductManager
 
     /**
      *  Take a shape as a part of what it already is, as shape.product() or shape.component()
-     *  resolved it: no matching again. For make.takeoff().
+     *  resolved it: no matching again. For make.estimate().
      *
      *  @param what - `{ product, measure }` or `{ component, volume }` (mm, mm3), with `label` and
      *    `block`: the component of the sheet whose rows give a product's recipe.
@@ -884,7 +884,7 @@ export class ProductManager
             throw new Error(`ProductManager.elementWork('${component}'): it is sized in ${block.unit}: give ${key ?? 'its size'}`);
         }
         // per element: once for each (a component sized in m2 is one element here, or as many as
-        // `elements` says: the takeoff of a wall used twice); per m2 of it; or, in the block
+        // `elements` says: the estimate of a wall used twice); per m2 of it; or, in the block
         // layout, as much as the block has, scaled by size
         const elements = block.unit === 'st' ? amount : (options.elements ?? 1);
         block.element.forEach(work => this.add(work.operation, {

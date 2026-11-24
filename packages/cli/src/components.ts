@@ -9,7 +9,7 @@
  *          { label: 'HSB wand 235, houtvezel, ESB', variantOf: 'hsbwand' })
  *
  *  Per preset the script runs with the make database (a snapshot of the sheet, archiyou makedb);
- *  its shapes are taken off as products (make.takeoff(all()).componentRows()) and its Rc is taken from the
+ *  its shapes are taken off as products (make.estimate(all()).componentRows()) and its Rc is taken from the
  *  layers (materials.rc(), ISO 6946). The table says what each component holds; --write puts them
  *  in the tab componenten of the sheet the snapshot was made from (or --sheet), each replacing its
  *  rows there, a new variant after its family, with where it came from (bron). Writing needs the
@@ -36,9 +36,9 @@ const USAGE = 'archiyou components <file.js|script.json> --makedb <snapshot.json
 
 /** What the script is given after its own code, to hand its component rows back */
 const TAIL = `
-__components_take = make.takeoff(all());
-__components_rows = __components_take.componentRows();
-__components_check = __components_take.check();
+__components_estimate = make.estimate(all());
+__components_rows = __components_estimate.componentRows();
+__components_check = __components_estimate.check();
 __components_rc = (() => { try { return materials.rc(all()); } catch (e) { return { error: String(e.message ?? e) }; } })();
 `;
 

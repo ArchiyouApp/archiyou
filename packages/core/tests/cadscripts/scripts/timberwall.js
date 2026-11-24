@@ -196,7 +196,7 @@ spec = doc
 
 //// PRODUCTS ////
 // What the parts are, as products of the make database (URBUILD_DATABASE_CORE), in its component
-// hsbwand: its rows give their recipes. A model using this wall reckons with them in make.takeoff().
+// hsbwand: its rows give their recipes. A model using this wall reckons with them in make.estimate().
 // The wall draws all of its layers and screws; complete() only adds the work on the element as a
 // whole (squaring, handling, mounting) and what a layer left out would have had.
 
