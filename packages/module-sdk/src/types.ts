@@ -136,8 +136,8 @@ export interface AyModuleManifest {
      *
      * A normal module is loaded only when the script declares it, so that nothing is
      * fetched by accident and the dependency is written where a reader looks for it. A
-     * standard module is one the engine itself leans on (core's `make.products()` opens
-     * its sheets with cloudcalc) and that every script should be able to use as it uses
+     * standard module is one the engine itself leans on (core's `make.offer()` opens
+     * the offer template with cloudcalc) and that every script should be able to use as it uses
      * `calc`. The runner then loads it for a run that names its global, or that uses a
      * core feature which needs it (core's STANDARD_MODULE_USES), still before the run
      * and still only then: a script that never touches it pays nothing. `$module()`

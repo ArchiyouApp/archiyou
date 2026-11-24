@@ -99,7 +99,7 @@ export class Shape
     _nameInherited?:boolean;
     /** Assigned material name — see the host's materials module. */
     _material?:string;
-    /** What this shape is as a part of a build, set by the products module (ProductManager).
+    /** What this shape is as a part of a build, set by shape.product() and shape.component() (make).
      *  Carried to a copy, like the material. */
     _product?:unknown;
     /** Visual style. A MESHUP Style instance: one style model for both kernels, which is what

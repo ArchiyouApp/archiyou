@@ -14,7 +14,7 @@ Two kinds, and the difference is one manifest field:
 |---|---|
 | **Gated** (the default) | Available only to accounts entitled to it. What the system was built for. |
 | **Public** (`"public": true`) | Available to everybody, no grant needed. For open-source modules, whose source anyone can read and build anyway. |
-| **Standard** (`"standard": true`) | Public, and usable without `$module()`, like `calc`. For a module the engine itself leans on (cloudcalc, which `make.products()` opens its sheets with). |
+| **Standard** (`"standard": true`) | Public, and usable without `$module()`, like `calc`. For a module the engine itself leans on (cloudcalc, which `make.offer()` opens the offer template with). |
 
 > **A copyleft module must never enter this repository's dependency graph.** archiyou-web is
 > Apache-2.0. A module under the GPL or AGPL lives in its own repository, is built to its own
@@ -79,7 +79,7 @@ Module 'fem': not declared in this script — add $module('fem') before using it
 **Standard modules are the exception.** A module installed with `"standard": true` is part of the
 standard library: use its global as you use `calc`, with no `$module()` line. The runner still loads
 it only for a run that needs it — one whose source names the global, or calls a core feature that
-opens the module (`make.products().fromSheet(url)` opens a Google Sheet with cloudcalc) — and still
+opens the module (`make.offer(url)` opens a Google Sheet with cloudcalc) — and still
 before the run, by the same pre-scan that reads `$module()`. Only who writes the declaration changes:
 the scan, instead of you. Two consequences: a mention in a comment can cost a standard module's
 bundle load once per session, and an unusable standard module fails at its first use rather than at

@@ -700,7 +700,7 @@ export class RunnerComponentImporter
         copy._name = shape._name;
         copy._nameInherited = shape._nameInherited;
         copy._material = shape._material;
-        copy._product = shape._product; // what it is as a part (ProductManager): a cached wall's studs stay studs
+        copy._product = shape._product; // what it is as a part (shape.product()): a cached wall's studs stay studs
         copy._scene = shape._node?.root?.() ?? shape._scene;
 
         if (shape.style && typeof copy.style?.merge === 'function')

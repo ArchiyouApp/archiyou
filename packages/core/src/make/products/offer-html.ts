@@ -2,7 +2,7 @@
  *  offer-html.ts — an offer as one flat HTML page for the client.
  *
  *  The offer is priced once, in the offer template (URBUILD_CLIENT_OFFER_TEMPLATE) that
- *  ProductManager.offer() computes; this file only reads it and lays it out. Two steps:
+ *  make.offer() computes (ProductManager.offer()); this file only reads it and lays it out. Two steps:
  *
  *   - offerPageData(source): the computed template's tables (tables.bouwkosten, tables.proces,
  *     tables.scenarios, tables.bouwers) and outputs (outputs.bouwkosten.*) → plain data: the

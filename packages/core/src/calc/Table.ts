@@ -609,7 +609,7 @@ export class Table
      * Attach a ready-made HTML page to this table. toHtml() — and with it the
      * `<pipeline>/tables/<name>/html` output — then delivers this page instead
      * of one generated from the rows. An offer page, for instance
-     * (`make.products().offerPage()`), whose rows are the offer's lines.
+     * (`make.offer().page()`), whose rows are the offer's lines.
      */
     html(page:string):this
     {

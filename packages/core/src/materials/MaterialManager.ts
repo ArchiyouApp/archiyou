@@ -6,7 +6,7 @@
  *
  *      materials.fromSheet('https://docs.google.com/spreadsheets/d/…')
  *
- *  or let `make.products().fromSheet(url)` do it, which opens the same sheet. How a material
+ *  or give a shape a product (shape.product()), which loads them from the make database. How a material
  *  looks is kept in code (appearance.ts), so `shape.material('osb')` draws as OSB before any
  *  sheet is loaded; its weight, λ and carbon need the sheet.
  *
@@ -354,7 +354,7 @@ export class MaterialManager
      *
      *      materials.fromSheet('https://docs.google.com/spreadsheets/d/…')
      *
-     *  `make.products().fromSheet(url)` does this too, from the same sheet.
+     *  A shape given a product (shape.product()) loads them from the make database instead.
      */
     fromSheet(url: string, options: { key?: string } = {}): this
     {
@@ -435,7 +435,7 @@ export class MaterialManager
             console.warn(this.loaded
                 ? `MaterialManager::resolve(): the core sheet has no material '${name}' (its materialen tab, column materiaal_id)`
                 : `MaterialManager::resolve(): unknown material '${name}': load the materials of the core sheet with `
-                    + `materials.fromSheet(url) or make.products().fromSheet(url)`);
+                    + `materials.fromSheet(url), or give the shape a product: shape.product()`);
             return null;
         }
         return new BoundMaterial(this, m, shape);
@@ -449,7 +449,7 @@ export class MaterialManager
         if (this.loaded || this._warnedUnloaded) return;
         this._warnedUnloaded = true;
         console.warn(`MaterialManager: '${material.name}' has no properties yet: they come from the core sheet. `
-            + `Load it with materials.fromSheet(url) or make.products().fromSheet(url)`);
+            + `Load it with materials.fromSheet(url), or give the shape a product: shape.product()`);
     }
 
     /** The active display unit system, from the modeler (defaults metric). */
