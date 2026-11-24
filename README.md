@@ -186,21 +186,22 @@ No image build, and the worker runs straight out of your working directory via `
 so an edit to `apps/server` or `packages/core` is picked up on save:
 
 ```bash
-pnpm build:meshup   # once — the worker loads the mesh kernel from packages/meshup/dist
-pnpm docker:dev     # Redis (the queue), and Postgres if you want one
-pnpm dev:worker     # the execution worker, from source, in watch mode
-pnpm dev            # editor + API, in another terminal
+pnpm dev            # editor + API + execution worker, from source
 ```
 
-`docker:*` scripts run containers, `dev:*` scripts run code from your working tree —
-so an edit to `apps/server` or `packages/core` is live on the next run. Set
-`SERVER_EXECUTION_VALIDATED=1` in your `.env` too, or the API will refuse to enqueue
-anything. `pnpm docker:dev:down` stops both containers when you are finished.
+`pnpm dev` first runs `scripts/dev-services.mjs`: it uses the Redis already answering on
+`SERVER_REDIS_PORT` (6379), or starts the `redis` service of `docker-compose.dev.yml` when
+there is none, and builds `packages/meshup` once if its `dist/` is missing (the worker
+loads the mesh kernel from there). Redis has to be up before the API starts: the API
+connects to it once, at boot. Without Docker it warns and starts anyway, and only
+`/execute` answers 503. `pnpm dev:noexec` runs the editor and API alone, without Redis or
+worker; `pnpm dev:worker` still runs the worker by itself.
 
-Redis is the one piece the execution pipeline genuinely needs a container for. Postgres
-is optional — with no `SERVER_DATABASE_URL` the server runs PGlite in-process (see
-[apps/server/README → Database](./apps/server/README.md#database)) — but it comes up in
-the same command when you do want `psql` and `pg_dump`.
+Set `SERVER_EXECUTION_VALIDATED=1` in your `.env` too, or the API will refuse to enqueue
+anything. Postgres is optional: with no `SERVER_DATABASE_URL` the server runs PGlite
+in-process (see [apps/server/README → Database](./apps/server/README.md#database)).
+`pnpm docker:dev` starts a local Postgres (and Redis) when you want `psql` and `pg_dump`;
+`pnpm docker:dev:down` stops the containers when you are finished.
 
 If you would rather run the whole thing in containers — to rehearse a deployment rather
 than to work on the code — `apps/server/docker-compose.yml` starts api + postgres +

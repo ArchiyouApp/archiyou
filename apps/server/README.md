@@ -108,10 +108,10 @@ too, though it does nothing until an execution gate is opened in `.env` — see
 than in `apps/server/`
 because it deploys the whole monorepo — it builds from the root context and
 mounts `apps/editor/dist`. For local development there are two options.
-`docker-compose.dev.yml` at the repo root is postgres + redis, no image build:
-`pnpm docker:dev` starts them, then `pnpm dev` and
-`pnpm dev:worker` run the API and the execution worker straight from source — use this
-to work on the code. This directory's own `docker-compose.yml` instead runs api +
+`docker-compose.dev.yml` at the repo root is postgres + redis, no image build, and
+`pnpm dev` runs the editor, the API and the execution worker straight from source,
+starting the redis service first when no Redis answers (postgres stays optional:
+`pnpm docker:dev`) — use this to work on the code. This directory's own `docker-compose.yml` instead runs api +
 postgres + redis + worker in containers (`pnpm --filter @archiyou/server docker:dev`),
 building the image and the editor first — use that to rehearse a deployment.
 

@@ -5,9 +5,12 @@
 # built, no code is copied, and an edit to apps/server or packages/core is picked up
 # on the next run (or immediately, in `worker:dev` watch mode).
 #
-#     pnpm docker:dev         # start postgres + redis
-#     pnpm dev                # editor + server, from source
-#     pnpm dev:worker         # the worker, from source, in watch mode
+#     pnpm dev                # editor + server + worker, from source; starts the redis
+#                             # service below first if nothing answers on 6379
+#                             # (scripts/dev-services.mjs). Without Docker it warns and
+#                             # runs without server-side execution.
+#     pnpm dev:noexec         # editor + server only, no Redis, no worker
+#     pnpm docker:dev         # start postgres + redis (only needed for postgres)
 #     pnpm docker:dev:down    # stop and remove them
 #
 # The split is deliberate: `docker:*` scripts run containers, `dev:*` scripts run code

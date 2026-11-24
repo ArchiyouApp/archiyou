@@ -15,7 +15,8 @@
     "build:editor:dev": "pnpm --filter @archiyou/editor build:dev",
     "build:docs": "pnpm --filter @archiyou/docs build",
     "dev:docs": "pnpm --filter @archiyou/docs dev",
-    "dev": "turbo dev --filter=@archiyou/editor --filter=@archiyou/server",
+    "dev": "node scripts/dev-services.mjs && concurrently -n app,worker -c green,magenta \"turbo dev --filter=@archiyou/editor --filter=@archiyou/server\" \"pnpm --filter @archiyou/server worker:dev\"",
+    "dev:noexec": "turbo dev --filter=@archiyou/editor --filter=@archiyou/server",
     "dev:editor": "turbo dev --filter=@archiyou/editor",
     "dev:server": "turbo dev --filter=@archiyou/server",
     "dev:worker": "pnpm --filter @archiyou/server worker:dev",
@@ -36,7 +37,7 @@
     "db:tunnel": "node scripts/db-remote.mjs tunnel --port 15432",
     "localize:extract": "pnpm --filter @archiyou/editor localize:extract",
     "localize:build": "pnpm --filter @archiyou/editor localize:build",
-    "dev:modules": "concurrently -n build,app -c cyan,green \"turbo watch build --filter=./modules/**\" \"turbo dev --filter=@archiyou/editor --filter=@archiyou/server\""
+    "dev:modules": "node scripts/dev-services.mjs && concurrently -n build,app,worker -c cyan,green,magenta \"turbo watch build --filter=./modules/**\" \"turbo dev --filter=@archiyou/editor --filter=@archiyou/server\" \"pnpm --filter @archiyou/server worker:dev\""
   },
   "dependencies": {
     "@archiyou/meshup": "workspace:*",
