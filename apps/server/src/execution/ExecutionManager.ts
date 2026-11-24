@@ -29,6 +29,7 @@ import type { ApiExecutionResponse, CacheResult, QueueTaskResult, ApiExecutionFi
 import { Library } from './Library';
 import { ExecutionBroker } from './ExecutionBroker';
 import { mergeObjects } from './utils'
+import { signal } from '../signals/bus';
 
 import archiver from 'archiver'
 
@@ -108,6 +109,20 @@ export class ExecutionManager
             // Execution error
             if(!queueResult?.success)
             {
+                // A result WITH the request is the worker reporting the script's own error,
+                // which the caller sees (and a configurator reports itself). Without it, the
+                // run never came back: the job failed, timed out or the worker died.
+                if(!queueResult?.request)
+                {
+                    const script = request.script;
+                    signal({
+                        type: 'execution.failed',
+                        source: 'api',
+                        message: queueResult?.error || 'The run did not come back',
+                        script: script?.author && script?.name ? `${script.author}/${script.name}${script.version ? `:${script.version}` : ''}` : undefined,
+                        scriptVersionId: script?.id,
+                    });
+                }
                 return {
                     success: false,
                     error: queueResult?.error,

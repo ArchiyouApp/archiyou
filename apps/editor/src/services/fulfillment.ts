@@ -44,6 +44,7 @@ import type { DocSVGPage } from '@archiyou/core/src/docs/types';
 import { editorScript } from '../state/core.js';
 import { buildConfiguratorRequest } from '../state/configurator.js';
 import { runScript } from './execution-service.js';
+import { scriptRef, sendSignal } from './signals.js';
 
 export {
   accessOf, formatExtension, fulfillmentCategories, fulfillmentExports, fulfillmentFormats,
@@ -95,6 +96,20 @@ export async function downloadFulfillment(
   if (!result || result.status === 'error')
   {
     const detail = result?.errors?.[0]?.message ?? result?.messages?.[0]?.message;
+    // A stopped run (no result) is no failure.
+    if (result)
+    {
+      const script = editorScript.get();
+      sendSignal({
+        type: 'output.failed',
+        source: 'configurator',
+        script: scriptRef(script),
+        scriptVersionId: script?.id ?? undefined,
+        message: detail ?? 'The model could not be generated',
+        line: result.errors?.[0]?.lineStart,
+        data: { fulfillment: fulfillment.name, formats: paths.join(', ').slice(0, 200) },
+      });
+    }
     throw new Error(detail ? msg(str`The model could not be generated: ${detail}`) : msg('The model could not be generated.'));
   }
 

@@ -48,6 +48,7 @@ import { ensureModuleCatalog } from './module-service.js';
 import { secretManager, type ContentProblem, type RunTrust } from './secret-manager.js';
 import { scriptDataOf, isOwnScript, knownNeeds, rememberNeeds } from './content-needs.js';
 import { knownCopies, resolveCopies } from './cloud-copies.js';
+import { sendSignal } from './signals.js';
 
 // Base URL of the backend. Same value api.ts/auth-service.ts use; '' → root-relative.
 // Feeds two core lookups that have to reach the server on their own: the $import()
@@ -419,6 +420,13 @@ export async function runScript(request: RunnerScriptExecutionRequest, options: 
           error,
         );
         setServerExecutionTarget(null);
+        sendSignal({
+          type: 'execution.fallback',
+          source: 'configurator',
+          script: `${target.user}/${target.scriptAndVersion}`,
+          message: `Server run refused${status || `: ${(error as Error)?.message ?? 'network error'}`}`,
+          data: error instanceof ApiError ? { status: error.status } : undefined,
+        });
       }
     }
 

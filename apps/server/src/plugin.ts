@@ -35,6 +35,8 @@ import { registerLinkRoutes } from './routes/links';
 import { registerProjectRoutes } from './routes/projects';
 import { registerClientRoutes } from './routes/client';
 import { registerFulfillmentRoutes } from './routes/fulfillments';
+import { registerSignalRoutes } from './routes/signals';
+import { signal, startSignals } from './signals/bus';
 import { moduleHost } from './modules/ModuleHost';
 import { ValidationError } from './validate';
 import { UserError, userService } from './services/UserService';
@@ -44,6 +46,12 @@ import { ProjectStoreError, projectStore } from './services/ProjectStore';
 import { translationQueue } from './translation/TranslationQueue';
 
 const EXECUTION_INIT_TIMEOUT_MS = 5000;
+
+/** Is any server run allowed (config.execution's two gates)? Only then does a missing pipeline
+ *  or worker matter. */
+function executionEnabled(): boolean {
+  return config.execution.allowValidated || config.execution.allowedAuthors.length > 0;
+}
 
 export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   // Explicit origin allowlist (config.corsOrigins = FRONTEND_URL + SERVER_CORS_ORIGINS),
@@ -182,6 +190,9 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   } catch (err) {
     console.warn('⚠️  Execution pipeline unavailable (is Redis running?):', (err as Error).message);
     console.warn('    Library read routes are served; /scripts/published/execute will 503 until Redis is reachable.');
+    if (executionEnabled()) {
+      signal({ type: 'execution.unavailable', source: 'api', message: `Execution pipeline unavailable: ${(err as Error).message}` });
+    }
   }
   fastify.decorate('executionManager', manager);
 
@@ -207,12 +218,22 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   {
     projectStore.purgeEvents()
       .then((n) => { if (n) console.log(`🧹 Forgot ${n} project event(s) older than ${config.events.retentionDays} days.`); })
-      .catch((err) => console.warn('⚠️  Purging old project activity failed:', (err as Error).message));
+      .catch((err) =>
+      {
+        console.warn('⚠️  Purging old project activity failed:', (err as Error).message);
+        signal({ type: 'maintenance.failed', source: 'api', message: `Purging old project activity failed: ${(err as Error).message}` });
+      });
   };
   purgeEvents();
   const purgeTimer = setInterval(purgeEvents, 24 * 60 * 60 * 1000);
   purgeTimer.unref();
   fastify.addHook('onClose', async () => { clearInterval(purgeTimer); });
+
+  // Signals (src/signals): errors and events, routed to Umami, the `signals` table and the
+  // team's inbox. Watches the execution workers only when server runs are switched on.
+  startSignals(fastify, {
+    workers: manager && executionEnabled() ? () => manager!.broker.countWorkers() : undefined,
+  });
 
   fastify.get('/health', async () => ({ status: 'healthy', timestamp: new Date().toISOString() }));
 
@@ -232,6 +253,7 @@ export async function serverApiPlugin(fastify: FastifyInstance): Promise<void> {
   await fastify.register(registerProjectRoutes);  // /projects/*, /clients/* (verified)
   await fastify.register(registerClientRoutes);   // POST /orders, /d/:token (public, rate limited)
   await fastify.register(registerFulfillmentRoutes); // POST /fulfillments (public, rate limited)
+  await fastify.register(registerSignalRoutes);   // POST /signals (public, rate limited)
   await fastify.register(registerAdminRoutes);    // /admin/* (operator only — users.is_admin)
 }
 
@@ -291,7 +313,17 @@ export function setupErrorHandling(fastify: FastifyInstance): void {
     // internals (file paths, SQL, upstream responses) and make a useful recon
     // oracle. 4xx statuses are ones we set deliberately, so their text is safe.
     const message = status >= 500 ? 'Internal server error' : (error.message || 'Request failed');
-    if (status >= 500) console.error('Unhandled server error:', error);
+    if (status >= 500) {
+      console.error('Unhandled server error:', error);
+      signal({
+        type: 'api.error',
+        source: 'api',
+        message: error.message || error.name,
+        user: request.user?.sub,
+        // The route's pattern, not its URL: ids and handles would make every call a new problem.
+        data: { method: request.method, route: request.routeOptions?.url ?? 'unknown', status },
+      });
+    }
     return reply.code(status).send({ success: false, error: message });
   });
 

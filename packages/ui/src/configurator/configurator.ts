@@ -5,6 +5,8 @@ import { localized, msg } from '@lit/localize';
 
 import { createExecutionFailureResult, getServerExecutionTarget, runScript, warmupWorker } from '@archiyou/editor/src/services/execution-service';
 import { currentParams, listenToHost, metricValues, postToHost, HOST_COMMANDS, type HostCommand } from '@archiyou/editor/src/services/host-events';
+import { scriptRef, sendSignal } from '@archiyou/editor/src/services/signals';
+import { editorScript } from '@archiyou/editor/src/state/core';
 import { setExecutionResult, setExecuting, executionResult, bakeAnimations, pipelineModelPath } from '@archiyou/editor/src/state/workspace';
 import { configuratorUnitSystemPick } from '@archiyou/editor/src/state/workspace';
 import { buildConfiguratorRequest, configuratorValueFor, setConfiguratorValue } from '@archiyou/editor/src/state/configurator';
@@ -336,7 +338,20 @@ export class PageConfigurator extends SignalWatcher(LitElement)
 
     if (result.status !== 'success')
     {
-      postToHost({ type: 'error', message: result.errors?.[0]?.message || 'The model could not be made.' });
+      const first = result.errors?.[0];
+      const message = first?.message || 'The model could not be made.';
+      postToHost({ type: 'error', message, line: first?.lineStart, query: changes.query });
+      const script = editorScript.get();
+      sendSignal({
+        type: 'run.failed',
+        source: 'configurator',
+        script: scriptRef(script),
+        scriptVersionId: script?.id ?? undefined,
+        message,
+        line: first?.lineStart,
+        query: changes.query,
+        data: { execution: getServerExecutionTarget() ? 'server' : 'client' },
+      });
       return;
     }
 
@@ -345,6 +360,8 @@ export class PageConfigurator extends SignalWatcher(LitElement)
     if (!this._readyReported)
     {
       this._readyReported = true;
+      const script = editorScript.get();
+      sendSignal({ type: 'configurator.view', source: 'configurator', script: scriptRef(script), scriptVersionId: script?.id ?? undefined });
       // Since this frame's navigation started: loading the page and the script, (in the
       // browser) the kernel, and the first run.
       postToHost({

@@ -19,6 +19,7 @@ import { configuratorUrl } from '@archiyou/ui/editor/publish-constants.js';
 
 import { api, assetUrl } from './api.js';
 import { runScript } from './execution-service.js';
+import { scriptRef, sendSignal } from './signals.js';
 import { fulfillmentExports, outputsToFiles, type FulfillmentFile } from './fulfillment.js';
 import { editorPathFor } from './script-links.js';
 import { renderThumbnailPng, glbOf, scenegraphOf } from './thumbnails.js';
@@ -312,6 +313,18 @@ export async function generateDeliveryFiles(
   if (!result || result.status === 'error')
   {
     const detail = result?.errors?.[0]?.message;
+    if (result)
+    {
+      sendSignal({
+        type: 'output.failed',
+        source: 'editor',
+        script: scriptRef(script),
+        scriptVersionId: script.id ?? undefined,
+        message: detail ?? 'The model could not be made',
+        line: result.errors?.[0]?.lineStart,
+        data: { delivery: true, formats: paths.join(', ').slice(0, 200) },
+      });
+    }
     throw new Error(detail ? `The model could not be made: ${detail}` : 'The model could not be made.');
   }
 

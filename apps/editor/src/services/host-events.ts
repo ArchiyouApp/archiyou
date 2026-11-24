@@ -21,7 +21,7 @@
  *             the first one, each change and
  *             preset, and runs without changes
  *   download  a download finished             { fulfillment, formats, params, metrics, query }
- *   error     the model could not be made     { message }
+ *   error     the model could not be made     { message, line?, query }  (`line` in the script, when known)
  *
  * `params` holds every param value as the configurator holds it (numbers, booleans, strings,
  * lists), `metrics` the metrics of the model on screen ({ name: value }: a number, or the text
@@ -78,7 +78,7 @@ export type HostEvent =
   | { type: 'preset', preset: string, via?: 'host' } & Configuration
   | { type: 'metrics' } & Configuration
   | { type: 'download', fulfillment: string, formats: string[] } & Configuration
-  | { type: 'error', message: string };
+  | { type: 'error', message: string, line?: number, query?: string };
 
 export type HostMessage = HostEvent & { source: typeof HOST_MESSAGE_SOURCE, version: typeof HOST_MESSAGE_VERSION, script: string };
 

@@ -23,6 +23,7 @@ import { extractTranslatableStrings } from '@archiyou/core/src/i18n/extract';
 
 import { config } from '../config';
 import { scriptStore } from '../services/ScriptStore';
+import { signal } from '../signals/bus';
 import { runTranslateJob, type TranslateJobData, type TranslateJobResult } from './translateJob';
 
 const QUEUE_NAME = 'translation-queue';
@@ -82,6 +83,10 @@ export class TranslationQueue {
       // Log only — the author is never told, but an operator must be able to see it.
       this.worker.on('failed', (job, error) => {
         console.warn(`Translation job ${job?.id} failed: ${error?.message}`);
+        // Only once its retries are used up: a retry that works is no problem.
+        if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+          signal({ type: 'translation.failed', source: 'api', message: error?.message, scriptVersionId: job.data.versionId });
+        }
       });
       this.worker.on('completed', (job, result) => {
         if (result?.status === 'translated') {

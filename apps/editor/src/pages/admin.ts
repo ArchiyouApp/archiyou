@@ -22,6 +22,7 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tab-group/tab-group.js';
 import '@archiyou/ui/admin/admin-configurators.js';
 import '@archiyou/ui/admin/admin-feedback.js';
+import '@archiyou/ui/admin/admin-signals.js';
 
 import { userState } from '../state/workspace';
 
@@ -96,6 +97,13 @@ export class PageAdmin extends SignalWatcher(LitElement)
         label: msg('Feedback'),
         lede: msg('What visitors sent with the feedback button on a configurator. Star what is worth keeping.'),
         render: () => html`<admin-feedback></admin-feedback>`,
+      },
+      {
+        id: 'signals',
+        icon: 'activity',
+        label: msg('Signals'),
+        lede: msg('What went wrong: failed runs and outputs in configurators, crashes of the app, server errors. One row per problem, counted.'),
+        render: () => html`<admin-signals></admin-signals>`,
       },
     ];
   }

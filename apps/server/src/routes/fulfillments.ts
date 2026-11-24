@@ -42,6 +42,7 @@ import { configuratorQuery, visitorOf } from '../services/ProjectStore';
 import { scriptStore } from '../services/ScriptStore';
 import { userService } from '../services/UserService';
 import { parse } from '../validate';
+import { signal } from '../signals/bus';
 
 const optionalText = (maxLength: number) => Type.Optional(Type.Union([Type.String({ maxLength }), Type.Null()]));
 
@@ -236,8 +237,22 @@ async function deliverByEmail(fastify: FastifyInstance, job: EmailJob): Promise<
   const link = configuratorLink(script, job.values);
   const event = { fulfillment: fulfillment.name, access: accessOf(fulfillment), key: job.key, ...job.who, email };
 
+  let cause: string | undefined;
   const fail = async (reason: 'not a client' | 'no server run' | 'too large' | 'failed') =>
   {
+    // A visitor asked for it and got an apology instead: worth the team's attention, except
+    // for an address the author never added as a client (that is the access rule working).
+    if (reason !== 'not a client')
+    {
+      signal({
+        type: 'fulfillment.failed',
+        source: 'api',
+        message: cause ? `${reason}: ${cause}` : reason,
+        script: `${script.author}/${script.name}:${script.version}`,
+        scriptVersionId: script.id,
+        data: { fulfillment: fulfillment.name, reason },
+      });
+    }
     await eventStore.add({ professional: script.author!.toLowerCase(), scriptVersionId: script.id!, type: 'fulfillment.failed', meta: { ...event, reason } });
     await emailService.sendFulfillmentFailed(email, { fulfillment: fulfillment.name, configurator, reason, link });
   };
@@ -248,6 +263,7 @@ async function deliverByEmail(fastify: FastifyInstance, job: EmailJob): Promise<
   const files = await makeFiles(fastify, job).catch((err) =>
   {
     console.error(`fulfillments: making "${fulfillment.name}" of ${script.author}/${script.name}:${script.version} failed:`, err);
+    cause = (err as Error)?.message;
     return null;
   });
   if (!files?.length) return fail('failed');

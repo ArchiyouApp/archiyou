@@ -131,6 +131,14 @@ export class ExecutionBroker
     }
 
     /**
+     * How many execution workers listen on the queue right now (signals: worker.down).
+     */
+    async countWorkers(): Promise<number>
+    {
+        return (await this.queue.getWorkers()).length;
+    }
+
+    /**
      * Clean up resources
      */
     async close(): Promise<void> 

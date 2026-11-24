@@ -26,10 +26,10 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { pgTable, text, boolean, integer, timestamp, json, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, boolean, integer, timestamp, date, json, jsonb, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
 
 import type { ScriptData, ScriptShared } from '@archiyou/core/src/execution/types';
-import type { DeliveryFile, DeliveryOffer } from '@archiyou/types';
+import type { DeliveryFile, DeliveryOffer, SignalSample, SignalSeverity, SignalSource, SignalType } from '@archiyou/types';
 
 /**
  * Accounts. Kept minimal — the script model stays in the single script_versions
@@ -336,3 +336,33 @@ export const events = pgTable('events', {
 ]);
 
 export type EventRow = typeof events.$inferSelect;
+
+/**
+ * Signals (apps/server/src/signals): what went wrong, counted rather than logged. One row per
+ * problem (`fingerprint`: type, script, message, line) per UTC day, with how often it happened,
+ * the signed-in users it happened to (at most 20 a day) and one occurrence's details to make it
+ * again. A burst of a thousand identical errors is one row. Read by the admin's Signals section
+ * and the daily report; never by authors. No IP addresses. Purged after
+ * config.signals.retentionDays.
+ */
+export const signals = pgTable('signals', {
+  fingerprint: text('fingerprint').notNull(),
+  day: date('day', { mode: 'string' }).notNull(),           // 'YYYY-MM-DD', UTC
+  type: text('type').$type<SignalType>().notNull(),
+  source: text('source').$type<SignalSource>().notNull(),
+  severity: text('severity').$type<SignalSeverity>().notNull(),
+  script: text('script'),
+  message: text('message'),
+  count: integer('count').notNull().default(0),
+  users: jsonb('users').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  sample: jsonb('sample').$type<SignalSample>().notNull().default(sql`'{}'::jsonb`),
+  firstSeen: at('first_seen').notNull().defaultNow(),
+  lastSeen: at('last_seen').notNull().defaultNow(),
+  /** When the team was emailed about this problem (on this day's row). */
+  alertedAt: at('alerted_at'),
+}, (t) => [
+  primaryKey({ columns: [t.fingerprint, t.day] }),
+  index('signals_by_day').on(t.day),
+]);
+
+export type SignalRow = typeof signals.$inferSelect;

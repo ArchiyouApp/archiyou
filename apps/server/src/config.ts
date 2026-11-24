@@ -344,6 +344,33 @@ export const config = {
   },
 
   /**
+   * Signals (src/signals): errors and a few events, routed by type (src/signals/rules.ts) to
+   * Umami, to the `signals` table and to an email to the team. Every part is inert until it is
+   * configured: no Umami URL and website id, no Umami; no address, alerts and the daily report
+   * are only printed to the console.
+   */
+  signals: {
+    /** Where the API reaches Umami, e.g. https://umami.archiyou.com. */
+    umamiUrl: (process.env.SERVER_UMAMI_URL ?? '').replace(/\/$/, ''),
+    /** The Umami website the platform's events go to ("Archiyou platform"). */
+    umamiWebsiteId: process.env.SERVER_UMAMI_WEBSITE_ID ?? '',
+    /** An Umami API key, only to read view counts for the daily report's failure rates. */
+    umamiApiKey: process.env.SERVER_UMAMI_API_KEY ?? '',
+    /** Who gets alerts and the daily report: comma-separated addresses. */
+    to: (process.env.SERVER_SIGNALS_EMAIL ?? '').split(',').map((a) => a.trim()).filter(Boolean),
+    /** Hour of the day (UTC) after which the report on yesterday goes out. */
+    reportHourUtc: Number(process.env.SERVER_SIGNALS_REPORT_HOUR ?? 6),
+    retentionDays: Number(process.env.SERVER_SIGNALS_RETENTION_DAYS ?? 90),
+    /** Alert emails in one hour at most; the rest are only counted, in the report. */
+    alertMaxPerHour: Number(process.env.SERVER_SIGNALS_ALERT_MAX_PER_HOUR ?? 10),
+    /** Per-IP rate limit on POST /signals, which anonymous visitors call. */
+    rateLimit: {
+      max: Number(process.env.SERVER_SIGNALS_RATE_LIMIT ?? 30),
+      timeWindow: process.env.SERVER_SIGNALS_RATE_WINDOW ?? '10 minutes',
+    },
+  },
+
+  /**
    * Links (`/go/<key>`, routes/links.ts). `baseUrl` is what a link starts with; unset, it is
    * the origin the editor reached the API on (behind Caddy the app's own domain, which routes
    * /go/* here; in dev the API itself). A link may only point at `targets` (URL prefixes),

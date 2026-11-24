@@ -7,6 +7,8 @@
  *   GET  /admin/feedback                   visitor feedback (?q, ?starred, ?sort, ?limit, ?offset)
  *   PUT  /admin/feedback/:id/starred       { starred: boolean }
  *   DELETE /admin/feedback/:id
+ *   GET  /admin/signals                    what went wrong, per problem (?range, ?q, ?type, ?source,
+ *                                          ?severity, ?sort, ?limit, ?offset)
  *
  * Its one power is `published.validated`, which clears a specific published version to
  * run SERVER-SIDE — unsandboxed, in the execution worker's Node process, for callers who
@@ -29,6 +31,11 @@ import { Type } from 'typebox';
 
 import { scriptStore } from '../services/ScriptStore';
 import { feedbackStore, type FeedbackSort } from '../services/FeedbackStore';
+import { signalStore } from '../signals/SignalStore';
+import {
+  SIGNAL_RANGES, SIGNAL_SEVERITIES, SIGNAL_SORTS, SIGNAL_SOURCES, SIGNAL_TYPES,
+  type SignalRange, type SignalSeverity, type SignalSort, type SignalSource, type SignalType,
+} from '@archiyou/types';
 import { parse } from '../validate';
 
 const SetValidatedSchema = Type.Object({
@@ -56,6 +63,25 @@ interface FeedbackQuery {
   sort?: string;
   limit?: string;
   offset?: string;
+}
+
+interface SignalQuery {
+  range?: string;
+  q?: string;
+  type?: string;
+  source?: string;
+  severity?: string;
+  sort?: string;
+  limit?: string;
+  offset?: string;
+}
+
+/** `value` if it is one of `allowed`; absent or empty is undefined; anything else throws, so a
+ *  typo is a 400 rather than a list that silently ignores the filter. */
+function oneOf<T extends string>(name: string, value: string | undefined, allowed: readonly T[]): T | undefined {
+  if (value === undefined || value === '') return undefined;
+  if ((allowed as readonly string[]).includes(value)) return value as T;
+  throw new Error(`Invalid '${name}'. Expected one of ${allowed.join(', ')}`);
 }
 
 interface ListQuery {
@@ -144,6 +170,28 @@ export async function registerAdminRoutes(fastify: FastifyInstance): Promise<voi
 
     const { total, items } = await feedbackStore.list({ q, starred, sort: (sort || undefined) as FeedbackSort | undefined, limit, offset });
     return { success: true, total, limit, offset, data: items };
+  });
+
+  /** Signals (src/signals), one row per problem over the range, newest first by default. */
+  fastify.get<{ Querystring: SignalQuery }>('/admin/signals', adminOnly, async (request, reply) => {
+    const query = request.query;
+    let filter;
+    try {
+      filter = {
+        range: oneOf<SignalRange>('range', query.range, SIGNAL_RANGES),
+        type: oneOf<SignalType>('type', query.type, SIGNAL_TYPES),
+        source: oneOf<SignalSource>('source', query.source, SIGNAL_SOURCES),
+        severity: oneOf<SignalSeverity>('severity', query.severity, SIGNAL_SEVERITIES),
+        sort: oneOf<SignalSort>('sort', query.sort, SIGNAL_SORTS),
+      };
+    } catch (error) {
+      reply.code(400);
+      return { success: false, error: (error as Error).message };
+    }
+    const limit = Math.min(Number(query.limit ?? 50) || 50, 200);
+    const offset = Math.max(Number(query.offset ?? 0) || 0, 0);
+    const list = await signalStore.list({ ...filter, q: query.q?.slice(0, 200), limit, offset });
+    return { success: true, limit, offset, data: list };
   });
 
   fastify.put<{ Params: { id: string } }>('/admin/feedback/:id/starred', adminOnly, async (request) => {

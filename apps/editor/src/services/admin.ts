@@ -12,6 +12,8 @@
 
 import type { ScriptData } from '@archiyou/core/src/execution/types';
 
+import type { AdminSignalList, SignalRange, SignalSeverity, SignalSort, SignalSource, SignalType } from '@archiyou/types';
+
 import { api } from './api.js';
 
 interface Envelope<T> { success: boolean; error?: string; data?: T }
@@ -140,4 +142,31 @@ export async function setFeedbackStarred(id: string, starred: boolean): Promise<
 export async function deleteFeedback(id: string): Promise<void>
 {
   await api.delete(`/admin/feedback/${encodeURIComponent(id)}`);
+}
+
+//// SIGNALS ////
+
+/** What the Signals section asks for (server: GET /admin/signals, src/signals). */
+export interface AdminSignalFilter
+{
+  range?: SignalRange;
+  q?: string;
+  type?: SignalType;
+  source?: SignalSource;
+  severity?: SignalSeverity;
+  sort?: SignalSort;
+  limit?: number;
+  offset?: number;
+}
+
+export async function fetchAdminSignals(filter: AdminSignalFilter = {}): Promise<AdminSignalList>
+{
+  const query = new URLSearchParams(
+    Object.entries(filter)
+      .filter(([, value]) => value !== undefined && value !== '')
+      .map(([key, value]) => [key, String(value)]),
+  ).toString();
+  const res = await api.get<Envelope<AdminSignalList>>(`/admin/signals${query ? `?${query}` : ''}`);
+  if (!res.data) throw new Error(res.error ?? 'The server did not return the signals.');
+  return res.data;
 }
