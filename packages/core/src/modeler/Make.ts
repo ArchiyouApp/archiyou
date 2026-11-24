@@ -27,6 +27,7 @@ import { PackOptionsSchema, Pack3DOptionsSchema, FoldoutViewOptionsSchema } from
 import { FOLDOUT_SIDES, convexHull, foldoutPlacement, outermostAt, projectableCoordinates, projectionLine, rotateSheetPoint } from './foldoutView';
 import type { FoldoutPlacement, FoldoutProjection, FoldoutSide, SheetPoint, SheetSegment } from './foldoutView';
 import { MM_PER_UNIT } from '../units/UnitConverter';
+import { layOut, screwSize, type Box3, type FastenOptions, type Vec3 as FastenVec3 } from './fasten';
 import { isClosedSolid, vote } from './packChoice';
 import { measure, group as groupShapes, toInstance, toOptions, put, fromGrams } from './pack3d';
 
@@ -2442,6 +2443,109 @@ export class Make
     }
 
     //// DATA GATHERING /////
+
+    //// FASTENINGS ////
+
+    /**
+     *  Screws between two sets of parts. Wherever a part of `from` lies against a part of `into`,
+     *  screws go through the part of `from` into the part of `into`, laid out by a pattern. Each
+     *  screw is drawn as a circle on the face it goes in at (the work face) and a line along its
+     *  full length, so you can see how long it is and check where its tip ends up.
+     *
+     *  Parts are found touching by their bounding boxes, so this is for parts square to the axes,
+     *  like framing and boards. `products.collect()` counts the screws by their product.
+     *
+     *  @param from     The parts the screws go through first (their heads are on these).
+     *  @param into     The parts the screws go into.
+     *  @param options  - product: the product id of the screw, like 'schroef-rvs-6x100'; its
+     *                    diameter and length are read from it ('…6x100') unless given
+     *                  - diameter, length: in mm
+     *                  - pattern: 'row' (default): `pitch` apart along each contact;
+     *                    'end': `count` screws on each contact, like two into the end of a stud
+     *                  - pitch: distance in a row, default 150 mm
+     *                  - count: screws per contact for 'end', default 2
+     *                  - edge: distance from the ends of a contact, default 3 × the diameter (at least 10 mm)
+     *                  - component: the component of the products sheet they belong to ('hsbwand')
+     *  @returns A group 'fastening' with the circles and lines. `.screws` lists each screw: its head,
+     *           tip, direction, and how far it goes into the second part (`penetration`).
+     *
+     *  @example
+     *  // Two screws through each plate into the end of every stud, and a board screwed to the studs
+     *  wall = make.wall(3000, 2700, 235, 38, 600)
+     *  make.fasten(wall.plates, wall.studs, { product: 'schroef-rvs-6x100', pattern: 'end', count: 2 })
+     *  board = box(3000, 16, 2700).move(1500, -125.5, 1350)
+     *  make.fasten(board, wall.studs, { product: 'schroef-rvs-4.5x50', pitch: 150 })
+     */
+    fasten(from: any, into: any, options: FastenOptions = {}): ShapeCollection
+    {
+        const modeler = this._anyKernelModeler;
+        const mm = MM_PER_UNIT[modeler.units()] ?? 1;
+        const size = screwSize(options.product);
+        const diameter = (options.diameter ?? size.diameter);
+        const length = (options.length ?? size.length);
+        if (!(diameter! > 0) || !(length! > 0))
+        {
+            throw new Error(`Make.fasten(): needs the size of the screw: a product id like 'schroef-rvs-6x100', or { diameter, length } in mm`);
+        }
+        const d = diameter! / mm, l = length! / mm;
+        const settings = {
+            diameter: d,
+            length: l,
+            pattern: options.pattern ?? 'row',
+            pitch: (options.pitch ?? 150) / mm,
+            count: Math.max(1, Math.round(options.count ?? 2)),
+            edge: (options.edge ?? Math.max(10, 3 * diameter!)) / mm,
+        } as const;
+
+        // the solids in what was given: a shape, a collection (also nested, like a wall's groups) or an array
+        const solids = (shapes: any): any[] =>
+            shapes == null ? []
+            : Array.isArray(shapes) ? shapes.flatMap(solids)
+            : shapes.isShapeCollection?.() ? shapes.toArray().flatMap(solids)
+            : (Number(shapes.volume?.()) > 0 ? [shapes] : []);
+        const boxOf = (shape: any): Box3 =>
+        {
+            const b = shape.bbox();
+            return { min: [b.minX(), b.minY(), b.minZ()], max: [b.maxX(), b.maxY(), b.maxZ()] };
+        };
+        const a = solids(from), b = solids(into);
+        const screws = layOut(a.map(boxOf), b.map(boxOf), settings);
+        if (screws.length === 0)
+        {
+            console.warn(`Make.fasten(): no part of \`from\` lies against a part of \`into\`: no screws`);
+        }
+
+        // the drawing: a circle of the head (twice the diameter) on the work face, a line to the tip
+        const data = { product: options.product ?? null, diameter: diameter!, length: length!, component: options.component ?? null, label: options.label ?? null };
+        const curves = screws.flatMap(screw =>
+        {
+            const axis = screw.direction.findIndex(v => v !== 0);
+            const [u, v] = [0, 1, 2].filter(i => i !== axis);
+            const ring = Array.from({ length: 17 }, (_, k) =>
+            {
+                const t = (k % 16) / 16 * 2 * Math.PI;
+                const p = [...screw.head] as FastenVec3;
+                p[u!] += d * Math.cos(t);
+                p[v!] += d * Math.sin(t);
+                return p;
+            });
+            const head = (modeler.polyline(ring) as any);
+            const shank = (modeler.line(screw.head, screw.tip) as any);
+            head._fastening = { ...data, head: true };
+            shank._fastening = { ...data, head: false };
+            return [head, shank];
+        });
+
+        // what can be seen from the geometry: a tip that comes out, or one that barely goes in
+        const out = screws.filter(s => s.penetration > s.into + 1e-6).length;
+        const short = screws.filter(s => s.penetration < 4 * d).length;
+        if (out) { console.warn(`Make.fasten(): ${out} of ${screws.length} screws (${length} mm) come out of the far side of the part they go into`); }
+        if (short) { console.warn(`Make.fasten(): ${short} of ${screws.length} screws (${length} mm) go less than 4 × their diameter into the second part`); }
+
+        const group = modeler.group('fastening', ...curves).color('#b03a2e') as ShapeCollection;
+        (group as any).screws = screws;
+        return group;
+    }
 
     /** Products of a product sheet for the parts of a model, and their costs: a new
      *  ProductManager. It reads nothing until fromSheet(url) or fromRows(rows).
