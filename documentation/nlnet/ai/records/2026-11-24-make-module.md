@@ -118,7 +118,28 @@ Step 2, one place:
   cadscripts, CLI, server and editor pass. The generated API reference and completions are
   regenerated; they had fallen behind the source.
 
+Step 3, the product belongs to the shape:
+
+- Sheet (trial copy only so far): `producten` has two new columns, `term` (one main term, English
+  where it can be) and `aliassen` (English and Dutch, comma separated), filled for all 362
+  products by the agent from the groups, types and uses; the human is to read them over. The real
+  core does not have them yet.
+- core `make/catalog/`: `products.ts` (the product model and size fit, taken out of
+  ProductManager, which now imports it) and `Catalog.ts`: a name becomes products by id, group,
+  alias, every word, then fuzzily (edit distance, none for names of three letters or fewer); the
+  part's size chooses among them. It never guesses quietly: a fuzzy read, a tie or a misfit is a
+  warning, no product or no way to choose an error with suggestions.
+- `shape.product(name)` / `collection.product(name)` (per part), `shape.product()` to read it back
+  (id, how it was found, size, material, the make database version), `shape.component(id)`,
+  `make.check()`, `make.strict()`. The product sets the shape's material, and a copy keeps both.
+  A product read back finds its database again by version, also when the run was given it as
+  'latest'.
+- Found and fixed: the script's `make` and the one shapes reach were different instances, so
+  `check()` was empty; the Modeler keeps one Make now and resets what is per run.
+- Tests: `tests/unit/make/catalog.test.ts` (lookup, size choice, shape.product in a run, check,
+  strict). Core 2071 pass, the same 5 fail as before; CLI, server pass.
+
 ## Next
 
-Step 3: `shape.product()` with the aliases (a column in `producten`: main term in English,
-aliases in English and Dutch), `shape.component()`, `check()`, `strict()`.
+Step 4: `make.takeoff()`: weight, cost, time (`tijd (seconden)`), grouping, order and cut lists.
+Before it reaches the real core: the `term`/`aliassen` columns there.
