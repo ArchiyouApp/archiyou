@@ -74,6 +74,7 @@ import { ParamManager } from '../execution/ParamManager';
 import { loadBinPackerModule, loadPack3dModule, type Make } from '../modeler/Make';
 import type { Handle } from '../interaction/Handle';
 import type { ShapeCollection } from '@archiyou/meshup';
+import * as meshup from '@archiyou/meshup';
 
 /**
  * What a script can use besides the modeling functions (`box()`, `sketch()`, …, see
@@ -467,6 +468,9 @@ export class Runner
             // instances, which may hold expensive resources. Per-run cleanup is
             // the module's own reset(), called from linkToArchiyou().
             modules: this._moduleRegistry,
+            // The mesh kernel's namespace (Mesh, Curve, …), for modules that build or query
+            // meshes themselves, e.g. energy's ray casts.
+            meshup,
         } as ArchiyouModules
 
         archiyou.modeler.setArchiyou(archiyou);
@@ -899,7 +903,7 @@ export class Runner
         await this._ensureKernel(request.kernel);
 
         // Record how shapes are made only when something reads it: FreeCAD and friends, or a
-        // script module that declares `recipes` (fab)
+        // script module that declares `recipes`
         await this._syncRecipeRecording(request);
 
         // The IFC classifier loads on demand; explainIFC() is synchronous, so load it up front when used
@@ -931,7 +935,7 @@ export class Runner
     }
 
     /** Switch shape recipe recording on for runs that request a recipe format or load a script module
-     *  that reads recipes (manifest `recipes`, like fab: saw cuts and drillings), off for all others.
+     *  that reads recipes (manifest `recipes`: saw cuts and drillings), off for all others.
      *  Recording stays on through the export at the end of the run, which is what reads it. Runs after
      *  _prepareModules(), which decides the modules. */
     private async _syncRecipeRecording(request: RunnerScriptExecutionRequest): Promise<void>
@@ -3001,7 +3005,7 @@ ${contextLines.join('\n')}
 
                 default:
                 {
-                    // A format a script module builds (its manifest `outputs`), like 'btlx' from fab.
+                    // A format a script module builds (its manifest `outputs`).
                     // Output paths let any plain format token through, so this is also where a format
                     // nobody builds is reported.
                     const format = outputPath.format as string;
