@@ -1,6 +1,0 @@
-# Local credentials — the Gemini API key lives here. Never commit.
-.env
-.env.*
-!.env.example
-
-node_modules

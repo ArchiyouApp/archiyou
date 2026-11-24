@@ -1,15 +1,9 @@
 /**
  *  materials/schemas.ts
  *
- *  Runtime schema for the materials database. Defined with TypeBox so it can be
- *  validated with Check()/Errors() from 'typebox/value' — the same pattern as
- *  ScriptSchema and calc/schemas.ts.
- *
- *  MaterialManager.load() validates the bundled database against this, the first time it
- *  runs, and warns on failure rather than throwing: a malformed entry must never break a
- *  user's script.
- *  The generator (tools/materials-generator) emits materials.schema.json from this
- *  so the `$schema` pointer in materials.json actually resolves.
+ *  Runtime schema of a Material, as read from the `materialen` tab of the core sheet
+ *  (fromSheet.ts). Defined with TypeBox so it can be validated with Check()/Errors() from
+ *  'typebox/value' — the same pattern as ScriptSchema and calc/schemas.ts.
  */
 
 import { Type, type TSchema, type TLiteral } from 'typebox'
@@ -86,6 +80,10 @@ export const MaterialSchema = Type.Object({
     group:       Type.Union(MATERIAL_GROUPS.map(g => Type.Literal(g)) as LiteralTuple<typeof MATERIAL_GROUPS>),
     aliases:     Type.Optional(Type.Array(Type.String())),
     description: Type.Optional(Type.String()),
+    application: Type.Optional(Type.String()),
+    fireClass:   Type.Optional(Type.String()),
+    strengthClass: Type.Optional(Type.String()),
+    price:       Type.Optional(Type.Object({ value: Type.Number(), unit: Type.String(), source: Type.Optional(Type.String()) })),
 
     ...Object.fromEntries(MATERIAL_PROPERTY_KEYS.map(k => [k, Type.Optional(MaterialPropertySchema)])),
 
@@ -93,16 +91,8 @@ export const MaterialSchema = Type.Object({
     viz: Type.Optional(MaterialVizSchema),
 })
 
-/** The materials.json document as a whole. */
-export const MaterialsDbSchema = Type.Object({
-    $schema:   Type.Optional(Type.String()),
-    meta:      Type.Optional(Type.Unknown()),
-    materials: Type.Array(MaterialSchema),
-})
-
 /** Registry, addressable by name — mirrors calc/schemas.ts. */
 export const MATERIAL_SCHEMAS: Record<string, TSchema> = {
     material: MaterialSchema,
     lca:      MaterialLCASchema,
-    db:       MaterialsDbSchema,
 }

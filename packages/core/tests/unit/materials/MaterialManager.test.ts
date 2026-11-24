@@ -1,18 +1,21 @@
 import { describe, it, expect } from 'vitest'
 
 import { MaterialManager } from '../../../src/materials/MaterialManager'
+import { materialFromRow, sheetNumber } from '../../../src/materials/fromSheet'
+import { APPEARANCE } from '../../../src/materials/appearance'
 import { rangeFor } from '../../../src/materials/ranges'
 import { MATERIAL_PROPERTY_KEYS } from '../../../src/materials/types'
 import type { ArchiyouModules } from '../../../src/types'
+import { MATERIALEN_ROWS } from './materialen.fixture'
 
-/** Minimal modeler stub exposing the unit accessors MaterialManager reads. */
-function makeManager(system: 'metric' | 'imperial' = 'metric', unit = 'mm'): MaterialManager
+/** A manager with the materials of the core sheet (the fixture), and a modeler stub for units. */
+function makeManager(system: 'metric' | 'imperial' = 'metric', unit = 'mm', loaded = true): MaterialManager
 {
     const mgr = new MaterialManager()
     mgr.setArchiyou({
         modeler: { unitSystem: () => system, units: () => unit },
     } as unknown as ArchiyouModules)
-    return mgr
+    return loaded ? mgr.fromRows(MATERIALEN_ROWS) : mgr
 }
 
 /** A fake solid with a fixed volume (in model units³). */
@@ -23,20 +26,92 @@ function fakeShape(volume: number)
 
 describe('MaterialManager', () =>
 {
-    describe('lookup & aliases', () =>
+    describe('materials from the core sheet', () =>
     {
-        it('resolves by canonical name', () =>
+        it('reads a row of the materialen tab', () =>
+        {
+            const timber = materialFromRow(MATERIALEN_ROWS[0]!)!
+            expect(timber).toMatchObject({
+                name: 'naaldhout_constructief',
+                group: 'wood',
+                application: 'constructiehout',
+                strengthClass: 'C24',
+                fireClass: 'D-s2,d0',
+                density: { value: 493, unit: 'kg/m3' },
+                thermalConductivity: { value: 0.13, unit: 'W/mK' },
+                compressive: { value: 21, unit: 'MPa' },
+                price: { value: 723.16, unit: 'EUR/m3' },
+            })
+            expect(timber.density!.source).toMatch(/EN ISO 10456/)
+            expect(timber.description).toMatch(/^Constructief vurenhout/)
+        })
+
+        it('groups by application, with the exceptions the sheet needs', () =>
+        {
+            const mgr = makeManager()
+            expect(mgr.get('houtvezel_flex')!.group).toBe('insulation')
+            expect(mgr.get('dampremmende_folie')!.group).toBe('membrane')
+            expect(mgr.get('gipsplaat')!.group).toBe('finish')          // plaatmateriaal in the sheet
+            expect(mgr.get('constructiestaal')!.group).toBe('metal')    // fundering in the sheet
+        })
+
+        it('reads numbers as cloudcalc gives them, and as text the way the sheet shows them', () =>
+        {
+            expect(sheetNumber(0.13)).toBe(0.13)
+            expect(sheetNumber('€ 1,021.79')).toBe(1021.79)
+            expect(sheetNumber('1,200')).toBe(1200)
+            expect(sheetNumber('50 / 20')).toBe(50)
+            expect(sheetNumber('')).toBeUndefined()
+        })
+
+        it('leaves out what the sheet leaves empty', () =>
+        {
+            const tape = makeManager().get('luchtdichte_tape')!
+            expect(tape.density).toBeUndefined()
+            expect(tape.lca).toBeUndefined()
+            expect('thermalConductivity' in tape).toBe(false)
+        })
+
+        it('reads the whole table from an open workbook', () =>
+        {
+            const wb = { tables: () => [{ name: 'materialen' }], table: () => MATERIALEN_ROWS }
+            const mgr = new MaterialManager().fromWorkbook(wb)
+            expect(mgr.all()).toHaveLength(MATERIALEN_ROWS.length)
+            expect(mgr.loaded).toBe(true)
+        })
+
+        it('says how to give the tab its table when the sheet has none', () =>
+        {
+            const wb = { tables: () => [{ name: 'producten' }], table: () => [] }
+            expect(() => new MaterialManager().fromWorkbook(wb)).toThrow(/named range tables\.materialen/)
+        })
+    })
+
+    describe('before the sheet is loaded', () =>
+    {
+        it('knows how a material looks, and its group, but none of its properties', () =>
+        {
+            const mgr = makeManager('metric', 'mm', false)
+            const osb = mgr.get('osb')!
+            expect(osb.group).toBe('wood')
+            expect(osb.viz?.textures?.sides?.image).toBe('./textures/osb_sides.jpg')
+            expect(osb.density).toBeUndefined()
+            expect(mgr.resolve('osb', fakeShape(1e9))!.mass()).toBeUndefined()
+        })
+
+        it('does not know a material without a look', () =>
+        {
+            expect(makeManager('metric', 'mm', false).get('unobtainium')).toBeNull()
+        })
+    })
+
+    describe('lookup', () =>
+    {
+        it('resolves by materiaal_id, case-insensitive', () =>
         {
             const mgr = makeManager()
             expect(mgr.get('douglas')?.name).toBe('douglas')
-            expect(mgr.get('DOUGLAS')?.name).toBe('douglas') // case-insensitive
-        })
-
-        it('resolves by alias', () =>
-        {
-            const mgr = makeManager()
-            expect(mgr.get('multiplex')?.name).toBe('plywood')
-            expect(mgr.get('aluminium')?.name).toBe('aluminum')
+            expect(mgr.get('DOUGLAS')?.name).toBe('douglas')
         })
 
         it('returns null / warns on unknown', () =>
@@ -66,13 +141,6 @@ describe('MaterialManager', () =>
                 }
             })
         }
-
-        it('every material with a numeric property cites a source', () =>
-        {
-            for (const mat of mgr.all())
-                for (const key of MATERIAL_PROPERTY_KEYS)
-                    if (mat[key]) expect(mat[key]!.source, `${mat.name}.${key}`).toBeTruthy()
-        })
     })
 
     describe('mass / weight calculation', () =>
@@ -80,15 +148,14 @@ describe('MaterialManager', () =>
         it('computes kg for a 1m³ solid in metric (mm units)', () =>
         {
             const mgr = makeManager('metric', 'mm')
-            // 1 m³ = 1e9 mm³ ; concrete 2400 kg/m³ → 2400 kg
-            const mat = mgr.get('concrete')!
-            expect(mgr.massFor(mat, 1e9)).toBeCloseTo(2400, 3)
+            // 1 m³ = 1e9 mm³ ; beton 2400 kg/m³ → 2400 kg
+            expect(mgr.massFor(mgr.get('beton')!, 1e9)).toBeCloseTo(2400, 3)
         })
 
         it('bound shape .mass()/.weight() agree', () =>
         {
             const mgr = makeManager('metric', 'mm')
-            // douglas 530 kg/m³, beam 100 x 100 x 2000 mm = 2e7 mm³ = 0.02 m³ → 10.6 kg
+            // douglas 530 kg/m³, beam 100 x 100 x 2000 mm = 0.02 m³ → 10.6 kg
             const bound = mgr.resolve('douglas', fakeShape(100 * 100 * 2000))!
             expect(bound.mass()).toBeCloseTo(10.6, 3)
             expect(bound.weight()).toBeCloseTo(bound.mass()!, 6)
@@ -98,8 +165,7 @@ describe('MaterialManager', () =>
         {
             // model unit is inches in imperial; a 1 ft³ cube = 12³ inch³
             const mgr = makeManager('imperial', 'inch')
-            const mat = mgr.get('steel')! // 7850 kg/m³
-            const massLb = mgr.massFor(mat, 12 ** 3) // 1 ft³
+            const massLb = mgr.massFor(mgr.get('constructiestaal')!, 12 ** 3) // 7850 kg/m³, 1 ft³
             // 1 ft³ steel ≈ 222.3 kg → ~490 lb
             expect(massLb).toBeGreaterThan(480)
             expect(massLb).toBeLessThan(500)
@@ -107,8 +173,7 @@ describe('MaterialManager', () =>
 
         it('returns undefined for a shape without volume()', () =>
         {
-            const mgr = makeManager()
-            const bound = mgr.resolve('steel', {} as any)!
+            const bound = makeManager().resolve('constructiestaal', {} as any)!
             expect(bound.mass()).toBeUndefined()
         })
     })
@@ -119,9 +184,8 @@ describe('MaterialManager', () =>
         {
             const metric = makeManager('metric')
             const imperial = makeManager('imperial')
-            const steel = metric.get('steel')!
-            expect(metric.property(steel, 'density')!.unit).toBe('kg/m3')
-            const imp = imperial.property(imperial.get('steel')!, 'density')!
+            expect(metric.property(metric.get('constructiestaal')!, 'density')!.unit).toBe('kg/m3')
+            const imp = imperial.property(imperial.get('constructiestaal')!, 'density')!
             expect(imp.unit).toBe('lb/ft3')
             expect(imp.value).toBeCloseTo(7850 * 0.0624279606, 2) // ≈ 490 lb/ft³
         })
@@ -140,10 +204,17 @@ describe('MaterialManager', () =>
             expect(spec.thinSideThresholdMM).toBe(25)
         })
 
+        it('gives a material of the sheet without its own look its group colour', () =>
+        {
+            const mgr = new MaterialManager().fromRows([{ materiaal_id: 'kurk', toepassing: 'isolatie', 'dichtheid (kg/m3)': 110 }])
+            expect(APPEARANCE['kurk']).toBeUndefined()
+            expect(mgr.renderSpec(mgr.get('kurk')!).pbr?.color).toMatch(/^#[0-9a-f]{6}$/)
+        })
+
         it('always carries an edge style, so materialized shapes get an outline', () =>
         {
             const mgr = makeManager()
-            const spec = mgr.renderSpec(mgr.get('steel')!)
+            const spec = mgr.renderSpec(mgr.get('constructiestaal')!)
             expect(spec.edge).toMatchObject({ opacity: 1.0, width: 1 })
             expect(spec.edge!.color).toMatch(/^#[0-9a-f]{6}$/)
         })
@@ -173,7 +244,7 @@ describe('MaterialManager', () =>
             const mgr = makeManager()
             mgr.materialLineColor = '#123456'
             expect(mgr.renderSpec(mgr.get('douglas')!).edge!.color).toBe('#123456')
-            expect(mgr.renderSpec(mgr.get('steel')!).edge!.color).toBe('#123456')
+            expect(mgr.renderSpec(mgr.get('constructiestaal')!).edge!.color).toBe('#123456')
         })
 
         it('falls back to black for a material with no base colour', () =>
@@ -187,7 +258,7 @@ describe('MaterialManager', () =>
             const mgr = makeManager()
             mgr.materialLineOpacity = 0.5
             mgr.materialLineColor = '#333333'
-            expect(mgr.renderSpec(mgr.get('steel')!).edge)
+            expect(mgr.renderSpec(mgr.get('constructiestaal')!).edge)
                 .toMatchObject({ color: '#333333', opacity: 0.5 })
         })
 
@@ -214,92 +285,57 @@ describe('MaterialManager', () =>
             const direct = await mgr.loadTextureDataURI(spec.textures!.sides!.image)
             expect(spec.textures!.sides!.data).toBe(direct)
         })
+
+        it('every look points at a texture that exists', async () =>
+        {
+            const mgr = makeManager()
+            const images = [...new Set(Object.values(APPEARANCE)
+                .flatMap(v => Object.values(v.textures ?? {}).map(t => t!.image)))]
+            for (const image of images)
+            {
+                expect(await mgr.loadTextureDataURI(image), image).toMatch(/^data:image\//)
+            }
+        })
     })
 
-    describe('EN 15804 life-cycle data', () =>
+    describe('EN 15804 life-cycle data, per m³ as the sheet gives it', () =>
     {
         const mgr = makeManager()
-        const withLca = mgr.all().filter(m => m.lca)
 
-        it('imported life-cycle data for most of the database', () =>
+        it('carries the modules, the standard and the source', () =>
         {
-            expect(withLca.length).toBeGreaterThan(30)
-        })
-
-        for (const mat of withLca)
-        {
-            it(`${mat.name} carries complete provenance`, () =>
-            {
-                const src = mat.lca!.source
-                for (const key of ['dataset', 'uuid', 'version', 'url', 'retrieved'] as const)
-                    expect(src[key], `${mat.name}.lca.source.${key}`).toBeTruthy()
-                expect(mat.lca!.standard).toMatch(/^EN 15804\+A[12]$/)
-                expect(Object.keys(mat.lca!.modules).length).toBeGreaterThan(0)
-            })
-        }
-
-        it('per-kg intensity of a volumetric EPD uses the EPD own density', () =>
-        {
-            // douglas: Nadelschnittholz declared per m³; GWP-total A1-A3 is negative
-            // because EN 15804+A2 counts the biogenic carbon taken up by the timber.
             const lca = mgr.get('douglas')!.lca!
             expect(lca.declaredUnit).toBe('m3')
-            expect(lca.density?.value).toBeGreaterThan(0)
-
-            const perKg = mgr.carbonIntensityOf(mgr.get('douglas')!)!
-            const expected = lca.modules.A1A3!.value / (lca.declaredUnitValue ?? 1) / lca.density!.value
-            expect(perKg).toBeCloseTo(expected, 6)
-            expect(perKg).toBeLessThan(0)
+            expect(lca.standard).toBe('EN 15804+A2')
+            expect(lca.modules.A1A3!.value).toBeCloseTo(-810.85, 2)
+            expect(lca.source.url).toMatch(/oekobaudat/)
         })
 
-        it('does not invent a per-kg figure for an area-declared EPD', () =>
+        it('per-kg intensity divides by the density', () =>
         {
-            // Flat glass is declared per m² — no thickness, so no honest mass basis.
-            // ÖKOBAUDAT spells that 'qm' (Quadratmeter), not 'm2'.
-            expect(mgr.get('glass')!.lca!.declaredUnit).toBe('qm')
-            expect(mgr.carbonIntensityOf(mgr.get('glass')!)).toBeUndefined()
-        })
-
-        it('does not double-count A1-A3 against its own A1/A2/A3 parts', () =>
-        {
-            const mat = mgr.get('douglas')!
-            const lca = mat.lca!
-            // this dataset declares BOTH the aggregate and the three constituents
-            expect(lca.modules.A1A3).toBeTruthy()
-            expect(lca.modules.A1).toBeTruthy()
-            // the aggregate must win, not be added on top of its parts
-            const perKg = mgr.carbonIntensityOf(mat)!
-            expect(perKg).toBeCloseTo(
-                lca.modules.A1A3!.value / (lca.declaredUnitValue ?? 1) / lca.density!.value, 6)
+            // GWP-total A1-A3 is negative: EN 15804+A2 counts the biogenic carbon in the timber
+            const douglas = mgr.get('douglas')!
+            expect(mgr.carbonIntensityOf(douglas)).toBeCloseTo(-810.85 / 530, 6)
         })
 
         it("'total' sums more modules than 'embodied'", () =>
         {
-            const steel = mgr.get('steel')!
-            const embodied = mgr.carbonIntensityOf(steel, 'embodied')!
-            const total = mgr.carbonIntensityOf(steel, 'total')!
-            expect(total).not.toBeCloseTo(embodied, 6)
+            const steel = mgr.get('constructiestaal')!
+            expect(mgr.carbonIntensityOf(steel, 'total')).not.toBeCloseTo(mgr.carbonIntensityOf(steel, 'embodied')!, 6)
         })
 
         it('an explicit module selection sums only those modules', () =>
         {
-            // Steel is declared per 1000 kg, so declaredUnitValue carries the factor
-            // and no density conversion is involved.
-            const steel = mgr.get('steel')!
+            const steel = mgr.get('constructiestaal')!
             const lca = steel.lca!
-            expect(lca.declaredUnit).toBe('kg')
-            expect(lca.declaredUnitValue).toBe(1000)
-
             const got = mgr.carbonIntensityOf(steel, ['C3', 'C4'])!
-            const want = ((lca.modules.C3?.value ?? 0) + (lca.modules.C4?.value ?? 0)) / 1000
-            expect(got).toBeCloseTo(want, 9)
+            expect(got).toBeCloseTo(((lca.modules.C3?.value ?? 0) + (lca.modules.C4?.value ?? 0)) / 7850, 9)
         })
 
         it('returns undefined, not zero, for undeclared modules', () =>
         {
-            // B6 (operational energy) is not declared for structural steel
-            expect(mgr.get('steel')!.lca!.modules.B6).toBeUndefined()
-            expect(mgr.carbonIntensityOf(mgr.get('steel')!, ['B6'])).toBeUndefined()
+            expect(mgr.get('constructiestaal')!.lca!.modules.B6).toBeUndefined()
+            expect(mgr.carbonIntensityOf(mgr.get('constructiestaal')!, ['B6'])).toBeUndefined()
         })
     })
 
@@ -318,21 +354,20 @@ describe('MaterialManager', () =>
             const b = imperial.resolve('douglas', fakeShape(inchVolume))!.carbon()!
 
             expect(a).toBeCloseTo(b, 6)   // a physical impact, not a display read-out
-            expect(a).toBeLessThan(0)     // sequestered biogenic carbon
+            expect(a).toBeCloseTo(-810.85 * 0.02, 6)
         })
 
         it('doubling the volume doubles the carbon', () =>
         {
             const mgr = makeManager('metric', 'mm')
-            const one = mgr.resolve('steel', fakeShape(1e6))!.carbon()!
-            const two = mgr.resolve('steel', fakeShape(2e6))!.carbon()!
+            const one = mgr.resolve('constructiestaal', fakeShape(1e6))!.carbon()!
+            const two = mgr.resolve('constructiestaal', fakeShape(2e6))!.carbon()!
             expect(two).toBeCloseTo(one * 2, 6)
         })
 
         it('is undefined when the material has no usable data', () =>
         {
-            const mgr = makeManager('metric', 'mm')
-            expect(mgr.resolve('glass', fakeShape(1e6))!.carbon()).toBeUndefined()
+            expect(makeManager().resolve('luchtdichte_tape', fakeShape(1e6))!.carbon()).toBeUndefined()
         })
     })
 
@@ -346,16 +381,16 @@ describe('MaterialManager', () =>
         {
             const mgr = makeManager('metric', 'mm')
             const totals = mgr.totals([
-                matShape('steel', 1e6),
-                matShape('steel', 1e6),
+                matShape('constructiestaal', 1e6),
+                matShape('constructiestaal', 1e6),
                 matShape('douglas', 2e7),
             ])
 
             expect(totals.byMaterial).toHaveLength(2)
-            const steel = totals.byMaterial.find(r => r.name === 'steel')!
+            const steel = totals.byMaterial.find(r => r.name === 'constructiestaal')!
             expect(steel.count).toBe(2)
             expect(steel.volume).toBe(2e6)
-            expect(steel.mass).toBeCloseTo(mgr.massKgFor(mgr.get('steel')!, 2e6)!, 6)
+            expect(steel.mass).toBeCloseTo(mgr.massKgFor(mgr.get('constructiestaal')!, 2e6)!, 6)
             expect(totals.total.mass).toBeCloseTo(
                 totals.byMaterial.reduce((s, r) => s + r.mass, 0), 6)
         })
@@ -363,18 +398,18 @@ describe('MaterialManager', () =>
         it('counts shapes with no material as unaccounted rather than dropping them', () =>
         {
             const mgr = makeManager('metric', 'mm')
-            const totals = mgr.totals([matShape('steel', 1e6), { volume: () => 1e6 }])
+            const totals = mgr.totals([matShape('constructiestaal', 1e6), { volume: () => 1e6 }])
             expect(totals.byMaterial).toHaveLength(1)
             expect(totals.total.unaccounted).toBe(1)
         })
 
         it('flags a material whose carbon could not be determined', () =>
         {
-            const mgr = makeManager('metric', 'mm')
-            const glass = mgr.totals([matShape('glass', 1e6)]).byMaterial[0]
-            expect(glass.mass).toBeGreaterThan(0)   // mass is knowable
-            expect(glass.carbon).toBeUndefined()    // carbon is not
-            expect(glass.partial).toBe(true)
+            const mgr = new MaterialManager().fromRows([{ materiaal_id: 'kurk', toepassing: 'isolatie', 'dichtheid (kg/m3)': 110 }])
+            const row = mgr.totals([matShape('kurk', 1e9)]).byMaterial[0]!
+            expect(row.mass).toBeCloseTo(110, 6)    // mass is knowable
+            expect(row.carbon).toBeUndefined()      // carbon is not
+            expect(row.partial).toBe(true)
         })
     })
 })

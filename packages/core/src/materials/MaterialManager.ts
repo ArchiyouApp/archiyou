@@ -1,15 +1,19 @@
 /**
  *  materials/MaterialManager.ts
  *
- *  Central registry of materials. Loads the materials.json database, resolves
- *  names/aliases, and performs unit-system-aware derived calculations (mass /
- *  weight) and property read-out.
+ *  The materials of a run. What a material is comes from the `materialen` tab of the core sheet
+ *  (URBUILD_DATABASE_CORE), where everyone can check it: load it with
  *
- *  Wired like the other archiyou modules (see Calc.ts): construct empty, then
- *  setArchiyou(modules) to gain access to the modeler (units) and shapes.
+ *      materials.fromSheet('https://docs.google.com/spreadsheets/d/…')
+ *
+ *  or let `make.products().fromSheet(url)` do it, which opens the same sheet. How a material
+ *  looks is kept in code (appearance.ts), so `shape.material('osb')` draws as OSB before any
+ *  sheet is loaded; its weight, λ and carbon need the sheet.
+ *
+ *  Resolves names, and performs unit-system-aware derived calculations (mass / weight, carbon)
+ *  and property read-out. Wired like the other archiyou modules (see Calc.ts): construct empty,
+ *  then setArchiyou(modules) to gain access to the modeler (units), shapes and cloudcalc.
  */
-
-import { Check, Errors } from 'typebox/value';
 
 import type { ArchiyouModules } from '../types';
 import type {
@@ -17,18 +21,14 @@ import type {
     MaterialTotalRow, MaterialTotals,
 } from './types';
 import { EMBODIED_MODULES, MATERIAL_PROPERTY_KEYS } from './types';
-import { MaterialSchema } from './schemas';
 import { MM_PER_UNIT } from '../units/UnitConverter';
-
-import materialsDb from './materials.json';
+import { APPEARANCE, APPEARANCE_GROUP, appearanceOf } from './appearance';
+import { materialsFromRows } from './fromSheet';
+import { rcOfBoxes, type RcOptions, type RcResult, type ThermalBox, type Vec3 } from './rc';
+import { ModuleUnavailableError } from '../modules/unavailableStub';
 
 /** Pounds per kilogram, for imperial mass read-out. */
 const LB_PER_KG = 2.2046226218;
-
-/** The bundled database is checked against MaterialSchema once per load of this module. Every
- *  run builds a new MaterialManager, and checking it each time cost ~4.5 ms per run: half of a
- *  small script's run, and again for every component activation. */
-let materialsDbChecked = false;
 
 /** Resolve a bundled texture file to a fetchable URL (Vite emits ./textures/* as assets). */
 function textureUrl(filename: string): string | null
@@ -335,53 +335,88 @@ export class MaterialManager
 
     constructor()
     {
-        // use setArchiyou() to init; load the DB immediately so lookups work standalone (tests)
-        this.load();
+        // use setArchiyou() to init; the materials come from the core sheet: fromSheet()
     }
 
     setArchiyou(ay: ArchiyouModules)
     {
         this._archiyou = ay;
-        if (this._index.size === 0) this.load();
     }
 
-    /** (Re)build the name/alias index from the bundled database. */
-    load()
+    /** Whether the materials of a sheet are loaded: their properties are known. */
+    get loaded(): boolean
+    {
+        return this._index.size > 0;
+    }
+
+    /**
+     *  Load the materials from the `materialen` tab of the core sheet (opened with cloudcalc):
+     *
+     *      materials.fromSheet('https://docs.google.com/spreadsheets/d/…')
+     *
+     *  `make.products().fromSheet(url)` does this too, from the same sheet.
+     */
+    fromSheet(url: string, options: { key?: string } = {}): this
+    {
+        let cloudcalc: { open(ref: string, opts?: { key?: string }): any } | null = null;
+        try
+        {
+            const module = (this._archiyou as any)?.modules?.resolve('cloudcalc');
+            cloudcalc = (typeof module?.open === 'function') ? module : null;
+        }
+        catch
+        {
+            // not declared: said below
+        }
+        if (!cloudcalc)
+        {
+            throw new ModuleUnavailableError('cloudcalc', 'materials.fromSheet(url): the sheet is opened with the cloudcalc module, '
+                + 'which this run did not load; add $module(\'cloudcalc\') at the top of the script, or check that the module is installed');
+        }
+        return this.fromWorkbook(cloudcalc.open(url, options.key ? { key: options.key } : {}));
+    }
+
+    /** Load the materials from an open workbook of the core sheet: its table `materialen`. */
+    fromWorkbook(wb: { tables(): Array<{ name: string }>; table(name: string): Array<Record<string, unknown>> }, table = 'materialen'): this
+    {
+        if (!wb.tables().some(t => t.name === table))
+        {
+            throw new Error(`materials.fromSheet(): the sheet has no table '${table}'. Give the materialen tab a named range `
+                + `tables.${table} over its header row (materiaal_id, toepassing, …) and the rows below it`);
+        }
+        return this.fromRows(wb.table(table));
+    }
+
+    /** Load materials from rows shaped like the `materialen` tab (see fromSheet.ts). */
+    fromRows(rows: Array<Record<string, unknown>>): this
     {
         this._index.clear();
-        const materials = ((materialsDb as any)?.materials ?? []) as Material[];
-        if (!materialsDbChecked)
-        {
-            materials.forEach(m =>
-            {
-                // Warn, never throw: one malformed entry must not break a user's script.
-                if (!Check(MaterialSchema, m))
-                {
-                    const first = [...Errors(MaterialSchema, m)][0] as any;
-                    console.warn(`MaterialManager: material '${(m as any)?.name ?? '?'}' fails schema`
-                        + `${first ? ` at ${first.path ?? '?'}: ${first.message}` : ''}`);
-                }
-            });
-            materialsDbChecked = true;
-        }
-        materials.forEach(m =>
+        this._warnedUnloaded = false;
+        materialsFromRows(rows).forEach(m =>
         {
             this._index.set(m.name.toLowerCase(), m);
             (m.aliases ?? []).forEach(a => this._index.set(a.toLowerCase(), m));
         });
+        return this;
     }
 
-    /** All materials in the database. */
+    /** All materials of the loaded sheet. */
     all(): Material[]
     {
         return [...new Set(this._index.values())];
     }
 
-    /** Look up a material definition by name or alias. */
+    /**
+     * Look up a material by its `materiaal_id` (or an alias). Before a sheet is loaded, a material
+     * with a known look (appearance.ts) comes back with that look and no properties.
+     */
     get(name: string): Material | null
     {
         if (!name) return null;
-        return this._index.get(name.toLowerCase()) ?? null;
+        const loaded = this._index.get(name.toLowerCase());
+        if (loaded) return loaded;
+        const id = name.toLowerCase();
+        return (!this.loaded && APPEARANCE[id]) ? { name: id, group: APPEARANCE_GROUP[id] ?? 'other', viz: appearanceOf(id) } : null;
     }
 
     /** Whether a material name/alias is known. */
@@ -397,10 +432,24 @@ export class MaterialManager
         const m = this.get(name);
         if (!m)
         {
-            console.warn(`MaterialManager::resolve(): unknown material '${name}'`);
+            console.warn(this.loaded
+                ? `MaterialManager::resolve(): the core sheet has no material '${name}' (its materialen tab, column materiaal_id)`
+                : `MaterialManager::resolve(): unknown material '${name}': load the materials of the core sheet with `
+                    + `materials.fromSheet(url) or make.products().fromSheet(url)`);
             return null;
         }
         return new BoundMaterial(this, m, shape);
+    }
+
+    private _warnedUnloaded = false;
+
+    /** Say once per run that properties need the sheet. */
+    private _warnUnloaded(material: Material): void
+    {
+        if (this.loaded || this._warnedUnloaded) return;
+        this._warnedUnloaded = true;
+        console.warn(`MaterialManager: '${material.name}' has no properties yet: they come from the core sheet. `
+            + `Load it with materials.fromSheet(url) or make.products().fromSheet(url)`);
     }
 
     /** The active display unit system, from the modeler (defaults metric). */
@@ -425,7 +474,8 @@ export class MaterialManager
         const density = material.density?.value;
         if (density === undefined)
         {
-            console.warn(`MaterialManager: material '${material.name}' has no density; cannot compute mass`);
+            if (!this.loaded) this._warnUnloaded(material);
+            else console.warn(`MaterialManager: material '${material.name}' has no density; cannot compute mass`);
             return undefined;
         }
         // model-unit³ → m³ : (mm per unit / 1000)³ metres per unit, cubed
@@ -526,6 +576,35 @@ export class MaterialManager
      * can and no more: a row's `carbon` is undefined rather than 0 when unknown, and the
      * grand total reports how many shapes it could not account for.
      */
+    /**
+     * Thermal resistance of a build-up (a wall, a floor) by ISO 6946's combined method: the
+     * shapes as boxes, with the λ of their materials (see rc.ts). Shapes without a material
+     * or a λ are left out, so pass the whole component.
+     *
+     *   materials.rc(collection(frame, wall.insulation, sheathing, lining)).rc   // 5.3 m²K/W
+     */
+    rc(shapes: any, options: Omit<RcOptions, 'unit'> = {}): RcResult
+    {
+        const list: any[] = Array.isArray(shapes) ? shapes
+            : (typeof shapes?.toArray === 'function' ? shapes.toArray() : [shapes]);
+        const boxes: ThermalBox[] = [];
+        list.flatMap(s => (typeof s?.toArray === 'function' ? s.toArray() : [s])).forEach(shape =>
+        {
+            const material = shape?._material ? this.get(shape._material) : null;
+            const lambda = material ? this.property(material, 'thermalConductivity')?.value : undefined;
+            if (!lambda || typeof shape?.bbox !== 'function') { return; }
+            const b = shape.bbox();
+            const xyz = (p: any): Vec3 => [p.x, p.y, p.z];
+            boxes.push({ min: xyz(b.min()), max: xyz(b.max()), lambda });
+        });
+        if (!boxes.length)
+        {
+            throw new Error('MaterialManager.rc(): none of the shapes has a material with a λ. '
+                + 'Give them a material (shape.material(), or a product of the sheet) and load the materials (materials.fromSheet())');
+        }
+        return rcOfBoxes(boxes, { ...options, unit: this.modelUnitMM() / 1000 });
+    }
+
     totals(shapes?: any): MaterialTotals
     {
         const list: any[] = Array.isArray(shapes)
@@ -627,7 +706,7 @@ export class MaterialManager
     }
 
     /**
-     * Load a texture image (by its materials.json path, e.g. './textures/x.jpg')
+     * Load a texture image (by its path in appearance.ts, e.g. './textures/x.jpg')
      * and return it as a base64 data URI, cached. Returns null if unavailable.
      */
     async loadTextureDataURI(imagePath: string): Promise<string | null>

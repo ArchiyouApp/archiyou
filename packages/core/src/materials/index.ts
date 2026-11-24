@@ -9,5 +9,8 @@ export {
     DEFAULT_MATERIAL_TEXTURE_STRENGTH,
 } from './MaterialManager';
 export * from './types';
+export { materialFromRow, materialsFromRows, sheetNumber } from './fromSheet';
+export { rcOfBoxes, type RcOptions, type RcResult, type ThermalBox } from './rc';
+export { APPEARANCE,APPEARANCE_GROUP, appearanceOf } from './appearance';
 export { rangeFor, GLOBAL_RANGES, GROUP_DENSITY_RANGES, GROUP_CARBON_RANGES } from './ranges';
-export { MaterialSchema, MaterialLCASchema, MaterialsDbSchema, MATERIAL_SCHEMAS } from './schemas';
+export { MaterialSchema, MaterialLCASchema, MATERIAL_SCHEMAS } from './schemas';

@@ -181,13 +181,6 @@ gifenc's files carry no notice of their own, so it is here:
 > OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 > OR OTHER DEALINGS IN THE SOFTWARE.
 
-## Material carbon data
-
-`packages/core/src/materials/materials.json` includes environmental-impact
-figures derived from [ÖKOBAUDAT](https://www.oekobaudat.de/), published by the
-German BBSR. Check ÖKOBAUDAT's own terms before relying on or redistributing
-these values commercially.
-
 ## Script modules
 
 Script modules are built and distributed from their own repositories and are not

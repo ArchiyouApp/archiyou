@@ -34,7 +34,8 @@ export function structuralProblems(file: ParsedIFC, productEntities: string[]): 
     ids.forEach((id, i) => { if (id !== i + 1) problems.push(`#${id} out of sequence`) })
     lines.forEach((l, id) => refsIn(l.args).forEach(r => { if (!lines.has(r)) problems.push(`#${id} ${l.entity} refers to missing #${r}`) }))
 
-    const guids = [...text.matchAll(/=IFC[A-Z0-9]+\('([0-9A-Za-z_$]{22})'/g)].map(m => m[1])
+    // the first argument of a rooted entity; IFCMATERIAL has no GlobalId, only a name (which can be 22 characters too)
+    const guids = [...text.matchAll(/=IFC(?!MATERIAL)[A-Z0-9]+\('([0-9A-Za-z_$]{22})'/g)].map(m => m[1])
     const seen = new Set<string>()
     guids.forEach(g => { if (seen.has(g)) problems.push(`GlobalId ${g} used twice`); seen.add(g) })
     if (guids.some(g => !'0123'.includes(g[0]))) problems.push('GlobalId with an impossible first character')

@@ -315,7 +315,7 @@ Two optional fields let a client module take part in more of a run:
   after the script ran; it returns the file (text or bytes) or `null`. A format must be a new
   lowercase token (never a built-in one like `glb`), is never part of a `default/model/*`
   wildcard, and a run that requests it without declaring the module gets an error naming the
-  `$module()` to add. The `fab` module is the worked example.
+  `$module()` to add.
 
 ### `DOCS.md` — the documentation the editor shows
 

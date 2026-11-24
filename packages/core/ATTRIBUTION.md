@@ -134,13 +134,6 @@ them:
 Vendoring these would make the app self-contained and let the CSP tighten to
 `'self'`.
 
-## Material carbon data
-
-`packages/core/src/materials/materials.json` includes environmental-impact
-figures derived from [ÖKOBAUDAT](https://www.oekobaudat.de/), published by the
-German BBSR. Check ÖKOBAUDAT's own terms before relying on or redistributing
-these values commercially.
-
 ## Script modules
 
 Script modules are built and distributed from their own repositories and are not

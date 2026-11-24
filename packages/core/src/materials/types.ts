@@ -154,10 +154,19 @@ export type MaterialGroup =
 /** A full material definition. */
 export interface Material
 {
+    /** The sheet's `materiaal_id`, e.g. 'naaldhout_constructief', 'osb', 'houtvezel_flex'. */
     name: string;
     group: MaterialGroup;
+    /** The sheet's `toepassing`: constructiehout, isolatie, plaatmateriaal, folies, … */
+    application?: string;
     aliases?: string[];
     description?: string;
+    /** Fire reaction class (EN 13501-1), e.g. 'D-s2,d0'. */
+    fireClass?: string;
+    /** Strength class, e.g. 'C24'. */
+    strengthClass?: string;
+    /** Average price, per the unit the sheet gives (usually m3), with its source. */
+    price?: { value: number; unit: string; source?: string };
 
     density?: MaterialProperty;
     porosity?: MaterialProperty;

@@ -401,7 +401,7 @@ describe('Runner — what a module adds to a run', () =>
     {
         const runner = await new Runner().load()
         const mod = withModule(runner, {
-            // what fab does: read how a shape was made while the script runs
+            // read how a shape was made while the script runs
             made: (shape: any) => mod._ay.recipes.recipeOf(shape) ? 'recorded' : 'none',
         })
 

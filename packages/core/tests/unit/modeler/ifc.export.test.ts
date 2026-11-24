@@ -20,6 +20,7 @@ import { join } from 'path'
 import { Modeler } from '../../../src/modeler/Modeler'
 import { Annotator } from '../../../src/annotator/Annotator'
 import { MaterialManager } from '../../../src/materials/MaterialManager'
+import { MATERIALEN_ROWS } from '../materials/materialen.fixture'
 import type { ArchiyouModules } from '../../../src/types'
 import {
     formatReal, formatSPF, escapeSPFString, ifcGuid, buildIFC, SPFWriter,
@@ -99,7 +100,8 @@ describe('IFC4 export of a synthetic wall', () =>
         modeler = new Modeler()
         await modeler.load()
         const annotator = new Annotator()
-        const modules = { modeler, annotator, materials: new MaterialManager() } as unknown as ArchiyouModules
+        // the materials of the core sheet's materialen tab (a copy of a few rows)
+        const modules = { modeler, annotator, materials: new MaterialManager().fromRows(MATERIALEN_ROWS) } as unknown as ArchiyouModules
         modeler.setArchiyou(modules)
         annotator.setArchiyou(modules)
         mkdirSync(OUTPUTS, { recursive: true })
@@ -112,10 +114,10 @@ describe('IFC4 export of a synthetic wall', () =>
     {
         const shapes: any[] = []
         const add = (s: any, name: string, material?: string) => { s.name(name); if (material) s.material(material); shapes.push(s) }
-        add(modeler.box(3000 * u, 200 * u, 38 * u).move(1500 * u, 0, 19 * u), 'bottomplate', 'softwood')
-        add(modeler.box(3000 * u, 200 * u, 38 * u).move(1500 * u, 0, 2531 * u), 'topplate', 'softwood')
-        ;[0, 1, 2, 3, 4].forEach(i => add(modeler.box(38 * u, 200 * u, 2474 * u).move((19 + i * 740) * u, 0, 1275 * u), `stud${i}`, 'softwood'))
-        ;[0, 1, 2, 3].forEach(i => add(modeler.box(702 * u, 200 * u, 2474 * u).move((389 + i * 740) * u, 0, 1275 * u), `insulation${i}`, 'mineralwool'))
+        add(modeler.box(3000 * u, 200 * u, 38 * u).move(1500 * u, 0, 19 * u), 'bottomplate', 'naaldhout_constructief')
+        add(modeler.box(3000 * u, 200 * u, 38 * u).move(1500 * u, 0, 2531 * u), 'topplate', 'naaldhout_constructief')
+        ;[0, 1, 2, 3, 4].forEach(i => add(modeler.box(38 * u, 200 * u, 2474 * u).move((19 + i * 740) * u, 0, 1275 * u), `stud${i}`, 'naaldhout_constructief'))
+        ;[0, 1, 2, 3].forEach(i => add(modeler.box(702 * u, 200 * u, 2474 * u).move((389 + i * 740) * u, 0, 1275 * u), `insulation${i}`, 'houtvezel_flex'))
         shapes.push(modeler.polygon([[1000 * u, 100 * u, 900 * u], [1600 * u, 100 * u, 900 * u], [1600 * u, 100 * u, 1900 * u], [1000 * u, 100 * u, 1900 * u]]).hide().name('opening0'))
         modeler.group('wallSouth', ...shapes)
     }
@@ -158,7 +160,7 @@ describe('IFC4 export of a synthetic wall', () =>
         wall()
         const { model } = buildIFC(modeler.scene(), PANEL)
         const stud = model.elements.find(e => e.name === 'stud0')!
-        expect(stud.material).toBe('softwood')
+        expect(stud.material).toBe('naaldhout_constructief')
         expect(stud.qto!.name).toBe('Qto_MemberBaseQuantities')
         expect(stud.qto!.netVolume).toBeCloseTo(0.038 * 0.2 * 2.474, 6)
         expect(stud.qto!.length).toBeCloseTo(2474)

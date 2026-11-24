@@ -1,9 +1,9 @@
 /**
- * End-to-end check of the material render path with the REAL materials database:
+ * End-to-end check of the material render path with the real material looks:
  *   MaterialManager.renderSpec → meshup Style.material → GLTFBuilder → GLB document.
  *
  * The meshup-side tests use hand-written specs; this one guards the seam between the
- * two packages, so a change to materials.json (texture sizes, pbr, edge defaults)
+ * two packages, so a change to appearance.ts (texture sizes, pbr, edge defaults)
  * that breaks the exporter is caught here rather than in the viewer.
  */
 
