@@ -18,6 +18,7 @@
 
 import * as meshup from '@archiyou/meshup'
 import { buildDXF, type toDXFOptions } from './DXFExporter'
+import type { ProductForOptions } from '../make/Make'
 // Type-only — see the dynamic import in SceneNode.toDAE() below.
 import type { toDAEOptions } from './DAEExporter'
 import type { DimensionOptions, LabelOptions } from '../annotator/types'
@@ -50,7 +51,7 @@ declare module '@archiyou/meshup' {
         material(name?: string): any
         /** Give this shape a product of the make database by name ('SLS', 'stud', 'osb 18'); its size
          *  chooses among what the name can mean. Chainable. Without a name: what it is. See make/catalog. */
-        product(name?: string, options?: any): any
+        product(name?: string, options?: ProductForOptions): any
         /** Make this shape a mass of a component of the make database ('hsbwand'). Chainable.
          *  Without an id: what it is. */
         component(id?: string): any
@@ -86,7 +87,7 @@ declare module '@archiyou/meshup' {
     interface ShapeCollection {
         /** Give every solid in it a product of the make database by name: each the product its
          *  size fits. Chainable. Without a name: what each shape is. */
-        product(name?: string, options?: any): any
+        product(name?: string, options?: ProductForOptions): any
         /** Make every shape in it a mass of a component of the make database. Chainable. */
         component(id?: string): any
         /** Export the 2D shapes in this collection (+ linked dimension lines) to DXF. */

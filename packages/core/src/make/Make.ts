@@ -21,6 +21,7 @@ import { collectParts, partSource } from '../modeler/parts';
 import { ProductManager } from './products/ProductManager';
 import { MakeDb } from './db';
 import { Catalog, type Resolution } from './catalog';
+import { Takeoff, type TakeoffOptions } from './takeoff/Takeoff';
 import { ContentNeededError, contentKey } from '../modules/sdkTypes';
 import type { BinPacker, CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm';
 import type { Packer3D } from '@archiyou/pack3d-wasm';
@@ -2643,11 +2644,31 @@ export class Make
      *  What went wrong or was guessed while giving shapes their products, in the order it
      *  happened: each with the shape's name, what was asked and what was done about it.
      *
-     *      make.check()   // [{ level: 'warning', shape: 'stud3', name: 'stdu', message: "'stdu' read as 'stud'" }]
+     *      make.check()   // [{ level: 'warning', where: "stud3.product('stdu')", name: 'stdu', message: "'stdu' read as 'stud'" }]
      */
     check(): Array<MakeIssue>
     {
         return [...this._issues];
+    }
+
+    /**
+     *  What the shapes weigh, cost and take to make, from what they are (shape.product(),
+     *  shape.component()) and the make database: see make/takeoff/Takeoff.ts.
+     *
+     *      take = make.takeoff()          // every shape of the scene
+     *      take.weight(); take.cost(); take.time(); take.by('component'); take.order(); take.cuts(); take.check()
+     *
+     *  Problems (a shape without a product, a product without a recipe) go to make.check() as well,
+     *  and stop the run when make.strict().
+     *
+     *  @param shapes - default: every shape of the scene
+     */
+    takeoff(shapes?: any, options: TakeoffOptions = {}): Takeoff
+    {
+        const db = this.db(options.db);
+        this._materialsFrom(db);
+        return new Takeoff(db, shapes ?? this.modeler.all(), options, () => this.archiyou,
+            issue => this._issue({ ...issue }));
     }
 
     /** Say a problem: kept and logged, so the model still runs (a shape that could not be given
@@ -2731,7 +2752,7 @@ export class Make
         const material = String(r.product.row['materiaal'] ?? '').trim();
         shapes.forEach(shape =>
         {
-            shape._product = { kind: 'make', product: r.product!.id, name, how: r.how, measure: r.measure, recipe: options.recipe, label: options.label, db };
+            shape._product = { kind: 'make', product: r.product!.id, name, how: r.how, measure: r.measure, recipe: options.recipe, label: options.label, block: options.component, db };
             if (material && !shape._material && typeof shape.material === 'function') { shape.material(material); }
         });
     }
@@ -2899,6 +2920,9 @@ export interface ProductForOptions
     label?: string;
     /** A version of the make database; default the latest the run was given */
     db?: string;
+    /** The component of the sheet the part is in ('hsbwand'): its rows give the part's recipe
+     *  (the work on a stud of a wall), and make.takeoff().by('component') groups by it */
+    component?: string;
 }
 
 /** A problem make.check() lists */
