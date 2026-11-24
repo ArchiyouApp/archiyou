@@ -17,9 +17,10 @@ import type * as brepTypes from '../modeler/brep/index';
 import { Table } from '../calc/Table';
 import { roundTo } from '../utils';
 
-import { collectParts } from '../modeler/parts';
+import { collectParts, partSource } from '../modeler/parts';
 import { ProductManager } from './products/ProductManager';
 import { MakeDb } from './db';
+import { Catalog, type Resolution } from './catalog';
 import { ContentNeededError, contentKey } from '../modules/sdkTypes';
 import type { BinPacker, CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm';
 import type { Packer3D } from '@archiyou/pack3d-wasm';
@@ -308,9 +309,16 @@ export class Make
         this._modeler = modeler;
     }
 
+    /** Wire the run's modules. The Modeler keeps one Make and calls this at the start of every
+     *  run, so what Make keeps per run starts again here: the stats of the last boarding(), the
+     *  problems check() lists, strict(). The make databases and catalogs it read stay: they are
+     *  kept per version, which never changes. */
     setArchiyou(modules: ArchiyouModules)
     {
         this._modules = modules;
+        (this as any).stats = undefined;
+        this._issues = [];
+        this._strict = false;
     }
 
     /** Shared BinPacker WASM instance, or null until loaded. */
@@ -2585,7 +2593,9 @@ export class Make
     db(version: string = 'latest'): MakeDb
     {
         const content = (this.archiyou?.runner as any)?.getActiveExecRequest?.()?.content as Record<string, any> | undefined;
-        const item = content?.[contentKey('make-db', version)];
+        // a pinned version may also have come as 'latest' (a product read back names the version it was found in)
+        const item = content?.[contentKey('make-db', version)]
+            ?? (version === 'latest' ? undefined : Object.values(content ?? {}).find((c: any) => c?.kind === 'make-db' && c.version === version));
         if (!item)
         {
             throw new ContentNeededError(
@@ -2601,6 +2611,136 @@ export class Make
             throw new Error(`make.db('${version}'): was given ${db.version} instead`);
         }
         return db;
+    }
+
+    //// PRODUCTS ON SHAPES ////
+
+    private _catalogs = new Map<string, Catalog>();
+    private _strict = false;
+    private _issues: Array<MakeIssue> = [];
+
+    /** The products of the make database, found by name: see make/catalog/Catalog.ts */
+    catalog(version: string = 'latest'): Catalog
+    {
+        const db = this.db(version);
+        if (!this._catalogs.has(db.version)) { this._catalogs.set(db.version, new Catalog(db)); }
+        return this._catalogs.get(db.version)!;
+    }
+
+    /**
+     *  Stop the run at the first problem from here on, instead of listing it in check(): a name
+     *  that is no product, a name read as another, a size that fits no product, two products
+     *  that fit equally well. For what is published or priced for a client. `make.strict(false)`
+     *  turns it off.
+     */
+    strict(on: boolean = true): this
+    {
+        this._strict = on;
+        return this;
+    }
+
+    /**
+     *  What went wrong or was guessed while giving shapes their products, in the order it
+     *  happened: each with the shape's name, what was asked and what was done about it.
+     *
+     *      make.check()   // [{ level: 'warning', shape: 'stud3', name: 'stdu', message: "'stdu' read as 'stud'" }]
+     */
+    check(): Array<MakeIssue>
+    {
+        return [...this._issues];
+    }
+
+    /** Say a problem: kept and logged, so the model still runs (a shape that could not be given
+     *  a product has none, and check() lists it); when strict, it stops the run */
+    private _issue(issue: MakeIssue): void
+    {
+        if (this._strict)
+        {
+            throw new Error(`${issue.where}: ${issue.message}`);
+        }
+        this._issues.push(issue);
+        console.warn(`${issue.where}: ${issue.message}`);
+    }
+
+    /**
+     *  Give shapes a product of the make database by name (shape.product()): each solid the
+     *  product its size fits among those the name can mean. The shape takes the product's
+     *  material. See Catalog for how a name is found.
+     *  @returns the resolutions, one per part (shapes of the same size are one part)
+     */
+    productFor(shapes: any, name: string, options: ProductForOptions = {}): Array<Resolution>
+    {
+        const catalog = this.catalog(options.db);
+        this._materialsFrom(catalog.db);
+        const parts = collectParts(partSource(shapes), { labels: false, order: 'scene', includeHidden: true });
+        if (!parts.length)
+        {
+            // no solid: a curve or a point is a product only by a name that means one
+            const r = catalog.resolve(name, null, options.tolerance);
+            this._mark(asArray(shapes), name, r, options);
+            return [r];
+        }
+        return parts.map(part =>
+        {
+            const r = catalog.resolve(name, part.measure, options.tolerance);
+            this._mark(part.shapes, name, r, options);
+            return r;
+        });
+    }
+
+    /**
+     *  Make shapes a mass of a component of the make database (shape.component()): priced by
+     *  the component's rows, per m3 of the shapes or per its unit.
+     */
+    componentFor(shapes: any, id: string): void
+    {
+        const catalog = this.catalog();
+        const known = catalog.components();
+        const where = `${describe(shapes)}.component('${id}')`;
+        if (!known.includes(id))
+        {
+            const close = known.filter(k => k.includes(id) || id.includes(k)).slice(0, 5);
+            this._issue({ level: 'error', where, name: id, message: `'${id}' is no component of the sheet` + (close.length ? `; did you mean: ${close.join(', ')}?` : '') });
+            return;
+        }
+        asArray(shapes).forEach(shape => { shape._product = { kind: 'make', component: id, db: catalog.db.version }; });
+    }
+
+    /** What a shape is, as shape.product() and shape.component() said: undefined when nothing */
+    productOf(shape: any): ShapeProduct | undefined
+    {
+        // shape._product: what meshup carries to a copy, so a copied stud is still a stud
+        const made = shape?._product;
+        if (made?.kind !== 'make') { return undefined; }
+        if (made.component) { return { kind: 'component', id: made.component, db: made.db }; }
+        const product = this.catalog(made.db).get(made.product);
+        return product ? {
+            kind: 'product', id: product.id, term: String(product.row['term'] ?? '') || undefined, groups: product.groups,
+            vorm: product.vorm, material: String(product.row['materiaal'] ?? '') || undefined,
+            name: made.name, how: made.how, measure: made.measure, db: made.db,
+        } : undefined;
+    }
+
+    /** Note on each shape what it is, and say what was guessed or went wrong */
+    private _mark(shapes: Array<any>, name: string, r: Resolution, options: ProductForOptions): void
+    {
+        const where = `${describe(shapes)}.product('${name}')`;
+        r.issues.forEach(i => this._issue({ level: i.level, where, name, message: i.message }));
+        if (!r.product) { return; }
+        const db = this.catalog(options.db).db.version;
+        const material = String(r.product.row['materiaal'] ?? '').trim();
+        shapes.forEach(shape =>
+        {
+            shape._product = { kind: 'make', product: r.product!.id, name, how: r.how, measure: r.measure, recipe: options.recipe, label: options.label, db };
+            if (material && !shape._material && typeof shape.material === 'function') { shape.material(material); }
+        });
+    }
+
+    /** The run's materials from the make database, once: a product's material has its properties */
+    private _materialsFrom(db: MakeDb): void
+    {
+        const materials = this.archiyou?.materials as any;
+        if (materials && !materials.loaded) { materials.fromRows(db.table('materialen')); }
     }
 
     /** Generate a part list Calc table from a ShapeCollection of cuboid parts
@@ -2744,4 +2884,58 @@ export class Make
 
         return table;
     }
+}
+
+
+//// PRODUCTS ON SHAPES: TYPES ////
+
+export interface ProductForOptions
+{
+    /** How far a size may be off and still fit (mm). Default 1. */
+    tolerance?: number;
+    /** A product whose recipe this one follows where it has none of its own */
+    recipe?: string;
+    /** Describes the shapes in lists: 'stijlen en regels' */
+    label?: string;
+    /** A version of the make database; default the latest the run was given */
+    db?: string;
+}
+
+/** A problem make.check() lists */
+export interface MakeIssue
+{
+    level: 'warning' | 'error';
+    /** The call it came from: "stud3.product('stdu')" */
+    where: string;
+    /** The name the script used */
+    name: string;
+    message: string;
+}
+
+/** What shape.product() returns without a name */
+export interface ShapeProduct
+{
+    kind: 'product' | 'component';
+    id: string;
+    term?: string;
+    groups?: Array<string>;
+    vorm?: string;
+    material?: string;
+    /** The name the script gave, and how it was found */
+    name?: string;
+    how?: string | null;
+    measure?: any;
+    /** The version of the make database it came from */
+    db: string;
+}
+
+const asArray = (shapes: any): Array<any> =>
+    Array.isArray(shapes) ? shapes : (typeof shapes?.toArray === 'function' ? shapes.toArray() : [shapes]);
+
+/** A shape or collection by its name, for messages: 'stud3', 'wall (12 shapes)' */
+function describe(shapes: any): string
+{
+    const name = typeof shapes?.name === 'function' ? shapes.name() : shapes?._name;
+    const count = asArray(shapes).length;
+    return `${name || 'shape'}${count > 1 ? ` (${count} shapes)` : ''}`;
 }

@@ -156,7 +156,9 @@ export class Modeler
      *  user can access them with modeler.make.wall()  */
     setMake()
     {
-        this._make = new Make(this);
+        // one Make per Modeler: the script's `make` and what shapes reach through their modeler
+        // (shape.product()) must be the same; a new run only resets what Make keeps per run
+        this._make ??= new Make(this);
         this._make.setArchiyou(this._modules);
     }
 

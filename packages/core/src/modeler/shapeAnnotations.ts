@@ -48,6 +48,12 @@ declare module '@archiyou/meshup' {
         label(value: string, options?: LabelOptions): any
         /** Assign (setter, chainable) or read (getter → BoundMaterial) this shape's material. */
         material(name?: string): any
+        /** Give this shape a product of the make database by name ('SLS', 'stud', 'osb 18'); its size
+         *  chooses among what the name can mean. Chainable. Without a name: what it is. See make/catalog. */
+        product(name?: string, options?: any): any
+        /** Make this shape a mass of a component of the make database ('hsbwand'). Chainable.
+         *  Without an id: what it is. */
+        component(id?: string): any
         /** Mass/weight in the active unit system. Shortcut for material().weight(). */
         weight(): number | undefined
         /** Embodied carbon (kgCO2e) of this shape. Defaults to cradle-to-gate A1-A3. */
@@ -78,6 +84,11 @@ declare module '@archiyou/meshup' {
 
 declare module '@archiyou/meshup' {
     interface ShapeCollection {
+        /** Give every solid in it a product of the make database by name: each the product its
+         *  size fits. Chainable. Without a name: what each shape is. */
+        product(name?: string, options?: any): any
+        /** Make every shape in it a mass of a component of the make database. Chainable. */
+        component(id?: string): any
         /** Export the 2D shapes in this collection (+ linked dimension lines) to DXF. */
         toDXF(options?: toDXFOptions): string | null
         /** Automatic dimensioning of the shapes in this collection (Annotator). */
@@ -184,6 +195,61 @@ function materialClasses(manager: any, name?: string): Array<string>
         return /^[a-z_]/.test(c) ? c : (c ? `m-${c}` : '')
     }
     return [...new Set([asClass(material?.name ?? name), asClass(material?.group)])].filter(Boolean)
+}
+
+//// PRODUCTS (make) ////
+
+/** The make module a shape reaches through its modeler, or null with a warning */
+function makeOf(shape: any, method: string): any
+{
+    const make = shape?._ay?.modeler?.make
+    if (!make)
+    {
+        console.warn(`Shape::${method}(): no make module reachable from this ${shape?.type ?? 'Shape'} `
+            + `(it carries no modeler reference), so it was skipped.`)
+        return null
+    }
+    return make
+}
+
+/**
+ *  Give this shape a product of the make database, by its id, group or any name it is known by
+ *  (English or Dutch): `box(38, 235, 2700).product('SLS')` is a sls-38x235. Without a name: what
+ *  the shape is ({ id, term, groups, material, name, how, db }), or undefined.
+ */
+ShapeProto.product = function (this: any, name?: string, options?: any) {
+    const make = makeOf(this, 'product')
+    if (name === undefined) return make?.productOf(this)
+    make?.productFor(this, name, options)
+    return this
+}
+
+/** Make this shape a mass of a component of the make database ('hsbwand'); without an id: what it is. */
+ShapeProto.component = function (this: any, id?: string) {
+    const make = makeOf(this, 'component')
+    if (id === undefined) return make?.productOf(this)
+    make?.componentFor(this, id)
+    return this
+}
+
+const CollectionProto = meshup.ShapeCollection.prototype as any
+
+/** Every solid in the collection its product, each by its size; without a name: what each shape is. */
+CollectionProto.product = function (this: any, name?: string, options?: any) {
+    const shapes = this.toArray()
+    const make = makeOf(shapes[0], 'product')
+    if (name === undefined) return shapes.map((s: any) => make?.productOf(s))
+    make?.productFor(this, name, options)
+    return this
+}
+
+/** Every shape in the collection a mass of a component; without an id: what each shape is. */
+CollectionProto.component = function (this: any, id?: string) {
+    const shapes = this.toArray()
+    const make = makeOf(shapes[0], 'component')
+    if (id === undefined) return shapes.map((s: any) => make?.productOf(s))
+    make?.componentFor(this, id)
+    return this
 }
 
 /** Mass/weight of this shape in the active unit system (kg / lb). */

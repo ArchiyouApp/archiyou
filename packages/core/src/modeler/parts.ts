@@ -233,6 +233,15 @@ function partSources(source: any, includeHidden: boolean): Array<PartSource>
     return found
 }
 
+/** What collectParts() reads from anything a script hands over: a scene node or a collection as
+ *  it is, a shape or an array of them as one group. */
+export function partSource(shapes: any): any
+{
+    if (typeof shapes?.forEachGroup === 'function' || typeof shapes?.children === 'function') { return shapes }
+    const list = Array.isArray(shapes) ? shapes : (shapes ? [shapes] : [])
+    return { forEachGroup: (fn: (group: string, shapes: Array<any>) => void) => fn('main', list) }
+}
+
 /** Join the instance names of one part.
  *
  *  NOTE the substring test rather than an equality test: it is what `Make.partList()` did, and
