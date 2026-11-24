@@ -201,6 +201,15 @@ Step 5, the scripts on the new API:
   database, content and problems through components). Core: the same 5 fail as before, and the
   round-trip table of the random `ur_house_sketch` (as before); CLI, server, editor pass.
 
+Renamed after step 5 (asked by the human, who found "block" vague: it named the old layout of the
+componenten tab, of blocks of rows with totals, which the table replaced): the CLI command
+`archiyou blocks` is `archiyou components`; `take.block()` and `ProductManager.block()` are
+`componentRows()`; `readBlocks()` / `Block` are `readComponents()` / `ComponentSpec` (with
+`ComponentSpecProduct`, `ComponentSpecInfo`, `ComponentRows`, `ComponentRowLine`,
+`ComponentRowStep`); the CLI files `blocks.ts` / `sheetBlocks.ts` are `components.ts` /
+`sheetComponents.ts`. "Block layout" stays the name of the old layout of the tab, which is still read.
+Above, the names are those of when the step was done.
+
 ## Next
 
 Step 6: remove the old API (`make.products().assign/collect/unassigned`, cloudcalc only for offer

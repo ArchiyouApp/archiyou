@@ -1,5 +1,5 @@
 /**
- *  `archiyou blocks <file.js> --makedb <snapshot.json>`: the variants of a component script as
+ *  `archiyou components <file.js> --makedb <snapshot.json>`: the variants of a component script as
  *  rows of its product sheet's componenten tab.
  *
  *  A component script names its variants as presets: the reference size and the layers of each,
@@ -9,7 +9,7 @@
  *          { label: 'HSB wand 235, houtvezel, ESB', variantOf: 'hsbwand' })
  *
  *  Per preset the script runs with the make database (a snapshot of the sheet, archiyou makedb);
- *  its shapes are taken off as products (make.takeoff(all()).block()) and its Rc is taken from the
+ *  its shapes are taken off as products (make.takeoff(all()).componentRows()) and its Rc is taken from the
  *  layers (materials.rc(), ISO 6946). The table says what each component holds; --write puts them
  *  in the tab componenten of the sheet the snapshot was made from (or --sheet), each replacing its
  *  rows there, a new variant after its family, with where it came from (bron). Writing needs the
@@ -20,7 +20,7 @@
  *  version's id):
  *
  *      pnpm admin:components export archiyou/timberwall:0.31 --out ./components     (apps/server)
- *      archiyou blocks ./components/timberwall@0.31.json --makedb makedb-2026-11-24.1.json --write
+ *      archiyou components ./components/timberwall@0.31.json --makedb makedb-2026-11-24.1.json --write
  */
 
 import { createHash } from 'node:crypto';
@@ -30,19 +30,19 @@ import { existsSync, readFileSync } from 'node:fs';
 import { type Args, columns, fail, out, quiet, round, userPath } from './common';
 import { engine, makeDbContent, moduleDirs, scriptFile, linkComponents } from './run';
 import { serviceAccount, sheetId } from './google';
-import { writeBlocks, type GeneratedBlock } from './sheetBlocks';
+import { writeComponents, type GeneratedComponent } from './sheetComponents';
 
-const USAGE = 'archiyou blocks <file.js|script.json> --makedb <snapshot.json> [--sheet <url>] [--preset name]... [--write] [--json]';
+const USAGE = 'archiyou components <file.js|script.json> --makedb <snapshot.json> [--sheet <url>] [--preset name]... [--write] [--json]';
 
-/** What the script is given after its own code, to hand its block back */
+/** What the script is given after its own code, to hand its component rows back */
 const TAIL = `
-__blocks_take = make.takeoff(all());
-__blocks_block = __blocks_take.block();
-__blocks_check = __blocks_take.check();
-__blocks_rc = (() => { try { return materials.rc(all()); } catch (e) { return { error: String(e.message ?? e) }; } })();
+__components_take = make.takeoff(all());
+__components_rows = __components_take.componentRows();
+__components_check = __components_take.check();
+__components_rc = (() => { try { return materials.rc(all()); } catch (e) { return { error: String(e.message ?? e) }; } })();
 `;
 
-export async function blocks(args: Args): Promise<number>
+export async function components(args: Args): Promise<number>
 {
     const file = scriptFile(args, USAGE);
     if (!file) { return 1; }
@@ -84,14 +84,14 @@ export async function blocks(args: Args): Promise<number>
     if (unknown.length) { fail(`no preset ${unknown.join(', ')} in the script; it has: ${declared.join(', ') || 'none'}`); return 1; }
     if (!wanted.length) { fail('the script declares no presets: name its variants with $PARAMS.preset(id, values, { label, variantOf })'); return 1; }
 
-    const made: Array<GeneratedBlock> = [];
+    const made: Array<GeneratedComponent> = [];
     for (const preset of wanted)
     {
         const values = params.presetValues(preset);
         const options = params.presetOptions(preset);
         const { res, scope } = await execute(values);
         if (res.status !== 'success') { fail(`preset ${preset} fails: ${res.errors?.[0]?.message ?? res.status}`); return 1; }
-        const rc = scope.__blocks_rc;
+        const rc = scope.__components_rc;
         made.push({
             id: preset,
             label: options.label ?? preset,
@@ -99,27 +99,27 @@ export async function blocks(args: Args): Promise<number>
             values,
             script: name,
             source,
-            block: scope.__blocks_block,
+            rows: scope.__components_rows,
             rc: rc?.error ? null : rc,
             rcError: rc?.error ?? null,
-            warnings: [...(res.warnings ?? []).map((w: any) => (typeof w === 'string' ? w : w.message)), ...(scope.__blocks_check ?? []).map((i: any) => `${i.where}: ${i.message}`)].filter(Boolean),
+            warnings: [...(res.warnings ?? []).map((w: any) => (typeof w === 'string' ? w : w.message)), ...(scope.__components_check ?? []).map((i: any) => `${i.where}: ${i.message}`)].filter(Boolean),
         });
     }
 
     if (args.bools.has('json')) { out(JSON.stringify(made, null, 1)); }
     else
     {
-        out(`${made.length} block(s) from ${name}, priced by make database ${snapshot.version} (${snapshot.source?.title ?? id})`);
+        out(`${made.length} component(s) from ${name}, priced by make database ${snapshot.version} (${snapshot.source?.title ?? id})`);
         const rows = [['component', 'variant of', 'Rc', 'depth', 'per m2', 'lines', 'label']];
         made.forEach(b =>
         {
             const size = Number(values(b).WIDTH) * Number(values(b).HEIGHT) / 1e6 || 1;
             const depth = b.rc ? b.rc.layers.reduce((s: number, l: any) => s + l.thickness, 0) * 1000 : NaN;
-            rows.push([b.id, b.variantOf ?? '', b.rc ? round(b.rc.rc, 2) : '-', isNaN(depth) ? '-' : round(depth, 1), round(b.block.totals.total / size, 2), String(b.block.lines.length), b.label]);
+            rows.push([b.id, b.variantOf ?? '', b.rc ? round(b.rc.rc, 2) : '-', isNaN(depth) ? '-' : round(depth, 1), round(b.rows.totals.total / size, 2), String(b.rows.lines.length), b.label]);
         });
         columns(rows).forEach(l => out(l));
         made.filter(b => b.rcError).forEach(b => out(`${b.id}: no Rc: ${b.rcError}`));
-        made.forEach(b => b.block.noRecipe.length && out(`${b.id}: no recipe for ${b.block.noRecipe.join(', ')}`));
+        made.forEach(b => b.rows.noRecipe.length && out(`${b.id}: no recipe for ${b.rows.noRecipe.join(', ')}`));
         made.forEach(b => (b.warnings ?? []).filter((w: string) => w.startsWith('make.') || w.includes('.product(')).forEach((w: string) => out(`${b.id}: ${w}`)));
     }
 
@@ -127,10 +127,10 @@ export async function blocks(args: Args): Promise<number>
     {
         if (!serviceAccount()) { fail('--write needs a service account (GOOGLE_SERVICE_ACCOUNT) with edit rights on the sheet'); return 1; }
         if (!id) { fail('--write: the snapshot names no sheet; give it with --sheet <url>'); return 1; }
-        const written = await writeBlocks(id, made);
+        const written = await writeComponents(id, made);
         written.forEach(w => out(`written ${w.id}: componenten!A${w.from}:A${w.to}`));
     }
     return 0;
 }
 
-const values = (b: GeneratedBlock): Record<string, any> => b.values ?? {};
+const values = (b: GeneratedComponent): Record<string, any> => b.values ?? {};

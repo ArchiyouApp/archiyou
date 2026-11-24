@@ -48,7 +48,7 @@ TAPE = 'tape-universeel-60';
 //// VARIANTS ////
 // The variants of this component, each a block of the core sheet's componenten tab: a preset
 // with the reference size and its layers. The blocks are made from these by running the script
-// per preset (archiyou blocks timberwall.js); the preset's name is the component's id.
+// per preset (archiyou components timberwall.js); the preset's name is the component's id.
 
 REFERENCE = { WIDTH: 3000, HEIGHT: 2700, TOP_CONNECT: true, OPENING: false, ROOF_HEIGHT: 0, MEMBRANE: 'none' };
 $PARAMS.preset('hsbwand', { ...REFERENCE, DEPTH: 235, INSULATION: 'woodwool', SHEATHING: 'houtvezel16', LINING: 'gips12.5' },

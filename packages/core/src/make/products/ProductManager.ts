@@ -62,7 +62,7 @@ import type { Table } from '../../calc/Table';
 import { ModuleUnavailableError } from '../../modules/unavailableStub';
 import type { MakeDb } from '../db';
 import { offerPageData, renderOfferHtml, type OfferPageOptions, type OfferSource } from './offer-html';
-import { combineRows, materialPrice, mergeRecipes, quantityOfUnit, readBlocks, type Block, type BlockProduct, type RecipeStep } from './recipes';
+import { combineRows, materialPrice, mergeRecipes, quantityOfUnit, readComponents, type ComponentSpec, type ComponentSpecProduct, type RecipeStep } from './recipes';
 import { toProduct, fit, orient, compareRanks, sheetUse, partQuantities, sizeText, productLabel,
     type Product, type ProductMeasure, type ProductRow, type ProductQuantities } from '../catalog/products';
 
@@ -225,7 +225,7 @@ export interface OfferScenarios
 }
 
 /** A line of block(): a product with the work its recipe gives, or work on the element. */
-export interface BlockLine extends Required<ProductQuantities>
+export interface ComponentRowLine extends Required<ProductQuantities>
 {
     id: string;
     kind: LineKind;
@@ -241,11 +241,11 @@ export interface BlockLine extends Required<ProductQuantities>
     recipe: string | null;
     /** The products of the sheet's rows that recipe was read from: the line itself, or ones like it. */
     like: Array<string>;
-    steps: Array<BlockStep>;
+    steps: Array<ComponentRowStep>;
 }
 
 /** An operation on a product in block(): factor x its quantity `per`. */
-export interface BlockStep
+export interface ComponentRowStep
 {
     operation: string;
     fase: string;
@@ -257,9 +257,9 @@ export interface BlockStep
 }
 
 /** What block() returns: the lines, and the totals including margins as compute() has them. */
-export interface ComponentBlock
+export interface ComponentRows
 {
-    lines: Array<BlockLine>;
+    lines: Array<ComponentRowLine>;
     totals: ProductCosts;
     noRecipe: Array<string>;
     noPrice: Array<string>;
@@ -349,7 +349,7 @@ interface Entry
 /** What compute() reads from the sheet. */
 interface CostData
 {
-    blocks: Map<string, Block>;
+    blocks: Map<string, ComponentSpec>;
     /** Percentages. */
     margins: { materiaal: number, arbeid: number, algemeen: number };
     /** Waste as a fraction, by vorm. */
@@ -560,7 +560,7 @@ export class ProductManager
             .sort((a, b) => rowOf(a) - rowOf(b))
             .map(id => ({ component: id, eenheid: costs.find(m => m[1] === id && m[2] !== 'm3')?.[2] ?? null }));
         // the table layout has no names per component: its components are its first rows
-        const blocks = wb.tables().some(t => t.name === this._sheet.components) ? readBlocks(wb.table(this._sheet.components)) : null;
+        const blocks = wb.tables().some(t => t.name === this._sheet.components) ? readComponents(wb.table(this._sheet.components)) : null;
         if (blocks && [...blocks.values()].some(b => b.layout === 'table'))
         {
             components = [...blocks.values()].map(b => ({ component: b.id, eenheid: b.unit || null, gebouwdeel: b.info.gebouwdeel }));
@@ -668,7 +668,7 @@ export class ProductManager
             compute: () => outputs,
             namedRanges: () => [],
         };
-        const blocks = readBlocks(db.table('componenten'));
+        const blocks = readComponents(db.table('componenten'));
         const components: Array<ComponentRow> = blocks ? [...blocks.values()].map(b => ({ component: b.id, eenheid: b.unit || null, gebouwdeel: b.info.gebouwdeel })) : [];
         this.fromRows(db.table('producten') as Array<ProductRow>, db.table('bewerkingen') as Array<OperationRow>, components);
         this._workbook = wb;
@@ -706,9 +706,9 @@ export class ProductManager
     }
 
     /** The sheet's components as it reckons with them (see recipes.ts), by id. Needs fromSheet() or fromDb(). */
-    blocks(): Map<string, Block>
+    componentSpecs(): Map<string, ComponentSpec>
     {
-        return this._loadCostData('blocks').blocks;
+        return this._loadCostData('componentSpecs').blocks;
     }
 
     /** The products with this id, or in this group (case does not matter for groups). */
@@ -1222,19 +1222,19 @@ export class ProductManager
      *  fromSheet().
      *
      *      products = make.products().fromSheet(url).collect(all())
-     *      products.block().lines   // [{ product: 'sls-38x235', st: 9, lengte: 24.5, steps: [{ operation: 'afkorten', per: 'st', factor: 2, quantity: 18 }, ...] }, ...]
+     *      products.componentRows().lines   // [{ product: 'sls-38x235', st: 9, lengte: 24.5, steps: [{ operation: 'afkorten', per: 'st', factor: 2, quantity: 18 }, ...] }, ...]
      */
-    block(): ComponentBlock
+    componentRows(): ComponentRows
     {
         const overview = this.compute();
-        const data = this._loadCostData('block');
+        const data = this._loadCostData('componentRows');
         const blockOf = new Map<string, string>();
         this._entries().forEach(e => { if (e.block && !blockOf.has(e.id)) { blockOf.set(e.id, e.block); } });
 
-        const lines: Array<BlockLine> = overview.lines.map(line =>
+        const lines: Array<ComponentRowLine> = overview.lines.map(line =>
         {
             const quantities = Object.fromEntries(QUANTITY_KEYS.map(k => [k, line[k]])) as Required<ProductQuantities>;
-            const base = { id: line.id, kind: line.kind, vorm: line.vorm, description: line.description, waste: line.waste, groups: [] as Array<string>, like: [] as Array<string>, ...quantities, costs: line.costs!, steps: [] as Array<BlockStep>, recipe: null as string | null };
+            const base = { id: line.id, kind: line.kind, vorm: line.vorm, description: line.description, waste: line.waste, groups: [] as Array<string>, like: [] as Array<string>, ...quantities, costs: line.costs!, steps: [] as Array<ComponentRowStep>, recipe: null as string | null };
             if (line.kind !== 'product') { return base; }
             const product = this._products.find(p => p.id === line.id)!;
             const recipe = this._recipe(product, blockOf.get(line.id) ?? '', data);
@@ -1833,7 +1833,7 @@ export class ProductManager
             throw new Error(`ProductManager.${method}(): needs the sheet: make.products().fromSheet(url)`);
         }
         const name = this._sheet.components;
-        const blocks = wb.tables().some(t => t.name === name) ? readBlocks(wb.table(name)) : null;
+        const blocks = wb.tables().some(t => t.name === name) ? readComponents(wb.table(name)) : null;
         if (!blocks)
         {
             throw new Error(`ProductManager.${method}(): the sheet has no recipes: a named range tables.${name} with the columns bewerking, fase, product, per, factor`);
@@ -1886,7 +1886,7 @@ export class ProductManager
         }
 
         const inGroup = (id: string, group: string) => this._products.find(p => p.id === id)?.groups.includes(group) === true;
-        const scope = (rows: Array<BlockProduct>, prefix: string) => [
+        const scope = (rows: Array<ComponentSpecProduct>, prefix: string) => [
             { source: `${prefix}${product.id}`, rows: rows.filter(r => r.id === product.id), exact: true },
             ...product.groups.map(group => ({ source: `${prefix}${group}`, rows: rows.filter(r => inGroup(r.id, group)), exact: false })),
             { source: `${prefix}${product.vorm}`, rows: rows.filter(r => r.vorm === product.vorm), exact: false },

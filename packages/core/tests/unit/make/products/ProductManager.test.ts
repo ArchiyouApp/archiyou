@@ -5,7 +5,7 @@ import { Calc } from '../../../../src/calc/Calc'
 import { MaterialManager } from '../../../../src/materials/MaterialManager'
 import { MATERIALEN_ROWS } from '../../materials/materialen.fixture'
 import { ProductManager, cutLengths, type ProductRow, type OperationRow, type ComponentRow } from '../../../../src/make/products/ProductManager'
-import { readBlocks, combineRows } from '../../../../src/make/products/recipes'
+import { readComponents, combineRows } from '../../../../src/make/products/recipes'
 
 /**
  * ProductManager: parts of a model → products of a product sheet → costs.
@@ -386,7 +386,7 @@ describe('ProductManager.compute()', () =>
 
         it('reads the components in it, with what their first row says, and the rows of each', () =>
         {
-            const blocks = readBlocks(TABLE)!
+            const blocks = readComponents(TABLE)!
             expect([...blocks.keys()]).toEqual(['wall', 'wall_esb'])
             const wall = blocks.get('wall')!
             expect(wall.layout).toBe('table')

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { retarget } from '../src/sheetBlocks';
+import { retarget } from '../src/sheetComponents';
 
 describe('retarget: a template row of the componenten tab moved to a new block', () =>
 {

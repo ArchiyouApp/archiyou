@@ -42,7 +42,7 @@ export interface RecipeStep
     factor: number;
 }
 
-export interface BlockProduct
+export interface ComponentSpecProduct
 {
     id: string;
     vorm: string;
@@ -65,7 +65,7 @@ export interface ElementWork
 }
 
 /** What a component's first row says about it. */
-export interface BlockInfo
+export interface ComponentSpecInfo
 {
     gebouwdeel: string;
     groep: string;
@@ -79,7 +79,7 @@ export interface BlockInfo
 }
 
 /** One representative component of the sheet. */
-export interface Block
+export interface ComponentSpec
 {
     id: string;
     /** m2 or st */
@@ -88,8 +88,8 @@ export interface Block
     size: number;
     /** The representative volume (m3). */
     volume: number;
-    info: BlockInfo;
-    products: Array<BlockProduct>;
+    info: ComponentSpecInfo;
+    products: Array<ComponentSpecProduct>;
     element: Array<ElementWork>;
     /** The costs of the representative component, excluding margins. */
     costs: Record<CostCategory, number>;
@@ -131,7 +131,7 @@ const rcOf = (row: Record<string, unknown>): number | null =>
  *     then per product a row (fase materiaal) with the operations on it below it, and the work on
  *     the element as a whole. An operation is per all rows of its product in the component.
  */
-export function readBlocks(rows: Array<Record<string, unknown>>): Map<string, Block> | null
+export function readComponents(rows: Array<Record<string, unknown>>): Map<string, ComponentSpec> | null
 {
     const first = rows[0];
     if (!first || !['bewerking', 'fase', 'product', 'per', 'factor'].every(column => column in first))
@@ -139,9 +139,9 @@ export function readBlocks(rows: Array<Record<string, unknown>>): Map<string, Bl
         return null;
     }
 
-    const blocks = new Map<string, Block>();
-    let block: Block | null = null;
-    const tableSteps = new Map<Block, Map<string, Array<RecipeStep>>>();
+    const blocks = new Map<string, ComponentSpec>();
+    let block: ComponentSpec | null = null;
+    const tableSteps = new Map<ComponentSpec, Map<string, Array<RecipeStep>>>();
 
     rows.forEach(row =>
     {
@@ -174,7 +174,7 @@ export function readBlocks(rows: Array<Record<string, unknown>>): Map<string, Bl
         // the rows under a block's total have no phase, nor has a component's first row in a table
         const fase = text(row['fase']);
         if (!block || !fase) { return; }
-        const current: Block = block;
+        const current: ComponentSpec = block;
 
         (Object.keys(COST_COLUMNS) as Array<CostCategory>).forEach(category =>
         {
@@ -241,7 +241,7 @@ export function readBlocks(rows: Array<Record<string, unknown>>): Map<string, Bl
 
 /** The recipe of one product that a block has on several rows (framing and blocking of the same
  *  beam): each step weighed by the quantity it works on, so together they cost what the rows do. */
-export function combineRows(rows: Array<BlockProduct>): Array<RecipeStep>
+export function combineRows(rows: Array<ComponentSpecProduct>): Array<RecipeStep>
 {
     if (rows.length === 1) { return rows[0]!.steps; }
     const steps = new Map<string, RecipeStep>();

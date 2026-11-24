@@ -289,12 +289,12 @@ export class Takeoff
 
     /**
      *  The model as rows of the sheet's componenten tab: per product its quantities and the work
-     *  its recipe gives, then the work on the element; totals incl. margins. What `archiyou blocks`
-     *  writes for a component's variants (see ProductManager.block()).
+     *  its recipe gives, then the work on the element; totals incl. margins. What `archiyou components`
+     *  writes for a component's variants (see ProductManager.componentRows()).
      */
-    block(): ReturnType<ProductManager['block']>
+    componentRows(): ReturnType<ProductManager['componentRows']>
     {
-        return this._engine(null).block();
+        return this._engine(null).componentRows();
     }
 
     /** The shapes that have no product or component, so are not reckoned with */
@@ -446,7 +446,7 @@ export class Takeoff
     private _lines(pm: ProductManager): Array<TakeoffLine>
     {
         pm.compute();
-        const blocks = pm.blocks();
+        const specs = pm.componentSpecs();
         return pm.list().map(line =>
         {
             let weight = 0;
@@ -458,11 +458,11 @@ export class Takeoff
             else if (line.kind === 'component')
             {
                 // the component's rows: their weight per m3 of the representative component
-                const block = blocks.get(line.id);
-                if (block && block.volume > 0)
+                const spec = specs.get(line.id);
+                if (spec && spec.volume > 0)
                 {
-                    const mass = block.products.reduce((sum, p) => { const product = this._products().get(p.id); return sum + (product ? this._weightOf(product, p.quantities) : 0); }, 0);
-                    weight = mass / block.volume * line.volume;
+                    const mass = spec.products.reduce((sum, p) => { const product = this._products().get(p.id); return sum + (product ? this._weightOf(product, p.quantities) : 0); }, 0);
+                    weight = mass / spec.volume * line.volume;
                 }
             }
             return { ...line, weight };

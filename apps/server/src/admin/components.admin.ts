@@ -3,7 +3,7 @@
  * product sheet from where the Google key is.
  *
  * A component's variants (its presets: hsbwand, hsbwand_esb, ...) become rows of the sheet's
- * componenten tab with the CLI: `archiyou blocks <script.json> --makedb <snapshot> --write`.
+ * componenten tab with the CLI: `archiyou components <script.json> --makedb <snapshot> --write`.
  * The server keeps no Google key (plans/PROTECTED_CONTENT.md §12.4), so it only hands out the
  * script: its code, params and presets, and which version it is, so every row in the sheet says
  * what made it (bron: 'archiyou/timberwall@0.31', bron-id: the version's id).

@@ -47,7 +47,7 @@ const USAGE = `archiyou <command>
   animate <file.js>         the model as a GLB with one of its animations (--animation name;
                             default the first parameter sweep), a sweep run once per frame
                             and merged into one clip; takes -p, --kernel, --modules, --out file.glb
-  blocks <file.js|.json>    the variants of a component script (its presets) as blocks of its
+  components <file.js|.json>  the variants of a component script (its presets) as rows of its
                             product sheet's componenten tab: products, work, costs and Rc; a .json
                             is a library script (pnpm admin:components export, in apps/server)
       --makedb <file.json>    the make database to reckon with (archiyou makedb)
@@ -144,7 +144,7 @@ async function main(argv: Array<string>): Promise<number>
         case 'animate': return (await import('./run')).animate(args);
         case 'eval': return (await import('./run')).evaluate(args);
         case 'mark': return (await import('./run')).markPhoto(args);
-        case 'blocks': return (await import('./blocks')).blocks(args);
+        case 'components': return (await import('./components')).components(args);
         case 'makedb': return (await import('./makedb')).makedb(args);
         case 'api': return api(args.positional.join(' ') || undefined);
         case 'docs': return docs(args.positional.join(' ') || undefined);

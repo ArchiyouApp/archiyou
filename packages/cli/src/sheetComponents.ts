@@ -1,5 +1,5 @@
 /**
- *  Components of a product sheet's componenten tab, written from a model (blocks.ts).
+ *  Components of a product sheet's componenten tab, written from a model (components.ts).
  *
  *  The tab is a table: the component's id on every row. Its first row says what it is (name,
  *  group, size, Rc, where it came from), then per product a row (fase materiaal) with the
@@ -29,7 +29,7 @@ export interface Provenance
     via?: string;
 }
 
-export interface GeneratedBlock
+export interface GeneratedComponent
 {
     id: string;
     label: string;
@@ -37,7 +37,7 @@ export interface GeneratedBlock
     values: Record<string, any>;
     script: string;
     source: Provenance;
-    block: any;             // ProductManager.block()
+    rows: any;              // make.takeoff().componentRows()
     rc: any | null;         // MaterialManager.rc()
     rcError: string | null;
     warnings: Array<string>;
@@ -102,7 +102,7 @@ export class Tab
 }
 
 /** The rows of one component at `start` (1-based), each with the row its format comes from */
-export function componentRows(t: Tab, b: GeneratedBlock, start: number, date: string): Array<{ cells: Array<string | number>; from: number }>
+export function sheetRows(t: Tab, b: GeneratedComponent, start: number, date: string): Array<{ cells: Array<string | number>; from: number }>
 {
     const width = t.head.length;
     const base = b.variantOf ?? b.id;
@@ -146,7 +146,7 @@ export function componentRows(t: Tab, b: GeneratedBlock, start: number, date: st
     }
 
     // the products, each with the operations of its recipe
-    (b.block.lines as Array<any>).filter(l => l.kind === 'product').forEach(line =>
+    (b.rows.lines as Array<any>).filter(l => l.kind === 'product').forEach(line =>
     {
         const ids = [line.id, ...(line.like ?? [])];
         const known = productRow(ids);
@@ -206,7 +206,7 @@ export function componentRows(t: Tab, b: GeneratedBlock, start: number, date: st
 }
 
 /** Write the components to the tab componenten; returns where each went */
-export async function writeBlocks(id: string, blocks: Array<GeneratedBlock>): Promise<Array<{ id: string; from: number; to: number }>>
+export async function writeComponents(id: string, components: Array<GeneratedComponent>): Promise<Array<{ id: string; from: number; to: number }>>
 {
     const date = new Date().toISOString().slice(0, 10);
     let meta = await spreadsheet(id);
@@ -241,7 +241,7 @@ export async function writeBlocks(id: string, blocks: Array<GeneratedBlock>): Pr
     }
 
     // the components others are a variant of first: their rows are what a variant takes
-    const ordered = [...blocks].sort((a, b) => Number(!!a.variantOf) - Number(!!b.variantOf));
+    const ordered = [...components].sort((a, b) => Number(!!a.variantOf) - Number(!!b.variantOf));
     const written: Array<{ id: string; from: number; to: number }> = [];
     for (const b of ordered)
     {
@@ -262,7 +262,7 @@ export async function writeBlocks(id: string, blocks: Array<GeneratedBlock>): Pr
             index = family.length ? family[family.length - 1]! : t.used;
         }
         const start = index + 1;
-        const rows = componentRows(t, b, start, date);
+        const rows = sheetRows(t, b, start, date);
         const room = rows.length;
         const shift = (r: number) => (r - 1 >= index ? r + room : r);   // a row of the tab after the insert
 
