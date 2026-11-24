@@ -18,7 +18,8 @@ import { api, docs, examples } from './lookup';
 const USAGE = `archiyou <command>
 
   init                      put the Archiyou skill in this project (.agents/ and .claude/, AGENTS.md)
-  run <file.js>             run a script: summary on stdout, model.glb and views.png in --out
+  run <file.js|.json>       run a script (a .json: as the server keeps it, with its params);
+                            summary on stdout, model.glb and views.png in --out
       -p NAME=value           a parameter value (repeatable)
       --views iso,front,cam:x,y,z   the sheet's views (default iso,front,right,top; none for no views;
                               around: eight directions, to find the one that matches a photo)

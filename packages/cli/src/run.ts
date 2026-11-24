@@ -54,6 +54,8 @@ interface RunOptions
 {
     file: string;
     code: string;
+    /** A .json file: the script as the server keeps it (code, params, presets) */
+    stored?: Record<string, any>;
     params: Record<string, any>;
     kernel: 'mesh' | 'brep';
     views: Array<ViewSpec>;
@@ -278,7 +280,7 @@ async function runOnce(o: RunOptions): Promise<RunResult>
     const started = performance.now();
     const execute = (content: Record<string, any>) => quiet(o.verbose, () => r.execute({
         kernel: o.kernel,
-        script: { name, code: o.code },
+        script: o.stored ? { ...o.stored, name: o.stored.name ?? name, code: o.code } : { name, code: o.code },
         params: o.params,
         modules: catalog,
         content,
@@ -903,7 +905,10 @@ function optionsFrom(args: Args, file: string, outDir: string | null): RunOption
     if (kernel !== 'mesh' && kernel !== 'brep') { throw new Error(`--kernel is mesh or brep, got "${kernel}"`); }
     return {
         file,
-        code: readFileSync(file, 'utf8'),
+        // a .json file is a script as the server keeps it (pnpm admin:components export): its code with its params
+        ...(extname(file) === '.json'
+            ? (() => { const stored = JSON.parse(readFileSync(file, 'utf8')); return { code: String(stored.code ?? ''), stored }; })()
+            : { code: readFileSync(file, 'utf8') }),
         params: paramValues(args.values.param),
         kernel,
         views: parseViews(args.values.views?.[0] ?? DEFAULT_VIEWS),
@@ -992,7 +997,7 @@ export async function animate(args: Args): Promise<number>
     const name = basename(file, extname(file));
     const started = performance.now();
     const exec = (params: Record<string, any>, path: string): Promise<any> => quiet(o.verbose, () => r.execute({
-        kernel: o.kernel, script: { name, code: o.code }, params, modules: catalog, outputs: [path], messages: ['user', 'warn'],
+        kernel: o.kernel, script: o.stored ? { ...o.stored, name: o.stored.name ?? name, code: o.code } : { name, code: o.code }, params, modules: catalog, outputs: [path], messages: ['user', 'warn'],
     }));
     const glbOf = (res: any): Uint8Array =>
     {
