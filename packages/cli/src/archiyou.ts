@@ -44,6 +44,12 @@ const USAGE = `archiyou <command>
   animate <file.js>         the model as a GLB with one of its animations (--animation name;
                             default the first parameter sweep), a sweep run once per frame
                             and merged into one clip; takes -p, --kernel, --modules, --out file.glb
+  blocks <file.js>          the variants of a component script (its presets) as blocks of its
+                            product sheet's componenten tab: products, work, costs and Rc
+      --sheet <url>           the product sheet (read with GOOGLE_SERVICE_ACCOUNT when set)
+      --preset <name>         only this preset (repeatable; default all)
+      --write                 write them to the sheet's tab componenten, each replacing its rows
+      --json                  everything as JSON
   api <name>                the API reference: a function, Class.member, or a class's members
   docs [topic]              the guide and tutorials, as Markdown
   examples [name]           example scripts
@@ -129,6 +135,7 @@ async function main(argv: Array<string>): Promise<number>
         case 'animate': return (await import('./run')).animate(args);
         case 'eval': return (await import('./run')).evaluate(args);
         case 'mark': return (await import('./run')).markPhoto(args);
+        case 'blocks': return (await import('./blocks')).blocks(args);
         case 'api': return api(args.positional.join(' ') || undefined);
         case 'docs': return docs(args.positional.join(' ') || undefined);
         case 'examples': return examples(args.positional[0]);

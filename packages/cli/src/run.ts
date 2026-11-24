@@ -145,6 +145,13 @@ async function loadRunner(verbose: boolean, moduleDirs: Array<string>): Promise<
     return runner;
 }
 
+/** The engine for another command: the runner, core, and the modules it can load */
+export async function engine(verbose: boolean, dirs: Array<string>): Promise<{ runner: any; core: any; catalog: Array<any> }>
+{
+    const r = await loadRunner(verbose, dirs);
+    return { runner: r, core, catalog };
+}
+
 //// GOOGLE SHEETS ////
 
 const sheets = new Map<string, Promise<any>>();
@@ -181,7 +188,7 @@ async function publicSheets(ids: Array<string>): Promise<Record<string, any>>
 interface LocalModule { entry: any; bundle: string | null }
 
 /** --modules, else the modules checkout next to the engine when run from this repo */
-function moduleDirs(args: Args): Array<string>
+export function moduleDirs(args: Args): Array<string>
 {
     const given = (args.values.modules ?? []).map(userPath);
     const missing = given.find(dir => !existsSync(dir));
@@ -875,7 +882,7 @@ function optionsFrom(args: Args, file: string, outDir: string | null): RunOption
     };
 }
 
-function scriptFile(args: Args, usage: string): string | null
+export function scriptFile(args: Args, usage: string): string | null
 {
     const file = args.positional[0];
     if (!file) { fail(`usage: ${usage}`); return null; }

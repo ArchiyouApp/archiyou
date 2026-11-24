@@ -97,7 +97,7 @@ export const DATA = existsSync(BUILT)
 //// ARGUMENTS ////
 
 /** Flags that take no value */
-const BOOLEAN_FLAGS = new Set(['json', 'verbose', 'clash', 'corners', 'force', 'parts', 'help', 'version']);
+const BOOLEAN_FLAGS = new Set(['json', 'verbose', 'clash', 'corners', 'force', 'parts', 'help', 'version', 'write']);
 const ALIASES: Record<string, string> = { p: 'param', h: 'help', v: 'version' };
 
 export interface Args
