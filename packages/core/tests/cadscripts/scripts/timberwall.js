@@ -195,23 +195,21 @@ spec = doc
     .height(1.0)
 
 //// PRODUCTS ////
-// What the parts are, as products of URBUILD_DATABASE_CORE (its component hsbwand). Only mapped
-// here, nothing is loaded: the model using this wall prices them with
-//   make.products().fromSheet(url).collect(all())
+// What the parts are, as products of the make database (URBUILD_DATABASE_CORE), in its component
+// hsbwand: its rows give their recipes. A model using this wall reckons with them in make.takeoff().
 // The wall draws all of its layers and screws; complete() only adds the work on the element as a
 // whole (squaring, handling, mounting) and what a layer left out would have had.
 
-products = make.products();
 // finger-jointed only where longer than SLS comes
-products.assign(['SLS', 'SLS-GEVINGERLAST'], frame, { component: COMPONENT, label: 'stijlen en regels' });
+frame.product(['SLS', 'SLS-GEVINGERLAST'], { component: COMPONENT, label: 'stijlen en regels' });
 if(INSULATION_PRODUCTS[$INSULATION])
 {
     // by a group, a mat of 240 fills a cavity of 235
-    products.assign(INSULATION_PRODUCTS[$INSULATION], wall.insulation, { component: COMPONENT, tolerance: 5, label: 'isolatie tussen de stijlen' });
+    wall.insulation.product(INSULATION_PRODUCTS[$INSULATION], { component: COMPONENT, tolerance: 5, label: 'isolatie tussen de stijlen' });
 }
-if(sheathing) { products.assign(sheathingSpec.product, sheathing, { component: COMPONENT, label: 'buitenplaat', recipe: sheathingSpec.recipe }); }
-if(membrane) { products.assign(membraneSpec.product, membrane, { component: COMPONENT, label: 'dampremmende folie' }); }
-if(lining) { products.assign(liningSpec.product, lining, { component: COMPONENT, label: 'binnenplaat' }); }
+if(sheathing) { sheathing.product(sheathingSpec.product, { component: COMPONENT, label: 'buitenplaat', recipe: sheathingSpec.recipe }); }
+if(membrane) { membrane.product(membraneSpec.product, { component: COMPONENT, label: 'dampremmende folie' }); }
+if(lining) { lining.product(liningSpec.product, { component: COMPONENT, label: 'binnenplaat' }); }
 
 // Tape: the seams of the outside boards (lying, in rows) taped in the workshop, and the edges
 // of the element taped on site
@@ -222,7 +220,7 @@ if(sheathing)
     const rows = Math.ceil($HEIGHT / boardHeight);
     const seams = (rows - 1) * $WIDTH + rows * (Math.ceil($WIDTH / boardLength) - 1) * boardHeight;
     const edges = 2 * ($WIDTH + $HEIGHT);
-    products.add(TAPE, { lengte: (seams + edges) / 1000 }, { component: COMPONENT, label: 'plaatnaden en elementomtrek' });
+    make.add(TAPE, { lengte: (seams + edges) / 1000 }, { component: COMPONENT, label: 'plaatnaden en elementomtrek' });
 }
 
 // what this wall leaves out or replaces, so complete() does not add the block's own
@@ -232,4 +230,4 @@ leftOut = [
     ...(sheathingSpec?.product === BLOCK_SHEATHING ? [] : [BLOCK_SHEATHING]),
     ...(lining ? [] : ['gipsplaat-12.5-1200', SCREWS.lining.product]),
 ];
-products.complete(COMPONENT, { oppervlak: wallAreaM2 }, { except: leftOut });
+make.complete(COMPONENT, { oppervlak: wallAreaM2 }, { except: leftOut });
