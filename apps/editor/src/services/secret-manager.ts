@@ -26,6 +26,8 @@ import { signal } from '@lit-labs/signals';
 
 import type { AyContentItem, AyContentNeed, AyGoogleSheetCopy } from '@archiyou/core/src/modules/sdkTypes';
 
+import { resolveMakeDb } from './make-db-content.js';
+
 //// KEYS ////
 
 export type KeyKind = 'google-service-account' | 'ai' | 'api-key';
@@ -297,9 +299,11 @@ class ClientSecretManager
   async resolve(needs: AyContentNeed[], trust: RunTrust) : Promise<{ content: Record<string, AyContentItem>; problems: ContentProblem[] }>
   {
     const unique = [...new Map(needs.filter((n) => n.kind === 'google-sheet').map((n) => [n.id, n])).values()];
-    const outcomes = await Promise.all(unique.map((need) => this._resolveSheet(need, trust)));
-    const content = Object.fromEntries(outcomes.flatMap((o) => (o.item ? [[`google-sheet:${o.item.id}`, o.item]] : [])));
-    const problems = outcomes.flatMap((o) => (o.problem ? [o.problem] : []));
+    // the snapshot of the product sheet (make.db()) comes from this app's own server, not Google
+    const [outcomes, db] = await Promise.all([Promise.all(unique.map((need) => this._resolveSheet(need, trust))), resolveMakeDb(needs)]);
+    const content = { ...Object.fromEntries(outcomes.flatMap((o) => (o.item ? [[`google-sheet:${o.item.id}`, o.item]] : []))), ...db.content };
+    const problems = [...outcomes.flatMap((o) => (o.problem ? [o.problem] : [])),
+      ...db.problems.map((message): ContentProblem => ({ id: 'make-db', code: 'failed', message }))];
     return { content, problems };
   }
 
