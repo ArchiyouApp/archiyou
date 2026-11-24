@@ -34,7 +34,8 @@
  *   src/docs/Docs.ts                  → Docs members (the `doc` global)
  *   src/docs/Document.ts              → Document members (what doc.create() and the chain return)
  *   src/make/Make.ts                  → Make members (the `make` global)
- *   src/make/products/ProductManager.ts→ ProductManager members (what make.products() returns)
+ *   src/make/estimate/Estimate.ts     → Estimate members (what make.estimate() returns)
+ *   src/make/offer/Offer.ts           → Offer members (what make.offer() returns)
  *   src/animator/Animator.ts          → Animator members (the `animator` global)
  *   src/animator/Animation.ts         → Animation members (what animator.create() returns)
  *
@@ -426,7 +427,8 @@ const makeMethods = extractPublicMethods(
     new Set(['setArchiyou', 'packReady']),
 )
 
-const productManagerMethods = extractPublicMethods(getClass('src/make/products/ProductManager.ts', 'ProductManager'))
+const estimateMethods = extractPublicMethods(getClass('src/make/estimate/Estimate.ts', 'Estimate'))
+const offerMethods = extractPublicMethods(getClass('src/make/offer/Offer.ts', 'Offer'))
 
 /* ------------------------------------------------------------------ */
 /*  Extract: animator (the `animator` global and the Animation it makes) */
@@ -533,9 +535,14 @@ const shapeClasses: ShapeClassInfo[] = [
         members: makeMethods,
     },
     {
-        label: 'ProductManager',
-        detail: 'make.products(): parts of a model matched to the products of a product sheet, and their costs',
-        members: productManagerMethods,
+        label: 'Estimate',
+        detail: 'make.estimate(): what the shapes weigh, cost and take to make, by the make database',
+        members: estimateMethods,
+    },
+    {
+        label: 'Offer',
+        detail: 'make.offer(template): an offer for a client, made with the offer template',
+        members: offerMethods,
     },
     {
         label: 'Animator',
