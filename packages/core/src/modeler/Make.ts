@@ -19,6 +19,8 @@ import { roundTo } from '../utils';
 
 import { collectParts } from './parts';
 import { ProductManager } from '../products/ProductManager';
+import { MakeDb } from '../make/db';
+import { ContentNeededError, contentKey } from '../modules/sdkTypes';
 import type { BinPacker, CuttingNode, Instance, Part } from '@archiyou/gdrr2bp-wasm';
 import type { Packer3D } from '@archiyou/pack3d-wasm';
 
@@ -2561,6 +2563,44 @@ export class Make
     products(): ProductManager
     {
         return new ProductManager(() => this.archiyou);
+    }
+
+    /** The make databases this Make read, by the version of their content: parsed once each. */
+    private _dbs = new Map<string, MakeDb>();
+
+    /**
+     *  The make database: a snapshot of the product sheet (materials, products, operations,
+     *  components, settings) with a version, so every number says where it came from. The run is
+     *  handed it as content (kind 'make-db'): the server keeps the snapshots, a sync makes them
+     *  from the sheet (see make/db/snapshot.ts). Without a version, the latest it was given.
+     *
+     *      db = make.db()
+     *      db.version                       // '2026-11-24.1'
+     *      db.setting('settings.rate_labor')
+     *      make.db('2026-11-24.1')          // pinned: the same numbers every time
+     *
+     *  When the run was not given it, the run stops and asks for it (result.needs); the app
+     *  fetches it and runs again, as for a Google Sheet.
+     */
+    db(version: string = 'latest'): MakeDb
+    {
+        const content = (this.archiyou?.runner as any)?.getActiveExecRequest?.()?.content as Record<string, any> | undefined;
+        const item = content?.[contentKey('make-db', version)];
+        if (!item)
+        {
+            throw new ContentNeededError(
+                `make.db(): the make database${version === 'latest' ? '' : ` ${version}`} was not given to this run. `
+                + 'The editor and the server fetch it before a run; from the CLI pass it with --makedb <file.json>.',
+                { content: [{ kind: 'make-db', id: version, reason: 'make.db' }] });
+        }
+        const key = `${version}|${item.version}`;
+        if (!this._dbs.has(key)) { this._dbs.set(key, MakeDb.fromBytes(item.bytes)); }
+        const db = this._dbs.get(key)!;
+        if (version !== 'latest' && db.version !== version)
+        {
+            throw new Error(`make.db('${version}'): was given ${db.version} instead`);
+        }
+        return db;
     }
 
     /** Generate a part list Calc table from a ShapeCollection of cuboid parts

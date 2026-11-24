@@ -57,7 +57,12 @@ export type {
 } from './modules/sdkTypes';
 export { ARCHIYOU_CORE_VERSION } from './constants';
 // The Google Sheets a script's code names, for an app to fetch before the run (request.content)
-export { scanContentNeeds } from './modules/contentNeeds';
+export { scanContentNeeds, makeDbNeeds } from './modules/contentNeeds';
+
+// The make database: a versioned snapshot of the product sheet (make/db/snapshot.ts). The server
+// keeps them, the CLI makes them; both check them with the same schema.
+export { MakeDb, validateSnapshot, snapshotFromTables, nextVersion, compareVersions, MAKE_DB_FORMAT, MAKE_DB_TABLES } from './make/db';
+export type { MakeDbSnapshot, MakeDbIssue, MakeDbTableName } from './make/db';
 
 // Key public types
 export type {

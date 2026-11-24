@@ -291,8 +291,10 @@ export interface AyModuleWarmContext {
 /** A kind of content a module can ask the app for. 'google-sheet' is a Google
  *  Sheet as an .xlsx export. 'google-sheet-copy' is a copy of one in Google Drive
  *  that the app makes with the user's key (see AyGoogleSheetCopy): the run asks for
- *  it, the app makes it, and the next run gets its address. */
-export type AyContentKind = 'google-sheet' | 'google-sheet-copy';
+ *  it, the app makes it, and the next run gets its address. 'make-db' is a snapshot
+ *  of the product sheet that the server keeps (core's make/db), as JSON: its id is
+ *  a version ('2026-11-24.1') or 'latest'. */
+export type AyContentKind = 'google-sheet' | 'google-sheet-copy' | 'make-db';
 
 /** Content the app fetched BEFORE the run and hands to modules through warm().
  *
@@ -329,8 +331,9 @@ export interface AyContentNeed {
     id: string;
     /** The key the script named for it (`{ key: 'urbuild' }`), if any. A name. */
     key?: string;
-    /** 'open': the script asked for it. 'import': content it opened refers to it. */
-    reason?: 'open' | 'import';
+    /** 'open': the script asked for it. 'import': content it opened refers to it.
+     *  'make.db': the script reckons with the make database. */
+    reason?: 'open' | 'import' | 'make.db';
     /** For a 'google-sheet-copy': the copy to make. */
     copy?: AyGoogleSheetCopy;
 }
