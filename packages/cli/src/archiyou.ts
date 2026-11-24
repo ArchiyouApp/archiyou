@@ -31,6 +31,8 @@ const USAGE = `archiyou <command>
       --clash                 list parts that share volume (touching does not count)
       --check <inventory.json>  compare the parts with an inventory (counts, axes, floor, relations)
       --makedb <file.json>    a snapshot of the make database for make.db() (archiyou makedb)
+      --components <dir>      .js files that $component('./name') finds by file name; the script's
+                              own folder always (repeatable; these come before it)
       --kernel mesh|brep      default mesh
       --modules <dir>         script modules for $module(): a module directory, or one that holds
                               them (repeatable; client modules, built to bundle.js or dist/bundle.js;
@@ -45,9 +47,12 @@ const USAGE = `archiyou <command>
   animate <file.js>         the model as a GLB with one of its animations (--animation name;
                             default the first parameter sweep), a sweep run once per frame
                             and merged into one clip; takes -p, --kernel, --modules, --out file.glb
-  blocks <file.js>          the variants of a component script (its presets) as blocks of its
-                            product sheet's componenten tab: products, work, costs and Rc
-      --sheet <url>           the product sheet (read with GOOGLE_SERVICE_ACCOUNT when set)
+  blocks <file.js|.json>    the variants of a component script (its presets) as blocks of its
+                            product sheet's componenten tab: products, work, costs and Rc; a .json
+                            is a library script (pnpm admin:components export, in apps/server)
+      --makedb <file.json>    the make database to reckon with (archiyou makedb)
+      --sheet <url>           the sheet to write to; default the one the snapshot was made from
+      --components <dir>      component scripts it uses, as for run (repeatable)
       --preset <name>         only this preset (repeatable; default all)
       --write                 write them to the sheet's tab componenten, each replacing its rows
       --json                  everything as JSON

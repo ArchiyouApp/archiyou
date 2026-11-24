@@ -19,6 +19,7 @@
     "admin:migrate-sqlite": "tsx src/admin/migrate-sqlite-to-pg.ts",
     "admin:modules": "tsx src/admin/modules.admin.ts",
     "admin:makedb": "tsx src/admin/makedb.admin.ts",
+    "admin:components": "tsx src/admin/components.admin.ts",
     "admin:translations": "tsx src/admin/translations.admin.ts",
     "admin:users": "tsx src/admin/users.admin.ts",
     "docker:dev": "docker compose -f docker-compose.yml --env-file ../../.env up --force-recreate",

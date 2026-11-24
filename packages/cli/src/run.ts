@@ -66,6 +66,7 @@ interface RunOptions
     outDir: string | null;   // null: write no files (sweep, eval)
     modules: Array<string>;  // directories with script modules, for $module()
     makedb?: string;         // a snapshot of the make database (makedb-<version>.json), for make.db()
+    components?: Array<string>; // folders whose .js files are the components $component('./name') finds
     verbose: boolean;
 }
 
@@ -151,6 +152,27 @@ export async function engine(verbose: boolean, dirs: Array<string>): Promise<{ r
 {
     const r = await loadRunner(verbose, dirs);
     return { runner: r, core, catalog };
+}
+
+//// COMPONENTS ////
+
+/** The scripts of the folders as $component('./name') and $component('name') find them, by their
+ *  file name: a .js file is the code, a .json file a script as the server keeps it (code, params,
+ *  presets), which wins. The script's own folder first, then the folders given with --components. */
+export function linkComponents(r: any, folders: Array<string>): Array<string>
+{
+    const scripts = new Map<string, any>();
+    folders.filter(existsSync).forEach(folder => readdirSync(folder).filter(f => f.endsWith('.js')).forEach(f =>
+    {
+        scripts.set(basename(f, '.js').toLowerCase(), core.Script.fromData({ name: basename(f, '.js'), code: readFileSync(join(folder, f), 'utf8') }));
+    }));
+    folders.filter(existsSync).forEach(folder => readdirSync(folder).filter(f => f.endsWith('.json')).forEach(f =>
+    {
+        const data = JSON.parse(readFileSync(join(folder, f), 'utf8'));
+        if (typeof data?.code === 'string') { scripts.set(basename(f, '.json').toLowerCase(), core.Script.fromData({ name: basename(f, '.json'), ...data })); }
+    }));
+    r.linkComponentScripts([...scripts.values()].filter(Boolean));
+    return [...scripts.keys()];
 }
 
 //// MAKE DATABASE ////
@@ -252,6 +274,7 @@ async function runOnce(o: RunOptions): Promise<RunResult>
 {
     const r = await loadRunner(o.verbose, o.modules);
     const name = basename(o.file, extname(o.file));
+    linkComponents(r, [...(o.components ?? []), dirname(o.file)].reverse());
     const started = performance.now();
     const execute = (content: Record<string, any>) => quiet(o.verbose, () => r.execute({
         kernel: o.kernel,
@@ -893,6 +916,7 @@ function optionsFrom(args: Args, file: string, outDir: string | null): RunOption
         outDir,
         modules: moduleDirs(args),
         makedb: args.values.makedb?.[0] ? userPath(args.values.makedb[0]) : undefined,
+        components: (args.values.components ?? []).map(userPath),
         verbose: args.bools.has('verbose'),
     };
 }

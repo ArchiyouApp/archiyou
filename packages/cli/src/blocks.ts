@@ -1,82 +1,76 @@
 /**
- *  `archiyou blocks <file.js> --sheet <url>`: the variants of a component script as blocks of
- *  its product sheet's componenten tab.
+ *  `archiyou blocks <file.js> --makedb <snapshot.json>`: the variants of a component script as
+ *  rows of its product sheet's componenten tab.
  *
  *  A component script names its variants as presets: the reference size and the layers of each,
  *  the preset's name the component's id in the sheet, with a label and what it is a variant of:
  *
- *      $PARAMS.preset('hsbwand-esb', { WIDTH: 3000, HEIGHT: 2700, DEPTH: 235, SHEATHING: 'esb15' },
+ *      $PARAMS.preset('hsbwand_esb', { WIDTH: 3000, HEIGHT: 2700, DEPTH: 235, SHEATHING: 'esb15' },
  *          { label: 'HSB wand 235, houtvezel, ESB', variantOf: 'hsbwand' })
  *
- *  Per preset the script runs with the sheet, its parts are collected as products
- *  (products.block()) and its Rc is taken from the layers (materials.rc(), ISO 6946). The table
- *  says what each component holds; --write puts them in the sheet's tab componenten (sheetBlocks.ts,
- *  the table layout), each replacing its rows there, a new variant after its family, with where
- *  it came from (bron: here the file's name and a hash of its code).
+ *  Per preset the script runs with the make database (a snapshot of the sheet, archiyou makedb);
+ *  its shapes are taken off as products (make.takeoff(all()).block()) and its Rc is taken from the
+ *  layers (materials.rc(), ISO 6946). The table says what each component holds; --write puts them
+ *  in the tab componenten of the sheet the snapshot was made from (or --sheet), each replacing its
+ *  rows there, a new variant after its family, with where it came from (bron). Writing needs the
+ *  service account (GOOGLE_SERVICE_ACCOUNT, google.ts).
  *
- *  The sheet is read with a service account when the environment has one (GOOGLE_SERVICE_ACCOUNT,
- *  see google.ts), else as a public sheet; writing always needs the account.
+ *  The script is a local .js file (bron: its name and a hash of its code), or a script of the
+ *  library as the server's admin command writes it (bron: author/name@version, bron-id the
+ *  version's id):
+ *
+ *      pnpm admin:components export archiyou/timberwall:0.31 --out ./components     (apps/server)
+ *      archiyou blocks ./components/timberwall@0.31.json --makedb makedb-2026-11-24.1.json --write
  */
 
 import { createHash } from 'node:crypto';
-import { basename, extname } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { basename, dirname, extname } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 
-import { type Args, columns, fail, out, quiet, round } from './common';
-import { engine, moduleDirs, scriptFile } from './run';
-import { exportXlsx, serviceAccount, sheetId } from './google';
+import { type Args, columns, fail, out, quiet, round, userPath } from './common';
+import { engine, makeDbContent, moduleDirs, scriptFile, linkComponents } from './run';
+import { serviceAccount, sheetId } from './google';
 import { writeBlocks, type GeneratedBlock } from './sheetBlocks';
 
-const USAGE = 'archiyou blocks <file.js> --sheet <url> [--preset name]... [--write] [--json]';
+const USAGE = 'archiyou blocks <file.js|script.json> --makedb <snapshot.json> [--sheet <url>] [--preset name]... [--write] [--json]';
 
 /** What the script is given after its own code, to hand its block back */
-function tail(url: string): string
-{
-    return `
-$module('cloudcalc');
-__blocks_products = make.products().fromSheet('${url}').collect(all());
-__blocks_block = __blocks_products.block();
+const TAIL = `
+__blocks_take = make.takeoff(all());
+__blocks_block = __blocks_take.block();
+__blocks_check = __blocks_take.check();
 __blocks_rc = (() => { try { return materials.rc(all()); } catch (e) { return { error: String(e.message ?? e) }; } })();
 `;
-}
 
 export async function blocks(args: Args): Promise<number>
 {
     const file = scriptFile(args, USAGE);
     if (!file) { return 1; }
-    const sheet = args.values.sheet?.[0];
-    if (!sheet) { fail(`usage: ${USAGE}`); return 1; }
+    const snapshotFile = args.values.makedb?.[0] ? userPath(args.values.makedb[0]) : null;
+    if (!snapshotFile || !existsSync(snapshotFile)) { fail(`usage: ${USAGE} (make a snapshot with archiyou makedb --sheet <url>)`); return 1; }
     const verbose = args.bools.has('verbose');
-    const id = sheetId(sheet);
-    const url = `https://docs.google.com/spreadsheets/d/${id}`;
-
-    // the sheet, as the account sees it, or as anyone does
-    let bytes: ArrayBuffer;
-    let via = 'key';
-    if (serviceAccount()) { bytes = await exportXlsx(id); }
-    else
-    {
-        const res = await fetch(`${url}/export?format=xlsx`);
-        if (!res.ok || !(res.headers.get('content-type') ?? '').includes('spreadsheetml'))
-        {
-            fail('the sheet is not public, and there is no service account (GOOGLE_SERVICE_ACCOUNT) to read it with');
-            return 1;
-        }
-        bytes = await res.arrayBuffer();
-        via = 'public';
-    }
-    const version = createHash('sha256').update(new Uint8Array(bytes)).digest('hex').slice(0, 16);
-    const content = { [`google-sheet:${id}`]: { kind: 'google-sheet', id, bytes, version, via } };
+    const content = makeDbContent(snapshotFile);
+    const snapshot = JSON.parse(readFileSync(snapshotFile, 'utf8'));
+    // the sheet to write to: the one the snapshot was made from, unless said otherwise
+    const id = args.values.sheet?.[0] ? sheetId(args.values.sheet[0]) : String(snapshot.source?.sheet ?? '');
 
     const { runner, catalog } = await engine(verbose, moduleDirs(args));
-    const name = basename(file, extname(file));
-    const own = readFileSync(file, 'utf8');
-    const code = own + tail(url);
-    // a local file has no version: its name and a hash of its code say which it was
-    const source = { bron: `bestand ${basename(file)} #${createHash('sha256').update(own).digest('hex').slice(0, 8)}` };
+    linkComponents(runner, [dirname(file), ...(args.values.components ?? []).map(userPath)]);
+    // a .js file, or a script of the library as `pnpm admin:components export` writes it: its code,
+    // params and presets, and which version it is
+    const stored = extname(file) === '.json' ? JSON.parse(readFileSync(file, 'utf8')) : null;
+    if (stored && typeof stored.code !== 'string') { fail(`${file}: not a script (no code)`); return 1; }
+    const name = stored?.name ?? basename(file, extname(file));
+    const own: string = stored?.code ?? readFileSync(file, 'utf8');
+    const code = own + TAIL;
+    // from the library: author, name and version; a local file has no version: its name and a hash of its code
+    const source = stored
+        ? { bron: stored.source?.bron ?? `${stored.author}/${stored.name}@${stored.version ?? 'zonder versie'}`, bronId: stored.source?.id ?? stored.id }
+        : { bron: `bestand ${basename(file)} #${createHash('sha256').update(own).digest('hex').slice(0, 8)}` };
     const execute = async (params: Record<string, any>) =>
     {
-        const res: any = await quiet(verbose, () => runner.execute({ script: { name, code }, params, modules: catalog, content, outputs: [], messages: ['user', 'warn'] }));
+        const script = stored ? { ...stored, code } : { name, code };
+        const res: any = await quiet(verbose, () => runner.execute({ script, params, modules: catalog, content, outputs: [], messages: ['user', 'warn'] }));
         return { res, scope: runner.getScope('default') as any };
     };
 
@@ -108,14 +102,14 @@ export async function blocks(args: Args): Promise<number>
             block: scope.__blocks_block,
             rc: rc?.error ? null : rc,
             rcError: rc?.error ?? null,
-            warnings: (res.warnings ?? []).map((w: any) => (typeof w === 'string' ? w : w.message)).filter(Boolean),
+            warnings: [...(res.warnings ?? []).map((w: any) => (typeof w === 'string' ? w : w.message)), ...(scope.__blocks_check ?? []).map((i: any) => `${i.where}: ${i.message}`)].filter(Boolean),
         });
     }
 
     if (args.bools.has('json')) { out(JSON.stringify(made, null, 1)); }
     else
     {
-        out(`${made.length} block(s) from ${name}, priced by the sheet`);
+        out(`${made.length} block(s) from ${name}, priced by make database ${snapshot.version} (${snapshot.source?.title ?? id})`);
         const rows = [['component', 'variant of', 'Rc', 'depth', 'per m2', 'lines', 'label']];
         made.forEach(b =>
         {
@@ -126,11 +120,13 @@ export async function blocks(args: Args): Promise<number>
         columns(rows).forEach(l => out(l));
         made.filter(b => b.rcError).forEach(b => out(`${b.id}: no Rc: ${b.rcError}`));
         made.forEach(b => b.block.noRecipe.length && out(`${b.id}: no recipe for ${b.block.noRecipe.join(', ')}`));
+        made.forEach(b => (b.warnings ?? []).filter((w: string) => w.startsWith('make.') || w.includes('.product(')).forEach((w: string) => out(`${b.id}: ${w}`)));
     }
 
     if (args.bools.has('write'))
     {
         if (!serviceAccount()) { fail('--write needs a service account (GOOGLE_SERVICE_ACCOUNT) with edit rights on the sheet'); return 1; }
+        if (!id) { fail('--write: the snapshot names no sheet; give it with --sheet <url>'); return 1; }
         const written = await writeBlocks(id, made);
         written.forEach(w => out(`written ${w.id}: componenten!A${w.from}:A${w.to}`));
     }
