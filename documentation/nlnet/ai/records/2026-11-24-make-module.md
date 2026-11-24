@@ -139,7 +139,30 @@ Step 3, the product belongs to the shape:
 - Tests: `tests/unit/make/catalog.test.ts` (lookup, size choice, shape.product in a run, check,
   strict). Core 2071 pass, the same 5 fail as before; CLI, server pass.
 
+Step 4, the takeoff:
+
+- One engine: `make.takeoff()` reckons with ProductManager, which now reads a snapshot as it read
+  the sheet (`fromDb()`), and takes shapes that `shape.product()` already resolved (`place()`),
+  so nothing is matched twice and the costs are those the sheet's components were checked
+  against.
+- Time from the sheet's time: per operation `tijd (seconden)` x the labour factor
+  (`settings.labor_factor`), as the sheet's `arbeidstijd (uur)`; a component's hours are its rows'
+  `arbeidstijd`. Checked on the trial copy: hours x rate is the labour cost, to the cent.
+- `take.weight()` (kg, net: volume x density, else the mass per piece of the sheet),
+  `take.cost()` (incl. the margins), `take.time()` (hours by phase), `take.lines()` (excl. margins,
+  as the component rows), `take.by('component' | 'product' | 'label' | 'material' | 'vorm' |
+  'group' | 'phase')`, `take.order()`, `take.cuts()` (per length of stock the parts sawn from it),
+  `take.check()`, `take.add()`, `take.complete()`, tables (`table()`, `orderTable()`,
+  `cutTable()`). Screws drawn by `make.fasten()` are counted by their heads.
+- `shape.product(name, { component })`: the component whose rows give the part's recipe and its
+  group in `by('component')`.
+- Problems (a shape without a product, no recipe, no price, no weight) go to `take.check()` and
+  `make.check()`; `make.strict()` stops the run.
+- Tests: `tests/unit/make/takeoff.test.ts`, on a sheet worked out by hand. Core 2075 pass, the
+  same 5 fail as before.
+- Not yet: CO2 in the takeoff (the sheet has it per product and per component row).
+
 ## Next
 
-Step 4: `make.takeoff()`: weight, cost, time (`tijd (seconden)`), grouping, order and cut lists.
-Before it reaches the real core: the `term`/`aliassen` columns there.
+Step 5: `timberwall` and `ur_house_detailed` on the new API; publishing components as an admin
+command. Before it reaches the real core: the `term`/`aliassen` columns there.
