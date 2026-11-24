@@ -19,6 +19,7 @@ import { roundTo } from '../utils';
 
 import { collectParts, partSource } from '../modeler/parts';
 import { ProductManager } from './products/ProductManager';
+import { Offer } from './offer/Offer';
 import { MakeDb } from './db';
 import { Catalog, type Resolution } from './catalog';
 import { Estimate, type EstimateOptions } from './estimate/Estimate';
@@ -2559,20 +2560,22 @@ export class Make
         return group;
     }
 
-    /** Products of a product sheet for the parts of a model, and their costs: a new
-     *  ProductManager. It reads nothing until fromSheet(url) or fromRows(rows).
+    /**
+     *  An offer for a client, made with the offer template: the prices builders published to it, per
+     *  builder and scenario. The template is a Google Sheet, opened with cloudcalc; see
+     *  make/offer/Offer.ts.
      *
-     *  @example
-     *  // In practice: products = make.products().fromSheet(url)   // a Google Sheet, read with cloudcalc
-     *  products = make.products().fromRows([
-     *      { product_id: 'sls-38x140', productgroep: 'SLS', vorm: 'balk', breedte: 38, hoogte: 140, lengte: 5400 },
-     *  ])
-     *  products.assign('SLS', make.wall(3000, 2700, 140))
-     *  products.toTable()
+     *      offer = make.offer(OFFER_TEMPLATE)
+     *      offer.add('hsbwand', { oppervlak: 48 }).add('dak', { oppervlak: 40 })
+     *      offer.compute({ bouwer: 'URBUILD', scenario: 'DIY Bouwpakket' })
+     *      offer.outputs().bouwkosten
+     *
+     *  @param template - the template's URL, or its workbook opened with cloudcalc
+     *  @param options - `key`: the name of the Google key in Keys, for a private template
      */
-    products(): ProductManager
+    offer(template: any, options: { key?: string } = {}): Offer
     {
-        return new ProductManager(() => this.archiyou);
+        return new Offer(new ProductManager(() => this.archiyou).fromOffer(template, options));
     }
 
     /** The make databases this Make read, by the version of their content: parsed once each. */
@@ -2705,7 +2708,7 @@ export class Make
             // Without the make database (a run not signed in, a test) the shapes keep the name and
             // their size, and make.estimate() finds the product: a component needs nothing to run
             if (!(e instanceof ContentNeededError)) { throw e; }
-            const pending = { kind: 'make', pending: names, said, tolerance: options.tolerance, fit: options.fit, recipe: options.recipe, label: options.label, block: options.component, db: options.db ?? null };
+            const pending = { kind: 'make', pending: names, said, tolerance: options.tolerance, fit: options.fit, recipe: options.recipe, label: options.label, block: options.component, waste: options.waste, db: options.db ?? null };
             if (!parts.length) { asArray(shapes).forEach(shape => this._carry(shape, { ...pending, measure: null })); }
             parts.forEach(part => part.shapes.forEach(shape => this._carry(shape, { ...pending, measure: part.measure })));
             return [];
@@ -2830,7 +2833,7 @@ export class Make
         const material = String(r.product.row['materiaal'] ?? '').trim();
         shapes.forEach(shape =>
         {
-            this._carry(shape, { kind: 'make', product: r.product!.id, name, how: r.how, measure: r.measure, recipe: options.recipe, label: options.label, block: options.component, db });
+            this._carry(shape, { kind: 'make', product: r.product!.id, name, how: r.how, measure: r.measure, recipe: options.recipe, label: options.label, block: options.component, waste: options.waste, db });
             if (material && !shape._material && typeof shape.material === 'function') { shape.material(material); }
         });
     }
@@ -3002,6 +3005,8 @@ export interface ProductForOptions
     fit?: boolean;
     /** A version of the make database; default the latest the run was given */
     db?: string;
+    /** Material waste as a fraction (0.15 is 15 %), instead of the sheet's for the product's vorm */
+    waste?: number;
     /** The component of the sheet the part is in ('hsbwand'): its rows give the part's recipe
      *  (the work on a stud of a wall), and make.estimate().by('component') groups by it */
     component?: string;

@@ -187,7 +187,7 @@ describe('URBUILD library: the core', () =>
 
 describe('URBUILD library: a builder sheet', () =>
 {
-    it('names a product by its type and the size that tells it apart, as ProductManager.prices() does', () =>
+    it('names a product by its type and the size that tells it apart, as the engine prices() does', () =>
     {
         expect(PRODUCTS.map(gs.productLabel)).toEqual(['SLS-regel 38x235', 'Gipsplaat 12.5 mm', 'Bouwplank (gezaagd, geniet) 32 mm', 'Wastafel'])
     })

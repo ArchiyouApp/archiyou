@@ -2,13 +2,15 @@ import { describe, it, expect, beforeAll, vi } from 'vitest'
 
 import { Modeler } from '../../../../src/modeler/Modeler'
 import { Calc } from '../../../../src/calc/Calc'
-import { MaterialManager } from '../../../../src/materials/MaterialManager'
-import { MATERIALEN_ROWS } from '../../materials/materialen.fixture'
 import { ProductManager, cutLengths, type ProductRow, type OperationRow, type ComponentRow } from '../../../../src/make/products/ProductManager'
 import { readComponents, combineRows } from '../../../../src/make/products/recipes'
+import { Catalog } from '../../../../src/make/catalog'
+import { Offer } from '../../../../src/make/offer'
+import { collectParts, partSource } from '../../../../src/modeler/parts'
 
 /**
- * ProductManager: parts of a model → products of a product sheet → costs.
+ * ProductManager, the engine of make.estimate() and make.offer(): parts of a model → products of
+ * a product sheet → costs.
  *
  * The rows are a few products of the URHOUSE sheet as its products table has them. A product
  * group is one product line in several sizes (SLS), a family can hold several lines (OSB).
@@ -37,6 +39,38 @@ const COMPONENTS: Array<ComponentRow> = [
     { component: 'kitchen', gebouwdeel: 'interieur', eenheid: 'st' },
 ]
 
+/**
+ * For the tests only: give shapes a product by name as shape.product() does (the Catalog: id,
+ * group, alias, words, fuzzy; the part's size chooses), and place() them. A name that is a
+ * component makes the shapes a mass of it. Errors throw, warnings go to console.warn.
+ */
+declare module '../../../../src/make/products/ProductManager'
+{
+    interface ProductManager { assign(name: string | Array<string>, shapes: any, options?: { component?: string, label?: string, recipe?: string, waste?: number, tolerance?: number }): this }
+}
+;(ProductManager.prototype as any).assign = function (this: any, name: string | Array<string>, shapes: any, options: any = {})
+{
+    if (typeof name === 'string' && this._components.some((c: any) => c.id === name))
+    {
+        const list = Array.isArray(shapes) ? shapes : [shapes]
+        list.forEach((shape: any) => this.place(shape, { component: name, volume: Math.abs(shape.volume()), label: options.label }))
+        return this
+    }
+    const rows = this._products.map((p: any) => p.row)
+    const catalog = new Catalog({ table: (table: string) => (table === 'producten' ? rows : []) } as any)
+    const parts = collectParts(partSource(shapes), { labels: false, order: 'scene' })
+    if (!parts.length) { throw new Error('no solid shapes') }
+    // a part that fits nothing is left (shape.product() says so in make.check()); none at all is an error
+    const found = parts.map(part => ({ part, r: catalog.resolveFirst(Array.isArray(name) ? name : [name], part.measure, options.tolerance ?? 1).resolution }))
+    if (!found.some(f => f.r.product)) { throw new Error(found[0]!.r.issues.map(i => i.message).join('; ')) }
+    found.filter(f => f.r.product).forEach(({ part, r }) =>
+    {
+        r.issues.forEach(i => console.warn(i.message))
+        part.shapes.forEach(shape => this.place(shape, { product: r.product!.id, measure: r.measure!, block: options.component, label: options.label ?? (part.group && part.group !== 'main' ? part.group : undefined), recipe: options.recipe, waste: options.waste }))
+    })
+    return this
+}
+
 let modeler: Modeler
 const products = () => new ProductManager().fromRows(PRODUCTS, OPERATIONS)
 const box = (x: number, y: number, z: number) => modeler.box(x, y, z)
@@ -48,7 +82,7 @@ beforeAll(async () =>
     await modeler.load()
 })
 
-describe('ProductManager.assign()', () =>
+describe('ProductManager: parts by name, as shape.product() gives them', () =>
 {
     it('gives a wall\'s studs and plates the SLS of their section, and leaves its insulation', () =>
     {
@@ -64,26 +98,23 @@ describe('ProductManager.assign()', () =>
         expect(sls.lengte).toBeCloseTo(lengths.reduce((a: number, b: number) => a + b, 0) / 1000, 5)
         expect(sls.oppervlak).toBe(0)
         expect(sls.description).toMatch(/studs/)
-        expect(pm.unassigned().length).toBe(wall.insulation.length)
-        expect(pm.unassigned(wall).length).toBe(wall.insulation.length)
 
-        // a later assign takes the insulation; nothing is left
+        // the insulation fits no SLS: given its own product
         pm.assign('WFF', wall.insulation)
-        expect(pm.unassigned().length).toBe(0)
         expect(line(pm, 'wff-140')).toMatchObject({ shapes: wall.insulation.length, description: 'insulation' })
     })
 
     it('takes the shortest stock length that is long enough, and says when none is', () =>
     {
         const pm = products()
-        expect(() => pm.assign('SLS', box(38, 140, 6000))).toThrow(/no product of 'SLS' fits any of the parts \(38 x 140 x 6000\)/)
+        expect(() => pm.assign('SLS', box(38, 140, 6000))).toThrow(/no product of 'SLS' fits the part's size 38 x 140 x 6000/)
         pm.assign('SLS-FJ', box(38, 140, 6000))
         expect(line(pm, 'sls-fj-38x140')).toMatchObject({ st: 1, lengte: 6 })
 
         // by id, it is assigned anyway, with a warning
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         pm.assign('sls-38x140', box(38, 140, 6000))
-        expect(warn.mock.calls[0]?.[0]).toMatch(/1 part\(s\) do not fit its size: 38 x 140 x 6000/)
+        expect(warn.mock.calls[0]?.[0]).toMatch(/sls-38x140 does not fit the part's size 38 x 140 x 6000/)
         warn.mockRestore()
         expect(line(pm, 'sls-38x140').lengte).toBe(6)
     })
@@ -136,11 +167,15 @@ describe('ProductManager.assign()', () =>
         expect(line(gyp, 'gyp-12.5-1200')).toMatchObject({ st: 1, zaaglengte: 2.7 })
     })
 
-    it('refuses a choice it cannot make, and names the narrower groups', () =>
+    it('takes the first of a tie, and says so: a narrower group chooses', () =>
     {
-        expect(() => products().assign('OSB', box(1200, 18, 2400)))
-            .toThrow(/2 products fit 18 x 1200 x 2400 equally well: osb-18-sqe-1220x2440, osb-18-tg2-1220x2440\. Assign one of them, or a narrower group: OSB-SQE, OSB-TG2/)
-        expect(() => products().assign('OSB-SQE', box(1200, 18, 2400))).not.toThrow()
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        expect(products().assign('OSB', box(1200, 18, 2400)).list().map(l => l.id)).toEqual(['osb-18-sqe-1220x2440'])
+        expect(warn.mock.calls[0]?.[0]).toMatch(/2 products of 'OSB' fit 18 x 1200 x 2400 equally well \(osb-18-sqe-1220x2440, osb-18-tg2-1220x2440\): took osb-18-sqe-1220x2440/)
+        warn.mockClear()
+        products().assign('OSB-SQE', box(1200, 18, 2400))
+        expect(warn).not.toHaveBeenCalled()
+        warn.mockRestore()
     })
 
     it('gives each part the first of several candidates that fits it', () =>
@@ -148,7 +183,11 @@ describe('ProductManager.assign()', () =>
         // SLS comes in 5.4 m, finger-jointed SLS in 9 m: only the long one is finger-jointed
         const pm = products().assign(['SLS', 'SLS-FJ'], [box(38, 140, 2700), box(38, 140, 8000)])
         expect(pm.list().map(l => [l.id, l.st])).toEqual([['sls-38x140', 1], ['sls-fj-38x140', 1]])
-        expect(() => products().assign(['SLS', 'SLS-FJ'], box(38, 999, 2700))).toThrow(/no product of 'SLS' fits/)
+        // a group of one product is taken as its id is: a misfit is said, not refused
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        expect(products().assign(['SLS', 'SLS-FJ'], box(38, 999, 2700)).list().map(l => l.id)).toEqual(['sls-fj-38x140'])
+        expect(warn.mock.calls[0]?.[0]).toMatch(/sls-fj-38x140 does not fit the part's size 38 x 999 x 2700/)
+        warn.mockRestore()
     })
 
     it('fits a piece by its largest three sizes when its row has four', () =>
@@ -159,19 +198,17 @@ describe('ProductManager.assign()', () =>
         expect(line(pm, 'raam-600x1200').st).toBe(1)
     })
 
-    it('loads products once: what assign() matched belongs to them', () =>
+    it('loads products once: what place() took belongs to them', () =>
     {
         expect(() => products().fromRows(PRODUCTS)).not.toThrow()
-        expect(() => products().assign('SLS', box(38, 140, 2600)).fromRows(PRODUCTS)).toThrow(/loaded once.*another make\.products\(\)/)
+        expect(() => products().assign('SLS', box(38, 140, 2600)).fromRows(PRODUCTS)).toThrow(/loaded once/)
         expect(() => products().add('screw-ss-6x100', { st: 1 }).fromRows(PRODUCTS)).toThrow(/loaded once/)
     })
 
     it('says what it has for an unknown id or group', () =>
     {
-        expect(() => products().assign('SLX', box(38, 140, 2000))).toThrow(/no product, product group or component 'SLX'\. Did you mean: SLS, SLS-T, SLS-FJ/)
-        // without products it only maps (see collect()); compute() then has nothing
-        expect(new ProductManager().assign('SLS', box(38, 140, 2000)).list()).toEqual([])
-        expect(() => products().assign('SLS', modeler.line([0, 0, 0], [100, 0, 0]))).toThrow(/no solid shapes/)
+        expect(() => products().assign('SLX', box(38, 140, 2000))).toThrow(/'SLX' is no product of the sheet; did you mean: sls/)
+        expect(() => products().place(box(38, 140, 2000), { product: 'nope', measure: {} as any })).toThrow(/'nope' is no product of the sheet/)
     })
 })
 
@@ -283,7 +320,7 @@ describe('ProductManager.compute()', () =>
             compute: () => ({ marges: { materiaal: 10, arbeid: 20, algemeen: 0 }, verlies: [['balk', 0.1], ['mat', 0.05]] }),
         }
     }
-    const sheet = () => new ProductManager().fromSheet(workbook())
+    const sheet = () => new ProductManager().fromWorkbook(workbook())
 
     it('prices a beam by its length with the waste of its vorm, and its labour by the recipe in its component', () =>
     {
@@ -404,7 +441,7 @@ describe('ProductManager.compute()', () =>
 
         it('has its components without named ranges, and prices them from their rows with the margins', () =>
         {
-            const pm = new ProductManager().fromSheet(tableSheet())
+            const pm = new ProductManager().fromWorkbook(tableSheet())
             const prices = pm.prices()
             expect(prices.map(p => [p.component, p.naam, p.groep, p.eenheid])).toEqual([['wall', 'HSB wand (Rc 5,2)', 'wanden', 'm2'], ['wall_esb', 'HSB wand, ESB', 'wanden', 'm2']])
             expect(prices[0]!.material).toBeCloseTo(165 / 8.1 * 1.1, 6)
@@ -417,7 +454,7 @@ describe('ProductManager.compute()', () =>
 
         it('adds the work on the element per element, or per m2 of it', () =>
         {
-            const pm = new ProductManager().fromSheet(tableSheet()).elementWork('wall', { oppervlak: 16.2 })
+            const pm = new ProductManager().fromWorkbook(tableSheet()).elementWork('wall', { oppervlak: 16.2 })
             expect(pm.list().map(l => [l.id, l.st, l.oppervlak])).toEqual([['montagewand', 1, 0], ['afmonteren', 0, 16.2]])
         })
     })
@@ -428,7 +465,7 @@ describe('ProductManager.compute()', () =>
         const wb = workbook()
         const rows = COMPONENTEN.map(r => r.component === 'wall' ? { ...r, 'stuks (totaal)': 9, 'lengte (totaal m1)': 24.3 }
             : r.product === 'wff-140' && r.fase === 'materiaal' ? { ...r, 'stuks (totaal)': 6, 'oppervlak (totaal m2)': 7.29 } : r)
-        const completed = () => new ProductManager().fromSheet({ ...wb, table: (name: string) => name === 'componenten' ? rows : wb.table(name) })
+        const completed = () => new ProductManager().fromWorkbook({ ...wb, table: (name: string) => name === 'componenten' ? rows : wb.table(name) })
 
         // a beam of the same line in the model stands for the block's beam: only the mats and the element work are added
         const pm = completed().assign('SLS', [box(38, 140, 2700)], { component: 'wall' }).complete('wall', { oppervlak: 16.2 })
@@ -443,71 +480,6 @@ describe('ProductManager.compute()', () =>
         expect(line(completed().complete('wall', { oppervlak: 8.1 }), 'sls-38x235').lengte).toBeCloseTo(24.3, 6)
         expect(completed().complete('wall', { oppervlak: 8.1 }, { except: ['wff-140'] }).list().map(l => l.id)).toEqual(['sls-38x235', 'montagewand', 'afmonteren'])
         expect(() => completed().complete('wall', { st: 1 })).toThrow(/sized in m2: give oppervlak/)
-    })
-
-    describe('mapped in a component, collected in the model', () =>
-    {
-        const wb = workbook()
-        const rows = COMPONENTEN.map(r => r.component === 'wall' ? { ...r, 'stuks (totaal)': 9, 'lengte (totaal m1)': 24.3 }
-            : r.product === 'wff-140' && r.fase === 'materiaal' ? { ...r, 'stuks (totaal)': 6, 'oppervlak (totaal m2)': 7.29 } : r)
-        const withSheet = () => new ProductManager().fromSheet({ ...wb, table: (name: string) => name === 'componenten' ? rows : wb.table(name) })
-        /** A wall component: two studs and a mat, mapped without a sheet, completed for 8.1 m2 */
-        function wallComponent()
-        {
-            const studs = [box(38, 140, 2700), box(38, 140, 2700)]
-            const mat = box(140, 575, 1350)
-            new ProductManager()
-                .assign('SLS', studs, { component: 'wall', label: 'studs' })
-                .assign('wff-140', mat, { component: 'wall' })
-                .add('screw-ss-6x100', { st: 30 }, { component: 'wall' })
-                .complete('wall', { oppervlak: 8.1 })
-            return [...studs, mat]
-        }
-
-        it('maps without a sheet: notes on each shape what it is, loads and prices nothing', () =>
-        {
-            const shapes = wallComponent()
-            expect((shapes[0] as any)._product).toMatchObject({ of: 'SLS', options: { component: 'wall', label: 'studs' } })
-            expect((shapes[2] as any)._product.of).toBe('wff-140')
-            expect(() => new ProductManager().assign('NOPE', box(10, 10, 10))).not.toThrow()
-            expect(() => new ProductManager().collect(shapes)).toThrow(/needs products/)
-        })
-
-        it('resolves the mappings with the sheet, as assign() there would', () =>
-        {
-            const pm = withSheet().collect(wallComponent())
-            const direct = withSheet().assign('SLS', [box(38, 140, 2700), box(38, 140, 2700)], { component: 'wall' })
-            expect(line(pm, 'sls-38x140').st).toBe(2)
-            expect(line(pm, 'sls-38x140').lengte).toBeCloseTo(line(direct, 'sls-38x140').lengte, 6)
-            expect(line(pm, 'wff-140').shapes).toBe(1)
-            expect(line(pm, 'screw-ss-6x100').st).toBeCloseTo(30, 6)
-            // complete(): the block's beam is shown by the studs, the mats by the mat; the work on the element is added
-            expect(pm.list().map(l => l.id)).toEqual(['sls-38x140', 'wff-140', 'screw-ss-6x100', 'montagewand', 'afmonteren'])
-            expect(line(pm, 'afmonteren').oppervlak).toBeCloseTo(8.1, 6)
-        })
-
-        it('counts a component once for every time it is in the model: each shape brings its share', () =>
-        {
-            const wall = wallComponent()
-            const copied = wall.map(s => s.copy())               // the wall again, as a cached component or a copy
-            const pm = withSheet().collect([...wall, ...copied])
-            expect(line(pm, 'sls-38x140').st).toBe(4)
-            expect(line(pm, 'screw-ss-6x100').st).toBeCloseTo(60, 6)
-            expect(line(pm, 'afmonteren').oppervlak).toBeCloseTo(16.2, 6)
-            expect(line(pm, 'montagewand').st).toBeCloseTo(2, 6)
-        })
-
-        it('leaves out what does not fit with a warning, instead of stopping the model', () =>
-        {
-            const odd = box(38, 999, 2700)
-            new ProductManager().assign('SLS', odd, { component: 'wall' })
-            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-            const pm = withSheet().collect([odd, ...wallComponent()])
-            expect(warn.mock.calls.flat().join(' ')).toMatch(/collect\(\): assign\('SLS'\) left out: .*no product of 'SLS' fits/)
-            warn.mockRestore()
-            expect(pm.unassigned().toArray()).toEqual([odd])
-            expect(line(pm, 'sls-38x140').st).toBe(2)
-        })
     })
 
     it('prices a component as a whole: per its unit, or per m3 when it has a volume', () =>
@@ -533,35 +505,17 @@ describe('ProductManager.compute()', () =>
         expect(pm.list().every(l => l.costs === null)).toBe(true)
     })
 
-    it('opens a sheet by its URL with the run\'s cloudcalc module, which the script declares', () =>
-    {
-        const opened: Array<any> = []
-        const cloudcalc = { open: (ref: string, opts: any) => { opened.push([ref, opts]); return workbook() } }
-        const run = (resolve: (name: string) => any) => new ProductManager(() => ({ modules: { resolve } } as any))
-        const URL = 'https://docs.google.com/spreadsheets/d/abc/edit'
-
-        expect(run(() => cloudcalc).workbook).toBeNull()
-        const pm = run(() => cloudcalc).fromSheet(URL, { key: 'urbuild' })
-        expect(opened).toEqual([[URL, { key: 'urbuild' }]])
-        expect(typeof pm.workbook?.compute).toBe('function')
-        expect(pm.add('montagewand', { st: 1 }).compute().total).toBeCloseTo(36, 6)
-
-        const undeclared = run((name) => { throw new Error(`$module('${name}'): no such module`) })
-        expect(() => undeclared.fromSheet(URL)).toThrow(/declare it at the top of the script: \$module\('cloudcalc'\)$/)
-        expect(() => new ProductManager().fromSheet(URL)).toThrow(/declare it at the top of the script/)
-    })
-
     it('needs the sheet, with its recipes and margins', () =>
     {
         expect(() => products().compute()).toThrow(/needs the sheet/)
-        expect(() => new ProductManager().fromSheet({} as any)).toThrow(/expected the URL of a Google Sheet, or a workbook/)
+        expect(() => new ProductManager().fromWorkbook({} as any)).toThrow(/expected a workbook/)
 
         const noRecipes = { ...workbook(), tables: () => [{ name: 'producten' }, { name: 'bewerkingen' }] }
-        expect(() => new ProductManager().fromSheet(noRecipes).compute()).toThrow(/no recipes: a named range tables.componenten/)
+        expect(() => new ProductManager().fromWorkbook(noRecipes).compute()).toThrow(/no recipes: a named range tables.componenten/)
         const builderLayout = { ...workbook(), table: (name: string) => (name === 'componenten' ? [{ component: 'wall', hoofdconstructie: 'sls' }] : workbook().table(name)) }
-        expect(() => new ProductManager().fromSheet(builderLayout).compute()).toThrow(/no recipes/)
+        expect(() => new ProductManager().fromWorkbook(builderLayout).compute()).toThrow(/no recipes/)
         const noMargins = { ...workbook(), compute: () => ({}) }
-        expect(() => new ProductManager().fromSheet(noMargins).compute()).toThrow(/no margins: named ranges outputs.marges/)
+        expect(() => new ProductManager().fromWorkbook(noMargins).compute()).toThrow(/no margins: named ranges outputs.marges/)
     })
 
     it('orders beams in lengths of stock, cut from them longest part first', () =>
@@ -608,7 +562,7 @@ describe('ProductManager.compute()', () =>
         // the floor's block: 4 beams of 20 m1 for 10 m2
         const wb = workbook()
         const rows = COMPONENTEN.map(r => r.component === 'floor' ? { ...r, 'stuks (totaal)': 4, 'lengte (totaal m1)': 20 } : r)
-        const pm = new ProductManager().fromSheet({ ...wb, table: (name: string) => name === 'componenten' ? rows : wb.table(name) })
+        const pm = new ProductManager().fromWorkbook({ ...wb, table: (name: string) => name === 'componenten' ? rows : wb.table(name) })
             .add('floor', { oppervlak: 20 })
 
         // 40 m1 with 10 % waste in lengths of 5.4 m at 54
@@ -619,7 +573,7 @@ describe('ProductManager.compute()', () =>
     {
         const calc = new Calc()
         calc.setArchiyou({} as any)
-        const pm = new ProductManager(() => ({ calc }) as any).fromSheet(workbook())
+        const pm = new ProductManager(() => ({ calc }) as any).fromWorkbook(workbook())
             .assign('SLS', [box(38, 140, 2600)], { component: 'wall' })
             .add('screw-ss-6x100', { st: 10 }, { component: 'floor' })
         const table = pm.orderTable()
@@ -695,7 +649,7 @@ describe('ProductManager.offer()', () =>
 
     it('lists the components with a group and a name as the price list, in the order of the sheet', () =>
     {
-        const prices = new ProductManager().fromSheet(sheet()).prices()
+        const prices = new ProductManager().fromWorkbook(sheet()).prices()
         expect(prices.map(p => [p.groep, p.component, p.naam, p.eenheid])).toEqual([
             ['wanden', 'wall', 'HSB wand', 'm2'], ['wanden', 'strawwall', 'Strobalen wand', 'm2'], ['keuken', 'kitchen', 'Basiskeuken', 'st']])
         expect(prices[0]).toMatchObject({ material: 60, onsite: 0, voorbewerking: 15, assemblage: 30, montage: 25, afbouw: 20 })
@@ -705,7 +659,20 @@ describe('ProductManager.offer()', () =>
         // the row of the cell, not a digit in the tab's name
         const wb = sheet()
         const tab = { ...wb, namedRanges: () => wb.namedRanges().map(r => ({ ...r, range: `'componenten2'!$${r.range.replace(/(\d+)/, '$$$1')}` })) }
-        expect(new ProductManager().fromSheet(tab).prices().map(p => p.component)).toEqual(['wall', 'strawwall', 'kitchen'])
+        expect(new ProductManager().fromWorkbook(tab).prices().map(p => p.component)).toEqual(['wall', 'strawwall', 'kitchen'])
+    })
+
+    it('opens the template by its URL with the run\'s cloudcalc module', () =>
+    {
+        const opened: Array<any> = []
+        const cloudcalc = { open: (ref: string, opts: any) => { opened.push([ref, opts]); return template() } }
+        const run = (resolve: (name: string) => any) => new ProductManager(() => ({ modules: { resolve } } as any))
+        const URL = 'https://docs.google.com/spreadsheets/d/abc/edit'
+
+        new Offer(run(() => cloudcalc).fromOffer(URL, { key: 'urbuild' })).add('wall', { oppervlak: 2 })
+        expect(opened).toEqual([[URL, { key: 'urbuild' }]])
+        const undeclared = run((name) => { throw new Error(`$module('${name}'): no such module`) })
+        expect(() => undeclared.fromOffer(URL)).toThrow(/make\.offer\(url\): the offer template is opened with the cloudcalc module/)
     })
 
     it('reads its components from what the builders published, without a builder\'s own sheet', () =>
@@ -726,9 +693,10 @@ describe('ProductManager.offer()', () =>
     {
         const wb = template()
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-        const pm = new ProductManager().fromOffer(wb as any)
+        const offer = new Offer(new ProductManager().fromOffer(wb as any))
             .add('wall', { oppervlak: 7.5 }).add('wall', { oppervlak: 2.5 })
-            .assign('kitchen', box(2400, 600, 900))          // a mass: 1.296 m3 at 1600 per m3 is 1.0368 kitchens of 2000
+            .add('kitchen', box(2400, 600, 900))          // a mass: 1.296 m3 at 1600 per m3 is 1.0368 kitchens of 2000
+        const pm = { offer: (o: any) => offer.compute(o), add: (c: string, q: any) => { offer.add(c, q); return pm } }
         expect(pm.offer({ scenario: 'Full Service', inputs: { floorarea_net: 54 } })).toBe(wb)
 
         expect(wb.sent[0]).toEqual({
@@ -772,61 +740,5 @@ describe('ProductManager.offer()', () =>
         expect(pm.offerOutputs({ scenario: 'DIY Full' }).bouwkosten.totaal).toBe(40000)
         expect(pm.offerOutputs().specificaties.uren).toBe(300)
         expect(wb.sent.at(-1)).toMatchObject({ scenario: 'Full Service', wanden: 10 })
-    })
-})
-
-describe('ProductManager.toTable()', () =>
-{
-    it('shows the lines, with the costs once computed', () =>
-    {
-        const made: Array<any> = []
-        const calc = { table: (name: string, rows: Array<any>, columns: Array<string>) => { made.push({ name, rows, columns }); return made.at(-1) } }
-        const pm = new ProductManager(() => ({ calc } as any)).fromRows(PRODUCTS, OPERATIONS).add('montagewand', { st: 1 })
-        pm.toTable()
-        expect(made[0]).toMatchObject({ name: 'products', columns: ['product', 'description', 'vorm', 'st', 'lengte', 'oppervlak', 'volume', 'zaaglengte', 'waste'] })
-        expect(made[0].rows).toEqual([['montagewand', '', 'st', 1, 0, 0, 0, 0, '']])
-        expect(() => products().toTable()).toThrow(/only available inside a run/)
-    })
-})
-
-describe('ProductManager: products are made of the materials of the same sheet', () =>
-{
-    const rows: Array<ProductRow> = [{ product_id: 'sls-38x140', productgroep: 'SLS', vorm: 'balk', breedte: 38, hoogte: 140, lengte: 5400, basiseenheid: 'st', materiaal: 'naaldhout_constructief' } as ProductRow]
-    const workbook = (withMaterials: boolean) =>
-    {
-        const tables: Record<string, Array<any>> = { producten: rows, bewerkingen: [], componenten: [], ...(withMaterials ? { materialen: MATERIALEN_ROWS } : {}) }
-        return {
-            table: (name: string) => tables[name] as Array<Record<string, unknown>>,
-            tables: () => Object.keys(tables).map(name => ({ name })),
-            namedRanges: () => [],
-            compute: () => ({ marges: { materiaal: 0, arbeid: 0, algemeen: 0 }, verlies: [] }),
-        }
-    }
-
-    it('fromSheet() loads the materialen tab into the run, and a part takes its product\'s material', () =>
-    {
-        const materials = new MaterialManager()
-        const pm = new ProductManager(() => ({ materials } as any)).fromSheet(workbook(true))
-        const stud = box(38, 140, 2700) as any
-        pm.assign('SLS', [stud])
-
-        expect(materials.loaded).toBe(true)
-        expect(materials.get('naaldhout_constructief')!.thermalConductivity!.value).toBe(0.13)
-        expect(stud._material).toBe('naaldhout_constructief')
-    })
-
-    it('keeps a material the shape was given itself', () =>
-    {
-        const pm = new ProductManager(() => ({ materials: new MaterialManager() } as any)).fromSheet(workbook(true))
-        const stud = (box(38, 140, 2700) as any).material('douglas')
-        pm.assign('SLS', [stud])
-        expect(stud._material).toBe('douglas')
-    })
-
-    it('works with a sheet that has no materialen tab', () =>
-    {
-        const materials = new MaterialManager()
-        new ProductManager(() => ({ materials } as any)).fromSheet(workbook(false))
-        expect(materials.loaded).toBe(false)
     })
 })

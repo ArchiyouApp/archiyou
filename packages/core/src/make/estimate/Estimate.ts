@@ -87,6 +87,7 @@ interface Placed
     block: string;
     label: string;
     recipe?: string;
+    waste?: number;
 }
 
 interface Added
@@ -153,12 +154,12 @@ export class Estimate
                 // named in a run without the make database: found now, as shape.product() would have
                 const { name, resolution: r } = this._catalog().resolveFirst(made.pending, made.measure ?? part.measure, made.tolerance, made.fit !== false);
                 r.issues.forEach(i => this._issue(i.level, `${this._name(shape)}.product(${made.said ?? `'${name}'`})`, i.message));
-                if (r.product) { this._placed.push({ shape, product: r.product, measure: r.measure ?? part.measure, block: made.block ?? '', label, recipe: made.recipe }); }
+                if (r.product) { this._placed.push({ shape, product: r.product, measure: r.measure ?? part.measure, block: made.block ?? '', label, recipe: made.recipe, waste: made.waste }); }
                 return;
             }
             const product = this._products().get(made.product);
             if (!product) { this._issue('error', this._name(shape), `'${made.product}' is not in make database ${db.version}`); return; }
-            this._placed.push({ shape, product, measure: made.measure ?? part.measure, block: made.block ?? '', label, recipe: made.recipe });
+            this._placed.push({ shape, product, measure: made.measure ?? part.measure, block: made.block ?? '', label, recipe: made.recipe, waste: made.waste });
         }));
         // the problems of the components the shapes come from: their own make.check()
         shares.forEach((_, extras) =>
@@ -364,7 +365,7 @@ export class Estimate
             {
                 pm.place(p.shape, p.component
                     ? { component: p.component, volume: p.volume, label: p.label, block: p.block || undefined }
-                    : { product: p.product!.id, measure: p.measure, label: p.label, block: p.block || undefined, recipe: p.recipe });
+                    : { product: p.product!.id, measure: p.measure, label: p.label, block: p.block || undefined, recipe: p.recipe, waste: p.waste });
             }
             catch (e) { if (!group) { this._issue('error', this._name(p.shape), (e as Error).message); } }
         });

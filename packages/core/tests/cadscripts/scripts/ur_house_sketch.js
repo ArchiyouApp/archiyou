@@ -663,7 +663,7 @@ function makeOffer(scope, { byVolume = false } = {})
     const net = (gross) => Math.max(0, gross - area(scope.openings));
 
     // the house as components of the product sheet, each in its unit (m2 or pieces)
-    const products = make.products().fromOffer(OFFER_TEMPLATE);
+    const offer = make.offer(OFFER_TEMPLATE);
     [
         ['schroeffundering', { oppervlak: footprint }], // the foundation with the ground floor on it: one component
         ['verdiepingsvloer', { oppervlak: footprint * (scope.NUM_FLOORS - 1) }],
@@ -683,15 +683,15 @@ function makeOffer(scope, { byVolume = false } = {})
         ['verwarming', { st: 1 }],
     ]
         .filter(([, quantity]) => quantity && Object.values(quantity)[0] > 0)
-        .forEach(([component, quantity]) => products.add(component, quantity));
+        .forEach(([component, quantity]) => offer.add(component, quantity));
     if(byVolume)
     {
-        products.assign('hsbwand', scope.wallsCombined, { label: 'wanden' });
-        products.assign('dak', scope.roofSolids, { label: 'dak' });
+        offer.add('hsbwand', scope.wallsCombined, { label: 'wanden' });
+        offer.add('dak', scope.roofSolids, { label: 'dak' });
     }
 
     // the template's kengetallen (sizes in cm), and days of transport by size: Tiny 1 ... Villa 4
-    const offer = products.offer({
+    const wb = offer.compute({
         scenario: scope.SCENARIO,
         inputs: {
             projectid: `URHOUSE ${scope.WIDTH}x${scope.DEPTH}`,
@@ -712,21 +712,21 @@ function makeOffer(scope, { byVolume = false } = {})
             logistiek: [50, 90, 130].filter(a => scope.floorAreaNet > a).length + 1,
         },
     });
-    return { products, offer };
+    return { offer, wb };
 }
 
 $pipeline('offer', function(scope)
 {
-    const { products, offer } = makeOffer(scope);
-    offer.sheet('BOUWKOSTEN').toTable();
-    offer.sheet('SPECIFICATIES').toTable();
+    const { offer, wb } = makeOffer(scope);
+    wb.sheet('BOUWKOSTEN').toTable();
+    wb.sheet('SPECIFICATIES').toTable();
     // what every component group costs the client in every scenario: the costoverview document shows it
-    return { costs: products.scenarioTable('costs') };
+    return { costs: offer.scenarioTable('costs') };
 });
 
 $pipeline('offercopy', function(scope)
 {
-    return makeOffer(scope).offer.cloudcopy({ title: `URHOUSE offerte ${scope.WIDTH}x${scope.DEPTH}`, share: 'writer' }).url;
+    return makeOffer(scope).wb.cloudcopy({ title: `URHOUSE offerte ${scope.WIDTH}x${scope.DEPTH}`, share: 'writer' }).url;
 });
 
 //// COST OVERVIEW DOCUMENT ////

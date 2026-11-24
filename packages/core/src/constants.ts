@@ -87,8 +87,8 @@ export const MODULE_FORMAT_RE = /^[a-z][a-z0-9-]*$/
  *  the feature lives, not in the module's manifest. Scanned on the source before the run, like
  *  `$module()` itself; a dynamic name the scan misses is still fixed by writing `$module()`. */
 export const STANDARD_MODULE_USES: ReadonlyArray<{ module: string, pattern: RegExp }> = [
-    // make.products().fromSheet(url) / .fromOffer(url) open a Google Sheet with cloudcalc
-    { module: 'cloudcalc', pattern: /\.(fromSheet|fromOffer)\s*\(|docs\.google\.com\/spreadsheets\// },
+    // make.offer(url) opens the offer template, a Google Sheet, with cloudcalc
+    { module: 'cloudcalc', pattern: /\bmake\.offer\s*\(|docs\.google\.com\/spreadsheets\// },
 ]
 /** Model formats whose exporter reads shape recipes (see src/modeler/Recipe.ts). A run that
  *  requests one of these records how every shape was made; every other run records nothing. */

@@ -115,6 +115,7 @@ describe('shape.product() in a run', () =>
             FRAME = frame.product().map(p => p.id);
             WALL = wall.component();
             NONE = box(10, 10, 10).product();
+            OWN = box(38, 140, 2400).material('osb').product('SLS')._material;
             CHECK = make.check();
         `)
         expect(result.errors ?? []).toEqual([])
@@ -125,6 +126,7 @@ describe('shape.product() in a run', () =>
         expect(scope.FRAME).toEqual(['sls-38x140', 'sls-38x140'])
         expect(scope.WALL).toEqual({ kind: 'component', id: 'hsbwand', db: '2026-11-24.1' })
         expect(scope.NONE).toBeUndefined()
+        expect(scope.OWN).toBe('osb')   // a material the shape was given itself stays
         expect(scope.CHECK).toEqual([])
     })
 

@@ -1,30 +1,21 @@
 /**
  *  products/ProductManager.ts
  *
- *  From the parts of a model to the products of a product sheet, and from there to costs.
+ *  The engine of make.estimate() and make.offer(): from parts and quantities to the products
+ *  of the make database, and from there to costs, hours, order lists and offers. Not used by
+ *  scripts directly: they give shapes a product (shape.product()) and ask make.estimate().
  *
  *  The sheet is the core: it holds the products with their sizes and prices, the operations
- *  with their norms, the recipes that turn a product's quantities into labour (the rows under
- *  a product in its componenten tab, see recipes.ts), and the margins. Partners can read and
- *  check all of it. This class only does what a sheet cannot: measure the parts of a model,
- *  match them to products, add up the quantities, and price them by the sheet's rows.
+ *  with their norms and times, the recipes that turn a product's quantities into labour (the
+ *  componenten tab, see recipes.ts), and the margins. Partners can read and check all of it.
+ *  This class only does what a sheet cannot: add up the quantities of the parts (place()) and
+ *  of what the model does not show (add(), complete()), and price them by the sheet's rows.
  *
- *      products = make.products().fromSheet('https://docs.google.com/spreadsheets/d/…')  // opened with cloudcalc
- *      products.assign('SLS', wall, { component: 'hsbwand' })  // every part that fits a size of the group
- *      products.assign('houtvezel-flex-140', wall.insulation, { component: 'hsbwand' })  // or one product, by id
- *      products.elementWork('hsbwand', { oppervlak: 8.1 })     // the work on the element as a whole
- *      products.add('tape-universeel-60', { lengte: 12 })      // what the model does not show
- *      overview = products.compute()                // costs per category and per line
- *
- *  A component maps its own parts, without a sheet: there assign(), add() and complete() only
- *  note on each shape what it is, so the component loads nothing. The model that uses it opens
- *  the sheet once and collects them, see collect():
- *
- *      products = make.products()                                    // in the wall component
- *      products.assign(['SLS', 'SLS-GEVINGERLAST'], wall.studs, { component: 'hsbwand' })
- *      products.complete('hsbwand', { oppervlak: 8.1 })              // what it does not model
- *
- *      products = make.products().fromSheet(url).collect(all())      // in the house
+ *      pm = new ProductManager(modules).fromDb(make.db())          // the snapshot of the sheet
+ *      pm.place(stud, { product: 'sls-38x235', measure, block: 'hsbwand' })
+ *      pm.add('tape-universeel-60', { lengte: 12 })                // what the model does not show
+ *      pm.complete('hsbwand', { oppervlak: 8.1 })                  // the rest of the component
+ *      overview = pm.compute()                                     // costs and hours per category and line
  *
  *  How a part is measured follows the product's vorm, not how the part looks: a wall's
  *  insulation is long for its section (a beam to partList()), but it is filled with mats.
@@ -39,7 +30,7 @@
  *  product, group or vorm anywhere in the sheet. The overview says which one it took.
  *
  *  A shape that is only a mass (a box for a wall, a block for a bathroom) is not measured for
- *  products at all: assign it to a component of the sheet ('hsbwand', 'badkamer_klein') and its
+ *  products at all: it is a component of the sheet (shape.component('hsbwand')) and its
  *  volume is priced at the component's cost per m3. That is rough on purpose: the component
  *  stands for a representative build-up, and its rows in the sheet's componenten tab say which.
  *  That tab is a table (see recipes.ts): the component's id on every row, its first row with its
@@ -54,16 +45,14 @@
  *  Sizes are in mm, as in the sheet, and so is the model.
  */
 
-import { ShapeCollection } from '@archiyou/meshup';
-
-import { collectParts, partSource, type PartMeasure } from '../../modeler/parts';
+import type { PartMeasure } from '../../modeler/parts';
 import type { ArchiyouModules } from '../../types';
 import type { Table } from '../../calc/Table';
 import { ModuleUnavailableError } from '../../modules/unavailableStub';
 import type { MakeDb } from '../db';
 import { offerPageData, renderOfferHtml, type OfferPageOptions, type OfferSource } from './offer-html';
 import { combineRows, materialPrice, mergeRecipes, quantityOfUnit, readComponents, type ComponentSpec, type ComponentSpecProduct, type RecipeStep } from './recipes';
-import { toProduct, fit, orient, compareRanks, sheetUse, partQuantities, sizeText, productLabel,
+import { toProduct, partQuantities, productLabel,
     type Product, type ProductMeasure, type ProductRow, type ProductQuantities } from '../catalog/products';
 
 export { toProduct, type Product, type ProductMeasure, type ProductRow, type ProductQuantities };
@@ -81,7 +70,7 @@ export interface OperationRow
     [column: string]: unknown;
 }
 
-/** A component, as fromRows() takes it. fromSheet() reads them from the componenten table's
+/** A component, as fromRows() takes it. fromWorkbook() reads them from the componenten table's
  *  first rows, or in the older layout from the sheet's outputs: `outputs.<component>.costm3`,
  *  and `costm2` or `costst` for its unit. */
 export interface ComponentRow
@@ -114,15 +103,6 @@ export interface ProductOptions
      *  the outside of a wall is worked as the wood fibre board it replaces, not as the gypsum
      *  board that is a plaat too. */
     recipe?: string;
-}
-
-export interface AssignOptions extends ProductOptions
-{
-    /** How far a size may be off and still fit (mm). Default 1. */
-    tolerance?: number;
-    /** Include hidden shapes. Default false: as in partList(), a hidden shape is not part of
-     *  what is built. */
-    hidden?: boolean;
 }
 
 /** Costs by category, as the sheet's cost columns: material, and the work by its phase, in the
@@ -303,7 +283,7 @@ export interface OrderLine
     total: number;
 }
 
-/** What fromSheet() reads, by name. The defaults are those of the URHOUSE sheet. */
+/** What fromWorkbook() reads, by name. The defaults are those of the URHOUSE sheet. */
 export interface ProductSheetOptions
 {
     /** The products table. Default 'producten'. */
@@ -312,11 +292,6 @@ export interface ProductSheetOptions
     operations?: string;
     /** The recipes and representative components, see recipes.ts. Default 'componenten'. */
     components?: string;
-    /** The materials the products are made of, for the run's materials. Default 'materialen'. */
-    materials?: string;
-    /** For a private sheet opened by its URL: the name of the Google key in Keys to read it
-     *  with, as `cloudcalc.open(url, { key })` takes it. Default: the user's default key. */
-    key?: string;
 }
 
 /** A workbook of the cloudcalc module, as far as this class uses it. */
@@ -362,31 +337,6 @@ interface Addition extends ProductOptions
     kind: LineKind;
     quantities: ProductQuantities;
 }
-
-/** What add() and complete() said in a script without products (a component), shared by the
- *  shapes its assign() mapped. Each of them brings an equal share of it to collect(): a copy
- *  of the whole (three cached bents, a wall copied) brings all of it again. */
-interface TakeOff
-{
-    /** How many shapes share it. */
-    shapes: number;
-    adds: Array<{ id: string, quantities: ProductQuantities, options: ProductOptions }>;
-    completes: Array<{ component: string, quantities: ProductQuantities, options: Pick<ProductOptions, 'label'> & { except?: Array<string> } }>;
-}
-
-/** What a shape is as a part, as assign() maps it without products: kept on the shape
- *  (`_product`), resolved by collect() against the sheet. */
-interface ProductMapping
-{
-    kind: 'product-mapping';
-    /** The product id, product group or component assign() was given, or the candidates. */
-    of: string | Array<string>;
-    /** Its options, with the label of the part's group. */
-    options: AssignOptions;
-    takeOff: TakeOff;
-}
-
-const isMapping = (value: unknown): value is ProductMapping => (value as ProductMapping | undefined)?.kind === 'product-mapping';
 
 //// SETTINGS ////
 
@@ -472,19 +422,9 @@ const baseNames = (shapes: Array<any>): string =>
 //// MANAGER ////
 
 /**
- *  Products of a product sheet for the parts of a model, and their costs.
- *  Made by `make.products()`; nothing is read until fromSheet() or fromRows().
- *
- *  @example
- *  // Products as rows, here written out; in practice fromSheet(url) reads them from the sheet
- *  products = make.products().fromRows([
- *      { product_id: 'sls-38x140', productgroep: 'SLS', vorm: 'balk', breedte: 38, hoogte: 140, lengte: 5400 },
- *      { product_id: 'houtvezel-flex-140', productgroep: 'HOUTVEZEL-FLEX', vorm: 'mat', dikte: 140, breedte: 575, lengte: 1350 },
- *  ])
- *  wall = make.wall(3000, 2700, 140)
- *  products.assign('SLS', wall)
- *  products.assign('HOUTVEZEL-FLEX', wall.insulation)
- *  products.toTable()
+ *  Products of the make database for the parts of a model, and their costs: the engine of
+ *  make.estimate() and make.offer(). Nothing is read until fromDb(), fromWorkbook(),
+ *  fromOffer() or fromRows().
  */
 export class ProductManager
 {
@@ -493,16 +433,12 @@ export class ProductManager
     private _operations: Array<OperationRow> = [];
     private _components: Array<Component> = [];
     private _workbook: SheetWorkbook | null = null;
-    private _sheet: Required<Omit<ProductSheetOptions, 'key'>> = { products: 'producten', operations: 'bewerkingen', components: 'componenten', materials: 'materialen' };
-    /** Per shape, the product it was matched to. A later assign() replaces it. */
+    private _sheet: Required<ProductSheetOptions> = { products: 'producten', operations: 'bewerkingen', components: 'componenten' };
+    /** Per shape, what it is (place()). A later place() replaces it. */
     private _assigned = new Map<any, Assignment>();
-    /** Shapes a group assign() saw but found no product for, until something else takes them. */
-    private _unmatched = new Set<any>();
     private _added: Array<Addition> = [];
     /** What complete() added, so a later complete() of the component does not take it as modelled */
     private _completed = new Set<Addition>();
-    /** Without products: what add() and complete() said, for the shapes assign() mapped to bring along. */
-    private _mappedTakeOff: TakeOff | null = null;
     private _waste = new Map<string, number>();
     /** Per product, the product whose recipe it follows (the option `recipe`). */
     private _recipeOf = new Map<string, string>();
@@ -530,23 +466,18 @@ export class ProductManager
     //// LOADING ////
 
     /**
-     *  Read the products and operations from a product sheet, to price the lines by its rows on
-     *  compute(). The sheet is opened with the cloudcalc module, a standard module the run loads
-     *  for this call; no `$module()` needed.
+     *  Read the products, operations, components and margins from a workbook: the tables and the
+     *  outputs of the sheet (fromDb() makes one of a snapshot; tests give one written out).
      *
-     *  @param sheet - The sheet's URL (or id), or a workbook the script opened itself with
-     *  `cloudcalc.open(url)`, to use it for more than the products.
-     *  @param options - Other names for the tables than the defaults, and `key` for a private sheet.
+     *  @param options - Other names for the tables than the defaults.
      */
-    fromSheet(sheet: SheetWorkbook | string, options: ProductSheetOptions = {}): this
+    fromWorkbook(wb: SheetWorkbook, options: ProductSheetOptions = {}): this
     {
-        const wb = (typeof sheet === 'string') ? this._openSheet(sheet, options.key) : sheet;
         if (typeof wb?.table !== 'function' || typeof wb?.compute !== 'function')
         {
-            throw new Error('ProductManager.fromSheet(): expected the URL of a Google Sheet, or a workbook of the cloudcalc module');
+            throw new Error('ProductManager.fromWorkbook(): expected a workbook: table(), tables(), compute(), namedRanges()');
         }
-        const { key: _key, ...names } = options;
-        this._sheet = { ...this._sheet, ...names };
+        this._sheet = { ...this._sheet, ...options };
         const operations = wb.tables().some(t => t.name === this._sheet.operations) ? wb.table(this._sheet.operations) : [];
         // a component is what has a cost per m3; costm2 or costst says its unit
         // in the order of the sheet: the row their cost per m3 is on
@@ -559,38 +490,21 @@ export class ProductManager
         let components: Array<ComponentRow> = [...new Set(costs.filter(m => m[2] === 'm3').map(m => m[1]!))]
             .sort((a, b) => rowOf(a) - rowOf(b))
             .map(id => ({ component: id, eenheid: costs.find(m => m[1] === id && m[2] !== 'm3')?.[2] ?? null }));
-        // the table layout has no names per component: its components are its first rows
-        const blocks = wb.tables().some(t => t.name === this._sheet.components) ? readComponents(wb.table(this._sheet.components)) : null;
-        if (blocks && [...blocks.values()].some(b => b.layout === 'table'))
+        // the table layout has no named ranges per component, nor has a snapshot: its components are its first rows
+        const specs = wb.tables().some(t => t.name === this._sheet.components) ? readComponents(wb.table(this._sheet.components)) : null;
+        if (specs && (components.length === 0 || [...specs.values()].some(b => b.layout === 'table')))
         {
-            components = [...blocks.values()].map(b => ({ component: b.id, eenheid: b.unit || null, gebouwdeel: b.info.gebouwdeel }));
+            components = [...specs.values()].map(b => ({ component: b.id, eenheid: b.unit || null, gebouwdeel: b.info.gebouwdeel }));
         }
         this.fromRows(wb.table(this._sheet.products) as Array<ProductRow>, operations as Array<OperationRow>, components);
         this._workbook = wb;
-        // the same sheet says what the products are made of: its materialen tab
-        const materials = this._modules?.()?.materials;
-        if (materials && wb.tables().some(t => t.name === this._sheet.materials))
-        {
-            materials.fromWorkbook(wb, this._sheet.materials);
-        }
         return this;
-    }
-
-    /** A shape takes the material of the product it is: the product's `materiaal` column, a
-     *  `materiaal_id` of the sheet's materialen tab. A material set on the shape itself stays. */
-    private _giveMaterial(shape: any, product: Product): void
-    {
-        const material = String(product.row['materiaal'] ?? '').trim();
-        if (material && !shape?._material && typeof shape?.material === 'function')
-        {
-            shape.material(material);
-        }
     }
 
     /**
      *  Read the components from an offer template instead of a product sheet: what its builders
      *  published (the template's BOUWERSPRIJZEN tab). Enough to make an offer, without access to any
-     *  builder's own sheet: `make.products().fromOffer(OFFER_TEMPLATE).add('hsbwand', { oppervlak: 48 }).offer()`.
+     *  builder's own sheet: make.offer(OFFER_TEMPLATE) (see make/offer/Offer.ts).
      *
      *  @param template - The offer template's URL, or its workbook opened with cloudcalc.
      *  @param options - `key` for a private template.
@@ -607,25 +521,18 @@ export class ProductManager
         return this;
     }
 
-    /** The workbook fromSheet() read, for what else the sheet computes:
-     *  `products.workbook.compute().wall.costm3`. Null before fromSheet(). */
-    get workbook(): SheetWorkbook | null
-    {
-        return this._workbook;
-    }
-
     /**
      *  Products (and operations and components) given as rows with the columns of the sheet:
      *  product_id, productgroep, vorm, dikte, breedte, hoogte, lengte; naam, werkeenheid;
-     *  component, eenheid. Without a sheet, compute() is not available, but assign(), add(),
-     *  list() and toTable() are.
+     *  component, eenheid. Without the componenten tab and margins compute() is not available,
+     *  but add() and list() are.
      */
     fromRows(products: Array<ProductRow>, operations: Array<OperationRow> = [], components: Array<ComponentRow> = []): this
     {
-        // what assign() and add() matched holds products of the set loaded before
-        if (this._assigned.size || this._unmatched.size || this._added.length)
+        // what place() and add() took holds products of the set loaded before
+        if (this._assigned.size || this._added.length)
         {
-            throw new Error('ProductManager: products are loaded once, before assign() and add(). For another product set use another make.products()');
+            throw new Error('ProductManager: products are loaded once, before place() and add()');
         }
         this._products = products.filter(r => r?.product_id).map(toProduct);
         this._operations = operations.filter(r => r?.naam);
@@ -641,7 +548,6 @@ export class ProductManager
         this._outputs = null;
         this._costData = null;
         this._recipes.clear();
-        this._matchCache.clear();
         this._costs = null;
         return this;
     }
@@ -668,10 +574,7 @@ export class ProductManager
             compute: () => outputs,
             namedRanges: () => [],
         };
-        const blocks = readComponents(db.table('componenten'));
-        const components: Array<ComponentRow> = blocks ? [...blocks.values()].map(b => ({ component: b.id, eenheid: b.unit || null, gebouwdeel: b.info.gebouwdeel })) : [];
-        this.fromRows(db.table('producten') as Array<ProductRow>, db.table('bewerkingen') as Array<OperationRow>, components);
-        this._workbook = wb;
+        this.fromWorkbook(wb);
         this._labourFactor = Number(db.setting('settings.labor_factor')) || 1;
         return this;
     }
@@ -683,9 +586,10 @@ export class ProductManager
      *  @param what - `{ product, measure }` or `{ component, volume }` (mm, mm3), with `label` and
      *    `block`: the component of the sheet whose rows give a product's recipe.
      */
-    place(shape: any, what: { product?: string, measure?: PartMeasure, component?: string, volume?: number, label?: string, block?: string, recipe?: string }): this
+    place(shape: any, what: { product?: string, measure?: PartMeasure, component?: string, volume?: number, label?: string, block?: string, recipe?: string, waste?: number }): this
     {
         const label = what.label ?? baseNames([shape]);
+        this._checkComponent('place', what.block);
         if (what.component)
         {
             const component = this._components.find(c => c.id === what.component);
@@ -698,114 +602,20 @@ export class ProductManager
             if (!product) { throw new Error(`'${what.product}' is no product of the sheet`); }
             if (!what.measure) { throw new Error(`${product.id}: the shape has no size`); }
             if (what.recipe) { this._recipeOf.set(product.id, what.recipe); }
+            if (what.waste !== undefined) { this._waste.set(product.id, what.waste); }
             this._assigned.set(shape, { kind: 'product', product, measure: what.measure, label, block: what.block });
         }
-        this._unmatched.delete(shape);
         this._costs = null;
         return this;
     }
 
-    /** The sheet's components as it reckons with them (see recipes.ts), by id. Needs fromSheet() or fromDb(). */
+    /** The sheet's components as it reckons with them (see recipes.ts), by id. Needs fromDb() or fromWorkbook(). */
     componentSpecs(): Map<string, ComponentSpec>
     {
         return this._loadCostData('componentSpecs').blocks;
     }
 
-    /** The products with this id, or in this group (case does not matter for groups). */
-    find(idOrGroup: string): Array<Product>
-    {
-        const exact = this._products.filter(p => p.id === idOrGroup);
-        if (exact.length) { return exact; }
-        const group = idOrGroup.trim().toUpperCase();
-        return this._products.filter(p => p.groups.some(g => g.toUpperCase() === group));
-    }
-
     //// ASSIGNING ////
-
-    /**
-     *  Match parts of the model to a product, or to the product of a group that fits them.
-     *
-     *  With a product id, every part gets that product (with a warning for a part that does
-     *  not fit its size). With a group, each part gets the product of the group that fits:
-     *  the section for a balk, the thickness for a plaat or mat; then the shortest length or
-     *  the smallest sheet that holds it. Parts that fit none are left as they are, so one
-     *  call can take a whole wall; it is an error when none fits at all, and when two
-     *  products fit a part equally well. A later assign() of a shape replaces an earlier one.
-     *
-     *  A plaat or mat is as thick as its smallest size. An offcut can be smaller than that
-     *  (insulation under a window, 80 mm high in a wall of 140): by product id, the size that
-     *  equals the product's thickness counts as its thickness; by group, only when nothing in
-     *  the group fits it as it is. Assign insulation of a known depth by id.
-     *
-     *  With a component ('hsbwand'), each shape is only a mass: its volume is priced at the
-     *  component's cost per m3. For an abstract model, roughly.
-     *
-     *  With `component` the parts follow that component's recipe in the sheet: see the top of this file.
-     *
-     *  @param idOrGroup - A product id ('sls-38x140'), a product group ('SLS') or a component ('hsbwand'),
-     *  or several, tried in order: each part gets the first that fits it. `['SLS', 'SLS-GEVINGERLAST']`
-     *  takes finger-jointed SLS only for what is longer than SLS comes.
-     *  @param shapes - A shape, a collection (with its groups, like a wall) or an array.
-     *  @example
-     *  products = make.products().fromRows([
-     *      { product_id: 'sls-38x140', productgroep: 'SLS', vorm: 'balk', breedte: 38, hoogte: 140, lengte: 5400 },
-     *      { product_id: 'sls-38x235', productgroep: 'SLS', vorm: 'balk', breedte: 38, hoogte: 235, lengte: 5400 },
-     *  ])
-     *  products.assign('SLS', make.wall(3000, 2700, 140))
-     *  products.list()
-     */
-    assign(idOrGroup: string | Array<string>, shapes: any, options: AssignOptions = {}): this
-    {
-        if (this._mapsOnly()) { return this._map(idOrGroup, shapes, options); }
-        if (Array.isArray(idOrGroup)) { return this._assignFirstFit(idOrGroup, shapes, options); }
-        this._checkComponent('assign', options.component);
-        const component = this._products.some(p => p.id === idOrGroup) ? undefined : this._components.find(c => c.id === idOrGroup);
-        if (component) { return this._assignComponent(component, shapes, options); }
-
-        const products = this._requireProducts('assign', idOrGroup);
-        const tolerance = options.tolerance ?? DEFAULT_TOLERANCE;
-        const exact = products.length === 1 && products[0]!.id === idOrGroup ? products[0]! : null;
-        const parts = collectParts(this._source(shapes), { labels: false, order: 'scene', includeHidden: options.hidden === true });
-        if (parts.length === 0)
-        {
-            throw new Error(`ProductManager.assign('${idOrGroup}'): no solid shapes to assign`);
-        }
-
-        // the group a part is in ('studs' of a wall), else the collection's name, else its shapes' names
-        const named = typeof shapes?._name === 'string' && shapes._name !== 'collection' ? shapes._name : '';
-        const misfits: Array<string> = [];
-        const matched = parts.map(part =>
-        {
-            const found = exact
-                ? { product: exact, measure: orient(exact, part.measure, tolerance) }
-                : this._match(idOrGroup, products, part.measure, tolerance);
-            if (exact && !fit(exact, found!.measure, tolerance)) { misfits.push(sizeText(part.measure)); }
-            const label = options.label ?? (part.group && part.group !== 'main' ? part.group : named || baseNames(part.shapes));
-            part.shapes.forEach(shape =>
-            {
-                if (!found) { if (!this._assigned.has(shape)) { this._unmatched.add(shape); } return; }
-                this._assigned.set(shape, { kind: 'product', product: found.product, measure: found.measure, label, block: options.component });
-                if (options.recipe) { this._recipeOf.set(found.product.id, options.recipe); }
-                this._unmatched.delete(shape);
-                this._giveMaterial(shape, found.product);
-            });
-            return found?.product ?? null;
-        });
-
-        if (matched.every(p => p === null))
-        {
-            const sizes = [...new Set(parts.map(p => sizeText(p.measure)))].slice(0, 5).join(', ');
-            throw new Error(`ProductManager.assign('${idOrGroup}'): no product of '${idOrGroup}' fits any of the parts (${sizes}). ` +
-                `It has: ${products.map(p => p.id).join(', ')}`);
-        }
-        if (misfits.length)
-        {
-            console.warn(`ProductManager.assign('${idOrGroup}'): ${misfits.length} part(s) do not fit its size: ${[...new Set(misfits)].slice(0, 5).join(', ')}`);
-        }
-        if (options.waste !== undefined) { matched.filter(Boolean).forEach(p => this._waste.set(p!.id, options.waste!)); }
-        this._costs = null;
-        return this;
-    }
 
     /**
      *  Add what the model does not show: a product (screws, tape), an operation of the sheet
@@ -814,20 +624,13 @@ export class ProductManager
      *
      *  @param id - A product id, the name of an operation, or a component.
      *  @param quantities - In the sheet's units: st, lengte (m1), oppervlak (m2), volume (m3), zaaglengte (m1).
-     *  @example
-     *  products = make.products().fromRows(
-     *      [{ product_id: 'schroef-rvs-6x100', productgroep: 'SCHROEF', vorm: 'stuk', breedte: 6, lengte: 100 }],
-     *      [{ naam: 'montagewand', fase: 'montage', werkeenheid: 'st' }])
-     *  products.add('schroef-rvs-6x100', { st: 32 }).add('montagewand', { st: 1 })
-     *  products.list()
+     *
+     *      pm.add('schroef-rvs-6x100', { st: 32 }).add('montagewand', { st: 1 })
+     *
+     *  In a script: make.add() (see Make), which goes with the shapes to make.estimate().
      */
     add(id: string, quantities: ProductQuantities, options: ProductOptions = {}): this
     {
-        if (this._mapsOnly())
-        {
-            this._takeOff().adds.push({ id, quantities, options });
-            return this;
-        }
         this._checkComponent('add', options.component);
         const kind = this._kindOf(id);
         if (!kind)
@@ -864,7 +667,7 @@ export class ProductManager
      *  The work on an element as a whole, which is on no product: its mounting, squaring and
      *  handling, as the `element` rows of the component's block say. Scaled by size from the
      *  representative component, so this agrees with the component's price per m2 or per piece.
-     *  Adds them as operation lines. Needs the sheet: fromSheet().
+     *  Adds them as operation lines. Needs the sheet: fromDb().
      *
      *  @param component - A component of the sheet: 'hsbwand'.
      *  @param quantities - How much of it the model has, in its unit: `{ oppervlak: 21.6 }` or `{ st: 2 }`.
@@ -900,23 +703,18 @@ export class ProductManager
      *  sheet that nothing assigned or added with this component stands for, scaled by size, and
      *  the work on the element as a whole (elementWork()). A product of the block is shown when
      *  the model has it, or a product of the same line (its first productgroep): rafters of
-     *  sls-38x170 stand for the block's sls-38x285. Call it after the assign()s of the component.
+     *  sls-38x170 stand for the block's sls-38x285. Call it after the place()s of the component.
      *
      *  @param component - A component of the sheet: 'hsbwand'.
      *  @param quantities - How much of it the model has, in its unit: `{ oppervlak: 21.6 }` or `{ st: 2 }`.
      *  @param options.except - Products of the block to leave out (the model has another build-up).
-     *  @example
-     *  products.assign('SLS', wall, { component: 'hsbwand' })
-     *  products.assign('houtvezel-flex-240', wall.insulation, { component: 'hsbwand' })
-     *  products.complete('hsbwand', { oppervlak: 8.1 })  // sheathing, gypsum, screws, tape and the element work
+     *
+     *      pm.complete('hsbwand', { oppervlak: 8.1 })  // sheathing, gypsum, screws, tape and the element work
+     *
+     *  In a script: make.complete() (see Make), which goes with the shapes to make.estimate().
      */
     complete(component: string, quantities: ProductQuantities, options: Pick<ProductOptions, 'label'> & { except?: Array<string>, elements?: number } = {}): this
     {
-        if (this._mapsOnly())
-        {
-            this._takeOff().completes.push({ component, quantities, options });
-            return this;
-        }
         this._checkComponent('complete', component);
         const block = this._loadCostData('complete').blocks.get(component);
         if (!block)
@@ -949,123 +747,6 @@ export class ProductManager
                 this._completed.add(this._added[this._added.length - 1]!);
             });
         return this.elementWork(component, quantities, options);
-    }
-
-    /**
-     *  Take the parts that components mapped, and price them by this sheet. A component maps
-     *  its parts without a sheet: make.products() with assign(), add() and complete() there
-     *  only note on each shape what it is ('SLS' for hsbwand), so the component loads nothing.
-     *  Here each mapping is resolved as if assign() was called with the sheet, then the add()s
-     *  and complete()s, each shape bringing its share: a component used three times brings
-     *  them three times. What does not fit is left out with a warning, not an error: see
-     *  unassigned(). An assign() after collect() replaces a mapping.
-     *
-     *  @param shapes - The model, or a part of it: all(), a component's model.
-     *  @example
-     *  // in the wall component, without a sheet
-     *  products = make.products()
-     *  products.assign('SLS', wall.studs, { component: 'hsbwand' })
-     *  products.complete('hsbwand', { oppervlak: 8.1 })
-     *  // in the house
-     *  products = make.products().fromSheet(CORE).collect(all())
-     *  products.compute()
-     */
-    collect(shapes: any, options: { hidden?: boolean } = {}): this
-    {
-        if (this._mapsOnly())
-        {
-            throw new Error('ProductManager.collect(): needs products to resolve the mappings with: make.products().fromSheet(url).collect(shapes)');
-        }
-        const mapped = [...new Set(collectParts(this._source(shapes), { labels: false, order: 'scene', includeHidden: options.hidden === true })
-            .flatMap(part => part.shapes)
-            .filter(shape => isMapping(shape?._product)))];
-
-        // the parts, by what they were mapped to
-        const groups = new Map<string, { mapping: ProductMapping, shapes: Array<any> }>();
-        mapped.forEach(shape =>
-        {
-            const mapping = shape._product as ProductMapping;
-            const key = JSON.stringify([mapping.of, mapping.options]);
-            if (!groups.has(key)) { groups.set(key, { mapping, shapes: [] }); }
-            groups.get(key)!.shapes.push(shape);
-        });
-        // a group that fails as a whole (one offcut fits two products) is tried part by part
-        groups.forEach(({ mapping, shapes: list }) =>
-        {
-            try { this.assign(mapping.of, list, mapping.options); }
-            catch
-            {
-                list.forEach(shape => this._collectStep(`assign('${mapping.of}')`,
-                    () => this.assign(mapping.of, shape, mapping.options),
-                    () => { if (!this._assigned.has(shape)) { this._unmatched.add(shape); } }));
-            }
-        });
-
-        // what the components added, each shape bringing its share
-        const shares = new Map<TakeOff, number>();
-        mapped.forEach(shape =>
-        {
-            const takeOff = (shape._product as ProductMapping).takeOff;
-            shares.set(takeOff, (shares.get(takeOff) ?? 0) + 1 / takeOff.shapes);
-        });
-        const scaled = (quantities: ProductQuantities, share: number): ProductQuantities =>
-            Object.fromEntries(Object.entries(quantities).map(([key, value]) => [key, Number(value) * share]));
-        shares.forEach((share, takeOff) => takeOff.adds.forEach(a => this._collectStep(`add('${a.id}')`,
-            () => this.add(a.id, scaled(a.quantities, share), a.options))));
-
-        // the screws make.fasten() drew: one per head circle, by product and component, before
-        // complete() so it knows the model has them
-        const screws = new Map<string, { id: string, component: string | undefined, count: number, labels: Set<string> }>();
-        const walk = (s: any): void =>
-        {
-            if (s == null) return;
-            if (Array.isArray(s)) { s.forEach(walk); return; }
-            const f = s._fastening;
-            if (f?.head && f.product)
-            {
-                const key = `${f.product}|${f.component ?? ''}`;
-                const entry = screws.get(key) ?? { id: f.product, component: f.component ?? undefined, count: 0, labels: new Set<string>() };
-                entry.count++;
-                entry.labels.add(f.label ?? 'fastening');
-                screws.set(key, entry);
-            }
-            if (typeof s.toArray === 'function' && s.isShapeCollection?.()) { s.toArray().forEach(walk); }
-        };
-        walk(shapes);
-        screws.forEach(({ id, component, count, labels }) => this._collectStep(`add('${id}')`,
-            () => this.add(id, { st: count }, { label: [...labels].join(', '), ...(component ? { component } : {}) })));
-
-        // complete() once per component, for all of it
-        const completes = new Map<string, { quantities: ProductQuantities, except: Set<string> }>();
-        shares.forEach((share, takeOff) => takeOff.completes.forEach(c =>
-        {
-            const sum = completes.get(c.component) ?? { quantities: {}, except: new Set<string>() };
-            Object.entries(scaled(c.quantities, share)).forEach(([key, value]) =>
-            {
-                sum.quantities[key as keyof ProductQuantities] = (sum.quantities[key as keyof ProductQuantities] ?? 0) + Number(value);
-            });
-            (c.options.except ?? []).forEach(id => sum.except.add(id));
-            completes.set(c.component, sum);
-        }));
-        completes.forEach((c, component) => this._collectStep(`complete('${component}')`,
-            () => this.complete(component, c.quantities, { except: [...c.except] })));
-
-        this._costs = null;
-        return this;
-    }
-
-    /**
-     *  The shapes that have no product. Of `shapes` when given (say the whole model);
-     *  otherwise of what assign() was given.
-     */
-    unassigned(shapes?: any, options: { hidden?: boolean } = {}): ShapeCollection
-    {
-        const loose = shapes === undefined
-            ? [...this._unmatched]
-            : collectParts(this._source(shapes), { labels: false, order: 'scene', includeHidden: options.hidden === true })
-                .flatMap(p => p.shapes)
-                .filter(s => !this._assigned.has(s));
-        return new ShapeCollection(loose);
     }
 
     //// RESULTS ////
@@ -1110,7 +791,7 @@ export class ProductManager
      *  The costs, from the rows of the sheet: per category including the sheet's margins, and per
      *  line excluding them. Material is the product's price with its waste, labour its recipe in
      *  the sheet at the operations' costs per unit. A component line is priced as a whole: do not
-     *  also list its products. Needs fromSheet().
+     *  also list its products. Needs fromDb().
      *
      *  @returns `{ material, onsite, voorbewerking, assemblage, montage, afbouw, total, lines, noRecipe, noPrice }`
      */
@@ -1195,34 +876,19 @@ export class ProductManager
         });
         totals.total = CATEGORIES.reduce((sum, k) => sum + totals[k], 0);
 
-        const loose = this._unmatched.size;
-        if (loose)
-        {
-            console.warn(`ProductManager.compute(): ${loose} shape(s) have no product and are not in the costs: see products.unassigned()`);
-        }
-        if (noRecipe.size)
-        {
-            console.warn(`ProductManager.compute(): no recipe in the sheet, so no labour, for: ${[...noRecipe].join(', ')}`);
-        }
-        if (noPrice.size)
-        {
-            console.warn(`ProductManager.compute(): no price in the sheet for: ${[...noPrice].join(', ')}`);
-        }
         const hours: ProductCosts = { material: 0, onsite: 0, voorbewerking: 0, assemblage: 0, montage: 0, afbouw: 0, total: 0 };
         COST_KEYS.forEach(k => { hours[k] = priced.reduce((sum, p) => sum + p.hours[k], 0); });
         return { ...totals, hours, lines: this.list(), noRecipe: [...noRecipe], noPrice: [...noPrice] };
     }
 
     /**
-     *  The model as a block of the sheet's componenten tab: what a component is made of at the
+     *  The model as rows of the sheet's componenten tab: what a component is made of at the
      *  size it was run at. Per product its quantities and, under it, the work its recipe gives
      *  (factor x the quantity it is per); then the work on the element as a whole. This is how a
-     *  component's block is made from its script, run at the block's reference size: the block's
-     *  hoeveelheden come from the model, its recipes (per, factor) stay the sheet's. Needs
-     *  fromSheet().
+     *  component's rows are made from its script, run at its reference size: the quantities come
+     *  from the model, its recipes (per, factor) stay the sheet's. Needs fromDb().
      *
-     *      products = make.products().fromSheet(url).collect(all())
-     *      products.componentRows().lines   // [{ product: 'sls-38x235', st: 9, lengte: 24.5, steps: [{ operation: 'afkorten', per: 'st', factor: 2, quantity: 18 }, ...] }, ...]
+     *      make.estimate().componentRows().lines   // [{ product: 'sls-38x235', st: 9, lengte: 24.5, steps: [{ operation: 'afkorten', per: 'st', factor: 2, quantity: 18 }, ...] }, ...]
      */
     componentRows(): ComponentRows
     {
@@ -1254,29 +920,6 @@ export class ProductManager
     }
 
     /**
-     *  The lines as a table of the script: quantities, and the costs after compute().
-     *  @param name - Name of the table. Default 'products'.
-     */
-    toTable(name = 'products'): Table
-    {
-        const calc = this._modules?.()?.calc;
-        if (!calc)
-        {
-            throw new Error('ProductManager.toTable(): tables are only available inside a run');
-        }
-        const lines = this.list();
-        const withCosts = lines.some(l => l.costs);
-        const columns = ['product', 'description', 'vorm', ...QUANTITY_KEYS, 'waste', ...(withCosts ? [...COST_KEYS, 'labour'] : [])];
-        const rows = lines.map(l => [
-            l.id, l.description, l.vorm,
-            ...QUANTITY_KEYS.map(k => Math.round(l[k] * 1000) / 1000),
-            l.waste ?? '',
-            ...(withCosts ? [...COST_KEYS.map(k => Math.round((l.costs?.[k] ?? 0) * 100) / 100), l.labour ?? ''] : []),
-        ]);
-        return calc.table(name, rows, columns) as Table;
-    }
-
-    /**
      *  The order list: the products to buy for the whole project, a line each, in the stock they
      *  are sold in: what a supplier is asked for. Beams in lengths of stock, the parts cut from
      *  them longest first (with a saw cut between two parts); sheets in pieces of stock by their
@@ -1284,7 +927,7 @@ export class ProductManager
      *  component the model has as a whole (add('verdiepingsvloer', ...), or a mass) brings the
      *  products of its block in the sheet, scaled by size. Priced by the sheet's product rows,
      *  excluding its margins and BTW: the purchase, not the client's price. Beams first, then
-     *  sheets, then the rest. Needs fromSheet().
+     *  sheets, then the rest. Needs fromDb().
      *
      *  @param options.byComponent - A list per component of the sheet instead, in the order the
      *    model first has them: what each costs. Its beams are cut from lengths of their own.
@@ -1428,14 +1071,9 @@ export class ProductManager
      *  An offer: the template computed with the quantities of this model, at the prices one builder
      *  published to the template. Every component group of the template is a row with its quantity
      *  in inputs.<groep>; a group the model has gets the model's quantity in the component's unit (a
-     *  mass assigned by its volume is converted at the builder's own price), the others 0. Which rows are on and their type stay the template's choice: in
-     *  the client's copy the client can switch them, the builder and the scenario.
-     *
-     *      products = make.products().fromOffer(OFFER_TEMPLATE)
-     *      products.add('hsbwand', { oppervlak: 48 }).add('dak', { oppervlak: 40 })
-     *      offer = products.offer({ bouwer: 'URBUILD', scenario: 'DIY Bouwpakket' })
-     *      offer.sheet('BOUWKOSTEN').toTable()     // the offer, here
-     *      offer.cloudcopy({ title: 'Offerte Jansen', share: 'writer' })   // the client's copy
+     *  mass given by its volume is converted at the builder's own price), the others 0. Which rows
+     *  are on and their type stay the template's choice: in the client's copy the client can switch
+     *  them, the builder and the scenario. In a script: make.offer() (make/offer/Offer.ts).
      *
      *  @param template - The offer template's URL or workbook. Default: the one of fromOffer().
      *  @param options - The builder, the scenario, more inputs of the template, a key for a private template.
@@ -1448,7 +1086,7 @@ export class ProductManager
             return this.offer(undefined, template as OfferOptions);
         }
         const wb = (template === undefined)
-            ? this._offer ?? (() => { throw new Error('ProductManager.offer(): needs the offer template: offer(OFFER_TEMPLATE), or make.products().fromOffer(OFFER_TEMPLATE)'); })()
+            ? this._offer ?? (() => { throw new Error('ProductManager.offer(): needs the offer template: make.offer(OFFER_TEMPLATE)'); })()
             : this._openTemplate('offer', template as SheetWorkbook | string, options.key);
 
         const name = (v: unknown) => String(v ?? '').trim();
@@ -1698,97 +1336,6 @@ export class ProductManager
 
     //// INTERNAL ////
 
-    /** Without products, as in a component: assign(), add() and complete() only map, for collect(). */
-    private _mapsOnly(): boolean
-    {
-        return this._products.length === 0 && this._components.length === 0 && !this._workbook;
-    }
-
-    private _takeOff(): TakeOff
-    {
-        return this._mappedTakeOff ??= { shapes: 0, adds: [], completes: [] };
-    }
-
-    /** assign() without products: note on each shape what it is, with the label of its group. */
-    private _map(idOrGroup: string | Array<string>, shapes: any, options: AssignOptions): this
-    {
-        const parts = collectParts(this._source(shapes), { labels: false, order: 'scene', includeHidden: options.hidden === true });
-        if (parts.length === 0)
-        {
-            throw new Error(`ProductManager.assign('${idOrGroup}'): no solid shapes to assign`);
-        }
-        const named = typeof shapes?._name === 'string' && shapes._name !== 'collection' ? shapes._name : '';
-        const takeOff = this._takeOff();
-        parts.forEach(part =>
-        {
-            const label = options.label ?? (part.group && part.group !== 'main' ? part.group : named || baseNames(part.shapes));
-            part.shapes.forEach(shape =>
-            {
-                if (!isMapping(shape._product) || shape._product.takeOff !== takeOff) { takeOff.shapes++; }
-                shape._product = { kind: 'product-mapping', of: idOrGroup, options: { ...options, label }, takeOff } satisfies ProductMapping;
-            });
-        });
-        return this;
-    }
-
-    /** assign() with candidates: each part gets the first of them that fits it. An error only
-     *  when none of them fits any part. */
-    private _assignFirstFit(candidates: Array<string>, shapes: any, options: AssignOptions): this
-    {
-        const all = collectParts(this._source(shapes), { labels: false, order: 'scene', includeHidden: options.hidden === true }).flatMap(p => p.shapes);
-        const errors: Array<string> = [];
-        candidates.reduce((rest: any, candidate, i) =>
-        {
-            const list = i === 0 ? all : rest as Array<any>;
-            if (list.length === 0) { return list; }
-            const before = new Map(list.map(shape => [shape, this._assigned.get(shape)]));
-            try { this.assign(candidate, i === 0 ? shapes : list, options); }
-            catch (e) { errors.push((e as Error).message); }
-            return list.filter(shape => !this._assigned.has(shape) || this._assigned.get(shape) === before.get(shape));
-        }, all);
-        if (errors.length === candidates.length)
-        {
-            throw new Error(errors[0]);
-        }
-        return this;
-    }
-
-    /** One step of collect(): what does not fit is a warning, so one part does not stop the model. */
-    private _collectStep(what: string, step: () => void, failed?: () => void): void
-    {
-        try { step(); }
-        catch (e)
-        {
-            failed?.();
-            console.warn(`ProductManager.collect(): ${what} left out: ${(e as Error).message}`);
-        }
-    }
-
-    /** Shapes standing for a component: each one's own volume, not its bounding box, so an
-     *  L-shaped mass is not priced as the block around it. */
-    private _assignComponent(component: Component, shapes: any, options: AssignOptions): this
-    {
-        const parts = collectParts(this._source(shapes), { labels: false, order: 'scene', includeHidden: options.hidden === true });
-        if (parts.length === 0)
-        {
-            throw new Error(`ProductManager.assign('${component.id}'): no solid shapes to assign`);
-        }
-        const named = typeof shapes?._name === 'string' && shapes._name !== 'collection' ? shapes._name : '';
-        parts.forEach(part =>
-        {
-            const label = options.label ?? (part.group && part.group !== 'main' ? part.group : named || baseNames(part.shapes));
-            part.shapes.forEach(shape =>
-            {
-                const own = typeof shape?.volume === 'function' ? Math.abs(Number(shape.volume())) : NaN;
-                const volume = Number.isFinite(own) && own > 0 ? own : part.measure.volume;
-                this._assigned.set(shape, { kind: 'component', component, volume, label, block: options.component });
-                this._unmatched.delete(shape);
-            });
-        });
-        this._costs = null;
-        return this;
-    }
-
     /** The quantities of every shape and every add(), in the order they make the lines. */
     private _entries(): Array<Entry & { isShape: boolean }>
     {
@@ -1830,7 +1377,7 @@ export class ProductManager
         const wb = this._workbook;
         if (!wb)
         {
-            throw new Error(`ProductManager.${method}(): needs the sheet: make.products().fromSheet(url)`);
+            throw new Error(`ProductManager.${method}(): needs the sheet: fromDb(make.db())`);
         }
         const name = this._sheet.components;
         const blocks = wb.tables().some(t => t.name === name) ? readComponents(wb.table(name)) : null;
@@ -1915,70 +1462,9 @@ export class ProductManager
         return null;
     }
 
-    private _requireProducts(method: string, idOrGroup: string): Array<Product>
-    {
-        if (this._products.length === 0)
-        {
-            throw new Error(`ProductManager.${method}(): no products yet: make.products().fromSheet(url) or fromRows(rows)`);
-        }
-        const found = this.find(idOrGroup);
-        if (found.length === 0)
-        {
-            const groups = [...new Set(this._products.flatMap(p => p.groups))];
-            const key = idOrGroup.toUpperCase().slice(0, 2);
-            const close = [...groups, ...this._components.map(c => c.id), ...this._products.map(p => p.id)]
-                .filter(k => k.toUpperCase().startsWith(key)).slice(0, 10);
-            throw new Error(`ProductManager.${method}('${idOrGroup}'): no product, product group or component '${idOrGroup}'` +
-                (close.length ? `. Did you mean: ${close.join(', ')}?` : `. Groups: ${groups.slice(0, 20).join(', ')}`));
-        }
-        return found;
-    }
-
-    /** The product of a group that fits a part best, with the part as measured for it; null
-     *  when none fits. Throws when two fit equally well. Measured parts repeat a lot (1792
-     *  solids of a house are 21 parts), so the answer is kept per size. */
-    private _matchCache = new Map<string, { product: Product, measure: PartMeasure } | null>();
-
-    private _match(group: string, products: Array<Product>, m: PartMeasure, tolerance: number): { product: Product, measure: PartMeasure } | null
-    {
-        const key = `${group}|${tolerance}|${sizeText(m)}`;
-        if (this._matchCache.has(key)) { return this._matchCache.get(key)!; }
-
-        type Ranked = { product: Product, measure: PartMeasure, rank: Array<number> };
-        const rank = (turn: boolean) => products
-            .map(product =>
-            {
-                const measure = turn ? orient(product, m, tolerance) : m;
-                return { product, measure, rank: fit(product, measure, tolerance) };
-            })
-            .filter((r): r is Ranked => r.rank !== null)
-            .sort((a, b) => compareRanks(a.rank, b.rank));
-        // as measured; turned only when nothing fits that way
-        const asMeasured = rank(false);
-        const ranked = asMeasured.length ? asMeasured : rank(true);
-        const best = ranked[0];
-        const tied = ranked.filter(r => best && compareRanks(r.rank, best.rank) === 0).map(r => r.product);
-        if (tied.length > 1)
-        {
-            const narrower = [...new Set(tied.flatMap(p => p.groups))].filter(g => g.toUpperCase() !== group.toUpperCase());
-            throw new Error(`ProductManager.assign('${group}'): ${tied.length} products fit ${sizeText(m)} equally well: ` +
-                `${tied.map(p => p.id).join(', ')}. Assign one of them` +
-                (narrower.length ? `, or a narrower group: ${narrower.join(', ')}` : ''));
-        }
-        const found = best ? { product: best.product, measure: best.measure } : null;
-        this._matchCache.set(key, found);
-        return found;
-    }
-
-    /** Anything assign() takes, as something collectParts() reads. */
-    private _source(shapes: any): any
-    {
-        return partSource(shapes);
-    }
-
     /** Open a sheet by its URL with the run's cloudcalc module. A sheet the run does not have yet
      *  ends the run with cloudcalc's own error, which the editor answers by fetching it. cloudcalc is
-     *  a standard module: the run loads it when the code calls fromSheet()/fromOffer() or names a
+     *  a standard module: the run loads it when the code calls make.offer() or names a
      *  sheet (STANDARD_MODULE_USES). It is missing here when the pre-scan could not see the use (a
      *  URL in a variable from elsewhere, a call built dynamically) — then `$module('cloudcalc')`
      *  declares it — or when it is not installed on this server. */
@@ -1996,7 +1482,7 @@ export class ProductManager
         }
         if (!cloudcalc)
         {
-            throw new ModuleUnavailableError('cloudcalc', 'ProductManager.fromSheet(url): the sheet is opened with the cloudcalc module, '
+            throw new ModuleUnavailableError('cloudcalc', 'make.offer(url): the offer template is opened with the cloudcalc module, '
                 + 'which this run did not load; add $module(\'cloudcalc\') at the top of the script, or check that the module is installed');
         }
         return cloudcalc.open(url, key ? { key } : {});
@@ -2071,7 +1557,7 @@ export class ProductManager
     {
         if (!this._workbook)
         {
-            throw new Error(`ProductManager.${method}(): needs the sheet: make.products().fromSheet(url)`);
+            throw new Error(`ProductManager.${method}(): needs the sheet: fromDb(make.db())`);
         }
         this._outputs ??= this._workbook.compute({}) as Record<string, any>;
         return this._outputs;

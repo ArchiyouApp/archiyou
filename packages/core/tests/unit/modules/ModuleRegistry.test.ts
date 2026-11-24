@@ -197,13 +197,12 @@ describe('ModuleRegistry — standard modules', () =>
         const use = STANDARD_MODULE_USES.find(u => u.module === 'cloudcalc')!
         const asStandard = entry({ id: use.module, global: 'example', standard: true })
 
-        expect(ModuleRegistry.isStandardUse("products = make.products().fromSheet('https://docs.google.com/spreadsheets/d/abc/edit')", asStandard)).toBe(true)
-        expect(ModuleRegistry.isStandardUse('products = make.products().fromOffer(TEMPLATE)', asStandard)).toBe(true)
+        expect(ModuleRegistry.isStandardUse('offer = make.offer(TEMPLATE)', asStandard)).toBe(true)
         expect(ModuleRegistry.isStandardUse("sheet = 'https://docs.google.com/spreadsheets/d/abc'", asStandard)).toBe(true)
-        // fromRows() reads nothing from a sheet, so it must not cost the bundle
-        expect(ModuleRegistry.isStandardUse('products = make.products().fromRows(rows)', asStandard)).toBe(false)
+        // an estimate reads the make database, not a sheet, so it must not cost the bundle
+        expect(ModuleRegistry.isStandardUse('est = make.estimate()', asStandard)).toBe(false)
         // and the patterns are for standard modules only
-        expect(ModuleRegistry.isStandardUse('make.products().fromSheet(url)', entry({ id: use.module }))).toBe(false)
+        expect(ModuleRegistry.isStandardUse('make.offer(TEMPLATE)', entry({ id: use.module }))).toBe(false)
     })
 
     it('keeps $module() working for a standard module', async () =>

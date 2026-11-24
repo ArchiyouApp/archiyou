@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll } from 'vitest'
 
 import { Modeler } from '../../../src/modeler/Modeler'
 import { contact, layOut, screwSize } from '../../../src/make/build/fasten'
-import { ProductManager } from '../../../src/make/products/ProductManager'
+import { Estimate } from '../../../src/make/estimate/Estimate'
+import { MakeDb, snapshotFromTables } from '../../../src/make/db'
 import type { ArchiyouModules } from '../../../src/types'
 
 let modeler: Modeler
@@ -87,17 +88,24 @@ describe('make.fasten()', () =>
         expect(() => modeler.make.fasten(modeler.box(10, 10, 10), modeler.box(10, 10, 10), { product: 'lijm' })).toThrow(/size of the screw/)
     })
 
-    it('is counted by products.collect(), by product', () =>
+    it('is counted by make.estimate(), by product', () =>
     {
         modeler.reset()
         const plate = modeler.box(1000, 235, 38).move(500, 0, 19)
         const studs = [0, 600].map(x => modeler.box(38, 235, 1000).move(x + 19, 0, 538))
         modeler.make.fasten(plate, studs, { product: 'schroef-rvs-6x100', pattern: 'end', count: 2 })
-        const pm = new ProductManager().fromRows([
-            { product_id: 'schroef-rvs-6x100', productgroep: 'SCHROEF', vorm: 'stuk', breedte: 6, lengte: 100, basiseenheid: 'st' },
-        ], [], [])
-        pm.collect(modeler.all())
-        expect(pm.list().find(l => l.id === 'schroef-rvs-6x100')).toMatchObject({ st: 4 })
+        const db = new MakeDb(snapshotFromTables({
+            version: '2026-11-24.1', source: { sheet: 'test', title: 'TEST' },
+            tables: {
+                materialen: [['materiaal_id', 'naam', 'toepassing', 'dichtheid (kg/m3)', 'warmtegeleidingscoëfficiënt λ (W/(m·K))'], ['staal', 'Staal', 'bevestiging', 7850, 50]],
+                producten: [['product_id', 'productgroep', 'vorm', 'materiaal', 'breedte', 'lengte', 'basiseenheid'], ['schroef-rvs-6x100', 'SCHROEF', 'stuk', 'staal', 6, 100, 'st']],
+                bewerkingen: [['naam', 'fase', 'werkeenheid', 'tijd (seconden)', 'kosten (EUR per werkeenheid)'], ['bevestigen', 'assemblage', 'st', 20, 0.33]],
+                componenten: [['component', 'fase', 'product', 'bewerking', 'per', 'factor'], ['frame', 'materiaal', 'schroef-rvs-6x100', '', '', '']],
+            },
+            settings: { 'settings.rate_labor': 40, 'outputs.marges.materiaal': 0, 'outputs.marges.arbeid': 0, 'outputs.marges.algemeen': 0 },
+        }))
+        const est = new Estimate(db, modeler.all())
+        expect(est.lines().find(l => l.id === 'schroef-rvs-6x100')).toMatchObject({ st: 4 })
     })
 })
 
