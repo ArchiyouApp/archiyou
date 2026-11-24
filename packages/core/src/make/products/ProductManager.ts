@@ -60,6 +60,7 @@ import { collectParts, partSource, type PartMeasure } from '../../modeler/parts'
 import type { ArchiyouModules } from '../../types';
 import type { Table } from '../../calc/Table';
 import { ModuleUnavailableError } from '../../modules/unavailableStub';
+import type { MakeDb } from '../db';
 import { offerPageData, renderOfferHtml, type OfferPageOptions, type OfferSource } from './offer-html';
 import { combineRows, materialPrice, mergeRecipes, quantityOfUnit, readBlocks, type Block, type BlockProduct, type RecipeStep } from './recipes';
 import { toProduct, fit, orient, compareRanks, sheetUse, partQuantities, sizeText, productLabel,
@@ -153,6 +154,9 @@ export interface ProductLine extends Required<ProductQuantities>
     shapes: number;
     /** Costs excluding margins, after compute(). */
     costs: ProductCosts | null;
+    /** Hours of work by phase (time x the labour factor, as the sheet's arbeidstijd), after
+     *  compute(); `material` is always 0. */
+    hours: ProductCosts | null;
     /** Whose recipe gave the labour, after compute(): 'hsbwand/sls-38x235', 'hsbwand/balk', 'SLS'. */
     labour: string | null;
 }
@@ -265,6 +269,8 @@ export interface ComponentBlock
 export interface ProductOverview extends ProductCosts
 {
     lines: Array<ProductLine>;
+    /** Hours of work by phase, see ProductLine.hours */
+    hours: ProductCosts;
     /** Products the sheet has no recipe for, nor for anything like them: no labour in the costs. */
     noRecipe: Array<string>;
     /** Lines the sheet has no price for: not in the costs. */
@@ -401,14 +407,20 @@ const round = (v: number): number => Math.round(v * 1e6) / 1e6;
  *  first length it still fits in, with a saw cut of `kerf` between two parts. */
 export function cutLengths(parts: Array<number>, stock: number, kerf: number = DEFAULT_KERF): number
 {
-    const left: Array<number> = [];
-    [...parts].sort((a, b) => b - a).forEach(length =>
+    return cutPlan(parts.map(length => ({ length, label: '' })), stock, kerf).length;
+}
+
+/** The lengths of stock (mm) the parts are cut from, and which parts each: as cutLengths() */
+export function cutPlan<P extends { length: number }>(parts: Array<P>, stock: number, kerf: number = DEFAULT_KERF): Array<{ parts: Array<P>, rest: number }>
+{
+    const bars: Array<{ parts: Array<P>, rest: number }> = [];
+    [...parts].sort((a, b) => b.length - a.length).forEach(part =>
     {
-        const i = left.findIndex(rest => rest >= length + kerf);
-        if (i >= 0) { left[i] -= length + kerf; }
-        else { left.push(stock - length); }
+        const bar = bars.find(b => b.rest >= part.length + kerf);
+        if (bar) { bar.rest -= part.length + kerf; bar.parts.push(part); }
+        else { bars.push({ parts: [part], rest: stock - part.length }); }
     });
-    return left.length;
+    return bars;
 }
 
 /** The price of a quantity of a product, excluding margins: see materialPrice(). */
@@ -493,6 +505,9 @@ export class ProductManager
     /** Per product, the product whose recipe it follows (the option `recipe`). */
     private _recipeOf = new Map<string, string>();
     private _costs: Array<ProductCosts> | null = null;
+    private _hours: Array<ProductCosts> | null = null;
+    /** Hours paid per hour of an operation's time: the sheet's settings.labor_factor (fromDb()) */
+    private _labourFactor = 1;
     /** Per line of the last compute(), whose recipe gave its labour. */
     private _labour: Array<string | null> | null = null;
     /** The sheet's outputs, for the components' prices and the margins. */
@@ -627,6 +642,71 @@ export class ProductManager
         this._matchCache.clear();
         this._costs = null;
         return this;
+    }
+
+    /**
+     *  Read everything from a snapshot of the sheet (make.db()) instead of the sheet itself: the
+     *  same tables and outputs, computed when the snapshot was made. For make.takeoff().
+     */
+    fromDb(db: MakeDb): this
+    {
+        // the snapshot as a workbook: its tables, and its outputs as the sheet computes them
+        const outputs: Record<string, any> = {};
+        Object.entries(db.snapshot.settings).filter(([name]) => name.startsWith('outputs.')).forEach(([name, value]) =>
+        {
+            const path = name.split('.').slice(1);
+            const last = path.pop()!;
+            const node = path.reduce((o, key) => (o[key] ??= {}), outputs);
+            node[last] = value;
+        });
+        const names = Object.keys(db.snapshot.tables);
+        const wb: SheetWorkbook = {
+            table: (name: string) => db.table(name as any) as Array<Record<string, unknown>>,
+            tables: () => names.map(name => ({ name })),
+            compute: () => outputs,
+            namedRanges: () => [],
+        };
+        const blocks = readBlocks(db.table('componenten'));
+        const components: Array<ComponentRow> = blocks ? [...blocks.values()].map(b => ({ component: b.id, eenheid: b.unit || null, gebouwdeel: b.info.gebouwdeel })) : [];
+        this.fromRows(db.table('producten') as Array<ProductRow>, db.table('bewerkingen') as Array<OperationRow>, components);
+        this._workbook = wb;
+        this._labourFactor = Number(db.setting('settings.labor_factor')) || 1;
+        return this;
+    }
+
+    /**
+     *  Take a shape as a part of what it already is, as shape.product() or shape.component()
+     *  resolved it: no matching again. For make.takeoff().
+     *
+     *  @param what - `{ product, measure }` or `{ component, volume }` (mm, mm3), with `label` and
+     *    `block`: the component of the sheet whose rows give a product's recipe.
+     */
+    place(shape: any, what: { product?: string, measure?: PartMeasure, component?: string, volume?: number, label?: string, block?: string, recipe?: string }): this
+    {
+        const label = what.label ?? baseNames([shape]);
+        if (what.component)
+        {
+            const component = this._components.find(c => c.id === what.component);
+            if (!component) { throw new Error(`'${what.component}' is no component of the sheet`); }
+            this._assigned.set(shape, { kind: 'component', component, volume: what.volume ?? 0, label, block: what.block });
+        }
+        else
+        {
+            const product = this._products.find(p => p.id === what.product);
+            if (!product) { throw new Error(`'${what.product}' is no product of the sheet`); }
+            if (!what.measure) { throw new Error(`${product.id}: the shape has no size`); }
+            if (what.recipe) { this._recipeOf.set(product.id, what.recipe); }
+            this._assigned.set(shape, { kind: 'product', product, measure: what.measure, label, block: what.block });
+        }
+        this._unmatched.delete(shape);
+        this._costs = null;
+        return this;
+    }
+
+    /** The sheet's components as it reckons with them (see recipes.ts), by id. Needs fromSheet() or fromDb(). */
+    blocks(): Map<string, Block>
+    {
+        return this._loadCostData('blocks').blocks;
     }
 
     /** The products with this id, or in this group (case does not matter for groups). */
@@ -993,7 +1073,7 @@ export class ProductManager
             if (!lines.has(entry.id))
             {
                 lines.set(entry.id, { id: entry.id, kind: entry.kind, vorm: entry.vorm, description: '', waste: this._waste.get(entry.id) ?? null, shapes: 0,
-                    st: 0, lengte: 0, oppervlak: 0, volume: 0, zaaglengte: 0, costs: null, labour: null });
+                    st: 0, lengte: 0, oppervlak: 0, volume: 0, zaaglengte: 0, costs: null, hours: null, labour: null });
             }
             const line = lines.get(entry.id)!;
             QUANTITY_KEYS.forEach(k => { line[k] = round(line[k] + (entry.quantities[k] ?? 0)); });
@@ -1011,6 +1091,7 @@ export class ProductManager
             ordered.forEach((l, i) =>
             {
                 l.costs = this._costs![i] ?? null;
+                l.hours = this._hours?.[i] ?? null;
                 l.labour = this._labour?.[i] ?? null;
             });
         }
@@ -1046,10 +1127,14 @@ export class ProductManager
         const priced = lines.map(line =>
         {
             const costs: ProductCosts = { material: 0, onsite: 0, voorbewerking: 0, assemblage: 0, montage: 0, afbouw: 0, total: 0 };
+            const hours: ProductCosts = { material: 0, onsite: 0, voorbewerking: 0, assemblage: 0, montage: 0, afbouw: 0, total: 0 };
             const sources = new Set<string>();
-            const addWork = (fase: string, amount: number) =>
+            // amount: units of work of the operation
+            const work = (operation: string, fase: string, amount: number) =>
             {
-                if ((CATEGORIES as ReadonlyArray<string>).includes(fase)) { costs[fase as typeof CATEGORIES[number]] += amount; }
+                if (!(CATEGORIES as ReadonlyArray<string>).includes(fase)) { return; }
+                costs[fase as typeof CATEGORIES[number]] += amount * this._rate(operation);
+                hours[fase as typeof CATEGORIES[number]] += amount * this._hoursPer(operation);
             };
 
             if (line.kind === 'product')
@@ -1063,7 +1148,7 @@ export class ProductManager
                     const recipe = this._recipe(product, block, data);
                     if (!recipe) { noRecipe.add(line.id); return; }
                     sources.add(recipe.source);
-                    recipe.steps.forEach(step => addWork(step.fase, step.factor * q[step.per] * this._rate(step.operation)));
+                    recipe.steps.forEach(step => work(step.operation, step.fase, step.factor * q[step.per]));
                 });
             }
             else if (line.kind === 'operation')
@@ -1071,9 +1156,8 @@ export class ProductManager
                 const operation = this._operations.find(o => o.naam === line.id)!;
                 const key = quantityOfUnit(operation.werkeenheid);
                 const amount = key ? line[key] + (key === 'lengte' ? line.zaaglengte : 0) : 0;
-                const rate = this._rate(line.id);
-                if (!rate) { noPrice.add(line.id); }
-                addWork(String(operation.fase ?? '').trim(), amount * rate);
+                if (!this._rate(line.id)) { noPrice.add(line.id); }
+                work(line.id, String(operation.fase ?? '').trim(), amount);
             }
             else
             {
@@ -1082,13 +1166,15 @@ export class ProductManager
                 // priced per m3 when it has a volume, else per its own unit
                 const scale = !block ? 0 : line.volume ? line.volume / block.volume : (key ? line[key] : 0) / block.size;
                 if (!block || !Number.isFinite(scale)) { noPrice.add(line.id); }
-                else { CATEGORIES.forEach(k => { costs[k] = block.costs[k] * scale; }); }
+                else { CATEGORIES.forEach(k => { costs[k] = block.costs[k] * scale; hours[k] = (block.hours?.[k] ?? 0) * scale; }); }
             }
             costs.total = CATEGORIES.reduce((sum, k) => sum + costs[k], 0);
-            return { costs, source: [...sources].join(', ') || null };
+            hours.total = CATEGORIES.reduce((sum, k) => sum + hours[k], 0);
+            return { costs, hours, source: [...sources].join(', ') || null };
         });
 
         this._costs = priced.map(p => p.costs);
+        this._hours = priced.map(p => p.hours);
         this._labour = priced.map(p => p.source);
 
         const { materiaal, arbeid, algemeen } = data.margins;
@@ -1114,7 +1200,9 @@ export class ProductManager
         {
             console.warn(`ProductManager.compute(): no price in the sheet for: ${[...noPrice].join(', ')}`);
         }
-        return { ...totals, lines: this.list(), noRecipe: [...noRecipe], noPrice: [...noPrice] };
+        const hours: ProductCosts = { material: 0, onsite: 0, voorbewerking: 0, assemblage: 0, montage: 0, afbouw: 0, total: 0 };
+        COST_KEYS.forEach(k => { hours[k] = priced.reduce((sum, p) => sum + p.hours[k], 0); });
+        return { ...totals, hours, lines: this.list(), noRecipe: [...noRecipe], noPrice: [...noPrice] };
     }
 
     /**
@@ -1153,7 +1241,7 @@ export class ProductManager
             }));
             return base;
         });
-        const { lines: _lines, noRecipe, noPrice, ...totals } = overview;
+        const { lines: _lines, hours: _hours, noRecipe, noPrice, ...totals } = overview;
         return { lines, totals, noRecipe, noPrice };
     }
 
@@ -1763,6 +1851,12 @@ export class ProductManager
     private _rate(operation: string): number
     {
         return Number(this._operations.find(o => o.naam === operation)?.['kosten (EUR per werkeenheid)']) || 0;
+    }
+
+    /** The hours paid for one unit of an operation: its time (`tijd (seconden)`) x the labour factor */
+    private _hoursPer(operation: string): number
+    {
+        return (Number(this._operations.find(o => o.naam === operation)?.['tijd (seconden)']) || 0) / 3600 * this._labourFactor;
     }
 
     /** The recipe a product follows, nearest first: its own row in the component's block, one like

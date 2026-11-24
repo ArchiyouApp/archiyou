@@ -93,6 +93,8 @@ export interface Block
     element: Array<ElementWork>;
     /** The costs of the representative component, excluding margins. */
     costs: Record<CostCategory, number>;
+    /** Its hours of work by phase, as the sheet's `arbeidstijd (uur)` (time x labour factor). */
+    hours: Record<CostCategory, number>;
     /** The CO2 of the representative component, kg: A1-A3, A4-C4, D. */
     gwp: [number, number, number];
     /** The layout it was read from: a block of rows under its id ('block'), or a table with the
@@ -161,6 +163,7 @@ export function readBlocks(rows: Array<Record<string, unknown>>): Map<string, Bl
                     products: [],
                     element: [],
                     costs: { material: 0, onsite: 0, voorbewerking: 0, assemblage: 0, montage: 0, afbouw: 0 },
+                    hours: { material: 0, onsite: 0, voorbewerking: 0, assemblage: 0, montage: 0, afbouw: 0 },
                     gwp: [0, 0, 0],
                     layout: 'block',
                 };
@@ -177,6 +180,7 @@ export function readBlocks(rows: Array<Record<string, unknown>>): Map<string, Bl
         {
             current.costs[category] += number(row[COST_COLUMNS[category]]);
         });
+        if (fase !== 'materiaal' && fase in COST_COLUMNS) { current.hours[fase as CostCategory] += number(row['arbeidstijd (uur)']); }
         ['GWP A1-A3 (kg)', 'GWP A4-C4 (kg)', 'GWP D (kg)'].forEach((column, i) => { current.gwp[i] += number(row[column]); });
 
         // a material row is a product of the block; any other row with a product is work on it
