@@ -88,6 +88,23 @@ export async function formulas(id: string, range: string): Promise<Array<Array<s
     return (body.values ?? []).map((row: Array<any>) => row.map(v => (v === null || v === undefined) ? '' : String(v)));
 }
 
+/** The computed values of named ranges, by name: numbers as numbers, blank cells left out at
+ *  the end of a row. One call for all of them. */
+export async function namedValues(id: string, names: Array<string>): Promise<Record<string, Array<Array<unknown>>>>
+{
+    if (!names.length) { return {}; }
+    const query = names.map(n => `ranges=${encodeURIComponent(n)}`).join('&');
+    const body = await call(`${SHEETS}/${id}/values:batchGet?${query}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`);
+    return Object.fromEntries(names.map((n, i) => [n, (body.valueRanges?.[i]?.values ?? []) as Array<Array<unknown>>]));
+}
+
+/** Its title */
+export async function title(id: string): Promise<string>
+{
+    const body = await call(`${SHEETS}/${id}?fields=${encodeURIComponent('properties.title')}`);
+    return body.properties?.title ?? '';
+}
+
 /** Write cells as a user types them: formulas stay formulas */
 export function writeValues(id: string, data: Array<{ range: string; values: Array<Array<string | number>> }>): Promise<any>
 {

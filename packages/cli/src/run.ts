@@ -65,6 +65,7 @@ interface RunOptions
     pipelines: Array<PipelineSpec>;   // pipelines whose output is written to outDir
     outDir: string | null;   // null: write no files (sweep, eval)
     modules: Array<string>;  // directories with script modules, for $module()
+    makedb?: string;         // a snapshot of the make database (makedb-<version>.json), for make.db()
     verbose: boolean;
 }
 
@@ -150,6 +151,19 @@ export async function engine(verbose: boolean, dirs: Array<string>): Promise<{ r
 {
     const r = await loadRunner(verbose, dirs);
     return { runner: r, core, catalog };
+}
+
+//// MAKE DATABASE ////
+
+/** A snapshot of the make database as the run's content: under its own version and as the latest */
+export function makeDbContent(file: string | undefined): Record<string, any>
+{
+    if (!file) { return {}; }
+    if (!existsSync(file)) { throw new Error(`--makedb: no such file ${file}`); }
+    const bytes = readFileSync(file);
+    const version = String(JSON.parse(bytes.toString('utf8'))?.version ?? '');
+    const item = (id: string) => ({ kind: 'make-db', id, bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), version, via: 'public' });
+    return { 'make-db:latest': item('latest'), ...(version ? { [`make-db:${version}`]: item(version) } : {}) };
 }
 
 //// GOOGLE SHEETS ////
@@ -252,7 +266,7 @@ async function runOnce(o: RunOptions): Promise<RunResult>
     }));
     // The public Google Sheets the script reads, as the server does: those its code names before
     // the run, and when it still stops for one (named some other way), that one and the run again
-    let content = await publicSheets(core.scanContentNeeds(o.code).map((n: any) => n.id));
+    let content = { ...await publicSheets(core.scanContentNeeds(o.code).filter((n: any) => n.kind === 'google-sheet').map((n: any) => n.id)), ...makeDbContent(o.makedb) };
     let res: any = await execute(content);
     const missing = (res.needs?.content ?? []).filter((n: any) => n.kind === 'google-sheet' && !content[`google-sheet:${n.id}`]).map((n: any) => n.id);
     if (missing.length)
@@ -878,6 +892,7 @@ function optionsFrom(args: Args, file: string, outDir: string | null): RunOption
         pipelines: (args.values.pipeline ?? []).map(parsePipeline),
         outDir,
         modules: moduleDirs(args),
+        makedb: args.values.makedb?.[0] ? userPath(args.values.makedb[0]) : undefined,
         verbose: args.bools.has('verbose'),
     };
 }

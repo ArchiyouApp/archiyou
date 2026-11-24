@@ -30,6 +30,7 @@ const USAGE = `archiyou <command>
                               to --out as <name>.<format>; default dxf (repeatable)
       --clash                 list parts that share volume (touching does not count)
       --check <inventory.json>  compare the parts with an inventory (counts, axes, floor, relations)
+      --makedb <file.json>    a snapshot of the make database for make.db() (archiyou makedb)
       --kernel mesh|brep      default mesh
       --modules <dir>         script modules for $module(): a module directory, or one that holds
                               them (repeatable; client modules, built to bundle.js or dist/bundle.js;
@@ -50,6 +51,9 @@ const USAGE = `archiyou <command>
       --preset <name>         only this preset (repeatable; default all)
       --write                 write them to the sheet's tab componenten, each replacing its rows
       --json                  everything as JSON
+  makedb --sheet <url>      a snapshot of the product sheet for the make database (make.db()):
+                            its tables and settings, checked, as makedb-<version>.json in --out
+                            (read with GOOGLE_SERVICE_ACCOUNT); exit 1 and no file on errors
   api <name>                the API reference: a function, Class.member, or a class's members
   docs [topic]              the guide and tutorials, as Markdown
   examples [name]           example scripts
@@ -136,6 +140,7 @@ async function main(argv: Array<string>): Promise<number>
         case 'eval': return (await import('./run')).evaluate(args);
         case 'mark': return (await import('./run')).markPhoto(args);
         case 'blocks': return (await import('./blocks')).blocks(args);
+        case 'makedb': return (await import('./makedb')).makedb(args);
         case 'api': return api(args.positional.join(' ') || undefined);
         case 'docs': return docs(args.positional.join(' ') || undefined);
         case 'examples': return examples(args.positional[0]);
