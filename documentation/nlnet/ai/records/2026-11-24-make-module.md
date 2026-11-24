@@ -215,9 +215,40 @@ cost, hours, weight, the order and cut lists): the class `Estimate` in `make/est
 internal `TakeOff` record in ProductManager keeps its name; it goes with that API in step 6.
 Above, the names are those of when the step was done.
 
+Step 6, the old API removed:
+
+- `make.products()` is gone, and with it `fromSheet()`, `assign()`, `collect()`, `unassigned()`,
+  `toTable()`, `find()`, the "only mapped" mode with its TakeOff record, and the matching it had
+  of its own (the Catalog does it). ProductManager is the engine of `make.estimate()` and
+  `make.offer()`, not a script API: `fromDb()`, `fromWorkbook()` (what `fromSheet()` did with a
+  workbook, for `fromDb()` and the tests), `fromOffer()`, `place()` (now also with `waste`, and it
+  refuses a component the sheet does not have), `add()`, `complete()`, `compute()`, the order
+  list, the component rows and the offer. 1977 lines became 1564.
+- `make.offer(template)` (make/offer/Offer.ts): the offer template, the only sheet a run still
+  opens with cloudcalc (it is live: the builders' prices). `add(component, quantities | shapes)`,
+  `compute()`, `outputs()`, `page()`, `html()`, `scenarios()`, `scenarioTable()`. The run loads
+  cloudcalc for `make.offer(` (STANDARD_MODULE_USES), no longer for `fromSheet(`/`fromOffer(`.
+- `materials.fromSheet(url)` is kept: the materials API, not the products one; a shape given a
+  product loads its material from the make database anyway. For the human to decide.
+- `archiyou run` takes a `.json` script (code with its params, as the server keeps it).
+- Tests: the engine's tests use an adapter that gives shapes a product as `shape.product()` does
+  (the Catalog) and places them; the old tests of matching keep their cases, with the Catalog's
+  messages: a tie is taken and said (a warning) where `assign()` refused it, and a group of one
+  product misfits as its id does. Tests of what is gone (collect, the sheet by URL, toTable, the
+  materials of fromSheet) went; the offer has a test of opening the template with cloudcalc.
+  Core: 2 fail, both from before (version, IFC house fixture); the 3 of the products API that
+  failed before are gone with it. CLI, server, editor, UI pass.
+- The production scripts still on the old API, read from the database (read only) and changed by
+  the agent: `ur_house_sketch` (`make.offer()`), `ur_floor`, `ur_house_detailed_storeys`,
+  `wall_time_cost`, `products_abstract`, `products_test`. Each run against the old API as a
+  baseline, the same: the offer € 47,674.05 (excl. BTW € 39,400.04), the storeys house € 29,681
+  (material € 14,404), wall_time_cost € 1,256.16 incl. margins with the same minutes per part,
+  products_test € 1,297.47, products_abstract € 1,123.06. `ur_floor` calls `.autoScale()` too.
+  For the human to save once this core is deployed, with the step 5 scripts.
+
 ## Next
 
-Step 6: remove the old API (`make.products().assign/collect/unassigned`, cloudcalc only for offer
-templates). Still on the old API in production: `ur_house_sketch`, `ur_floor`,
-`ur_house_detailed_storeys`, `wall_time_cost`, `products_abstract`, `products_test`. Before it
-reaches the real core: the `term`/`aliassen` columns there.
+- The real core sheet: the `term`/`aliassen` columns (now in the trial copy only), then a snapshot
+  of it on the server (`archiyou makedb`, `pnpm admin:makedb add`).
+- Deploy, then save the migrated scripts in the editor.
+- CO2 in the estimate; builders' own prices as a layer over the snapshot.
