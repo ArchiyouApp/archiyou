@@ -110,12 +110,16 @@ export async function loadStylerHatchImages(rules:ReadonlyArray<StylerRuleEntry>
     {
         if(image.startsWith('data:')){ HATCH_IMAGES.set(image, { data: image }); return }
         const material = materials?.get?.(image);
-        const texture = material?.viz?.textures?.section ?? material?.viz?.textures?.sides;
-        if(texture?.image)
+        // where it is cut, else its faces: the files of the material's name (see appearance.ts)
+        const textures = [material?.viz?.textures?.section, material?.viz?.textures?.sides].filter(t => t?.image);
+        if(textures.length)
         {
-            const data = await materials.loadTextureDataURI?.(texture.image);
-            if(data){ HATCH_IMAGES.set(image, { data, size: [texture.realWidth ?? 500, texture.realHeight ?? texture.realWidth ?? 500] }) }
-            else { console.warn(`styler: could not load the texture of material '${image}' to hatch with`) }
+            for(const texture of textures)
+            {
+                const data = await materials.loadTextureDataURI?.(texture.image);
+                if(data){ HATCH_IMAGES.set(image, { data, size: [texture.realWidth ?? 500, texture.realHeight ?? texture.realWidth ?? 500] }); return }
+            }
+            console.warn(`styler: material '${image}' has no texture to hatch with: add textures/${image}_section.jpg or _sides.jpg`);
             return
         }
         if(/^https?:\/\//.test(image)){ HATCH_IMAGES.set(image, { data: image }); return } // referenced as it is

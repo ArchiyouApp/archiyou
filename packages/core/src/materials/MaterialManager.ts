@@ -684,26 +684,33 @@ export class MaterialManager
         return base ? darken(base, this.materialLineDarken) : '#000000';
     }
 
+    /** Textures a material's name has no file for: asked once (see loadTextureDataURI) */
+    private _noTexture = new Set<string>();
+
     /**
-     * Load a texture image (by its path in appearance.ts, e.g. './textures/x.jpg')
-     * and return it as a base64 data URI, cached. Returns null if unavailable.
+     * Load a texture image (by its path, './textures/<materiaal_id>_sides.jpg': see appearance.ts)
+     * and return it as a base64 data URI, cached. Null when there is no such file: the material
+     * has its colour only. That is not a problem, so it is not said, and not asked again.
      */
     async loadTextureDataURI(imagePath: string): Promise<string | null>
     {
         if (this._texCache.has(imagePath)) return this._texCache.get(imagePath)!;
+        if (this._noTexture.has(imagePath)) return null;
         const filename = imagePath.replace(/^.*[/\\]/, ''); // basename
         const url = textureUrl(filename);
-        if (!url) return null;
         try
         {
-            const bytes = await loadBytes(url);
-            const dataUri = `data:${sniffMime(bytes)};base64,${bytesToBase64(bytes)}`;
+            const bytes = url ? await loadBytes(url) : null;
+            // an image, not a server's page for a file it does not have
+            const image = bytes && ((bytes[0] === 0xff && bytes[1] === 0xd8) || (bytes[0] === 0x89 && bytes[1] === 0x50));
+            if (!image) { this._noTexture.add(imagePath); return null; }
+            const dataUri = `data:${sniffMime(bytes!)};base64,${bytesToBase64(bytes!)}`;
             this._texCache.set(imagePath, dataUri);
             return dataUri;
         }
-        catch (e)
+        catch
         {
-            console.warn(`MaterialManager: could not load texture '${imagePath}': ${(e as Error).message}`);
+            this._noTexture.add(imagePath);
             return null;
         }
     }
@@ -732,7 +739,8 @@ export class MaterialManager
                 if (!tex?.image || tex.data) continue;
 
                 let data = await this.loadTextureDataURI(tex.image);
-                if (!data) continue;
+                // no file of the material's name: its colour only
+                if (!data) { delete spec.textures[role]; continue; }
                 if (strength !== 1)
                 {
                     // Masks are greyscale and anchored at white, so the adjustment is

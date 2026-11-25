@@ -3,114 +3,100 @@
  *
  *  The only material data kept in code. What a material IS (density, λ, strength, LCA,
  *  price) comes from the `materialen` tab of the core sheet, where everyone can check it
- *  (see fromRows.ts). How it LOOKS is presentation: a colour, a roughness and a texture mask,
- *  so a shape given `.material('osb')` looks like OSB without any sheet loaded.
- *
- *  Keyed by the sheet's `materiaal_id`. The textures in ./textures are greyscale masks that the
- *  viewer multiplies by `pbr.color`, so one mask serves several materials: wood fibre, straw
- *  and hemp share the mineral wool mask, each in its own colour.
- *
+ *  (see fromRows.ts). How it LOOKS is presentation: a colour and a roughness, here by the sheet's
+ *  `materiaal_id`, so a shape given `.material('osb')` looks like OSB without any sheet loaded.
  *  A material the sheet has and this table does not gets a plain colour from its group.
+ *
+ *  Its texture goes by its name only: ./textures/<materiaal_id>_sides.jpg for its faces, and
+ *  <materiaal_id>_section.jpg for where it is cut (a drawing's hatch). A material without such a
+ *  file has its colour only; to give it a texture, add the file. The textures are greyscale masks
+ *  that the viewer multiplies by `pbr.color`. Their size in the world follows the material's group
+ *  (TEXTURE_SIZE).
  */
 
 import type { MaterialGroup, MaterialViz } from './types';
 
-/** A texture set: the mask images and their real-world size in mm. */
-interface Masks
+/** How large a texture is in the world (mm), by the material's group: a mask of wood shows
+ *  500 x 875 mm of it. A cut face (section) shows 500 x 500 mm. */
+const TEXTURE_SIZE: Record<MaterialGroup, [number, number]> = {
+    wood: [500, 875], insulation: [1200, 2100], metal: [1500, 2625], concrete: [3000, 3000],
+    composite: [3000, 3000], masonry: [1000, 1000], finish: [1000, 1000], glass: [2000, 3000],
+    stone: [1000, 1000], plastic: [1000, 1000], membrane: [1000, 1000], other: [1000, 1000],
+};
+
+/** The textures a material has by its name: a file that is not there is a colour only (see
+ *  MaterialManager.loadTextureDataURI) */
+function texturesOf(id: string, group: MaterialGroup): NonNullable<MaterialViz['textures']>
 {
-    sides: { image: string; realWidth: number; realHeight: number; repeat: boolean };
-    section?: { image: string; realWidth: number; realHeight: number; repeat: boolean };
+    const [w, h] = TEXTURE_SIZE[group] ?? TEXTURE_SIZE.other;
+    return {
+        sides: { image: `./textures/${id}_sides.jpg`, realWidth: w, realHeight: h, repeat: false },
+        section: { image: `./textures/${id}_section.jpg`, realWidth: 500, realHeight: 500, repeat: false },
+    };
 }
 
-const mask = (name: string, w: number, h: number, section = false): Masks => ({
-    sides: { image: `./textures/${name}_sides.jpg`, realWidth: w, realHeight: h, repeat: false },
-    ...(section ? { section: { image: `./textures/${name}_section.jpg`, realWidth: 500, realHeight: 500, repeat: false } } : {}),
-});
-
-const MASKS = {
-    softwood: mask('softwood', 500, 875, true),
-    hardwood: mask('hardwood', 500, 875, true),
-    douglas: mask('douglas', 500, 875, true),
-    glulam: mask('glulam', 500, 875, true),
-    plywood: mask('plywood', 500, 875, true),
-    clt: mask('clt', 500, 875, true),
-    osb: mask('osb', 500, 875, true),
-    fibre: mask('mineralwool', 1200, 2100),
-    eps: mask('eps', 1200, 1644),
-    xps: mask('xps', 1200, 2100),
-    drywall: mask('drywall', 1000, 1000),
-    cement: mask('cement', 3000, 3000),
-    concrete: mask('concrete', 3000, 3000),
-    steel: mask('steel', 1500, 2625),
-    zinc: mask('zinc', 1500, 2625),
-    rebar: mask('rebar', 1500, 2625),
-    terracotta: mask('terracotta', 1000, 1000),
-    glass: mask('glass', 2000, 3000),
-} as const;
-
-const look = (color: string, roughness: number, masks?: Masks, extra: { metallic?: number; alpha?: number } = {}): MaterialViz => ({
+const look = (color: string, roughness: number, extra: { metallic?: number; alpha?: number } = {}): MaterialViz => ({
     pbr: { color, roughness, metallic: extra.metallic ?? 0, ...(extra.alpha !== undefined ? { alpha: extra.alpha } : {}) },
-    ...(masks ? { textures: masks } : {}),
 });
 
 /** The look per `materiaal_id` of the core sheet. */
 export const APPEARANCE: Record<string, MaterialViz> = {
     // constructiehout
-    naaldhout_constructief: look('#8B5A2B', 0.7, MASKS.softwood),
-    naaldhout_geschaafd: look('#9a6a38', 0.65, MASKS.softwood),
-    gelamineerd_hout: look('#cba46c', 0.7, MASKS.glulam),
-    i_ligger: look('#a87a48', 0.7, MASKS.softwood),
+    naaldhout_constructief: look('#8B5A2B', 0.7),
+    naaldhout_geschaafd: look('#9a6a38', 0.65),
+    gelamineerd_hout: look('#cba46c', 0.7),
+    i_ligger: look('#a87a48', 0.7),
     // gevel
-    douglas: look('#c08a4a', 0.72, MASKS.douglas),
-    lariks: look('#b98a55', 0.72, MASKS.softwood),
-    thermohout: look('#5e3d24', 0.7, MASKS.hardwood),
-    hergebruikt_hout: look('#7d6a55', 0.75, MASKS.softwood),
+    douglas: look('#c08a4a', 0.72),
+    lariks: look('#b98a55', 0.72),
+    thermohout: look('#5e3d24', 0.7),
+    hergebruikt_hout: look('#7d6a55', 0.75),
     // plaatmateriaal
-    osb: look('#c2a06a', 0.8, MASKS.osb),
-    esb: look('#c9ad7c', 0.75, MASKS.osb),
-    multiplex: look('#d9b380', 0.7, MASKS.plywood),
-    drielagenplaat: look('#d6b07a', 0.7, MASKS.clt),
-    cementspaanplaat: look('#9a9a94', 0.85, MASKS.cement),
-    gipsplaat: look('#e0e0e0', 0.7, MASKS.drywall),
+    osb: look('#c2a06a', 0.8),
+    esb: look('#c9ad7c', 0.75),
+    multiplex: look('#d9b380', 0.7),
+    drielagenplaat: look('#d6b07a', 0.7),
+    cementspaanplaat: look('#9a9a94', 0.85),
+    gipsplaat: look('#e0e0e0', 0.7),
     // isolatie and wood fibre boards
-    houtvezel_buitenplaat: look('#7a5a3a', 0.85, MASKS.fibre),
-    houtvezelplaat: look('#9b7650', 0.9, MASKS.fibre),
-    houtvezel_flex: look('#a88257', 0.95, MASKS.fibre),
-    hennepvezel: look('#b9a77a', 0.95, MASKS.fibre),
-    glaswol: look('#e3cf73', 0.95, MASKS.fibre),
-    stro: look('#d9c27a', 0.95, MASKS.fibre),
-    eps: look('#f4f4f0', 0.9, MASKS.eps),
-    xps: look('#c7e0ef', 0.85, MASKS.xps),
+    houtvezel_buitenplaat: look('#7a5a3a', 0.85),
+    houtvezelplaat: look('#9b7650', 0.9),
+    houtvezel_flex: look('#a88257', 0.95),
+    hennepvezel: look('#b9a77a', 0.95),
+    glaswol: look('#e3cf73', 0.95),
+    stro: look('#d9c27a', 0.95),
+    eps: look('#f4f4f0', 0.9),
+    xps: look('#c7e0ef', 0.85),
     // metal
-    rvs: look('#b8bcc0', 0.35, MASKS.steel, { metallic: 1 }),
-    verzinkt_staal: look('#9aa3ab', 0.45, MASKS.zinc, { metallic: 0.9 }),
-    schroefpaal: look('#5a5f63', 0.55, MASKS.steel, { metallic: 1 }),
-    constructiestaal: look('#808080', 0.5, MASKS.steel, { metallic: 1 }),
-    wapeningsstaal: look('#666666', 0.5, MASKS.rebar, { metallic: 0.9 }),
-    zink: look('#8E9BA7', 0.4, MASKS.zinc, { metallic: 0.9 }),
-    gecoat_staal: look('#3b3f42', 0.5, MASKS.steel, { metallic: 0.6 }),
+    rvs: look('#b8bcc0', 0.35, { metallic: 1 }),
+    verzinkt_staal: look('#9aa3ab', 0.45, { metallic: 0.9 }),
+    schroefpaal: look('#5a5f63', 0.55, { metallic: 1 }),
+    constructiestaal: look('#808080', 0.5, { metallic: 1 }),
+    wapeningsstaal: look('#666666', 0.5, { metallic: 0.9 }),
+    zink: look('#8E9BA7', 0.4, { metallic: 0.9 }),
+    gecoat_staal: look('#3b3f42', 0.5, { metallic: 0.6 }),
     // fundering, dakbedekking, afwerking
-    beton: look('#808080', 0.8, MASKS.concrete),
-    keramische_dakpan: look('#b4583a', 0.8, MASKS.terracotta),
-    hergebruikte_dakpan: look('#9b5a40', 0.85, MASKS.terracotta),
-    leem_grondlaag: look('#a8865e', 0.9, MASKS.cement),
-    leem_afwerklaag: look('#c8a983', 0.9, MASKS.cement),
+    beton: look('#808080', 0.8),
+    keramische_dakpan: look('#b4583a', 0.8),
+    hergebruikte_dakpan: look('#9b5a40', 0.85),
+    leem_grondlaag: look('#a8865e', 0.9),
+    leem_afwerklaag: look('#c8a983', 0.9),
     keramische_tegel: look('#d8d4cc', 0.4),
-    houten_vloer: look('#9b6b3e', 0.6, MASKS.hardwood),
+    houten_vloer: look('#9b6b3e', 0.6),
     groendak: look('#5f7a3a', 0.95),
     epdm: look('#2b2b2b', 0.8),
     // folies and tape
-    dampremmende_folie: look('#d9d9d9', 0.6, undefined, { alpha: 0.6 }),
-    dampopen_folie: look('#e6e6e6', 0.6, undefined, { alpha: 0.6 }),
+    dampremmende_folie: look('#d9d9d9', 0.6, { alpha: 0.6 }),
+    dampopen_folie: look('#e6e6e6', 0.6, { alpha: 0.6 }),
     luchtdichte_tape: look('#2f6db3', 0.5),
     // kozijnen
-    houten_raam: look('#e8e2d6', 0.6, MASKS.softwood),
-    houten_kozijn: look('#e8e2d6', 0.6, MASKS.softwood),
-    houten_deur: look('#8a6a48', 0.6, MASKS.hardwood),
-    houten_deur_glas: look('#8a6a48', 0.6, MASKS.hardwood),
-    staldeur: look('#7a5a3a', 0.65, MASKS.softwood),
+    houten_raam: look('#e8e2d6', 0.6),
+    houten_kozijn: look('#e8e2d6', 0.6),
+    houten_deur: look('#8a6a48', 0.6),
+    houten_deur_glas: look('#8a6a48', 0.6),
+    staldeur: look('#7a5a3a', 0.65),
     binnendeur: look('#f0ede6', 0.5),
-    dakraam: look('#F8F8F8', 0.05, MASKS.glass, { alpha: 0.25 }),
+    dakraam: look('#F8F8F8', 0.05, { alpha: 0.25 }),
 };
 
 /** The group of each material above, for drawings and IFC before the sheet is loaded (the sheet
@@ -134,8 +120,9 @@ const GROUP_COLOR: Record<MaterialGroup, string> = {
     membrane: '#d9d9d9', composite: '#9a9a94', other: '#b0b0b0',
 };
 
-/** How a material looks: its own entry, else its group's colour. */
+/** How a material looks: its own colour, else its group's; and the textures of its name. */
 export function appearanceOf(id: string, group?: MaterialGroup): MaterialViz
 {
-    return APPEARANCE[id] ?? look(GROUP_COLOR[group ?? 'other'] ?? GROUP_COLOR.other, 0.8);
+    const g = group ?? APPEARANCE_GROUP[id] ?? 'other';
+    return { ...(APPEARANCE[id] ?? look(GROUP_COLOR[g] ?? GROUP_COLOR.other, 0.8)), textures: texturesOf(id, g) };
 }

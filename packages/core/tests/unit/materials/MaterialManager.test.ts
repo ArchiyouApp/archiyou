@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import { readdirSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 import { MaterialManager } from '../../../src/materials/MaterialManager'
 import { materialFromRow, sheetNumber } from '../../../src/materials/fromRows'
@@ -279,15 +281,35 @@ describe('MaterialManager', () =>
             expect(spec.textures!.sides!.data).toBe(direct)
         })
 
-        it('every look points at a texture that exists', async () =>
+        it('finds a material\'s texture by its name, and gives the colour only where there is no file', async () =>
         {
             const mgr = makeManager()
-            const images = [...new Set(Object.values(APPEARANCE)
-                .flatMap(v => Object.values(v.textures ?? {}).map(t => t!.image)))]
-            for (const image of images)
-            {
-                expect(await mgr.loadTextureDataURI(image), image).toMatch(/^data:image\//)
-            }
+            const osb = mgr.get('osb')!.viz!.textures!
+            expect([osb.sides!.image, osb.section!.image]).toEqual(['./textures/osb_sides.jpg', './textures/osb_section.jpg'])
+            expect(await mgr.loadTextureDataURI(osb.sides!.image)).toMatch(/^data:image\/jpeg;base64,/)
+
+            // no file of its name: no texture, said nowhere, asked once
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            expect(await mgr.loadTextureDataURI('./textures/pe_schuim_sides.jpg')).toBeNull()
+            expect(await mgr.loadTextureDataURI('./textures/pe_schuim_sides.jpg')).toBeNull()
+            expect(warn).not.toHaveBeenCalled()
+            warn.mockRestore()
+
+            // an export leaves out what has no file: OSB has a cut face texture, gypsum only its faces
+            const spec = (id: string) => ({ style: { material: mgr.renderSpec(mgr.get(id)!) } })
+            const [board, gypsum] = [spec('osb'), spec('gipsplaat')]
+            await mgr.embedTexturesInShapes([board, gypsum])
+            expect(Object.keys(board.style.material.textures!)).toEqual(['sides', 'section'])
+            expect(Object.keys(gypsum.style.material.textures!)).toEqual(['sides'])
+        })
+
+        it('has a file only for materials: every texture is named after one', () =>
+        {
+            const dir = fileURLToPath(new URL('../../../src/materials/textures/', import.meta.url))
+            const names = readdirSync(dir).filter(f => f.endsWith('.jpg')).map(f => f.replace(/_(sides|section)\.jpg$/, ''))
+            const materials = new Set([...Object.keys(APPEARANCE), ...MATERIALEN_ROWS.map(r => String(r['materiaal_id']))])
+            expect(names.filter(n => !materials.has(n))).toEqual([])
+            expect(new Set(names).size).toBe(41)
         })
     })
 
