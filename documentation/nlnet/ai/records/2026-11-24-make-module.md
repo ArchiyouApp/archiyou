@@ -246,6 +246,23 @@ Step 6, the old API removed:
   products_test € 1,297.47, products_abstract € 1,123.06. `ur_floor` calls `.autoScale()` too.
   For the human to save once this core is deployed, with the step 5 scripts.
 
+After step 6 (asked by the human: a snapshot is the whole core sheet; materials only from it):
+
+- `archiyou makedb` reads the whole sheet: every tab as a table (its named range tables.<name>,
+  else the tab from its first row with data, a column without a heading by its letter) and every
+  other named range as a value. Not the builders' tabs (`bouwers`, `bouwersprijzen`): their own
+  prices, which every signed-in user could read in a snapshot; a layer of their own later, as
+  decided. The snapshot says which tabs it read and which it left out. The four tables the core
+  reckons with are checked as before; the others come as they are. `make.db().tables()`,
+  `.settings()`, `.table('instellingen')`. The real core: 2026-11-25.1, five tables, 333 named
+  values (the settings and the components' outputs); the house gives the same as on 2026-11-24.1.
+- `materials.fromSheet()` and `fromWorkbook()` are gone: the materials come from the run's make
+  database, loaded the first time a material is asked for; without it (not signed in, a test) a
+  material has its look and no properties, and the run goes on. A script that uses material
+  properties (`.material('…')`, `.weight()`, `.carbon()`, `materials.rc()`) asks for the make
+  database, as `.product()` does. `materials/fromSheet.ts` is `fromRows.ts`. cloudcalc is now only
+  for the offer template.
+
 ## Next
 
 - The real core sheet: the `term`/`aliassen` columns (now in the trial copy only), then a snapshot
