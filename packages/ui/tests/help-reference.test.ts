@@ -23,14 +23,14 @@ describe('the generated reference', () =>
 {
   it('has the globals, the $ functions and the shape classes', () =>
   {
-    ['box', 'sphere', 'sketch', '$component', '$PARAMS', 'doc', 'calc', 'print', 'Mesh', 'Mesh.move', 'Mesh.subtract', 'ShapeCollection', 'Curve.fillet']
+    ['box', 'sphere', 'sketch', '$component', '$PARAMS', 'doc', 'calc', 'print', 'Solid', 'Solid.move', 'Solid.subtract', 'ShapeCollection', 'Curve.fillet']
       .forEach(id => expect(index.byId.has(id), id).toBe(true));
   });
 
   it('merges the methods shapeAnnotations adds to the meshup classes', () =>
   {
-    expect(index.byId.has('Mesh.dimension')).toBe(true);
-    expect(index.byId.has('Mesh.label')).toBe(true);
+    expect(index.byId.has('Solid.dimension')).toBe(true);
+    expect(index.byId.has('Solid.label')).toBe(true);
   });
 
   it('leaves out what is private or engine-only', () =>
@@ -49,7 +49,7 @@ describe('searchApi', () =>
 
   it('finds members by class and prefix', () =>
   {
-    expect(searchApi(index, 'Mesh.mo').map(e => e.id)).toContain('Mesh.move');
+    expect(searchApi(index, 'Solid.mo').map(e => e.id)).toContain('Solid.move');
   });
 
   it('returns nothing for an empty query', () =>
@@ -74,13 +74,13 @@ describe('lookupAt', () =>
   it('walks a chain to the class of the receiver', () =>
   {
     const result = lookup("box(10).move(5).col|or('red')");
-    expect(result.receiver).toBe('Mesh');
-    expect(result.ids).toEqual(['Mesh.color']);
+    expect(result.receiver).toBe('Solid');
+    expect(result.ids).toEqual(['Solid.color']);
   });
 
   it('types a variable from its assignment', () =>
   {
-    expect(lookup('top = box(1200, 700, 30)\ntop.move|Z(735)').ids).toEqual(['Mesh.moveZ']);
+    expect(lookup('top = box(1200, 700, 30)\ntop.move|Z(735)').ids).toEqual(['Solid.moveZ']);
   });
 
   it('types a $component importer', () =>
@@ -97,7 +97,7 @@ describe('lookupAt', () =>
   {
     const result = lookup('unknownThing.subtr|act(x)');
     expect(result.receiver).toBeNull();
-    expect(result.ids).toEqual(expect.arrayContaining(['Mesh.subtract', 'ShapeCollection.subtract']));
+    expect(result.ids).toEqual(expect.arrayContaining(['Solid.subtract', 'ShapeCollection.subtract']));
   });
 
   it('explains a script parameter through $PARAMS', () =>

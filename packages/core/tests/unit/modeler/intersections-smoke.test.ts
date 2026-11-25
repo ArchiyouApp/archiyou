@@ -15,7 +15,7 @@ describe('collection.intersections mesh path', () =>
         const subbox = (m.box(100, 50, 50) as any).color('blue')
         const icol = boxes.copy().intersections(subbox)
         expect(icol).toBeInstanceOf(SmartShapeCollection)
-        icol.toArray().forEach((s: any) => expect(s.constructor.name).toBe('Mesh'))
+        icol.toArray().forEach((s: any) => expect(s.constructor.name).toBe('Solid'))
     })
 
     it('intersections() is non-replacing: originals stay, results are added too', () =>

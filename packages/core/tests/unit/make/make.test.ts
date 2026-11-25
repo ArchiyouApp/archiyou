@@ -66,7 +66,7 @@ describe('Make', async () =>
             .scene()
             .shapes()
             .toArray()
-            .filter(shape => shape.type === 'Mesh')
+            .filter(shape => shape.type === 'Solid')
             .filter(shape => (shape as any).overlapPerc?.(probe) > 0.001)
 
         expect(overlappingMeshes).toHaveLength(0)
@@ -92,7 +92,7 @@ describe('Make', async () =>
         expect((wall as any).openingJackStuds.length).toBe(8)
 
         // Verify each opening void is free of solid mesh material
-        const solidMeshes = localModeler.scene().shapes().toArray().filter(s => s.type === 'Mesh')
+        const solidMeshes = localModeler.scene().shapes().toArray().filter(s => s.type === 'Solid')
 
         const probe1 = localModeler.boxBetween([600, -100, 600], [800, 100, 800]).removeFromScene()
         const probe2 = localModeler.boxBetween([1400, -100, 1100], [1900, 100, 1400]).removeFromScene()

@@ -54,9 +54,9 @@ describe('make.pack3d', () =>
 
     /** The placed copies of every bin, by bin, without the outline of the bin. */
     const placed = (result: any): any[][] =>
-        [1, 2, 3, 4, 5, 6].map(i => result.getGroup(`bin${i}`)).filter(Boolean).map((group: any) => group.toArray().filter((shape: any) => shape.type === 'Mesh'))
+        [1, 2, 3, 4, 5, 6].map(i => result.getGroup(`bin${i}`)).filter(Boolean).map((group: any) => group.toArray().filter((shape: any) => shape.type === 'Solid'))
 
-    const signature = (result: any): string => result.toArray().filter((s: any) => s.type === 'Mesh')
+    const signature = (result: any): string => result.toArray().filter((s: any) => s.type === 'Solid')
         .map((shape: any) => { const b = shape.bbox(); return [b.minX(), b.minY(), b.minZ(), b.maxX(), b.maxY(), b.maxZ()].map(v => Math.round(v * 1e6) / 1e6).join(',') }).join(' ')
 
     it('puts the six orientations of a box where the planner means them', () =>
@@ -234,7 +234,7 @@ describe('make.pack3d', () =>
         metric.units('m')
         const parts = metric.collection(metric.box(0.4, 0.3, 0.25), metric.box(0.4, 0.3, 0.25), metric.box(0.6, 0.4, 0.3))
         const result = metric.make.pack3d(parts, { bins: [{ length: 1.2, width: 0.8, height: 1.8, maxWeight: 600 }], weight: 10, maxIterations: 0 })
-        const copies = result.toArray().filter((s: any) => s.type === 'Mesh')
+        const copies = result.toArray().filter((s: any) => s.type === 'Solid')
         expect(copies.length).toBe(3)
         copies.forEach((s: any) => { expect(s.bbox().maxX()).toBeLessThanOrEqual(1.2 + 1e-9); expect(s.bbox().maxY()).toBeLessThanOrEqual(0.8 + 1e-9) })
         expect((metric as any).stats.bins[0].weight).toBe(30)

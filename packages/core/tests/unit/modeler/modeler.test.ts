@@ -433,7 +433,7 @@ describe('Modeler — mesh mode methods', () =>
         const s = m.sphere(10);
         expect(s).toBeInstanceOf(SmartMesh);
         expect((s as any).mode).toBe('mesh');
-        expect(s.type).toBe('Mesh');
+        expect(s.type).toBe('Solid');
     });
 
     it('cylinder()', () =>
@@ -441,7 +441,7 @@ describe('Modeler — mesh mode methods', () =>
         const cyl = m.cylinder(5, 10);
         expect(cyl).toBeInstanceOf(SmartMesh);
         expect((cyl as any).mode).toBe('mesh');
-        expect(cyl.type).toBe('Mesh');
+        expect(cyl.type).toBe('Solid');
     });
 
     it('point()', () =>

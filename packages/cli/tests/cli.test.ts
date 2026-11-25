@@ -48,9 +48,9 @@ describe('lookups (no kernel)', () =>
 
     it('api: a class lists its members', () =>
     {
-        const r = cli(['api', 'Mesh']);
+        const r = cli(['api', 'Solid']);
         expect(r.status).toBe(0);
-        expect(r.stdout).toMatch(/^Mesh.*members/);
+        expect(r.stdout).toMatch(/^Solid.*members/);
         expect(r.stdout).toContain('  volume(): number');
     });
 
@@ -108,7 +108,7 @@ describe.skipIf(!MESHUP_BUILT)('run (needs pnpm build:meshup)', () =>
         const lines = r.stdout.trim().split('\n');
         expect(lines[0]).toMatch(/^OK {2}plate\.js {2}mesh/);
         expect(r.stdout).toContain('size 200 x 100 x 60');
-        expect(r.stdout).toMatch(/blockL\s+Mesh\s+40 x 100 x 50\s+200000/);
+        expect(r.stdout).toMatch(/blockL\s+Solid\s+40 x 100 x 50\s+200000/);
         expect(r.stdout).toContain('print: width 200');
         expect(r.stdout).not.toMatch(/Runner::|ShapeCollection::/); // core's own logging stays out
         expect(statSync(join(out, 'model.glb')).size).toBeGreaterThan(1000);

@@ -2,8 +2,8 @@ script               brep     mesh brep match   ok  off only m only b  first div
 artcrate             success    19   19    19   19    0      0      0  
 boxpubtest           success     1    1     1    1    0      0      0  
 gardenchair          success    34   34    32   32    0      2      2  
-                             only mesh: Scene/longitudinal/Mesh[0] [Mesh]
-                             only mesh: Scene/longitudinal/Mesh[1] [Mesh]
+                             only mesh: Scene/longitudinal/Solid[0] [Solid]
+                             only mesh: Scene/longitudinal/Solid[1] [Solid]
                              only brep: Scene/longitudinal/diagramBaseFrontLine [Face]
                              only brep: Scene/longitudinal/group1/UnnamedShapeCollection [ShapeCollection]
 kakpinchedstool      success    36   37    36   36    0      0      1  
@@ -20,20 +20,20 @@ number_ranges_demo   success     5    5     5    5    0      0      0
 programmaticparams   success     2    2     2    2    0      0      0  
 sedia                success    23   22    22   22    0      1      0  
                              only mesh: Scene/back/Vertex[1] [Vertex]
-simplestep           error      44   22    22    8   14     22      0  Scene/side/Mesh[0]: bbox.width mesh=50 brep=25
+simplestep           error      44   22    22    8   14     22      0  Scene/side/Solid[0]: bbox.width mesh=50 brep=25
                              brep: Make: the make module (walls, boarding, part lists, sheet packing) is only available in mesh mode — it builds 
-                             off: Scene/side/Mesh[1] mesh=[-1.85e-15,-25,200,600,4.44e-14,250] brep=[0,-25,250,50,525,275] (bbox.width,bbox.depth,bbox.height,bbox.max.x,bbox.center.x,bbox.max.y,bbox.center.y,bbox.min.z,bbox.max.z,bbox.center.z,bbox.diagonal,volume)
-                             off: Scene/side/Mesh[3] mesh=[200,-25,450,250,525,475] brep=[0,-25,200,600,0,250] (bbox.width,bbox.depth,bbox.height,bbox.min.x,bbox.max.x,bbox.center.x,bbox.max.y,bbox.center.y,bbox.min.z,bbox.max.z,bbox.center.z,bbox.diagonal,volume)
-                             off: Scene/side/Mesh[4] mesh=[200,-25,400,600,8.88e-14,450] brep=[175,0,250,200,50,450] (bbox.width,bbox.depth,bbox.height,bbox.min.x,bbox.max.x,bbox.center.x,bbox.min.y,bbox.max.y,bbox.center.y,bbox.min.z,bbox.center.z,bbox.diagonal,volume)
+                             off: Scene/side/Solid[1] mesh=[-1.85e-15,-25,200,600,4.44e-14,250] brep=[0,-25,250,50,525,275] (bbox.width,bbox.depth,bbox.height,bbox.max.x,bbox.center.x,bbox.max.y,bbox.center.y,bbox.min.z,bbox.max.z,bbox.center.z,bbox.diagonal,volume)
+                             off: Scene/side/Solid[3] mesh=[200,-25,450,250,525,475] brep=[0,-25,200,600,0,250] (bbox.width,bbox.depth,bbox.height,bbox.min.x,bbox.max.x,bbox.center.x,bbox.max.y,bbox.center.y,bbox.min.z,bbox.max.z,bbox.center.z,bbox.diagonal,volume)
+                             off: Scene/side/Solid[4] mesh=[200,-25,400,600,8.88e-14,450] brep=[175,0,250,200,50,450] (bbox.width,bbox.depth,bbox.height,bbox.min.x,bbox.max.x,bbox.center.x,bbox.min.y,bbox.max.y,bbox.center.y,bbox.min.z,bbox.center.z,bbox.diagonal,volume)
                              … 10 more off
-                             only mesh: Scene/side/Mesh[11] [Mesh]
-                             only mesh: Scene/side/Mesh[12] [Mesh]
-                             only mesh: Scene/side/Mesh[13] [Mesh]
+                             only mesh: Scene/side/Solid[11] [Solid]
+                             only mesh: Scene/side/Solid[12] [Solid]
+                             only mesh: Scene/side/Solid[13] [Solid]
                              … 19 more only on mesh
 slidercabinet        success    32   18    18   18    0     14      0  
-                             only mesh: Scene/sliderdoors/pleft [Mesh]
-                             only mesh: Scene/sliderdoors/kerfSub[0] [Mesh]
-                             only mesh: Scene/sliderdoors/kerfSub[1] [Mesh]
+                             only mesh: Scene/sliderdoors/pleft [Solid]
+                             only mesh: Scene/sliderdoors/kerfSub[0] [Solid]
+                             only mesh: Scene/sliderdoors/kerfSub[1] [Solid]
                              … 11 more only on mesh
 strawwall            success    56   55    55   55    0      1      0  
                              only mesh: Scene/studgrid/gridline [Curve]
@@ -56,7 +56,7 @@ tomy                 success    13   13    13    6    7      0      0  Scene/cut
                              off: Scene/cuts/cutBackPrimaryLine mesh=[870.5727,292.81,-0.0141,970.0539,302.9829,1.73e-18] brep=[869.755,302.985,-99.504,969.264,312.886,-99.504] (bbox.depth,bbox.height,bbox.min.x,bbox.max.x,bbox.center.x,bbox.min.y,bbox.max.y,bbox.center.y,bbox.min.z,bbox.max.z,bbox.center.z)
                              … 3 more off
 ur_house_sketch      success    53   53    51   50    1      2      2  Scene/walls/wallsCombined: volume mesh=12486011371.1993 brep=12975763250
-                             only mesh: Scene/roof/Mesh [Mesh]
+                             only mesh: Scene/roof/Solid [Solid]
                              only mesh: Scene/walls/Vertex [Vertex]
                              only brep: Scene/roof/group2/UnnamedShapeCollection [ShapeCollection]
                              only brep: Scene/walls/Wire:Planar [Wire]

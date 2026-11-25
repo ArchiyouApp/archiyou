@@ -33,7 +33,7 @@ const API_EXAMPLES: Array<{ id: string, code: string }> = (JSON.parse(fs.readFil
  *  They live in packages/meshup (a submodule); rewrite them as small whole scripts there
  *  and take them off this list. Skipped, so they stay visible in the test output. */
 const FRAGMENTS = [
-    'Mesh.align', 'Curve.align', 'Polygon.align', 'ShapeCollection.align', 'Vertex.align', // Shape.align
+    'Solid.align', 'Curve.align', 'Polygon.align', 'ShapeCollection.align', 'Vertex.align', // Shape.align
     'Curve.fillet', 'Bbox.corner', 'Bbox.getSidesShapes',
 ]
 const isFragment = (id: string) => FRAGMENTS.includes(id.replace(/ #\d+$/, ''))

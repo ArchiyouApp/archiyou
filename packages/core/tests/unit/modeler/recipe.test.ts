@@ -688,7 +688,7 @@ describe('Recipe', () =>
             ;(base as any).name('plate')
 
             const steps = explainRecipe(base)
-            expect(steps).toContain('plate (Mesh)')
+            expect(steps).toContain('plate (Solid)')
             expect(steps).toContain('box(size=[100, 50, 20])')
             expect(steps).toContain('rotate(30°, axis=[0, 0, 1], pivot=[0, 0, 0])')
             expect(steps).toMatch(/cut\n\s+└ cylinder\(radius=5, height=40\)/)

@@ -34,7 +34,7 @@ const BASE = { x: 2000, y: 1000, z: 500 }
 const TOWER = { x: 400, y: 300, z: 1500 }
 function model(): any
 {
-    modeler.scene().clear?.()
+    (modeler.scene() as any).clear?.()
     const base = modeler.boxBetween([0, 0, 0], [BASE.x, BASE.y, BASE.z]) as any
     const tower = modeler.boxBetween([0, 0, 0], [TOWER.x, TOWER.y, TOWER.z]) as any
     return modeler.collection(base, tower)

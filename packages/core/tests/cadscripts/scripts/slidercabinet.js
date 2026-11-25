@@ -162,7 +162,7 @@ if(FRONT_SLIDER_DOORS)
 
 }
 
-plates = all().filter(s => s.type === 'Mesh')
+plates = all().filter(s => s.isSolid?.())   // the mesh solids: their type is 'Solid' now, as brep's are
     .forEach((s) => s.copy().layflat()
     .moveY(-3000)
     );

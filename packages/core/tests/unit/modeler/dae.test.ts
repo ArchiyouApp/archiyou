@@ -114,7 +114,7 @@ describe('Modeler DAE export', () =>
         const root = dae!.indexOf('name="root"')
         const walls = dae!.indexOf('name="walls"')
         // 'Mesh:Box' with the ':' sanitized away — every 1.4.1 `name` is an xs:NCName
-        const shape = dae!.indexOf('name="Mesh_Box"')
+        const shape = dae!.indexOf('name="Solid_Box"')
         const instance = dae!.indexOf('<instance_geometry')
 
         // root > walls > shape, each written inside the previous, with the geometry

@@ -40,7 +40,7 @@ function coverageOf(script: string, scene: any): Coverage
     {
         const isHidden = hidden || node.style?.visible === false
         const shape = node.shape?.()
-        if (shape && !isHidden && shape.style?.visible !== false && shape.type === 'Mesh')
+        if (shape && !isHidden && shape.style?.visible !== false && shape.type === 'Solid')
         {
             c.solids++
             const recipe = recipeOf(shape)

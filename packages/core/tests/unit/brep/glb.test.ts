@@ -39,7 +39,7 @@ describe('brep → meshup conversion', () =>
         expect(result.isShapeCollection()).toBe(true)
 
         const shapes = result.toArray()
-        const mesh = shapes.find((s: any) => s.type === 'Mesh')
+        const mesh = shapes.find((s: any) => s.type === 'Solid')
         expect(mesh).toBeTruthy()
         // a box has 12 triangles and 12 edges
         expect(mesh.vertices().length).toBeGreaterThan(0)
@@ -52,7 +52,7 @@ describe('brep → meshup conversion', () =>
     it('carries the tessellation normals onto the stand-in Mesh', () =>
     {
         const boxNormals = (brepShapeToMeshup(new brep.Solid().makeBox(100)) as any)
-            .toArray().find((s: any) => s.type === 'Mesh').toBuffer().normals
+            .toArray().find((s: any) => s.type === 'Solid').toBuffer().normals
 
         expect(boxNormals.length).toBeGreaterThan(0)
         for (let i = 0; i < boxNormals.length; i += 3)
@@ -72,14 +72,14 @@ describe('brep → meshup conversion', () =>
         // a sphere keeps OC's per-node normals, so it shades smooth rather than faceted:
         // many more distinct normals than it has triangles' worth of facets
         const sphereNormals = (brepShapeToMeshup(new brep.Solid().makeSphere(50)) as any)
-            .toArray().find((s: any) => s.type === 'Mesh').toBuffer().normals
+            .toArray().find((s: any) => s.type === 'Solid').toBuffer().normals
         expect(distinct(sphereNormals)).toBeGreaterThan(distinct(boxNormals) * 10)
     })
 
     it('preserves the box dimensions through tessellation', () =>
     {
         const result = brepShapeToMeshup(new brep.Solid().makeBox(100, 50, 20)) as any
-        const mesh = result.toArray().find((s: any) => s.type === 'Mesh')
+        const mesh = result.toArray().find((s: any) => s.type === 'Solid')
         const bbox = mesh.bbox()
         expect(Math.round(bbox.width())).toEqual(100)
         expect(Math.round(bbox.depth())).toEqual(50)
@@ -97,7 +97,7 @@ describe('brep → meshup conversion', () =>
         const box = new brep.Solid().makeBox(10)
         box.color('blue')
         const result = brepShapeToMeshup(box) as any
-        const mesh = result.toArray().find((s: any) => s.type === 'Mesh')
+        const mesh = result.toArray().find((s: any) => s.type === 'Solid')
         expect(mesh.style.color).toBeTruthy()
     })
 })
