@@ -2,28 +2,33 @@
  *  make/db/snapshot.ts — the make database as a file: a snapshot of the product sheet.
  *
  *  The sheet (URBUILD_DATABASE_CORE) is where people keep the materials, products, operations,
- *  components and settings. A sync (the CLI: `archiyou makedb`) takes the computed values of its
- *  tables and settings, checks them against the schema below and writes them as one JSON file
- *  with a version. The core reckons with such a file, never with the live sheet: it needs no
+ *  components and settings. A sync (the CLI: `archiyou makedb`) takes the whole sheet as computed:
+ *  every tab as a table, every other named range as a value (but the builders' tabs, which get a
+ *  layer of their own); checks it against the schema below and writes it as one JSON file with a
+ *  version. The core reckons with such a file, never with the live sheet: it needs no
  *  formulas and no Google access, and every result can say which numbers it used.
  *
  *      {
  *        "format": 1,
  *        "version": "2026-11-24.1",
  *        "date": "2026-11-24T14:05:00.000Z",
- *        "source": { "sheet": "1o0_…", "title": "URBUILD_DATABASE_CORE" },
- *        "tables": { "materialen": [{…}], "producten": [{…}], "bewerkingen": [{…}], "componenten": [{…}] },
- *        "settings": { "settings.rate_labor": 40, "outputs.marges.materiaal": 10, "settings.waste": [["balk", 0.1], …] }
+ *        "source": { "sheet": "1o0_…", "title": "URBUILD_DATABASE_CORE", "tabs": [...], "skipped": ["bouwers", "bouwersprijzen"] },
+ *        "tables": { "materialen": [{…}], "producten": [{…}], "bewerkingen": [{…}], "componenten": [{…}], "instellingen": [{…}] },
+ *        "settings": { "settings.rate_labor": 40, "outputs.marges.materiaal": 10, "settings.waste": [["balk", 0.1], …], "outputs.hsbwand.costm2": 157.8, … }
  *      }
  *
  *  A table is its rows as records by the sheet's header, as the sheet has them: the core's
- *  readers (materials, products, recipes) take them as they took the sheet's tables. Settings are
- *  the sheet's named ranges by name: a value for a cell, rows of values for a range.
+ *  readers (materials, products, recipes) take them as they took the sheet's tables. A tab with a
+ *  named range tables.<name> is that range, by that name; any other tab is the whole tab, from its
+ *  first row with data as the header, by the tab's name (a column without a heading by its letter).
+ *  The four tables the core reckons with (MAKE_DB_TABLES) are checked; the others come as they are.
+ *  Settings are the sheet's other named ranges by name: a value for a cell, rows for a range.
  */
 
 export const MAKE_DB_FORMAT = 1;
 
-/** The tables of a snapshot, by the name of their named range in the sheet (tables.<name>). */
+/** The tables the core reckons with, by the name of their named range in the sheet (tables.<name>).
+ *  A snapshot has the sheet's other tabs too, by their own names. */
 export type MakeDbTableName = 'materialen' | 'producten' | 'bewerkingen' | 'componenten';
 
 export type MakeDbRow = Record<string, unknown>;
@@ -34,6 +39,10 @@ export interface MakeDbSource
     sheet: string;
     /** Its title, when the sync could read it */
     title?: string;
+    /** The tabs it was read from */
+    tabs?: Array<string>;
+    /** Tabs left out on purpose (the builders' own prices) */
+    skipped?: Array<string>;
 }
 
 export interface MakeDbSnapshot
@@ -44,7 +53,8 @@ export interface MakeDbSnapshot
     /** When the sync read the sheet (ISO 8601) */
     date: string;
     source: MakeDbSource;
-    tables: Record<MakeDbTableName, Array<MakeDbRow>>;
+    /** The four the core reckons with, and the sheet's other tabs */
+    tables: Record<MakeDbTableName, Array<MakeDbRow>> & Record<string, Array<MakeDbRow>>;
     /** The sheet's settings by the name of their named range: a value, or rows of values */
     settings: Record<string, unknown>;
 }
@@ -145,6 +155,12 @@ export function validateSnapshot(snapshot: unknown): Array<MakeDbIssue>
         });
     });
 
+    // the sheet's other tabs come as they are: rows of records
+    Object.entries(s.tables ?? {}).filter(([name]) => !(name in MAKE_DB_TABLES)).forEach(([name, rows]) =>
+    {
+        if (!Array.isArray(rows) || rows.some(r => !r || typeof r !== 'object')) { error(name, 'not rows of records'); }
+    });
+
     MAKE_DB_SETTINGS.forEach(name =>
     {
         if (!isNumber(s.settings?.[name])) { error(name, 'missing, or not a number'); }
@@ -176,11 +192,11 @@ export function snapshotFromTables(input: {
     version: string;
     date?: Date;
     source: MakeDbSource;
-    tables: Record<MakeDbTableName, Array<Array<unknown>>>;
+    tables: Record<string, Array<Array<unknown>>>;
     settings: Record<string, unknown>;
 }): MakeDbSnapshot
 {
-    const tables = Object.fromEntries((Object.keys(input.tables) as Array<MakeDbTableName>).map(name =>
+    const tables = Object.fromEntries(Object.keys(input.tables).map(name =>
     {
         const [head = [], ...rows] = input.tables[name];
         const columns = head.map(h => text(h));
@@ -188,7 +204,7 @@ export function snapshotFromTables(input: {
             .map(cells => Object.fromEntries(columns.map((c, i) => [c, cells[i] ?? ''] as [string, unknown]).filter(([c]) => c !== '')))
             .filter(hasData);
         return [name, records];
-    })) as Record<MakeDbTableName, Array<MakeDbRow>>;
+    })) as MakeDbSnapshot['tables'];
     return {
         format: MAKE_DB_FORMAT,
         version: input.version,

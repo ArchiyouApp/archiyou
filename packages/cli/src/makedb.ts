@@ -1,9 +1,12 @@
 /**
  *  `archiyou makedb --sheet <url>`: a snapshot of the product sheet for the make database.
  *
- *  Reads the computed values of the sheet's tables (tables.materialen, .producten, .bewerkingen,
- *  .componenten) and settings (settings.*, outputs.marges.*, outputs.opslagen.*, outputs.verlies)
- *  with the service account of the environment (see google.ts), checks them with core's schema
+ *  Reads the whole sheet, as computed: every tab as a table (a named range tables.<name> on it
+ *  when it has one: materialen, producten, bewerkingen, componenten; else the tab itself, from
+ *  its first row with data as the header, by the tab's name), and every other named range as a
+ *  value (settings.*, outputs.*). Not the builders' tabs (SKIPPED): their prices are the builders'
+ *  own, for a layer of their own later. With the service account of the environment (see
+ *  google.ts); it checks them with core's schema
  *  (make/db/snapshot.ts) and writes them as one JSON file, named by its version:
  *  makedb-2026-11-24.1.json. The version is the day and the next number for that day among the
  *  snapshots in --out. Hand the file to the server (`pnpm admin:makedb add <file>`), or to a run
@@ -19,9 +22,14 @@ import { type Args, columns, fail, out, quiet, userPath } from './common';
 import { namedValues, serviceAccount, sheetId, spreadsheet, title } from './google';
 
 const USAGE = 'archiyou makedb --sheet <url> [--out <dir>] [--json]';
+/** The tables the core reckons with: they must be there (core's schema checks them) */
 const TABLES = ['materialen', 'producten', 'bewerkingen', 'componenten'] as const;
-/** The named ranges that are settings: a value, or a range of rows */
-const SETTING = /^(settings\.|outputs\.marges\.|outputs\.opslagen\.|outputs\.verlies$)/;
+/** Tabs left out: the builders' own prices (bouwersprijzen, and who they are: bouwers), which every
+ *  signed-in user could read in a snapshot; they get a layer of their own later */
+const SKIPPED = ['bouwers', 'bouwersprijzen'];
+
+/** A column letter: 0 is A, 26 is AA */
+const letter = (i: number): string => (i < 26 ? String.fromCharCode(65 + i) : letter(Math.floor(i / 26) - 1) + letter(i % 26));
 
 export async function makedb(args: Args): Promise<number>
 {
@@ -33,26 +41,47 @@ export async function makedb(args: Args): Promise<number>
 
     const id = sheetId(sheet);
     const meta = await spreadsheet(id);
-    const names: Array<string> = (meta.namedRanges ?? []).map((n: any) => n.name);
-    const missing = TABLES.filter(t => !names.includes(`tables.${t}`));
+    const tabs: Array<{ id: number; title: string }> = (meta.sheets ?? []).map((t: any) => ({ id: t.properties.sheetId, title: t.properties.title }));
+    const ranges: Array<{ name: string; tab: number }> = (meta.namedRanges ?? []).map((n: any) => ({ name: n.name, tab: n.range?.sheetId ?? 0 }));
+    const missing = TABLES.filter(t => !ranges.some(r => r.name === `tables.${t}`));
     if (missing.length) { fail(`the sheet has no named range ${missing.map(t => `tables.${t}`).join(', ')}`); return 1; }
-    const settingNames = names.filter(n => SETTING.test(n)).sort();
 
-    const values = await namedValues(id, [...TABLES.map(t => `tables.${t}`), ...settingNames]);
-    const settings = Object.fromEntries(settingNames.map(n =>
+    // the tables: the named ones, and every other tab (not skipped) as a whole
+    const named = ranges.filter(r => r.name.startsWith('tables.'));
+    const read = tabs.filter(t => !SKIPPED.includes(t.title));
+    const whole = read.filter(t => !named.some(r => r.tab === t.id));
+    const values = await namedValues(id, ranges.map(r => r.name).concat(whole.map(t => `'${t.title.replace(/'/g, "''")}'`)));
+
+    const tables: Record<string, Array<Array<unknown>>> = {};
+    named.filter(r => read.some(t => t.id === r.tab)).forEach(r => { tables[r.name.slice('tables.'.length)] = values[r.name] ?? []; });
+    whole.forEach(t =>
     {
-        const v = values[n] ?? [];
-        // a cell is its value; a range stays rows
-        return [n, (v.length <= 1 && (v[0]?.length ?? 0) <= 1) ? (v[0]?.[0] ?? '') : v];
-    }));
+        const rows = values[`'${t.title.replace(/'/g, "''")}'`] ?? [];
+        const start = rows.findIndex(row => row.some(v => String(v ?? '').trim() !== ''));
+        if (start < 0) { return; }
+        // a column without a heading is named by its letter: the tab's own first column (A) often has none
+        const width = Math.max(...rows.map(row => row.length));
+        const head = Array.from({ length: width }, (_, i) => String(rows[start]![i] ?? '').trim() || letter(i));
+        tables[t.title] = [head, ...rows.slice(start + 1)];
+    });
+
+    // every other named range is a value: a cell its value, a range its rows (on a skipped tab: left out)
+    const settings = Object.fromEntries(ranges
+        .filter(r => !r.name.startsWith('tables.') && read.some(t => t.id === r.tab))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(r =>
+        {
+            const v = values[r.name] ?? [];
+            return [r.name, (v.length <= 1 && (v[0]?.length ?? 0) <= 1) ? (v[0]?.[0] ?? '') : v];
+        }));
 
     const core: any = await quiet(args.bools.has('verbose'), () => import('@archiyou/core'));
     const existing = readdirSync(dir).map(f => f.match(/^makedb-(\d{4}-\d{2}-\d{2}\.\d+)\.json$/)?.[1]).filter((v): v is string => !!v);
     const version = core.nextVersion(new Date(), existing);
     const snapshot = core.snapshotFromTables({
         version,
-        source: { sheet: id, title: await title(id) },
-        tables: Object.fromEntries(TABLES.map(t => [t, values[`tables.${t}`] ?? []])),
+        source: { sheet: id, title: await title(id), tabs: read.map(t => t.title), skipped: tabs.filter(t => SKIPPED.includes(t.title)).map(t => t.title) },
+        tables,
         settings,
     });
     const issues: Array<{ level: string; at: string; message: string }> = core.validateSnapshot(snapshot);
@@ -64,7 +93,8 @@ export async function makedb(args: Args): Promise<number>
     }
     else
     {
-        out(`${snapshot.source.title || id}: ${TABLES.map(t => `${snapshot.tables[t].length} ${t}`).join(', ')}, ${settingNames.length} settings`);
+        out(`${snapshot.source.title || id}: ${Object.keys(snapshot.tables).map(t => `${snapshot.tables[t].length} ${t}`).join(', ')}, ${Object.keys(settings).length} named values`);
+        if (snapshot.source.skipped.length) { out(`left out: ${snapshot.source.skipped.join(', ')} (the builders' own prices)`); }
         if (issues.length)
         {
             columns([['', 'where', 'problem'], ...issues.slice(0, 40).map(i => [i.level, i.at, i.message])]).forEach(l => out(l));

@@ -53,12 +53,27 @@ export class MakeDb
     get date(): string { return this.snapshot.date; }
     get source(): MakeDbSnapshot['source'] { return this.snapshot.source; }
 
-    /** The rows of a table, as the sheet has them; without the notes (a row without the
-     *  table's key, see MAKE_DB_TABLES) */
-    table(name: MakeDbTableName): Array<MakeDbRow>
+    /** The rows of a table, as the sheet has them: one of the four the core reckons with, without
+     *  their notes (a row without the table's key, see MAKE_DB_TABLES), or another tab by its name
+     *  ('instellingen') */
+    table(name: MakeDbTableName | string): Array<MakeDbRow>
     {
-        const key = MAKE_DB_TABLES[name].key;
-        return key ? this.snapshot.tables[name].filter(r => String(r[key] ?? '').trim() !== '') : this.snapshot.tables[name];
+        const rows = this.snapshot.tables[name];
+        if (!rows) { throw new Error(`make.db().table('${name}'): no such table; ${this} has: ${this.tables().join(', ')}`); }
+        const key = (MAKE_DB_TABLES as Record<string, { key: string | null }>)[name]?.key;
+        return key ? rows.filter(r => String(r[key] ?? '').trim() !== '') : rows;
+    }
+
+    /** The names of its tables: the four the core reckons with, and the sheet's other tabs */
+    tables(): Array<string>
+    {
+        return Object.keys(this.snapshot.tables);
+    }
+
+    /** The names of its settings: the sheet's other named ranges */
+    settings(): Array<string>
+    {
+        return Object.keys(this.snapshot.settings);
     }
 
     /** A setting by the name of its named range in the sheet: 'settings.rate_labor' */
