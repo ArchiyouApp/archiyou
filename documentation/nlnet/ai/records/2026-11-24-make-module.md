@@ -263,6 +263,20 @@ After step 6 (asked by the human: a snapshot is the whole core sheet; materials 
   database, as `.product()` does. `materials/fromSheet.ts` is `fromRows.ts`. cloudcalc is now only
   for the offer template.
 
+Textures by the material's name (asked by the human: only materials, never products, bound only
+by the material's name, nothing in any sheet, reusing the textures there are):
+
+- A material's texture is `materials/textures/<materiaal_id>_sides.jpg`, and `_section.jpg` where
+  it is cut. No file: its colour only, said nowhere, asked once. The 25 masks, named by kind
+  (softwood, osb, mineralwool…) and tied to 41 materials by a table in appearance.ts, are now
+  59 files named after those materials (git keeps an image once; a browser fetches only what a
+  model uses). appearance.ts keeps colour and roughness only. The size in the world follows the
+  material's group; three materials changed scale by that (houtvezel_buitenplaat as wood, leem
+  as a finish, eps as insulation). Five materials of the sheet have no texture yet.
+- Checked: the timberwall's GLB has the same four images as before, and its views are the same
+  to the byte. Tests: a texture by name, none without a file (quietly, once), an export leaves
+  out what has no file, every file is named after a material.
+
 ## Next
 
 - The real core sheet: the `term`/`aliassen` columns (now in the trial copy only), then a snapshot
