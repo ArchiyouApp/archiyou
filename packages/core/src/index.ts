@@ -58,6 +58,7 @@ export type {
 export { ARCHIYOU_CORE_VERSION } from './constants';
 // The Google Sheets a script's code names, for an app to fetch before the run (request.content)
 export { scanContentNeeds, makeDbNeeds } from './modules/contentNeeds';
+export { isMeshSolid } from './modeler/meshSolid';
 
 // The make database: a versioned snapshot of the product sheet (make/db/snapshot.ts). The server
 // keeps them, the CLI makes them; both check them with the same schema.

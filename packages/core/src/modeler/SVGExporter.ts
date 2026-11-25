@@ -51,6 +51,7 @@ import type { AnnotationFormat } from '../annotator/annotationLayer'
 import { isKernelShapeCollection } from './typeguards'
 import { STYLER_DEFAULT_RULES, stylerExportRules, stylerOf, compileStylerRules, stylerPaintOrder, stylerHatchDefs, drawnClassLists, modelColorClass, modelColorsIn, withLineWeight } from '../docs/styler/Styler'
 import type { StylerRuleEntry } from '../docs/styler/Styler'
+import { isMeshSolid } from './meshSolid';
 
 //// TYPES ////
 
@@ -357,7 +358,7 @@ interface PreparedCurve
  *  so never commits to one's classes. */
 export function isDrawableFace(shape: any): boolean
 {
-    return (shape?.type === 'Mesh' || shape?.type === 'Polygon') && shape.isFlatOnXY?.() === true
+    return (isMeshSolid(shape) || shape?.type === 'Polygon') && shape.isFlatOnXY?.() === true
 }
 
 /** Every Shape of a collection that draws as a face. */

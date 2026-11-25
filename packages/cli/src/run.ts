@@ -495,11 +495,13 @@ function sharedVolume(a: any, b: any): number
     try
     {
         // intersection() adds its result to the scene. A mesh result is detached with tmp(); brep's
-        // _intersection() is a variant that never adds it. Not for meshes: Mesh._intersection()
-        // REPLACES the mesh by the shared volume, and every later check would see that instead
-        const shared = a.type === 'Mesh' ? a.intersection(b) : a._intersection(b);
+        // _intersection() is a variant that never adds it. Not for meshes: Solid._intersection()
+        // REPLACES the solid by the shared volume, and every later check would see that instead.
+        // A mesh solid by its class: its type is 'Solid', as a brep solid's is
+        const mesh = core.isMeshSolid(a);
+        const shared = mesh ? a.intersection(b) : a._intersection(b);
         const volume = Math.abs(shared?.volume?.() ?? 0);
-        if (a.type === 'Mesh') { shared?.tmp?.(); }
+        if (mesh) { shared?.tmp?.(); }
         return volume;
     }
     catch

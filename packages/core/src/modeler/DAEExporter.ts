@@ -22,6 +22,7 @@ import {
 import { MM_PER_UNIT } from '../units/UnitConverter'
 import { cascadedStyle, isVisible, toRgb01 } from './exportStyle'
 import type { ModelUnits } from './types'
+import { isMeshSolid } from './meshSolid'
 
 //// TYPES ////
 
@@ -265,7 +266,8 @@ export async function buildDAE(root: meshup.SceneNode, opts: toDAEOptions = {}):
             let ok = false
             try
             {
-                switch (shape.type)
+                // a mesh-kernel solid by its class: its type is 'Solid', as a brep solid's is
+                switch (isMeshSolid(shape) ? 'Mesh' : shape.type)
                 {
                     case 'Mesh':
                         ok = options.ngons

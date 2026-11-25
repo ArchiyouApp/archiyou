@@ -89,6 +89,7 @@ import { Make } from '../make/Make';
 import { brepShapeToMeshup, meshupShapeToBrep, isBrepShape, DEFAULT_MESHING_QUALITY } from './brep/toMeshup';
 
 import { systemOfUnit, MM_PER_UNIT } from '../units/UnitConverter';
+import { isMeshSolid } from './meshSolid';
 
 // Union classes that combine meshup and brep
 type PointLike = meshup.PointLike // only use one
@@ -1405,7 +1406,7 @@ export class Modeler
     private _sceneMeshes(method: string): Array<any>
     {
         const meshes = this._exportScene().shapes().toArray()
-            .filter((s:any) => s?.type === 'Mesh') as Array<any>
+            .filter((s:any) => isMeshSolid(s)) as Array<any>
 
         if (meshes.length === 0)
         {

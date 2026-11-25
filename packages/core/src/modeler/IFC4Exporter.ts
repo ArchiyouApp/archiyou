@@ -40,6 +40,7 @@ import type { ModelUnits } from './types'
 import { MM_PER_UNIT } from '../units/UnitConverter'
 import { isBrepShape, brepShapeToMeshup, DEFAULT_MESHING_QUALITY } from './brep/toMeshup'
 import { recipeOf, resolveRecipe, asCuboid, type Classification } from './Recipe'
+import { isMeshSolid } from './meshSolid';
 
 //// 1. SPEC ////
 
@@ -1531,7 +1532,7 @@ export function buildModel(root: any, classification: IfcClassification, options
 export function shapeBodies(shape: any, units: ModelUnits): Body[]
 {
     const meshes: any[] = isBrepShape(shape)
-        ? [brepShapeToMeshup(shape, DEFAULT_MESHING_QUALITY)].flatMap((m: any) => m?.isShapeCollection?.() ? m.toArray() : [m]).filter((m: any) => m?.type === 'Mesh')
+        ? [brepShapeToMeshup(shape, DEFAULT_MESHING_QUALITY)].flatMap((m: any) => m?.isShapeCollection?.() ? m.toArray() : [m]).filter((m: any) => isMeshSolid(m))
         : [shape]
     const eps = 0.001 / (MM_PER_UNIT[units] ?? 1)
     return meshes.map(mesh =>

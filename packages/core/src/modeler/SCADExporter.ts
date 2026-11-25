@@ -41,6 +41,7 @@ import {
     recipeOf, resolveRecipe, mapRecipe, affineCompose, RecipeReport,
     type Affine, type LeafNode, type BooleanNode, type RecipeMapping,
 } from './Recipe'
+import { isMeshSolid } from './meshSolid';
 
 //// 1. OPTIONS ////
 
@@ -240,7 +241,7 @@ function createSCADMapping(env: MappingEnv): RecipeMapping<string>
 function polyhedronOf(shape: any): { text: string; closed: boolean } | null
 {
     const meshes: any[] = isBrepShape(shape)
-        ? [brepShapeToMeshup(shape, DEFAULT_MESHING_QUALITY, { edges: false })].flatMap((m: any) => m?.isShapeCollection?.() ? m.toArray() : [m]).filter((m: any) => m?.type === 'Mesh')
+        ? [brepShapeToMeshup(shape, DEFAULT_MESHING_QUALITY, { edges: false })].flatMap((m: any) => m?.isShapeCollection?.() ? m.toArray() : [m]).filter((m: any) => isMeshSolid(m))
         : [shape]
     let faces: PlanarFace[] = meshes.flatMap(m => meshFaces(m))
     // polyhedron faces cannot have holes: fall back to the kernel's own polygons, which never do
@@ -368,7 +369,7 @@ export function buildSCAD(root: meshup.SceneNode, opts: toSCADOptions = {}): SCA
         const heading = (module: string, note?: string): string[] =>
             (module !== label || layer || note) ? [`// ${label}${layer ? `  (layer ${layer})` : ''}${note ? `: ${note}` : ''}`] : []
 
-        const surface = shape.type === 'Mesh' ? surfaceOf(shape) : null
+        const surface = isMeshSolid(shape) ? surfaceOf(shape) : null
         if (surface)
         {
             if (!surface.flat)
@@ -382,7 +383,7 @@ export function buildSCAD(root: meshup.SceneNode, opts: toSCADOptions = {}): SCA
             return
         }
 
-        if (shape.type === 'Mesh' || isBrepShape(shape))
+        if (isMeshSolid(shape) || isBrepShape(shape))
         {
             const module = names.allocate(label)
             let reason: string | undefined

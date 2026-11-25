@@ -57,6 +57,7 @@ import {
     RecipeReport, fmt,
     type Vec3, type Affine, type RecipeNode, type LeafNode, type BooleanNode, type RecipeMapping, type MapContext,
 } from './Recipe'
+import { isMeshSolid } from './meshSolid';
 
 //// 1. OPTIONS ////
 
@@ -762,7 +763,7 @@ export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = 
             brep = await brepShapeText(shape, mm);
             kind = 'exact brep';
         }
-        else if (shape.type === 'Mesh')
+        else if (isMeshSolid(shape))
         {
             const b = writePlanarBRep(meshFaces(shape, mm), 1e-6 * mm * Math.max(1, bboxSize(shape)));
             brep = b?.text ?? null;
@@ -799,7 +800,7 @@ export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = 
         };
 
         let emitted: Emitted;
-        const recipe = options.parametric && (shape.type === 'Mesh' || isBrepShape(shape)) ? recipeOf(shape) : null;
+        const recipe = options.parametric && (isMeshSolid(shape) || isBrepShape(shape)) ? recipeOf(shape) : null;
         if (recipe)
         {
             const tree = resolveRecipe(recipe);
@@ -821,7 +822,7 @@ export async function buildFCStd(root: meshup.SceneNode, opts: toFCStdOptions = 
         else
         {
             emitted = baked();
-            report.add({ subject: label, status: 'baked', reason: options.parametric ? (shape.type === 'Mesh' || isBrepShape(shape) ? 'shape was not recorded' : `${kind} is exported as geometry`) : 'parametric export is off', notes: [], tags: [] });
+            report.add({ subject: label, status: 'baked', reason: options.parametric ? (isMeshSolid(shape) || isBrepShape(shape) ? 'shape was not recorded' : `${kind} is exported as geometry`) : 'parametric export is off', notes: [], tags: [] });
         }
 
         for (const o of draft) { o.color ??= color; o.transparency ??= transparency; }

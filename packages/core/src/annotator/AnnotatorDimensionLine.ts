@@ -35,6 +35,7 @@ import type { AnnotationFormat } from './annotationLayer'
 import { DOC_DEFAULT_SVG_FONT_FAMILY, DOC_DIMENSION_LINES_TEXT_HEIGHT, DOC_DIMENSION_LINES_ARROW_SIZE,
     DOC_DIMENSION_LINES_LINE_WIDTH } from '../constants'
 import { svgXY, svgLine, svgLeader, svgArrow, svgTextLabel } from './svgPrimitives'
+import { isMeshSolid } from '../modeler/meshSolid';
 
 /*  Fallbacks for the label proportions, used only when a DimensionLine cannot reach an
     Annotator (a line built outside the app, a unit test). The real settings live on the
@@ -170,7 +171,8 @@ export class DimensionLine extends BaseAnnotation
     fromShape(shape:AnyShape, options?:DimensionOptions):DimensionLine|Array<DimensionLine>
     {
         const ann = this._archiyou.annotator;
-        const t = (shape as any).type as string;
+        // a mesh-kernel solid by its class: its type is 'Solid', as a brep solid's is
+        const t = isMeshSolid(shape) ? 'Mesh' : (shape as any).type as string;
 
         // Normalize options: init() validates against an object schema, so never
         // pass undefined; default units from the model (mirrors old Edge.dimension).

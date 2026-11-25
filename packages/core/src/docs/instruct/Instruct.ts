@@ -44,6 +44,7 @@ import {
 import type { LabelOptions } from '../../annotator/types'
 import type { Docs } from '../Docs'
 import type { LayoutAnimationInterpolation, LayoutTransformation } from '../../modeler/types'
+import { isMeshSolid } from '../../modeler/meshSolid';
 
 /** Seconds. Matches GLTF_ANIMATION_DURATION so a step's motion reads like the scene's own. */
 const DEFAULT_DURATION = 1.0
@@ -820,7 +821,7 @@ export class Instruct
 
         const meshEntries = drawn
             .map((shape: any, i: number) => ({ ...entries[i], shape }))
-            .filter((e: any) => e.shape?.type === 'Mesh' && e.shape?.style?.visible !== false)
+            .filter((e: any) => isMeshSolid(e.shape) && e.shape?.style?.visible !== false)
         const meshes = meshEntries.map((e: any) => e.shape)
 
         const camera = resolved.camera

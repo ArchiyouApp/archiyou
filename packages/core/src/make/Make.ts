@@ -35,6 +35,7 @@ import { MM_PER_UNIT } from '../units/UnitConverter';
 import { layOut, screwSize, type Box3, type FastenOptions, type Vec3 as FastenVec3 } from './build/fasten';
 import { isClosedSolid, vote } from './pack/packChoice';
 import { measure, group as groupShapes, toInstance, toOptions, put, fromGrams } from './pack/pack3d';
+import { isMeshSolid } from '../modeler/meshSolid';
 
 /** The 2D sheet packer (gdrr2bp), loaded on demand like the 3D load planner and the IFC classifier: most runs never
  *  nest parts, and the module is a few hundred KB. pack2d() and boarding() are synchronous for scripts, so the Runner
@@ -228,7 +229,7 @@ const unit = (p: Vec3): Vec3 => scale(p, 1 / len(p));
  *  `edges` are the shape's own edges(), which meshup groups by kind. */
 const isSolid = (shape: any, edges: any): boolean =>
     shape?.type === 'Solid' // brep
-    || (shape?.type === 'Mesh' && !(edges.getGroup('boundary')?.length > 0)); // meshup: no open edges
+    || (isMeshSolid(shape) && !(edges.getGroup('boundary')?.length > 0)); // meshup: no open edges
 
 /** Whether point p lies within (or on) the bounding box of a shape */
 const onBbox = (shape: any, p: Vec3): boolean =>
