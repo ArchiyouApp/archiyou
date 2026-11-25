@@ -1,10 +1,12 @@
 /**
- *  materials/fromSheet.ts — materials from the `materialen` tab of the core sheet.
+ *  materials/fromRows.ts — materials from the `materialen` tab of the core sheet, as rows: those of
+ *  the make database (make.db().table('materialen')).
  *
  *  The core sheet (URBUILD_DATABASE_CORE) is the one source of what a material is: its density,
  *  thermal conductivity λ (EN ISO 10456 design values), vapour resistance, fire class, strength,
  *  recyclability, average price and EN 15804 life-cycle carbon. It is kept online so everyone can
- *  check it and see where each value comes from. This file only reads one row into a Material.
+ *  check it and see where each value comes from; the make database is a snapshot of it. This file
+ *  only reads one row into a Material.
  *
  *  The tab's columns, as the sheet names them (row 2 of the tab, the named range
  *  `tables.materialen`):

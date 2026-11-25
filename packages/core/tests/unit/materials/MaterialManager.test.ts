@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
 import { MaterialManager } from '../../../src/materials/MaterialManager'
-import { materialFromRow, sheetNumber } from '../../../src/materials/fromSheet'
+import { materialFromRow, sheetNumber } from '../../../src/materials/fromRows'
 import { APPEARANCE } from '../../../src/materials/appearance'
 import { rangeFor } from '../../../src/materials/ranges'
 import { MATERIAL_PROPERTY_KEYS } from '../../../src/materials/types'
@@ -72,18 +72,11 @@ describe('MaterialManager', () =>
             expect('thermalConductivity' in tape).toBe(false)
         })
 
-        it('reads the whole table from an open workbook', () =>
+        it('reads the whole table from rows', () =>
         {
-            const wb = { tables: () => [{ name: 'materialen' }], table: () => MATERIALEN_ROWS }
-            const mgr = new MaterialManager().fromWorkbook(wb)
+            const mgr = new MaterialManager().fromRows(MATERIALEN_ROWS)
             expect(mgr.all()).toHaveLength(MATERIALEN_ROWS.length)
             expect(mgr.loaded).toBe(true)
-        })
-
-        it('says how to give the tab its table when the sheet has none', () =>
-        {
-            const wb = { tables: () => [{ name: 'producten' }], table: () => [] }
-            expect(() => new MaterialManager().fromWorkbook(wb)).toThrow(/named range tables\.materialen/)
         })
     })
 

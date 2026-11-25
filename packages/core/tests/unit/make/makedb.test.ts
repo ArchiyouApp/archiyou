@@ -100,10 +100,35 @@ describe('make/db: which snapshot a script needs', () =>
         expect(makeDbNeeds('db = make.db()').map(n => n.id)).toEqual(['latest'])
         expect(makeDbNeeds("stud = box(38, 235, 2700).product('SLS')").map(n => n.id)).toEqual(['latest'])
         expect(makeDbNeeds('est = make.estimate(all())').map(n => n.id)).toEqual(['latest'])
+        // the materials' properties come from it too
+        expect(makeDbNeeds("w = box(10, 10, 10).material('osb').weight()").map(n => n.id)).toEqual(['latest'])
+        expect(makeDbNeeds('rc = materials.rc(all())').map(n => n.id)).toEqual(['latest'])
         // $component is a script, not a component of the sheet; an unrelated .product property neither
         expect(makeDbNeeds("wall = $component('./timberwall', {}); x = y.product")).toEqual([])
         expect(scanContentNeeds("make.db('2026-11-24.2'); cloudcalc.open('https://docs.google.com/spreadsheets/d/1o0_OGFKAh9f3Sh6FlVx7JYNoDmSopAzd9U0akVJHGzw')").map(n => `${n.kind}:${n.id}`))
             .toEqual(['google-sheet:1o0_OGFKAh9f3Sh6FlVx7JYNoDmSopAzd9U0akVJHGzw', 'make-db:2026-11-24.2'])
+    })
+})
+
+describe('make/db: the whole sheet', () =>
+{
+    it('keeps the sheet\'s other tabs as they are, and says which it left out', () =>
+    {
+        const asRows = (records: Array<Record<string, unknown>>) => [Object.keys(records[0]!), ...records.map(r => Object.values(r))]
+        const s = snapshotFromTables({
+            version: '2026-11-25.1', date: new Date('2026-11-25T09:00:00Z'),
+            source: { sheet: 'x', title: 'X', tabs: ['instellingen'], skipped: ['bouwers', 'bouwersprijzen'] },
+            tables: { ...Object.fromEntries(Object.entries(snapshot().tables).map(([k, rows]) => [k, asRows(rows)])),
+                instellingen: [['A', 'naam', 'waarde', 'id'], ['element', 'uurtarief arbeid', 40, 'settings.rate_labor']] },
+            settings: { ...snapshot().settings, 'outputs.hsbwand.costm2': 157.8 },
+        })
+        const db = new MakeDb(s)
+        expect(db.tables()).toEqual(['materialen', 'producten', 'bewerkingen', 'componenten', 'instellingen'])
+        expect(db.table('instellingen')).toEqual([{ A: 'element', naam: 'uurtarief arbeid', waarde: 40, id: 'settings.rate_labor' }])
+        expect(db.setting('outputs.hsbwand.costm2')).toBe(157.8)
+        expect(db.source.skipped).toEqual(['bouwers', 'bouwersprijzen'])
+        expect(() => db.table('bouwers')).toThrow(/no such table; .* has: materialen, producten, bewerkingen, componenten, instellingen/)
+        expect(validateSnapshot({ ...s, tables: { ...s.tables, kapot: 'x' as any } }).map(i => `${i.at}: ${i.message}`)).toContain('kapot: not rows of records')
     })
 })
 
@@ -119,6 +144,22 @@ describe('make.db() in a run', () =>
         const scope = r.getScope('default') as any
         expect(result.status).toBe('success')
         expect([scope.V, scope.RATE, scope.N]).toEqual(['2026-11-24.1', 40, 1])
+    })
+
+    it('gives the run its materials: a material has its properties without anything else', async () =>
+    {
+        const r = await new Runner().load()
+        await r.execute({ script: { code: "W = box(1000, 1000, 1000).material('naaldhout_constructief').weight(); N = materials.all().length" },
+            content: { 'make-db:latest': item('latest', snapshot()) }, outputs: [] } as any)
+        const scope = r.getScope('default') as any
+        expect(scope.N).toBe(1)
+        expect(scope.W).toBeCloseTo(450, 3)     // 1 m3 at 450 kg/m3
+
+        // without it: how the material looks, no properties, and the run goes on
+        const bare = await new Runner().load()
+        const res: any = await bare.execute({ script: { code: "W = box(1000, 1000, 1000).material('osb').weight(); N = materials.all().length" }, outputs: [] } as any)
+        expect(res.status).toBe('success')
+        expect((bare.getScope('default') as any).N).toBe(0)
     })
 
     it('asks for it when the run was not given it, and refuses another version than it pinned', async () =>

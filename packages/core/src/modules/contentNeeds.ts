@@ -10,7 +10,8 @@ import type { AyContentNeed } from './sdkTypes';
 
 /** The content written into the code: the Google Sheets (a URL anywhere, or a bare id passed
  *  to open()), and the make database (make/db) where the code reckons with it: make.db() with
- *  the version it pins, else the latest, also for .product(), .component() and make.estimate(). */
+ *  the version it pins, else the latest, also for .product(), .component(), make.estimate() and
+ *  what reads the materials (.material('…'), .weight(), .carbon(), materials.rc()). */
 export function scanContentNeeds(code: string): AyContentNeed[]
 {
     const urls = [...code.matchAll(/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/g)].map((m) => m[1]!);
@@ -24,6 +25,7 @@ export function scanContentNeeds(code: string): AyContentNeed[]
 export function makeDbNeeds(code: string): AyContentNeed[]
 {
     const pinned = [...code.matchAll(/\bmake\.db\(\s*(['"`])([0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]+|latest)\1\s*\)/g)].map((m) => m[2]!);
-    const latest = /\bmake\.db\(\s*\)|\bmake\.estimate\(|\.product\(\s*['"`[]|\.component\(\s*['"`]/.test(code) ? ['latest'] : [];
+    // and the materials: their properties (weight, λ, CO2) come from it too
+    const latest = /\bmake\.db\(\s*\)|\bmake\.estimate\(|\.product\(\s*['"`[]|\.component\(\s*['"`]|\.material\(\s*['"`]|\.(weight|carbon|materialTotals)\(\s*\)|\bmaterials\.(rc|get|all|resolve)\(/.test(code) ? ['latest'] : [];
     return [...new Set([...pinned, ...latest])].map((id) => ({ kind: 'make-db', id, reason: 'make.db' }));
 }

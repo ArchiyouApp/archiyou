@@ -2,7 +2,7 @@
  *  materials/schemas.ts
  *
  *  Runtime schema of a Material, as read from the `materialen` tab of the core sheet
- *  (fromSheet.ts). Defined with TypeBox so it can be validated with Check()/Errors() from
+ *  (fromRows.ts). Defined with TypeBox so it can be validated with Check()/Errors() from
  *  'typebox/value' — the same pattern as ScriptSchema and calc/schemas.ts.
  */
 

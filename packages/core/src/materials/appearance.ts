@@ -3,7 +3,7 @@
  *
  *  The only material data kept in code. What a material IS (density, λ, strength, LCA,
  *  price) comes from the `materialen` tab of the core sheet, where everyone can check it
- *  (see fromSheet.ts). How it LOOKS is presentation: a colour, a roughness and a texture mask,
+ *  (see fromRows.ts). How it LOOKS is presentation: a colour, a roughness and a texture mask,
  *  so a shape given `.material('osb')` looks like OSB without any sheet loaded.
  *
  *  Keyed by the sheet's `materiaal_id`. The textures in ./textures are greyscale masks that the
@@ -114,7 +114,7 @@ export const APPEARANCE: Record<string, MaterialViz> = {
 };
 
 /** The group of each material above, for drawings and IFC before the sheet is loaded (the sheet
- *  says it too: fromSheet.ts derives it from `toepassing`). */
+ *  says it too: fromRows.ts derives it from `toepassing`). */
 export const APPEARANCE_GROUP: Record<string, MaterialGroup> = Object.fromEntries([
     ...['naaldhout_constructief', 'naaldhout_geschaafd', 'gelamineerd_hout', 'i_ligger', 'douglas', 'lariks', 'thermohout',
         'hergebruikt_hout', 'osb', 'esb', 'multiplex', 'drielagenplaat', 'houtvezel_buitenplaat', 'houten_vloer', 'houten_raam',

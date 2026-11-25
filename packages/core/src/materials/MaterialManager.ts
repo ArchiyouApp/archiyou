@@ -2,17 +2,14 @@
  *  materials/MaterialManager.ts
  *
  *  The materials of a run. What a material is comes from the `materialen` tab of the core sheet
- *  (URBUILD_DATABASE_CORE), where everyone can check it: load it with
- *
- *      materials.fromSheet('https://docs.google.com/spreadsheets/d/…')
- *
- *  or give a shape a product (shape.product()), which loads them from the make database. How a material
- *  looks is kept in code (appearance.ts), so `shape.material('osb')` draws as OSB before any
- *  sheet is loaded; its weight, λ and carbon need the sheet.
+ *  (URBUILD_DATABASE_CORE), where everyone can check it, as the make database has it (make.db(), a
+ *  snapshot of the sheet): the first time a material is asked for, the run's make database gives
+ *  them. How a material looks is kept in code (appearance.ts), so `shape.material('osb')` draws as
+ *  OSB in a run without the make database (not signed in, a test); its weight, λ and carbon need it.
  *
  *  Resolves names, and performs unit-system-aware derived calculations (mass / weight, carbon)
  *  and property read-out. Wired like the other archiyou modules (see Calc.ts): construct empty,
- *  then setArchiyou(modules) to gain access to the modeler (units), shapes and cloudcalc.
+ *  then setArchiyou(modules) to gain access to the modeler (units, make.db()) and shapes.
  */
 
 import type { ArchiyouModules } from '../types';
@@ -23,9 +20,8 @@ import type {
 import { EMBODIED_MODULES, MATERIAL_PROPERTY_KEYS } from './types';
 import { MM_PER_UNIT } from '../units/UnitConverter';
 import { APPEARANCE, APPEARANCE_GROUP, appearanceOf } from './appearance';
-import { materialsFromRows } from './fromSheet';
+import { materialsFromRows } from './fromRows';
 import { rcOfBoxes, type RcOptions, type RcResult, type ThermalBox, type Vec3 } from './rc';
-import { ModuleUnavailableError } from '../modules/unavailableStub';
 
 /** Pounds per kilogram, for imperial mass read-out. */
 const LB_PER_KG = 2.2046226218;
@@ -335,7 +331,7 @@ export class MaterialManager
 
     constructor()
     {
-        // use setArchiyou() to init; the materials come from the core sheet: fromSheet()
+        // use setArchiyou() to init; the materials come from the run's make database (see get())
     }
 
     setArchiyou(ay: ArchiyouModules)
@@ -343,51 +339,32 @@ export class MaterialManager
         this._archiyou = ay;
     }
 
-    /** Whether the materials of a sheet are loaded: their properties are known. */
+    /** Whether the materials of the make database are loaded: their properties are known. */
     get loaded(): boolean
     {
         return this._index.size > 0;
     }
 
-    /**
-     *  Load the materials from the `materialen` tab of the core sheet (opened with cloudcalc):
-     *
-     *      materials.fromSheet('https://docs.google.com/spreadsheets/d/…')
-     *
-     *  A shape given a product (shape.product()) loads them from the make database instead.
-     */
-    fromSheet(url: string, options: { key?: string } = {}): this
+    private _triedDb = false;
+
+    /** The materials of the run's make database, once: when the run has none, appearance only */
+    private _fromMakeDb(): void
     {
-        let cloudcalc: { open(ref: string, opts?: { key?: string }): any } | null = null;
+        if (this.loaded || this._triedDb) { return; }
+        this._triedDb = true;
         try
         {
-            const module = (this._archiyou as any)?.modules?.resolve('cloudcalc');
-            cloudcalc = (typeof module?.open === 'function') ? module : null;
+            const db = (this._archiyou as any)?.modeler?.make?.db?.();
+            if (db) { this.fromRows(db.table('materialen')); }
         }
         catch
         {
-            // not declared: said below
+            // no make database in this run (not signed in, a test): what a material looks like only
         }
-        if (!cloudcalc)
-        {
-            throw new ModuleUnavailableError('cloudcalc', 'materials.fromSheet(url): the sheet is opened with the cloudcalc module, '
-                + 'which this run did not load; add $module(\'cloudcalc\') at the top of the script, or check that the module is installed');
-        }
-        return this.fromWorkbook(cloudcalc.open(url, options.key ? { key: options.key } : {}));
     }
 
-    /** Load the materials from an open workbook of the core sheet: its table `materialen`. */
-    fromWorkbook(wb: { tables(): Array<{ name: string }>; table(name: string): Array<Record<string, unknown>> }, table = 'materialen'): this
-    {
-        if (!wb.tables().some(t => t.name === table))
-        {
-            throw new Error(`materials.fromSheet(): the sheet has no table '${table}'. Give the materialen tab a named range `
-                + `tables.${table} over its header row (materiaal_id, toepassing, …) and the rows below it`);
-        }
-        return this.fromRows(wb.table(table));
-    }
-
-    /** Load materials from rows shaped like the `materialen` tab (see fromSheet.ts). */
+    /** Load materials from rows shaped like the `materialen` tab (see fromRows.ts): the make
+     *  database's, which get() loads by itself, or rows a test gives. */
     fromRows(rows: Array<Record<string, unknown>>): this
     {
         this._index.clear();
@@ -403,6 +380,7 @@ export class MaterialManager
     /** All materials of the loaded sheet. */
     all(): Material[]
     {
+        this._fromMakeDb();
         return [...new Set(this._index.values())];
     }
 
@@ -413,6 +391,7 @@ export class MaterialManager
     get(name: string): Material | null
     {
         if (!name) return null;
+        this._fromMakeDb();
         const loaded = this._index.get(name.toLowerCase());
         if (loaded) return loaded;
         const id = name.toLowerCase();
@@ -434,8 +413,8 @@ export class MaterialManager
         {
             console.warn(this.loaded
                 ? `MaterialManager::resolve(): the core sheet has no material '${name}' (its materialen tab, column materiaal_id)`
-                : `MaterialManager::resolve(): unknown material '${name}': load the materials of the core sheet with `
-                    + `materials.fromSheet(url), or give the shape a product: shape.product()`);
+                : `MaterialManager::resolve(): unknown material '${name}': the materials come from the make database, `
+                    + `which this run was not given (sign in; from the CLI: --makedb <file>)`);
             return null;
         }
         return new BoundMaterial(this, m, shape);
@@ -448,8 +427,8 @@ export class MaterialManager
     {
         if (this.loaded || this._warnedUnloaded) return;
         this._warnedUnloaded = true;
-        console.warn(`MaterialManager: '${material.name}' has no properties yet: they come from the core sheet. `
-            + `Load it with materials.fromSheet(url), or give the shape a product: shape.product()`);
+        console.warn(`MaterialManager: '${material.name}' has no properties: they come from the make database, `
+            + `which this run was not given (sign in; from the CLI: --makedb <file>)`);
     }
 
     /** The active display unit system, from the modeler (defaults metric). */
@@ -600,7 +579,7 @@ export class MaterialManager
         if (!boxes.length)
         {
             throw new Error('MaterialManager.rc(): none of the shapes has a material with a λ. '
-                + 'Give them a material (shape.material(), or a product of the sheet) and load the materials (materials.fromSheet())');
+                + 'Give them a material (shape.material(), or a product: shape.product()); the materials come from the make database');
         }
         return rcOfBoxes(boxes, { ...options, unit: this.modelUnitMM() / 1000 });
     }
