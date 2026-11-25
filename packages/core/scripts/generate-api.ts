@@ -55,7 +55,7 @@ const ENTRY_POINTS = [
 
 /** Classes (and interfaces) documented with their members, in reference order */
 const CLASSES = [
-    'Mesh', 'Curve', 'Polygon', 'ShapeCollection', 'SceneNode', 'Sketch',
+    'Solid', 'Curve', 'Polygon', 'ShapeCollection', 'SceneNode', 'Sketch',
     'Point', 'Vector', 'Vertex', 'Bbox', 'OBbox',
     'Docs', 'Document', 'Calc', 'Make', 'Estimate', 'Offer', 'MaterialManager',
     'ParamManager', 'RunnerComponentImporter', 'Handle',
@@ -78,7 +78,7 @@ export interface ApiParam
 
 export interface ApiEntry
 {
-    /** 'box', 'Mesh', 'Mesh.move', '$component' */
+    /** 'box', 'Solid', 'Solid.move', '$component' */
     id: string
     name: string
     /** Class the member belongs to; absent for globals and classes */

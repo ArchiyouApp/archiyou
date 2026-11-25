@@ -40,11 +40,11 @@ export const MODELER_METHODS_INTO_GLOBAL = [
  *  mesh mode (cone, spiral, helix, basePlane) are deliberately absent. */
 export const FACTORY_RETURN_TYPES: Record<string, string> = {
     // 3D shapes
-    box:          'Mesh',
-    cube:         'Mesh',
-    boxBetween:   'Mesh',
-    sphere:       'Mesh',
-    cylinder:     'Mesh',
+    box:          'Solid',
+    cube:         'Solid',
+    boxBetween:   'Solid',
+    sphere:       'Solid',
+    cylinder:     'Solid',
     // curves / wires
     line:         'Curve',
     arc:          'Curve',

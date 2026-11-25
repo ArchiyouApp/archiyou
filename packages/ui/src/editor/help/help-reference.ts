@@ -29,7 +29,7 @@ export interface ApiParam
 
 export interface ApiEntry
 {
-  /** 'box', 'Mesh', 'Mesh.move', '$component' */
+  /** 'box', 'Solid', 'Solid.move', '$component' */
   id: string;
   name: string;
   /** Class the member belongs to; absent for globals and classes */
@@ -96,7 +96,7 @@ export function indexApi(entries: ApiEntry[]): ApiIndex
 
 //// SEARCH ////
 
-/** Entries matching a query on name or id (`move`, `Mesh.mo`), best first. */
+/** Entries matching a query on name or id (`move`, `Solid.mo`), best first. */
 export function searchApi(index: ApiIndex, query: string, limit = 60): ApiEntry[]
 {
   const q = query.trim().toLowerCase();
@@ -213,7 +213,7 @@ function rootType(index: ApiIndex, code: string, root: string): string | null
   const call = root.match(/^([A-Za-z_$][\w$]*)\s*\(/);
   if (call) return globalReturns(index, call[1]);
 
-  // A module (`doc`, `calc`, `$PARAMS`) or a class name used for its statics (`Mesh.Box`)
+  // A module (`doc`, `calc`, `$PARAMS`) or a class name used for its statics (`Solid.Box`)
   const entry = index.byId.get(root);
   if (entry?.kind === 'module') return entry.returns ?? null;
   if (entry?.kind === 'class') return entry.id;

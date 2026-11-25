@@ -47,7 +47,7 @@ export const API_FILE = '../../packages/ui/src/editor/help/api.generated.json';
 
 /** Sidebar groups for the classes, in this order; a class not listed goes under "More" */
 const CLASS_GROUPS: Array<{ label: string, classes: string[] }> = [
-  { label: 'Shapes', classes: ['Mesh', 'Curve', 'Polygon', 'ShapeCollection', 'Sketch', 'SceneNode'] },
+  { label: 'Shapes', classes: ['Solid', 'Curve', 'Polygon', 'ShapeCollection', 'Sketch', 'SceneNode'] },
   { label: 'Geometry', classes: ['Point', 'Vector', 'Vertex', 'Bbox', 'OBbox'] },
   { label: 'Modules', classes: ['Docs', 'Document', 'Calc', 'Make', 'MaterialManager', 'ParamManager', 'RunnerComponentImporter', 'Handle'] },
 ];

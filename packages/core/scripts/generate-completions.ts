@@ -19,7 +19,7 @@
  *   src/modeler/Modeler.ts            → modelerFunctions
  *   src/modeler/shapeAnnotations.ts   → annotation methods per augmented meshup class
  *   ../meshup/src/Shape.ts            → shared transform/info methods
- *   ../meshup/src/Mesh.ts             → Mesh members
+ *   ../meshup/src/Solid.ts            → Solid members (Mesh is its old name, an alias)
  *   ../meshup/src/Curve.ts            → Curve members
  *   ../meshup/src/Polygon.ts          → Polygon members (plane(), planeBetween())
  *   ../meshup/src/ShapeCollection.ts  → ShapeCollection members
@@ -356,7 +356,7 @@ const collectionAnnotationMethods = extractAnnotationMethods('ShapeCollection')
 /* ------------------------------------------------------------------ */
 
 const meshupShapeMethods      = extractPublicMethods(getClass('../meshup/src/Shape.ts', 'Shape'))
-const meshupMeshMethods       = extractPublicMethods(getClass('../meshup/src/Mesh.ts',    'Mesh'),    new Set(['type', 'constructor']))
+const meshupMeshMethods       = extractPublicMethods(getClass('../meshup/src/Solid.ts',   'Solid'),   new Set(['type', 'constructor']))
 const meshupCurveMethods      = extractPublicMethods(getClass('../meshup/src/Curve.ts',   'Curve'),   new Set(['type', 'constructor']))
 const meshupPolygonMethods    = extractPublicMethods(getClass('../meshup/src/Polygon.ts', 'Polygon'), new Set(['type', 'constructor']))
 const meshupSceneNodeMethods  = extractPublicMethods(getClass('../meshup/src/SceneNode.ts', 'SceneNode'))
@@ -451,13 +451,13 @@ const stylerMethods = extractPublicMethods(getClass('src/docs/styler/Styler.ts',
 /* ------------------------------------------------------------------ */
 
 // Every meshup shape inherits from Shape, and shapeAnnotations patches Shape.prototype,
-// so both sets are common to Mesh / Curve / Polygon.
+// so both sets are common to Solid / Curve / Polygon.
 const shapeCommonMembers = mergeMembers(meshupShapeMethods, shapeAnnotationMethods)
 
 const shapeClasses: ShapeClassInfo[] = [
     {
-        label: 'Mesh',
-        detail: 'mesh geometry shape (box, sphere, cylinder, …)',
+        label: 'Solid',
+        detail: 'a solid: box, sphere, cylinder, … (Mesh is its old name)',
         members: mergeMembers(shapeCommonMembers, meshupMeshMethods),
     },
     {
